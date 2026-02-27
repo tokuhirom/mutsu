@@ -643,7 +643,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::AnonSub(body)),
+                right: Box::new(Expr::AnonSub { body, is_rw: false }),
             },
         ));
     }
@@ -708,7 +708,7 @@ fn render_signature_item(expr: &Expr) -> String {
             Value::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
             _ => v.to_string_value(),
         },
-        Expr::AnonSub(_) => "{ ... }".to_string(),
+        Expr::AnonSub { .. } => "{ ... }".to_string(),
         _ => "...".to_string(),
     }
 }
@@ -805,7 +805,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     // Zero-param pointed block: -> { body }
     if r.starts_with('{') {
         let (r, body) = parse_block_body(r)?;
-        return Ok((r, Expr::AnonSub(body)));
+        return Ok((r, Expr::AnonSub { body, is_rw: false }));
     }
     // Sub-signature destructuring: -> (:key($var), :value($var2)) { body }
     if r.starts_with('(') {
@@ -827,6 +827,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 param_defs: sub_params,
                 return_type,
                 body,
+                is_rw: false,
             },
         ));
     }
@@ -862,6 +863,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 param_defs,
                 return_type,
                 body,
+                is_rw: false,
             },
         ))
     } else {
@@ -897,6 +899,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                     param_defs: vec![first],
                     return_type,
                     body,
+                    is_rw: false,
                 },
             ))
         }
@@ -1412,7 +1415,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     // :name{block} (block-valued colonpair)
     if r.starts_with('{') {
         let (r, body) = parse_block_body(r)?;
-        return Ok((r, (name, Some(Expr::AnonSub(body)))));
+        return Ok((r, (name, Some(Expr::AnonSub { body, is_rw: false }))));
     }
 
     // :name<word> or :name<words> (angle bracket form)

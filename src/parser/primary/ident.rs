@@ -849,6 +849,15 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, make_anon_sub(body)));
             }
+            if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
+                let (r, traits) = super::super::stmt::parse_sub_traits_pub(r)?;
+                let (r, body) = parse_block_body(r)?;
+                let mut expr = make_anon_sub(body);
+                if traits.is_rw {
+                    expr = set_anon_sub_rw(expr, true);
+                }
+                return Ok((r, expr));
+            }
             // sub with params: sub ($x, $y) { ... }
             if r.starts_with('(') {
                 match parse_anon_sub_with_params(r) {
@@ -933,7 +942,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // quietly expr — defer evaluation so quietly can control warning behavior
             let (r, expr) = expression(r)?;
             let wrapped = match expr {
-                Expr::AnonSub(_) | Expr::AnonSubParams { .. } => expr,
+                Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => expr,
                 other => make_anon_sub(vec![Stmt::Expr(other)]),
             };
             return Ok((
@@ -1369,9 +1378,14 @@ fn parse_anon_sub_rest(
     let (r, _) = ws(input)?;
     let (r, _) = parse_char(r, ')')?;
     let (r, _) = ws(r)?;
+    let (r, traits) = super::super::stmt::parse_sub_traits_pub(r)?;
     let (r, body) = parse_block_body(r)?;
     if params.is_empty() {
-        Ok((r, make_anon_sub(body)))
+        let mut expr = make_anon_sub(body);
+        if traits.is_rw {
+            expr = set_anon_sub_rw(expr, true);
+        }
+        Ok((r, expr))
     } else {
         Ok((
             r,
@@ -1380,7 +1394,28 @@ fn parse_anon_sub_rest(
                 param_defs,
                 return_type,
                 body,
+                is_rw: traits.is_rw,
             },
         ))
+    }
+}
+
+fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
+    match expr {
+        Expr::AnonSub { body, .. } => Expr::AnonSub { body, is_rw },
+        Expr::AnonSubParams {
+            params,
+            param_defs,
+            return_type,
+            body,
+            ..
+        } => Expr::AnonSubParams {
+            params,
+            param_defs,
+            return_type,
+            body,
+            is_rw,
+        },
+        other => other,
     }
 }

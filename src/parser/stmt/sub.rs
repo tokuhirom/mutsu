@@ -420,6 +420,7 @@ pub(super) fn sub_decl_body(
                     signature_alternates,
                     body: Vec::new(),
                     multi,
+                    is_rw: traits.is_rw,
                     is_export: traits.is_export,
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
@@ -461,6 +462,7 @@ pub(super) fn sub_decl_body(
             signature_alternates,
             body,
             multi,
+            is_rw: traits.is_rw,
             is_export: traits.is_export,
             is_test_assertion: traits.is_test_assertion,
             supersede,
@@ -529,7 +531,7 @@ fn consume_raw_sub_body(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 /// Result of parsing sub traits.
-pub(super) struct SubTraits {
+pub(crate) struct SubTraits {
     pub is_export: bool,
     pub is_test_assertion: bool,
     pub is_rw: bool,
@@ -957,7 +959,7 @@ fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     if r.starts_with('{') {
         let (r, body) = crate::parser::primary::parse_block_body(r)?;
-        return Ok((r, Expr::AnonSub(body)));
+        return Ok((r, Expr::AnonSub { body, is_rw: false }));
     }
     expression(input)
 }

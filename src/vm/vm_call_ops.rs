@@ -99,7 +99,7 @@ impl VM {
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
-            let result = result?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
         } else if let Some(native_result) = Self::try_native_function(&name, &args) {
@@ -108,7 +108,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
             let result = self.interpreter.call_function(&name, args);
             self.interpreter.set_pending_call_arg_sources(None);
-            let result = result?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
         }
@@ -181,12 +181,14 @@ impl VM {
         {
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
         } else if let Some(native_result) = Self::try_native_function(&name, &args) {
             self.stack.push(native_result?);
         } else {
             let result = self.interpreter.call_function(&name, args)?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
         }
@@ -562,7 +564,7 @@ impl VM {
         self.interpreter.set_pending_call_arg_sources(arg_sources);
         let result = self.interpreter.eval_call_on_value(target, args);
         self.interpreter.set_pending_call_arg_sources(None);
-        let result = result?;
+        let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
         self.stack.push(result);
         self.sync_locals_from_env(code);
         Ok(())
@@ -604,6 +606,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(None);
             result?
         };
+        let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
         self.stack.push(result);
         self.sync_locals_from_env(code);
         Ok(())

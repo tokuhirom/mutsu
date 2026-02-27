@@ -207,6 +207,7 @@ fn wrap_composition_operands(expr: Expr) -> Expr {
                         param_defs,
                         return_type: None,
                         body: vec![Stmt::Expr(body_expr)],
+                        is_rw: false,
                     };
                 }
                 let left_wrapped = if should_wrap_whatevercode(&left) {
@@ -520,6 +521,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                 .collect(),
             return_type: None,
             body: vec![Stmt::Expr(body_expr)],
+            is_rw: false,
         }
     }
 }
@@ -978,7 +980,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "foo");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::AnonSub(_)));
+                assert!(matches!(args[0], Expr::AnonSub { .. }));
             }
             _ => panic!("expected call expression"),
         }
@@ -1007,7 +1009,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "map");
                 assert_eq!(args.len(), 2);
-                assert!(matches!(args[0], Expr::AnonSub(_)));
+                assert!(matches!(args[0], Expr::AnonSub { .. }));
                 assert!(matches!(args[1], Expr::ArrayVar(ref n) if n == "list"));
             }
             _ => panic!("expected call expression"),

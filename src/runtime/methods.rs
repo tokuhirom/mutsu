@@ -181,7 +181,7 @@ impl Interpreter {
                     }
                 }
                 Expr::Block(stmts)
-                | Expr::AnonSub(stmts)
+                | Expr::AnonSub { body: stmts, .. }
                 | Expr::AnonSubParams { body: stmts, .. }
                 | Expr::Gather(stmts) => {
                     for s in stmts {
@@ -398,6 +398,7 @@ impl Interpreter {
                         def.params.clone(),
                         def.param_defs.clone(),
                         def.body.clone(),
+                        def.is_rw,
                         self.env.clone(),
                     ));
                 }
@@ -805,6 +806,7 @@ impl Interpreter {
                     params: Vec::new(),
                     param_defs: Vec::new(),
                     body: vec![],
+                    is_rw: false,
                     env: self.env().clone(),
                     assumed_positional: Vec::new(),
                     assumed_named: std::collections::HashMap::new(),
@@ -843,6 +845,7 @@ impl Interpreter {
                             def.params,
                             def.param_defs,
                             def.body,
+                            def.is_rw,
                             self.env.clone(),
                         )
                     })
@@ -2996,6 +2999,7 @@ impl Interpreter {
                         params,
                         Vec::new(),
                         body,
+                        false,
                         env,
                         id,
                     ));
@@ -3463,6 +3467,7 @@ impl Interpreter {
             def.params.clone(),
             def.param_defs.clone(),
             def.body.clone(),
+            def.is_rw,
             HashMap::new(),
         ))
     }

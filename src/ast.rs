@@ -39,6 +39,7 @@ pub(crate) struct FunctionDef {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_test_assertion: bool,
+    pub(crate) is_rw: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
 }
@@ -137,12 +138,16 @@ pub(crate) enum Expr {
     RoutineMagic,
     BlockMagic,
     Block(Vec<Stmt>),
-    AnonSub(Vec<Stmt>),
+    AnonSub {
+        body: Vec<Stmt>,
+        is_rw: bool,
+    },
     AnonSubParams {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         return_type: Option<String>,
         body: Vec<Stmt>,
+        is_rw: bool,
     },
     CallOn {
         target: Box<Expr>,
@@ -320,6 +325,7 @@ pub(crate) enum Stmt {
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,
+        is_rw: bool,
         is_export: bool,
         is_test_assertion: bool,
         supersede: bool,
@@ -748,7 +754,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             }
         }
         Expr::Block(stmts)
-        | Expr::AnonSub(stmts)
+        | Expr::AnonSub { body: stmts, .. }
         | Expr::AnonSubParams { body: stmts, .. }
         | Expr::Gather(stmts) => {
             for s in stmts {
@@ -913,7 +919,10 @@ fn check_bare_var_expr(expr: &Expr, bare_name: &str, found: &mut bool) {
 pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
     let placeholders = collect_placeholders(&stmts);
     if placeholders.is_empty() {
-        Expr::AnonSub(stmts)
+        Expr::AnonSub {
+            body: stmts,
+            is_rw: false,
+        }
     } else {
         Expr::AnonSubParams {
             params: placeholders.clone(),
@@ -942,6 +951,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 .collect(),
             return_type: None,
             body: stmts,
+            is_rw: false,
         }
     }
 }

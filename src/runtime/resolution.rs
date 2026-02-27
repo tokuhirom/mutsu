@@ -452,6 +452,7 @@ impl Interpreter {
                 params: data.params.clone(),
                 param_defs: data.param_defs.clone(),
                 body: data.body.clone(),
+                is_rw: data.is_rw,
                 env: new_env.clone(),
                 assumed_positional: data.assumed_positional.clone(),
                 assumed_named: data.assumed_named.clone(),
@@ -468,6 +469,7 @@ impl Interpreter {
                 vec![],
                 Vec::new(),
                 data.body.clone(),
+                data.is_rw,
                 new_env.clone(),
             );
             self.env = new_env;
@@ -497,7 +499,9 @@ impl Interpreter {
             let mut merged = saved_env;
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    merged.insert(k.clone(), v.clone());
+                    if merged.contains_key(k) {
+                        merged.insert(k.clone(), v.clone());
+                    }
                 }
             } else {
                 for (k, v) in self.env.iter() {
@@ -512,9 +516,12 @@ impl Interpreter {
             self.env = merged;
             self.restore_readonly_vars(saved_readonly);
             return match result {
-                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) if e.return_value.is_some() => {
+                    self.maybe_fetch_rw_proxy(e.return_value.unwrap(), data.is_rw)
+                }
                 Err(e) if e.is_fail => Ok(Value::Nil),
-                other => other,
+                Ok(v) => self.maybe_fetch_rw_proxy(v, data.is_rw),
+                Err(e) => Err(e),
             };
         }
         Err(RuntimeError::new("Callable expected"))

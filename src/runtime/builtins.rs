@@ -128,6 +128,8 @@ impl Interpreter {
             "fail" => self.builtin_fail(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
+            "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(args.first().cloned().unwrap_or(Value::Nil)),
@@ -487,6 +489,7 @@ impl Interpreter {
             if def.empty_sig && !args.is_empty() {
                 return Err(Self::reject_args_for_empty_sig(args));
             }
+            let routine_is_rw = true;
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             let rw_bindings =
@@ -513,8 +516,11 @@ impl Interpreter {
                 self.multi_dispatch_stack.pop();
             }
             return match result {
-                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                other => other,
+                Err(e) if e.return_value.is_some() => {
+                    self.maybe_fetch_rw_proxy(e.return_value.unwrap(), routine_is_rw)
+                }
+                Ok(v) => self.maybe_fetch_rw_proxy(v, routine_is_rw),
+                Err(e) => Err(e),
             };
         }
         if self.has_proto(name) {
@@ -835,6 +841,243 @@ impl Interpreter {
         )
     }
 
+    fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
+        match arg {
+            Some(Value::Array(items, _)) => items.to_vec(),
+            Some(Value::Nil) | None => Vec::new(),
+            Some(other) => vec![other.clone()],
+        }
+    }
+
+    pub(crate) fn maybe_fetch_rw_proxy(
+        &mut self,
+        result: Value,
+        is_rw: bool,
+    ) -> Result<Value, RuntimeError> {
+        if !is_rw || self.in_lvalue_assignment {
+            return Ok(result);
+        }
+        if let Value::Proxy { fetcher, .. } = result.clone() {
+            if matches!(fetcher.as_ref(), Value::Nil) {
+                return Ok(Value::Nil);
+            }
+            return self.call_sub_value(*fetcher, vec![result], true);
+        }
+        Ok(result)
+    }
+
+    fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
+        for stmt in body.iter().rev() {
+            match stmt {
+                Stmt::Expr(expr) | Stmt::Return(expr) => return Some(expr.clone()),
+                _ => continue,
+            }
+        }
+        None
+    }
+
+    fn is_explicit_return_rw_target(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Call { name, args }
+                if name == "return-rw"
+                    && args.len() == 1
+                    && matches!(&args[0], Expr::Var(_))
+        ) || matches!(
+            expr,
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                ..
+            } if name == "return-rw" && args.is_empty() && matches!(target.as_ref(), Expr::Var(_))
+        )
+    }
+
+    fn assign_proxy_lvalue(&mut self, proxy: Value, value: Value) -> Result<Value, RuntimeError> {
+        let Value::Proxy { fetcher, storer } = proxy.clone() else {
+            return Err(RuntimeError::new(
+                "X::Assignment::RO: target is not assignable",
+            ));
+        };
+        let store_result =
+            self.call_sub_value(*storer.clone(), vec![proxy.clone(), value.clone()], true);
+        if let Err(err) = store_result {
+            if err.message.contains("Too many positionals") {
+                self.call_sub_value(*storer.clone(), vec![value.clone()], true)?;
+            } else {
+                return Err(err);
+            }
+        }
+        if matches!(fetcher.as_ref(), Value::Nil) {
+            return Ok(Value::Nil);
+        }
+        let fetched = self.call_sub_value(*fetcher.clone(), vec![proxy.clone()], true);
+        match fetched {
+            Ok(value) => Ok(value),
+            Err(err) if err.message.contains("Too many positionals") => {
+                let value = self.call_sub_value(*fetcher, Vec::new(), true)?;
+                Ok(value)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn assign_rw_target_expr(
+        &mut self,
+        target: &Expr,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        match target {
+            Expr::Var(name) => {
+                self.env.insert(name.clone(), value.clone());
+                Ok(value)
+            }
+            Expr::Call { name, args } => {
+                let mut eval_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    eval_args.push(self.eval_block_value(&[Stmt::Expr(arg.clone())])?);
+                }
+                self.assign_named_sub_lvalue_with_values(name, eval_args, value)
+            }
+            Expr::CallOn { target, args } => {
+                let callable = self.eval_block_value(&[Stmt::Expr(*target.clone())])?;
+                let mut eval_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    eval_args.push(self.eval_block_value(&[Stmt::Expr(arg.clone())])?);
+                }
+                self.assign_callable_lvalue_with_values(callable, eval_args, value)
+            }
+            Expr::MethodCall {
+                target, name, args, ..
+            } if name == "return-rw" && args.is_empty() => {
+                if let Expr::Var(var_name) = target.as_ref() {
+                    self.env.insert(var_name.clone(), value.clone());
+                    return Ok(value);
+                }
+                Err(RuntimeError::new(
+                    "X::Assignment::RO: return-rw target is not assignable",
+                ))
+            }
+            _ => Err(RuntimeError::new(
+                "X::Assignment::RO: rw sub does not expose an assignable target",
+            )),
+        }
+    }
+
+    fn assign_named_sub_lvalue_with_values(
+        &mut self,
+        name: &str,
+        call_args: Vec<Value>,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
+            if let Some(target_expr) = Self::rw_sub_target_expr(&def.body) {
+                let allow_target_assign =
+                    def.is_rw || Self::is_explicit_return_rw_target(&target_expr);
+                if allow_target_assign {
+                    match self.assign_rw_target_expr(&target_expr, value.clone()) {
+                        Ok(result) => return Ok(result),
+                        Err(err) if Self::is_explicit_return_rw_target(&target_expr) => {
+                            return Err(err);
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+            let was_lvalue = self.in_lvalue_assignment;
+            self.in_lvalue_assignment = true;
+            let result = self.call_function(name, call_args);
+            self.in_lvalue_assignment = was_lvalue;
+            let result = result?;
+            if def.is_rw
+                && let Value::Proxy { .. } = result
+            {
+                return self.assign_proxy_lvalue(result, value);
+            }
+            return Err(RuntimeError::new(format!(
+                "X::Assignment::RO: sub '{}' is not rw",
+                name
+            )));
+        }
+
+        if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
+            return self.assign_callable_lvalue_with_values(callable, call_args, value);
+        }
+
+        Err(RuntimeError::new(format!("Unknown call: {}", name)))
+    }
+
+    fn assign_callable_lvalue_with_values(
+        &mut self,
+        callable: Value,
+        call_args: Vec<Value>,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        match callable {
+            Value::Routine { name, .. } => {
+                self.assign_named_sub_lvalue_with_values(&name, call_args, value)
+            }
+            Value::Sub(data) => {
+                if let Some(target_expr) = Self::rw_sub_target_expr(&data.body) {
+                    let allow_target_assign =
+                        data.is_rw || Self::is_explicit_return_rw_target(&target_expr);
+                    if allow_target_assign {
+                        match self.assign_rw_target_expr(&target_expr, value.clone()) {
+                            Ok(result) => return Ok(result),
+                            Err(err) if Self::is_explicit_return_rw_target(&target_expr) => {
+                                return Err(err);
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                }
+                let was_lvalue = self.in_lvalue_assignment;
+                self.in_lvalue_assignment = true;
+                let result = self.call_sub_value(Value::Sub(data), call_args, true);
+                self.in_lvalue_assignment = was_lvalue;
+                let result = result?;
+                if let Value::Proxy { .. } = result {
+                    return self.assign_proxy_lvalue(result, value);
+                }
+                Err(RuntimeError::new("X::Assignment::RO: sub is not rw"))
+            }
+            Value::WeakSub(weak) => match weak.upgrade() {
+                Some(strong) => {
+                    self.assign_callable_lvalue_with_values(Value::Sub(strong), call_args, value)
+                }
+                None => Err(RuntimeError::new("Callable has been freed")),
+            },
+            _ => Err(RuntimeError::new(
+                "X::Assignment::RO: cannot assign through non-callable value",
+            )),
+        }
+    }
+
+    fn builtin_assign_named_sub_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_assign_named_sub_lvalue expects name, call args, and value",
+            ));
+        }
+        let name = args[0].to_string_value();
+        let call_args = Self::sub_call_args_from_value(args.get(1));
+        let value = args[2].clone();
+        self.assign_named_sub_lvalue_with_values(&name, call_args, value)
+    }
+
+    fn builtin_assign_callable_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_assign_callable_lvalue expects callable, call args, and value",
+            ));
+        }
+        let callable = args[0].clone();
+        let call_args = Self::sub_call_args_from_value(args.get(1));
+        let value = args[2].clone();
+        self.assign_callable_lvalue_with_values(callable, call_args, value)
+    }
+
     fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut message = String::new();
         for arg in args {
@@ -971,6 +1214,7 @@ impl Interpreter {
             next_def.params.clone(),
             next_def.param_defs.clone(),
             next_def.body.clone(),
+            next_def.is_rw,
             self.env.clone(),
         ))
     }

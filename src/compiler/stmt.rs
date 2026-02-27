@@ -789,6 +789,7 @@ impl Compiler {
                 param_defs,
                 body,
                 multi,
+                is_rw,
                 return_type,
                 ..
             } => {
@@ -803,6 +804,7 @@ impl Compiler {
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: *multi,
+                    is_rw: *is_rw,
                     is_export: false,
                     is_test_assertion: false,
                     supersede: false,

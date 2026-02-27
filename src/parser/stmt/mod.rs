@@ -252,6 +252,10 @@ pub(super) fn parse_param_list_with_return_pub(
     sub::parse_param_list_with_return(input)
 }
 
+pub(super) fn parse_sub_traits_pub(input: &str) -> PResult<'_, sub::SubTraits> {
+    sub::parse_sub_traits(input)
+}
+
 pub(super) fn parse_sub_name_pub(input: &str) -> PResult<'_, String> {
     sub::parse_sub_name(input)
 }

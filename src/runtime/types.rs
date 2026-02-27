@@ -1044,7 +1044,7 @@ impl Interpreter {
                     let saved = self.env.clone();
                     self.env.insert("_".to_string(), arg.clone());
                     let ok = match where_expr.as_ref() {
-                        Expr::AnonSub(body) => self
+                        Expr::AnonSub { body, .. } => self
                             .eval_block_value(body)
                             .map(|v| v.truthy())
                             .unwrap_or(false),

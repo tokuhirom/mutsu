@@ -35,6 +35,7 @@ impl VM {
                 params,
                 Vec::new(),
                 body.clone(),
+                false,
                 self.interpreter.env().clone(),
             );
             self.stack.push(val);
@@ -55,6 +56,7 @@ impl VM {
             param_defs,
             return_type,
             body,
+            is_rw,
             ..
         } = stmt
         {
@@ -68,6 +70,7 @@ impl VM {
                 params.clone(),
                 param_defs.clone(),
                 body.clone(),
+                *is_rw,
                 env,
             );
             self.stack.push(val);
@@ -88,6 +91,7 @@ impl VM {
             param_defs,
             return_type,
             body,
+            is_rw,
             ..
         } = stmt
         {
@@ -101,6 +105,7 @@ impl VM {
                 params.clone(),
                 param_defs.clone(),
                 body.clone(),
+                *is_rw,
                 env,
             );
             self.stack.push(val);
@@ -123,6 +128,7 @@ impl VM {
                 vec![],
                 Vec::new(),
                 body.clone(),
+                false,
                 self.interpreter.env().clone(),
             );
             self.stack.push(val);
@@ -147,6 +153,7 @@ impl VM {
             signature_alternates,
             body,
             multi,
+            is_rw,
             is_export,
             is_test_assertion,
             supersede,
@@ -166,6 +173,7 @@ impl VM {
                 return_type.as_ref(),
                 body,
                 *multi,
+                *is_rw,
                 *is_test_assertion,
                 *supersede,
             )?;
@@ -177,6 +185,7 @@ impl VM {
                     return_type.as_ref(),
                     body,
                     *multi,
+                    *is_rw,
                     *is_test_assertion,
                     *supersede,
                 )?;
@@ -189,6 +198,7 @@ impl VM {
                     return_type.as_ref(),
                     body,
                     *multi,
+                    *is_rw,
                     *is_test_assertion,
                     *supersede,
                 )?;
@@ -200,6 +210,7 @@ impl VM {
                         return_type.as_ref(),
                         body,
                         *multi,
+                        *is_rw,
                         *is_test_assertion,
                         *supersede,
                     )?;
