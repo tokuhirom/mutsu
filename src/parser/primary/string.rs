@@ -408,7 +408,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     } else if let Some(rest) = after_prefix.strip_prefix(":format") {
         (rest, true)
     } else {
-        (after_prefix, false)
+        (after_prefix, q_format_quote)
     };
     let is_format_quote = q_format_quote || is_format_adverb;
 

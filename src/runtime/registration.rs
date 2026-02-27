@@ -1567,42 +1567,59 @@ impl Interpreter {
                     // `our method` also registers as a package-scoped sub
                     if *is_our {
                         let qualified_name = format!("{}::{}", name, resolved_method_name);
-                        // Prepend "self" as first param so the first argument
-                        // gets bound as `self` when calling this as a function.
-                        let mut our_params = vec!["self".to_string()];
-                        our_params.extend(
-                            effective_params
-                                .iter()
-                                .filter(|p| p.as_str() != "self")
-                                .cloned(),
-                        );
-                        let self_param = crate::ast::ParamDef {
-                            name: "self".to_string(),
-                            default: None,
-                            multi_invocant: true,
-                            required: false,
-                            named: false,
-                            slurpy: false,
-                            double_slurpy: false,
-                            sigilless: false,
-                            type_constraint: None,
-                            literal_value: None,
-                            sub_signature: None,
-                            where_constraint: None,
-                            traits: Vec::new(),
-                            optional_marker: false,
-                            outer_sub_signature: None,
-                            code_signature: None,
-                            is_invocant: false,
-                            shape_constraints: None,
+                        let has_explicit_invocant = effective_param_defs
+                            .iter()
+                            .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
+                        let (our_params, our_param_defs) = if has_explicit_invocant {
+                            (
+                                effective_params.clone(),
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| p.name.as_str() != "self")
+                                    .cloned()
+                                    .collect(),
+                            )
+                        } else {
+                            // Prepend "self" as first param so the first argument
+                            // gets bound as `self` when calling this as a function.
+                            let mut our_params = vec!["self".to_string()];
+                            our_params.extend(
+                                effective_params
+                                    .iter()
+                                    .filter(|p| p.as_str() != "self")
+                                    .cloned(),
+                            );
+                            let self_param = crate::ast::ParamDef {
+                                name: "self".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            };
+                            let mut our_param_defs = vec![self_param];
+                            our_param_defs.extend(
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| {
+                                        !(p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                                    })
+                                    .cloned(),
+                            );
+                            (our_params, our_param_defs)
                         };
-                        let mut our_param_defs = vec![self_param];
-                        our_param_defs.extend(
-                            effective_param_defs
-                                .iter()
-                                .filter(|p| !p.is_invocant)
-                                .cloned(),
-                        );
                         let func_def = crate::ast::FunctionDef {
                             package: name.to_string(),
                             name: resolved_method_name.clone(),
