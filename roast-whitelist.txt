@@ -486,3 +486,4 @@ roast/integration/packages.t
 roast/integration/passing-pair-class-to-sub.t
 roast/integration/substr-after-match-in-gather-in-for.t
 roast/integration/topic_in_double_loop.t
+roast/t/fudge.t

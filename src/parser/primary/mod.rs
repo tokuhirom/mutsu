@@ -87,6 +87,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(string::smart_double_quoted_string(input));
         try_primary!(string::big_q_string(input));
         try_primary!(string::qx_string(input));
+        try_primary!(string::backtick_qx_string(input));
         try_primary!(string::q_string(input));
         try_primary!(string::corner_bracket_string(input));
         try_primary!(regex::regex_lit(input));
@@ -526,5 +527,16 @@ mod tests {
             }
             _ => panic!("expected qx call expression"),
         }
+    }
+
+    #[test]
+    fn primary_backtick_qx_form() {
+        reset_primary_memo();
+        let (rest, expr) = primary("`echo $x`").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Call { ref name, ref args } if name == "QX" && args.len() == 1
+        ));
     }
 }

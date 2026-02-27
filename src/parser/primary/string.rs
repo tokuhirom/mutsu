@@ -466,6 +466,30 @@ pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Parse backtick command form: `...`.
+/// This is equivalent to `qx` with interpolation enabled.
+pub(super) fn backtick_qx_string(input: &str) -> PResult<'_, Expr> {
+    if crate::parser::stmt::simple::match_user_declared_circumfix_op(input).is_some() {
+        return Err(PError::expected("backtick qx string"));
+    }
+    let body = input
+        .strip_prefix('`')
+        .ok_or_else(|| PError::expected("backtick qx string"))?;
+    let end = body
+        .find('`')
+        .ok_or_else(|| PError::expected("closing '`'"))?;
+    let content = &body[..end];
+    let rest = &body[end + 1..];
+    let command_expr = interpolate_string_content(content);
+    Ok((
+        rest,
+        Expr::Call {
+            name: "QX".to_string(),
+            args: vec![command_expr],
+        },
+    ))
+}
+
 /// Process an escape sequence starting at `rest` (which begins with `\`).
 /// `extra_escapes` lists additional simple single-char escapes (e.g., `'"'`, `'{'`).
 /// Returns `Some((remaining_input, true))` if a continuation-style escape was handled

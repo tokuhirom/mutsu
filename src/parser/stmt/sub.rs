@@ -357,7 +357,8 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
 
     // Parse params
-    let (rest, (params, param_defs, return_type)) = if rest.starts_with('(') {
+    let has_explicit_signature = rest.starts_with('(');
+    let (rest, (params, param_defs, return_type)) = if has_explicit_signature {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
@@ -401,14 +402,9 @@ pub(super) fn sub_decl_body(
     } else {
         rest
     };
-    // Detect `sub name;` without a block body.
-    if rest.starts_with(';') || rest.is_empty() {
+    // Detect forward declaration: `sub name(...);`.
+    if let Some(rest) = rest.strip_prefix(';') {
         if allow_main_semicolon_decl && name == "MAIN" && !multi {
-            let rest = if let Some(stripped) = rest.strip_prefix(';') {
-                stripped
-            } else {
-                rest
-            };
             return Ok((
                 rest,
                 Stmt::SubDecl {
@@ -426,12 +422,43 @@ pub(super) fn sub_decl_body(
                 },
             ));
         }
-        return Err(PError::raw(
-            "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
-             Please use the block form. If you did not mean to declare a unit-scoped sub, \
-             perhaps you accidentally placed a semicolon after routine's definition?".to_string(),
-            Some(rest.len()),
+        if !has_explicit_signature {
+            return Err(PError::raw(
+                "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
+                 Please use the block form. If you did not mean to declare a unit-scoped sub, \
+                 perhaps you accidentally placed a semicolon after routine's definition?"
+                    .to_string(),
+                Some(rest.len()),
+            ));
+        }
+        if name == "MAIN" && !allow_main_semicolon_decl {
+            return Err(PError::raw(
+                "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
+                 Please use the block form. If you did not mean to declare a unit-scoped sub, \
+                 perhaps you accidentally placed a semicolon after routine's definition?"
+                    .to_string(),
+                Some(rest.len()),
+            ));
+        }
+        return Ok((
+            rest,
+            Stmt::SubDecl {
+                name,
+                name_expr,
+                params,
+                param_defs,
+                return_type,
+                signature_alternates,
+                body: Vec::new(),
+                multi,
+                is_export: traits.is_export,
+                is_test_assertion: traits.is_test_assertion,
+                supersede,
+            },
         ));
+    }
+    if rest.is_empty() {
+        return Err(PError::expected("sub body '{ ... }'"));
     }
     let (rest, body) = match block(rest) {
         Ok(ok) => ok,
@@ -697,6 +724,16 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
             rest = r;
             continue;
         }
+        if !r.starts_with(',')
+            && starts_with_sigil_param(r)
+            && params.last().is_some_and(is_anonymous_sigil_param)
+        {
+            let (r, mut p) = parse_single_param(r)?;
+            p.multi_invocant = multi_invocant;
+            params.push(p);
+            rest = r;
+            continue;
+        }
         if !r.starts_with(',') {
             // Check for --> return type annotation at end of param list
             if let Some(stripped) = r.strip_prefix("-->") {
@@ -824,6 +861,16 @@ pub(super) fn parse_param_list_with_return(
             rest = r;
             continue;
         }
+        if !r.starts_with(',')
+            && starts_with_sigil_param(r)
+            && params.last().is_some_and(is_anonymous_sigil_param)
+        {
+            let (r, mut p) = parse_single_param(r)?;
+            p.multi_invocant = multi_invocant;
+            params.push(p);
+            rest = r;
+            continue;
+        }
         if !r.starts_with(',') {
             if let Some(stripped) = r.strip_prefix("-->") {
                 let (r, rt) = parse_return_type_annotation(stripped)?;
@@ -879,6 +926,17 @@ fn make_param(name: String) -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
     }
+}
+
+fn is_anonymous_sigil_param(param: &ParamDef) -> bool {
+    matches!(
+        param.name.as_str(),
+        "__ANON_STATE__" | "__ANON_ARRAY__" | "__ANON_HASH__" | "__ANON_CODE__"
+    )
+}
+
+fn starts_with_sigil_param(input: &str) -> bool {
+    matches!(input.as_bytes().first(), Some(b'$' | b'@' | b'%' | b'&'))
 }
 
 fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, String)> {

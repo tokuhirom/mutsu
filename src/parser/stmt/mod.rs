@@ -905,6 +905,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_sub_decl_with_compact_anonymous_sigil_params() {
+        let (rest, stmts) = program("sub foo($$$$) { 1 }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
+            assert_eq!(param_defs.len(), 4);
+            assert!(
+                param_defs
+                    .iter()
+                    .all(|p| p.name == "__ANON_STATE__" && !p.named && !p.slurpy)
+            );
+        } else {
+            panic!("expected SubDecl");
+        }
+    }
+
+    #[test]
+    fn parse_forward_sub_declaration_with_semicolon() {
+        let (rest, stmts) = program("sub foo($$$$); sub foo($$$$) { 1 }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        if let Stmt::SubDecl {
+            body, param_defs, ..
+        } = &stmts[0]
+        {
+            assert!(body.is_empty());
+            assert_eq!(param_defs.len(), 4);
+        } else {
+            panic!("expected SubDecl");
+        }
+    }
+
+    #[test]
+    fn parse_forward_sub_without_signature_is_invalid() {
+        let err = program("sub foo;").err().expect("expected parse error");
+        assert!(err.to_string().contains("X::UnitScope::Invalid"));
+    }
+
+    #[test]
     fn parse_main_semicolon_captures_following_mainline() {
         let (rest, stmts) = program("my @*ARGS = <x>; sub MAIN($a); say $a;").unwrap();
         assert_eq!(rest, "");
