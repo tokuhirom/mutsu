@@ -5823,22 +5823,35 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+                let class_def = self.classes.get(class_key);
+                let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
+                let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
                 if self.class_has_method(class_name, "BUILD") {
+                    let build_args = if has_direct_build {
+                        args.clone()
+                    } else {
+                        Vec::new()
+                    };
                     let (_v, updated) = self.run_instance_method(
                         class_name,
                         attrs.clone(),
                         "BUILD",
-                        Vec::new(),
+                        build_args,
                         Some(Value::make_instance(class_name.clone(), attrs.clone())),
                     )?;
                     attrs = updated;
                 }
                 if self.class_has_method(class_name, "TWEAK") {
+                    let tweak_args = if has_direct_tweak {
+                        args.clone()
+                    } else {
+                        Vec::new()
+                    };
                     let (_v, updated) = self.run_instance_method(
                         class_name,
                         attrs.clone(),
                         "TWEAK",
-                        Vec::new(),
+                        tweak_args,
                         Some(Value::make_instance(class_name.clone(), attrs.clone())),
                     )?;
                     attrs = updated;
