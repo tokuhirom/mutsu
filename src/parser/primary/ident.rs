@@ -779,6 +779,21 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        "while" => {
+            if let Ok((r, stmt)) = super::super::stmt::while_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "until" => {
+            if let Ok((r, stmt)) = super::super::stmt::until_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "loop" => {
+            if let Ok((r, stmt)) = super::super::stmt::loop_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)

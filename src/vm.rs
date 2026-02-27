@@ -1136,8 +1136,15 @@ impl VM {
                 cond_end,
                 body_end,
                 label,
+                collect,
             } => {
-                self.exec_while_loop_op(code, *cond_end, *body_end, label, ip, compiled_fns)?;
+                let spec = vm_control_ops::WhileLoopSpec {
+                    cond_end: *cond_end,
+                    body_end: *body_end,
+                    label: label.clone(),
+                    collect: *collect,
+                };
+                self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
             OpCode::ForLoop {
                 param_idx,
@@ -1162,12 +1169,14 @@ impl VM {
                 step_start,
                 body_end,
                 label,
+                collect,
             } => {
                 let spec = vm_control_ops::CStyleLoopSpec {
                     cond_end: *cond_end,
                     step_start: *step_start,
                     body_end: *body_end,
                     label: label.clone(),
+                    collect: *collect,
                 };
                 self.exec_cstyle_loop_op(code, &spec, ip, compiled_fns)?;
             }

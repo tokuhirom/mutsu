@@ -285,6 +285,21 @@ pub(super) fn for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::for_stmt(input)
 }
 
+/// Public accessor for `while` statement parser (used by primary.rs for `while` expressions).
+pub(super) fn while_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::while_stmt(input)
+}
+
+/// Public accessor for `until` statement parser (used by primary.rs for `until` expressions).
+pub(super) fn until_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::until_stmt(input)
+}
+
+/// Public accessor for `loop` statement parser (used by primary.rs for `loop` expressions).
+pub(super) fn loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::loop_stmt(input)
+}
+
 pub(super) fn labeled_loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::labeled_loop_stmt(input)
 }
