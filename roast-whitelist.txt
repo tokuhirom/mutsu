@@ -443,6 +443,7 @@ roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-list/map_function_return_values.t
 roast/S32-list/rotor.t
+roast/S32-list/unique.t
 roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t

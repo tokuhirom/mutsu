@@ -1994,6 +1994,9 @@ impl Interpreter {
             "sort" => {
                 return self.dispatch_sort(target, &args);
             }
+            "unique" => {
+                return self.dispatch_unique(target, &args);
+            }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
             }
@@ -5083,6 +5086,65 @@ impl Interpreter {
             }
             other => Ok(other),
         }
+    }
+
+    fn dispatch_unique(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut as_func: Option<Value> = None;
+        let mut with_func: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "as" && value.truthy() {
+                    as_func = Some(value.as_ref().clone());
+                    continue;
+                }
+                if key == "with" && value.truthy() {
+                    with_func = Some(value.as_ref().clone());
+                    continue;
+                }
+            }
+        }
+
+        let items: Vec<Value> = match target {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+            v @ (Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. }) => Self::value_to_list(&v),
+            other => vec![other],
+        };
+
+        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut unique_items: Vec<Value> = Vec::new();
+        for item in items {
+            let key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            } else {
+                item.clone()
+            };
+
+            let mut duplicate = false;
+            for seen in &seen_keys {
+                let is_same = if let Some(func) = with_func.clone() {
+                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
+                        .truthy()
+                } else {
+                    values_identical(seen, &key)
+                };
+                if is_same {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if !duplicate {
+                seen_keys.push(key);
+                unique_items.push(item);
+            }
+        }
+
+        Ok(Value::array(unique_items))
     }
 
     fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {

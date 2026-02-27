@@ -252,6 +252,7 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
+            "unique" => self.builtin_unique(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
@@ -613,6 +614,9 @@ impl Interpreter {
         if args.len() == 1 {
             if is_chain_comparison_op(op) {
                 return Ok(Value::Bool(true));
+            }
+            if op == "~" {
+                return Ok(Value::Str(crate::runtime::utils::coerce_to_str(&args[0])));
             }
             return Ok(args[0].clone());
         }

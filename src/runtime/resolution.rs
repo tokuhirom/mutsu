@@ -752,6 +752,17 @@ impl Interpreter {
             }
             return Ok(Value::array(result));
         }
+        if let Some(func) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                let value = self.call_sub_value(func.clone(), vec![item], false)?;
+                match value {
+                    Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                    v => result.push(v),
+                }
+            }
+            return Ok(Value::array(result));
+        }
         Ok(Value::array(list_items))
     }
 
@@ -914,6 +925,16 @@ impl Interpreter {
             let mut result = Vec::new();
             for item in list_items {
                 if self.smart_match(&item, &pattern) {
+                    result.push(item);
+                }
+            }
+            return Ok(Value::array(result));
+        }
+        if let Some(func) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
+                if pred.truthy() {
                     result.push(item);
                 }
             }
