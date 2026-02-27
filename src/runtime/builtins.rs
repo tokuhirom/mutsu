@@ -259,6 +259,7 @@ impl Interpreter {
             "dd" => self.builtin_dd(&args),
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
+            "end" => self.builtin_end(&args),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
@@ -1750,6 +1751,7 @@ impl Interpreter {
                 | "tc"
                 | "trim"
                 | "elems"
+                | "end"
                 | "keys"
                 | "values"
                 | "pairs"

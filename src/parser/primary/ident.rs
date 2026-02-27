@@ -451,6 +451,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "sleep"
             | "dir"
             | "elems"
+            | "end"
     ) || is_expr_listop(name)
 }
 
@@ -1439,6 +1440,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '”'
             || next == '｢'
             || next == '('
+            || next == '['
             || next.is_ascii_digit()
             || hyphen_forward_call
             || is_user_sub)
