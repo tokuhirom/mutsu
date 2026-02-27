@@ -1350,6 +1350,26 @@ impl VM {
                 self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx)?;
                 *ip += 1;
             }
+            OpCode::FlipFlopExpr {
+                lhs_end,
+                rhs_end,
+                site_id,
+                exclude_start,
+                exclude_end,
+                is_fff,
+            } => {
+                self.exec_flip_flop_expr_op(
+                    code,
+                    ip,
+                    *lhs_end,
+                    *rhs_end,
+                    *site_id,
+                    *exclude_start,
+                    *exclude_end,
+                    *is_fff,
+                    compiled_fns,
+                )?;
+            }
 
             // -- Type checking --
             OpCode::TypeCheck(tc_idx) => {

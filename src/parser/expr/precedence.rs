@@ -669,6 +669,22 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             rest = r;
             continue;
         }
+        // Flip-flop operators: ff/fff and endpoint-excluding forms.
+        if let Some((name, len)) = parse_flipflop_infix(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = range_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after flip-flop operator", r.len())
+            })?;
+            *left = Expr::InfixFunc {
+                name,
+                left: Box::new(left.clone()),
+                right: vec![right],
+                modifier: None,
+            };
+            rest = r;
+            continue;
+        }
         // User-defined infix words (typically via my &infix:<...> = ...),
         // e.g. `42 same-in-Int "42"`.
         // Do not span statement boundaries across newlines.
@@ -713,6 +729,18 @@ fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
         return None;
     }
     Some((name.to_string(), end))
+}
+
+fn parse_flipflop_infix(input: &str) -> Option<(String, usize)> {
+    const OPS: &[&str] = &["^fff^", "^fff", "fff^", "fff", "^ff^", "^ff", "ff^", "ff"];
+    for op in OPS {
+        if let Some(rest) = input.strip_prefix(op)
+            && !is_ident_char(rest.as_bytes().first().copied())
+        {
+            return Some(((*op).to_string(), op.len()));
+        }
+    }
+    None
 }
 
 fn is_reserved_infix_word(name: &str) -> bool {

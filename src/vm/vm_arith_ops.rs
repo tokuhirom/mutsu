@@ -142,7 +142,21 @@ impl VM {
 
     pub(super) fn exec_bool_coerce_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(val.truthy()));
+        let out = match &val {
+            Value::Regex(_)
+            | Value::RegexWithAdverbs { .. }
+            | Value::Routine { is_regex: true, .. } => {
+                let topic = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                Value::Bool(self.interpreter.smart_match_values(&topic, &val))
+            }
+            _ => Value::Bool(val.truthy()),
+        };
+        self.stack.push(out);
     }
 
     pub(super) fn exec_concat_op(&mut self) {

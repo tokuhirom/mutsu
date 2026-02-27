@@ -456,6 +456,15 @@ pub(crate) enum OpCode {
         right_arity: u32,
         modifier_idx: Option<u32>,
     },
+    /// Stateful scalar flip-flop (ff/fff) with lazily evaluated lhs/rhs bytecode spans.
+    FlipFlopExpr {
+        lhs_end: u32,
+        rhs_end: u32,
+        site_id: u64,
+        exclude_start: bool,
+        exclude_end: bool,
+        is_fff: bool,
+    },
 
     // -- Exception handling --
     /// Try block layout:
@@ -686,6 +695,22 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::SmartMatchExpr { rhs_end, .. } => *rhs_end = target,
             _ => panic!("patch_smart_match_rhs_end on non-SmartMatchExpr opcode"),
+        }
+    }
+
+    pub(crate) fn patch_flip_flop_lhs_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::FlipFlopExpr { lhs_end, .. } => *lhs_end = target,
+            _ => panic!("patch_flip_flop_lhs_end on non-FlipFlopExpr opcode"),
+        }
+    }
+
+    pub(crate) fn patch_flip_flop_rhs_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::FlipFlopExpr { rhs_end, .. } => *rhs_end = target,
+            _ => panic!("patch_flip_flop_rhs_end on non-FlipFlopExpr opcode"),
         }
     }
 
