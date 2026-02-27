@@ -151,6 +151,7 @@ impl Interpreter {
             // Grammar helpers
             "make" => self.builtin_make(&args),
             "made" => self.builtin_made(),
+            "__mutsu_make_format" => self.builtin_make_format(&args),
             "undefine" => Ok(Value::Nil),
             "local" => Ok(Value::Nil),
             "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),

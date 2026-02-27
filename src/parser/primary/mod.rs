@@ -334,6 +334,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_q_o_format_quote() {
+        let (rest, expr) = primary("q:o/%5s/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Call { ref name, ref args }
+                if name == "__mutsu_make_format"
+                    && args.len() == 1
+                    && matches!(args[0], Expr::Literal(Value::Str(ref s)) if s == "%5s")
+        ));
+    }
+
+    #[test]
+    fn parse_qq_format_quote_with_interpolation() {
+        let (rest, expr) = primary("qq:format/%$s5/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Call { ref name, ref args }
+                if name == "__mutsu_make_format"
+                    && args.len() == 1
+                    && matches!(args[0], Expr::StringInterpolation(_))
+        ));
+    }
+
+    #[test]
     fn parse_p5_regex_with_adverb() {
         let (rest1, expr1) = primary("m:P5/(?<name>.+)/").unwrap();
         assert_eq!(rest1, "");
