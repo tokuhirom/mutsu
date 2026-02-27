@@ -807,6 +807,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         let assign_stmt = Stmt::Assign {
             name: name.clone(),
@@ -842,6 +843,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         let assign_stmt = Stmt::Assign {
             name: name.clone(),
