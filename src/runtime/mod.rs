@@ -1768,10 +1768,8 @@ impl Interpreter {
     ) {
         if let Some(popped) = self.caller_env_stack.pop() {
             for (key, value) in &popped {
-                if self.is_var_dynamic(key) {
-                    if restored_env.get(key) != Some(value) {
-                        restored_env.insert(key.clone(), value.clone());
-                    }
+                if self.is_var_dynamic(key) && restored_env.get(key) != Some(value) {
+                    restored_env.insert(key.clone(), value.clone());
                 }
             }
         }

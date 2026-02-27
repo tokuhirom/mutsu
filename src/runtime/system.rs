@@ -165,10 +165,10 @@ impl Interpreter {
             }
         }
         // Fallback: look at the most recent callframe stack entry for the code
-        if let Some(entry) = self.callframe_stack.last() {
-            if let Some(ref code) = entry.code {
-                return code.clone();
-            }
+        if let Some(entry) = self.callframe_stack.last()
+            && let Some(ref code) = entry.code
+        {
+            return code.clone();
         }
         Value::Nil
     }
@@ -186,7 +186,7 @@ impl Interpreter {
                 continue;
             }
             // Skip type names, enum values, and signal names
-            if k.chars().next().map_or(false, |c| c.is_uppercase()) {
+            if k.chars().next().is_some_and(|c| c.is_uppercase()) {
                 continue;
             }
             // Add sigil prefix based on the env key convention:

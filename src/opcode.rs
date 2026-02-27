@@ -270,8 +270,6 @@ pub(crate) enum OpCode {
     MakeAnonSubParams(u32),
     MakeLambda(u32),
     MakeBlockClosure(u32),
-    IndexAssignInvalid,
-
     // -- Indexing --
     Index,
     DeleteIndexNamed(u32),
