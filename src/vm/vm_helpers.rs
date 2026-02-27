@@ -824,7 +824,8 @@ impl VM {
             if !fn_name.is_empty() {
                 self.interpreter.pop_routine();
             }
-            self.interpreter.pop_test_assertion_context(pushed_assertion);
+            self.interpreter
+                .pop_test_assertion_context(pushed_assertion);
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             self.locals = saved_locals;
@@ -841,7 +842,8 @@ impl VM {
                     if !fn_name.is_empty() {
                         self.interpreter.pop_routine();
                     }
-                    self.interpreter.pop_test_assertion_context(pushed_assertion);
+                    self.interpreter
+                        .pop_test_assertion_context(pushed_assertion);
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
                     self.locals = saved_locals;
@@ -933,7 +935,8 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }
-        self.interpreter.pop_test_assertion_context(pushed_assertion);
+        self.interpreter
+            .pop_test_assertion_context(pushed_assertion);
         self.interpreter.pop_block();
 
         let mut restored_env = saved_env;
