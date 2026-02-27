@@ -229,6 +229,14 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             remaining_len: err.remaining_len.or(Some(r.len())),
         })?;
         let (r, _) = ws(r)?;
+        // Do not consume full `given` statement headers as postfix modifiers.
+        // This preserves parsing of:
+        //   { ... }
+        //   given $topic { ... }
+        // as two statements instead of `{ ... } given $topic` plus a stray block.
+        if r.starts_with('{') {
+            return Ok((rest, stmt));
+        }
         let (r, _) = opt_char(r, ';');
         let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
         return Ok((

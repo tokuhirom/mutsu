@@ -1,5 +1,5 @@
 use Test;
-plan 7;
+plan 8;
 
 ok !(one(1..2)), 'one(range) flattens iterable arguments';
 
@@ -11,6 +11,24 @@ ok !(one(1..2)), 'one(range) flattens iterable arguments';
         }
     }
     is $c, 9, 'for pointy param list with parens binds tuple values';
+}
+
+{
+    my $matched = False;
+    {
+        my $c = 0;
+        for (-4..4)X(-4..4) -> ($x, $y) {
+            if $x & $y == -1 | 0 | 1 {
+                $c++;
+            }
+        }
+    }
+    given 1 {
+        when 0 | 1 | 2 {
+            $matched = True;
+        }
+    }
+    ok $matched, 'given statement after block is not parsed as postfix modifier';
 }
 
 ok do if 1 ne 2|3|4 { 1 } else { 0 }, 'ne with junction is true when all are different';
