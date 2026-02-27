@@ -509,6 +509,20 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             );
         }
     }
+    // Hyper-prefix slip forms: |<< expr / |>> expr.
+    // Lower to the same unary Pipe AST used by plain `|expr`.
+    if input.starts_with("|<<") || input.starts_with("|>>") {
+        let rest = &input[3..];
+        let (rest, _) = ws(rest)?;
+        let (rest, expr) = postfix_expr(rest)?;
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr: Box::new(expr),
+            },
+        ));
+    }
     // |@array or |%hash or |$scalar or |ident — slip/flatten prefix
     if input.starts_with('|')
         && !input.starts_with("||")

@@ -496,6 +496,11 @@ impl Interpreter {
         right: Value,
         f: fn(i32) -> bool,
     ) -> Result<Value, RuntimeError> {
+        if matches!(left, Value::Pair(..) | Value::ValuePair(..))
+            || matches!(right, Value::Pair(..) | Value::ValuePair(..))
+        {
+            return Err(RuntimeError::new("X::Multi::NoMatch"));
+        }
         // Version-vs-Version comparison: use version_cmp_parts directly
         if let (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) =
             (&left, &right)
