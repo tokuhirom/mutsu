@@ -7,11 +7,12 @@ LIST_ONLY=0
 RUN_ALL=0
 PR_NUMBER=""
 AGENT="codex"
+FULL_AUTO=0
 POLL_INTERVAL_SECONDS=600
 
 usage() {
     cat <<USAGE
-Usage: $0 [--agent codex|claude] [--pr <number>] [--all] [--list] [--limit <n>] [--dry-run]
+Usage: $0 [--agent codex|claude] [--pr <number>] [--all] [--list] [--limit <n>] [--full-auto] [--dry-run]
 
 Options:
   --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
@@ -19,6 +20,7 @@ Options:
   --all           Run for all matching open PRs (conflict/CI failure)
   --list          Show matching PRs and exit
   --limit <n>     Number of open PRs to inspect (default: 30)
+  --full-auto     Use codex in --full-auto mode instead of exec (codex only)
   --dry-run       Print ai-sandbox command without executing it
   -h, --help      Show this help
 USAGE
@@ -81,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             fi
             AGENT="$2"
             shift 2
+            ;;
+        --full-auto)
+            FULL_AUTO=1
+            shift
             ;;
         --dry-run)
             DRY_RUN=1
@@ -151,7 +157,9 @@ run_history_update() {
     timestamp="$(date +%Y%m%d%H%M)"
     branch_name="update-history-${timestamp}"
     prompt="$(build_history_prompt "$branch_name")"
-    if [[ "$AGENT" == "codex" ]]; then
+    if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
+        cmd=(ai-sandbox --recreate "$branch_name" codex-fa "$prompt")
+    elif [[ "$AGENT" == "codex" ]]; then
         cmd=(ai-sandbox --recreate "$branch_name" codex exec "$prompt")
     else
         cmd=(ai-sandbox --recreate "$branch_name" claude -p --verbose --output-format stream-json "$prompt")
@@ -230,7 +238,9 @@ run_for_pr() {
     local cmd
 
     prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url")"
-    if [[ "$AGENT" == "codex" ]]; then
+    if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
+        cmd=(ai-sandbox --recreate "pr-${pr_number}" codex-fa "$prompt")
+    elif [[ "$AGENT" == "codex" ]]; then
         cmd=(ai-sandbox --recreate "pr-${pr_number}" codex exec "$prompt")
     else
         cmd=(ai-sandbox --recreate "pr-${pr_number}" claude -p --verbose --output-format stream-json "$prompt")
