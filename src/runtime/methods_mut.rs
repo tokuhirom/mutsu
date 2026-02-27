@@ -1,4 +1,55 @@
 use super::*;
+use num_bigint::BigInt;
+use num_traits::Signed;
+
+fn value_to_bigint(value: &Value) -> BigInt {
+    match value {
+        Value::Int(i) => BigInt::from(*i),
+        Value::BigInt(n) => n.clone(),
+        Value::Num(f) => BigInt::from(*f as i64),
+        Value::Rat(n, d) | Value::FatRat(n, d) => {
+            if *d == 0 {
+                BigInt::from(0)
+            } else {
+                BigInt::from(*n / *d)
+            }
+        }
+        Value::Bool(b) => BigInt::from(i64::from(*b)),
+        Value::Str(s) => s
+            .trim()
+            .parse::<i64>()
+            .map(BigInt::from)
+            .unwrap_or_else(|_| BigInt::from(0)),
+        _ => BigInt::from(0),
+    }
+}
+
+fn normalize_twos_complement(mut value: BigInt, bits: usize) -> BigInt {
+    if bits == 0 {
+        return BigInt::from(0);
+    }
+    let modulus = BigInt::from(1u8) << bits;
+    value %= &modulus;
+    if value.is_negative() {
+        value += modulus;
+    }
+    value
+}
+
+fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &BigInt) {
+    for i in 0..bits {
+        let bit_index = from + i;
+        let byte_index = bit_index / 8;
+        let bit_in_byte = 7 - (bit_index % 8);
+        let src_shift = bits - 1 - i;
+        let bit_is_set = ((value >> src_shift) & BigInt::from(1u8)) == BigInt::from(1u8);
+        if bit_is_set {
+            bytes[byte_index] |= 1 << bit_in_byte;
+        } else {
+            bytes[byte_index] &= !(1 << bit_in_byte);
+        }
+    }
+}
 
 impl Interpreter {
     fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
@@ -845,6 +896,59 @@ impl Interpreter {
             id: target_id,
         } = target.clone()
         {
+            if (class_name == "Buf"
+                || class_name.starts_with("Buf[")
+                || class_name.starts_with("buf"))
+                && matches!(method, "write-ubits" | "write-bits")
+                && args.len() == 3
+            {
+                let from = super::to_int(&args[0]);
+                let bits = super::to_int(&args[1]);
+                if from < 0 || bits < 0 {
+                    return Err(RuntimeError::new("bit offset/length must be non-negative"));
+                }
+                let from = from as usize;
+                let bits = bits as usize;
+                let mut updated = (*attributes).clone();
+                let mut bytes = if let Some(Value::Array(items, ..)) = updated.get("bytes") {
+                    items
+                        .iter()
+                        .map(|v| match v {
+                            Value::Int(i) => *i as u8,
+                            _ => 0,
+                        })
+                        .collect::<Vec<u8>>()
+                } else {
+                    Vec::new()
+                };
+                let required_bits = from.saturating_add(bits);
+                let required_len = required_bits.div_ceil(8);
+                if bytes.len() < required_len {
+                    bytes.resize(required_len, 0);
+                }
+                let value = normalize_twos_complement(value_to_bigint(&args[2]), bits);
+                if bits > 0 {
+                    write_bits_into_bytes(&mut bytes, from, bits, &value);
+                }
+                updated.insert(
+                    "bytes".to_string(),
+                    Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                );
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
+                let updated_instance = Value::Instance {
+                    class_name: class_name.clone(),
+                    attributes: std::sync::Arc::new(updated),
+                    id: target_id,
+                };
+                self.env
+                    .insert(target_var.to_string(), updated_instance.clone());
+                return Ok(updated_instance);
+            }
+
             if class_name == "Iterator" {
                 let mut updated = (*attributes).clone();
                 let items = match updated.get("items") {

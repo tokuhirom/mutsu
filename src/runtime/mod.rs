@@ -245,6 +245,15 @@ enum ClassItem {
     UnicodePropItem { name: String, negated: bool },
 }
 
+/// Entry in the callframe stack, tracking state for each call frame.
+#[derive(Clone)]
+pub(crate) struct CallFrameEntry {
+    pub file: String,
+    pub line: i64,
+    pub code: Option<Value>,
+    pub env: HashMap<String, Value>,
+}
+
 pub struct Interpreter {
     env: HashMap<String, Value>,
     output: String,
@@ -262,6 +271,7 @@ pub struct Interpreter {
     output_emitted: bool,
     bailed_out: bool,
     functions: HashMap<String, FunctionDef>,
+    operator_assoc: HashMap<String, String>,
     proto_functions: HashMap<String, FunctionDef>,
     token_defs: HashMap<String, Vec<FunctionDef>>,
     lib_paths: Vec<String>,
@@ -270,6 +280,7 @@ pub struct Interpreter {
     program_path: Option<String>,
     current_package: String,
     routine_stack: Vec<(String, String)>,
+    callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
     test_pending_callsite_line: Option<i64>,
@@ -920,6 +931,16 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Pod::Block::Para".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block::Para".to_string(), "Pod::Block".to_string()],
+            },
+        );
+        classes.insert(
             "Pod::Block::Table".to_string(),
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
@@ -927,6 +948,16 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Table".to_string(), "Pod::Block".to_string()],
+            },
+        );
+        classes.insert(
+            "Pod::Item".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Item".to_string(), "Pod::Block".to_string()],
             },
         );
         classes.insert(
@@ -1013,6 +1044,7 @@ impl Interpreter {
             output_emitted: false,
             bailed_out: false,
             functions: HashMap::new(),
+            operator_assoc: HashMap::new(),
             proto_functions: HashMap::new(),
             token_defs: HashMap::new(),
             lib_paths: Vec::new(),
@@ -1021,6 +1053,7 @@ impl Interpreter {
             program_path: None,
             current_package: "GLOBAL".to_string(),
             routine_stack: Vec::new(),
+            callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
@@ -1716,11 +1749,53 @@ impl Interpreter {
     }
 
     pub(crate) fn push_caller_env(&mut self) {
+        self.push_caller_env_with_code(None);
+    }
+
+    /// Push caller env with an explicit code (Sub) value for the current frame.
+    pub(crate) fn push_caller_env_with_code(&mut self, code: Option<Value>) {
         self.caller_env_stack.push(self.env.clone());
+        let file = self
+            .env
+            .get("?FILE")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let line = self
+            .env
+            .get("?LINE")
+            .and_then(|v| match v {
+                Value::Int(i) => Some(*i),
+                _ => None,
+            })
+            .unwrap_or(0);
+        let code = code.or_else(|| self.block_stack.last().cloned());
+        self.callframe_stack.push(CallFrameEntry {
+            file,
+            line,
+            code,
+            env: self.env.clone(),
+        });
     }
 
     pub(crate) fn pop_caller_env(&mut self) {
         self.caller_env_stack.pop();
+        self.callframe_stack.pop();
+    }
+
+    /// Pop caller env and apply any dynamic variable writes back to the given env.
+    /// Use this instead of `pop_caller_env()` at function return sites that restore `saved_env`.
+    pub(crate) fn pop_caller_env_with_writeback(
+        &mut self,
+        restored_env: &mut HashMap<String, Value>,
+    ) {
+        if let Some(popped) = self.caller_env_stack.pop() {
+            for (key, value) in &popped {
+                if self.is_var_dynamic(key) && restored_env.get(key) != Some(value) {
+                    restored_env.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        self.callframe_stack.pop();
     }
 
     /// Look up a variable through the $CALLER:: chain.
@@ -1866,6 +1941,7 @@ impl Interpreter {
             output_emitted: false,
             bailed_out: false,
             functions: self.functions.clone(),
+            operator_assoc: self.operator_assoc.clone(),
             proto_functions: self.proto_functions.clone(),
             token_defs: self.token_defs.clone(),
             lib_paths: self.lib_paths.clone(),
@@ -1874,6 +1950,7 @@ impl Interpreter {
             program_path: self.program_path.clone(),
             current_package: self.current_package.clone(),
             routine_stack: Vec::new(),
+            callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,

@@ -1106,6 +1106,14 @@ impl VM {
                 self.exec_pre_decrement_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::PreIncrementIndex(name_idx) => {
+                self.exec_pre_increment_index_op(code, *name_idx);
+                *ip += 1;
+            }
+            OpCode::PreDecrementIndex(name_idx) => {
+                self.exec_pre_decrement_index_op(code, *name_idx);
+                *ip += 1;
+            }
 
             // -- Variable access --
             OpCode::GetCaptureVar(name_idx) => {
@@ -1128,8 +1136,15 @@ impl VM {
                 cond_end,
                 body_end,
                 label,
+                collect,
             } => {
-                self.exec_while_loop_op(code, *cond_end, *body_end, label, ip, compiled_fns)?;
+                let spec = vm_control_ops::WhileLoopSpec {
+                    cond_end: *cond_end,
+                    body_end: *body_end,
+                    label: label.clone(),
+                    collect: *collect,
+                };
+                self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
             OpCode::ForLoop {
                 param_idx,
@@ -1154,12 +1169,14 @@ impl VM {
                 step_start,
                 body_end,
                 label,
+                collect,
             } => {
                 let spec = vm_control_ops::CStyleLoopSpec {
                     cond_end: *cond_end,
                     step_start: *step_start,
                     body_end: *body_end,
                     label: label.clone(),
+                    collect: *collect,
                 };
                 self.exec_cstyle_loop_op(code, &spec, ip, compiled_fns)?;
             }
@@ -1405,8 +1422,9 @@ impl VM {
                 self.exec_make_lambda_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::IndexAssignInvalid => {
-                return Err(RuntimeError::new("Invalid assignment target"));
+            OpCode::IndexAssignGeneric => {
+                self.exec_index_assign_generic_op()?;
+                *ip += 1;
             }
             OpCode::MakeBlockClosure(idx) => {
                 self.exec_make_block_closure_op(code, *idx)?;

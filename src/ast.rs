@@ -324,6 +324,7 @@ pub(crate) enum Stmt {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         return_type: Option<String>,
+        associativity: Option<String>,
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,
@@ -399,6 +400,8 @@ pub(crate) enum Stmt {
         cond: Expr,
         then_branch: Vec<Stmt>,
         else_branch: Vec<Stmt>,
+        /// Optional binding variable: `if EXPR -> $var { }`
+        binding_var: Option<String>,
     },
     While {
         cond: Expr,
@@ -586,6 +589,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             cond,
             then_branch,
             else_branch,
+            ..
         } => {
             collect_ph_expr(cond, out);
             for s in then_branch {

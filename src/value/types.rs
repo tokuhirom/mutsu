@@ -346,7 +346,9 @@ impl Value {
                 Value::Instance { class_name, .. }
                     if class_name == "Pod::Block"
                         || class_name == "Pod::Block::Comment"
+                        || class_name == "Pod::Block::Para"
                         || class_name == "Pod::Block::Table"
+                        || class_name == "Pod::Item"
             ),
             _ => false,
         }
