@@ -1,6 +1,38 @@
 use super::*;
 
 impl Compiler {
+    fn extract_test_more_plan_arg(arg: &Option<Expr>) -> Option<&Expr> {
+        let expr = arg.as_ref()?;
+        if let Expr::Binary {
+            left,
+            op: TokenKind::FatArrow,
+            right,
+        } = expr
+            && matches!(
+                left.as_ref(),
+                Expr::Literal(Value::Str(key)) if key == "tests"
+            )
+        {
+            return Some(right.as_ref());
+        }
+        None
+    }
+
+    fn compile_test_more_use(&mut self, arg: &Option<Expr>) {
+        // `Test::More` is provided by native Test functions.
+        let test_name_idx = self.code.add_constant(Value::Str("Test".to_string()));
+        self.code.emit(OpCode::UseModule(test_name_idx));
+        if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
+            self.compile_expr(plan_arg);
+            let plan_name_idx = self.code.add_constant(Value::Str("plan".to_string()));
+            self.code.emit(OpCode::ExecCall {
+                name_idx: plan_name_idx,
+                arity: 1,
+                arg_sources_idx: None,
+            });
+        }
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
@@ -860,6 +892,9 @@ impl Compiler {
                     || module == "isms"
                     || module == "MONKEY-TYPING"
                     || module == "nqp" => {}
+            Stmt::Use { module, arg } if module == "Test::More" => {
+                self.compile_test_more_use(arg);
+            }
             Stmt::Use { module, .. } if module == "Test" || module.starts_with("Test::") => {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
