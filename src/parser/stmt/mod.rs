@@ -252,6 +252,10 @@ pub(super) fn parse_param_list_with_return_pub(
     sub::parse_param_list_with_return(input)
 }
 
+pub(super) fn parse_return_type_annotation_pub(input: &str) -> PResult<'_, String> {
+    sub::parse_return_type_annotation(input)
+}
+
 pub(super) fn parse_sub_traits_pub(input: &str) -> PResult<'_, sub::SubTraits> {
     sub::parse_sub_traits(input)
 }
@@ -940,6 +944,15 @@ mod tests {
         } else {
             panic!("expected SubDecl");
         }
+    }
+
+    #[test]
+    fn parse_declared_postfix_operator_call_in_following_statement() {
+        let (rest, stmts) = program("sub postfix:<!!>($x) { $x }; (4!!, 5!!).join(' ');").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "postfix:<!!>"));
+        assert!(matches!(&stmts[1], Stmt::Expr(Expr::MethodCall { .. })));
     }
 
     #[test]

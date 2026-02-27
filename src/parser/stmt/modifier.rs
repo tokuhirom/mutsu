@@ -80,6 +80,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 cond,
                 then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
+                binding_var: None,
             },
         ));
     }
@@ -104,6 +105,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 },
                 then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
+                binding_var: None,
             },
         ));
     }
@@ -280,6 +282,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 },
                 then_branch: vec![stmt_for_branch.clone()],
                 else_branch: Vec::new(),
+                binding_var: None,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -299,6 +302,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 },
                 then_branch: vec![stmt_for_branch],
                 else_branch: Vec::new(),
+                binding_var: None,
             }],
         };
         return Ok((r_tail, given_stmt));
@@ -347,6 +351,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 cond: not_defined,
                 then_branch: vec![modified_stmt],
                 else_branch: Vec::new(),
+                binding_var: None,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -360,6 +365,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 cond: not_defined,
                 then_branch: vec![modified_stmt],
                 else_branch: Vec::new(),
+                binding_var: None,
             }],
         };
         return Ok((r_tail, given_stmt));

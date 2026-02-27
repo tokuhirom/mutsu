@@ -475,12 +475,17 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             (r, vec![])
         };
         let name = format!("{}{}", prefix, var);
+        let method_target = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(var.to_string()),
+        };
         return Ok((
             rest,
             Expr::AssignExpr {
                 name,
                 expr: Box::new(Expr::MethodCall {
-                    target: Box::new(Expr::Var(var.to_string())),
+                    target: Box::new(method_target),
                     name: method_name.to_string(),
                     args,
                     modifier: None,
