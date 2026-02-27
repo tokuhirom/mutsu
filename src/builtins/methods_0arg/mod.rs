@@ -702,7 +702,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else if let Ok(f) = s.trim().parse::<f64>() {
                         Value::Int(f as i64)
                     } else {
-                        return None;
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
                     }
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
@@ -724,7 +727,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     if let Ok(f) = s.trim().parse::<f64>() {
                         Value::Num(f)
                     } else {
-                        return None;
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
                     }
                 }
                 Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
@@ -745,7 +751,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else if let Ok(f) = s.trim().parse::<f64>() {
                         Value::Num(f)
                     } else {
-                        return None;
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
                     }
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),

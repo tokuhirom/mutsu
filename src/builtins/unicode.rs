@@ -89,6 +89,7 @@ pub(crate) fn unicode_rat_value(c: char) -> Option<(i64, i64)> {
         '⅜' => Some((3, 8)),
         '⅝' => Some((5, 8)),
         '⅞' => Some((7, 8)),
+        '༳' => Some((-1, 2)),
         '↉' => Some((0, 1)),
         _ => None,
     }
@@ -112,6 +113,20 @@ pub(crate) fn unicode_numeric_int_value(c: char) -> Option<i64> {
         '౸' => Some(0),
         '㆒' => Some(1),
         '𐌣' => Some(50),
+        '⓿' => Some(0),
+        '፼' => Some(10000),
+        'ↈ' => Some(100000),
+        '𒐀' => Some(2),
+        'Ⅰ' | 'ⅰ' => Some(1),
+        'Ⅱ' | 'ⅱ' => Some(2),
+        'Ⅲ' | 'ⅲ' => Some(3),
+        'Ⅳ' | 'ⅳ' => Some(4),
+        'Ⅴ' | 'ⅴ' => Some(5),
+        'Ⅵ' | 'ⅵ' => Some(6),
+        'Ⅶ' | 'ⅶ' => Some(7),
+        'Ⅷ' | 'ⅷ' => Some(8),
+        'Ⅸ' | 'ⅸ' => Some(9),
+        'Ⅹ' | 'ⅹ' => Some(10),
         _ => None,
     }
 }
@@ -122,37 +137,41 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
     if c.is_ascii_digit() {
         return Some(c as u32 - '0' as u32);
     }
-    // For Unicode Nd characters, digits in each script block are contiguous
-    // and ordered 0-9. The digit value is offset from the zero digit.
-    // Use Rust's char::is_numeric() which covers Nd category.
     if !c.is_numeric() {
         return None;
     }
+    // Only allow Unicode Decimal_Number (Nd), not No/Nl.
+    static ND_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let nd_re = ND_RE.get_or_init(|| regex::Regex::new(r"^\p{Nd}$").expect("valid Nd regex"));
+    let mut tmp = [0u8; 4];
+    if !nd_re.is_match(c.encode_utf8(&mut tmp)) {
+        return None;
+    }
     let cp = c as u32;
-    // The zero digit of each decimal digit block is the codepoint with value
-    // cp - (cp % 10) if digits are aligned on 10-boundaries, which they are
-    // for all Unicode Nd blocks.
-    let offset = cp % 16; // Most Nd blocks are 16-aligned
-    // Try a few common patterns
-    // Pattern: digits are at base + 0..9 within a 16-aligned block
-    if offset <= 9 {
-        // Verify: the character at base+0 should also be numeric
-        let base = cp - offset;
-        if let Some(zero_char) = char::from_u32(base)
-            && zero_char.is_numeric()
-        {
-            return Some(offset);
+    // Nd blocks are contiguous digits 0..9. Recover the value by offset from zero.
+    let offset16 = cp % 16;
+    if offset16 <= 9 {
+        let base = cp - offset16;
+        let all_digits = (0..=9).all(|i| {
+            char::from_u32(base + i).is_some_and(|ch| {
+                let mut b = [0u8; 4];
+                nd_re.is_match(ch.encode_utf8(&mut b))
+            })
+        });
+        if all_digits {
+            return Some(offset16);
         }
     }
-    // Fallback: try 10-aligned blocks
     let offset10 = cp % 10;
-    if offset10 <= 9 {
-        let base = cp - offset10;
-        if let Some(zero_char) = char::from_u32(base)
-            && zero_char.is_numeric()
-        {
-            return Some(offset10);
-        }
+    let base = cp - offset10;
+    let all_digits = (0..=9).all(|i| {
+        char::from_u32(base + i).is_some_and(|ch| {
+            let mut b = [0u8; 4];
+            nd_re.is_match(ch.encode_utf8(&mut b))
+        })
+    });
+    if all_digits {
+        return Some(offset10);
     }
     None
 }

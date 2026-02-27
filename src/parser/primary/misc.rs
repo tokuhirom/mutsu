@@ -322,6 +322,16 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
+    // :36<...> is a generic radix literal, not a colonpair.
+    let digit_end = r
+        .char_indices()
+        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0);
+    if digit_end > 0 && r[digit_end..].starts_with('<') {
+        return Err(PError::expected("generic radix literal"));
+    }
     // :{ ... }: typed hash literal (Hash[Mu,Any]).
     // For now we treat it like a regular hash literal.
     if r.starts_with('{') {
@@ -1053,6 +1063,17 @@ fn is_hash_literal_start(input: &str) -> bool {
     // Colon pair: :name(expr) or :name or :!name or :Nname — indicates a hash literal
     if input.starts_with(':') && !input.starts_with("::") {
         let r = &input[1..];
+        let digit_end = r
+            .char_indices()
+            .take_while(|(_, c)| {
+                crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some()
+            })
+            .last()
+            .map(|(idx, c)| idx + c.len_utf8())
+            .unwrap_or(0);
+        if digit_end > 0 && r[digit_end..].starts_with('<') {
+            return false;
+        }
         // :!name
         if r.starts_with('!') && super::super::stmt::ident_pub(&r[1..]).is_ok() {
             return true;
@@ -1384,6 +1405,15 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let r = input
         .strip_prefix(':')
         .ok_or_else(|| PError::expected("':'"))?;
+    let digit_end = r
+        .char_indices()
+        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0);
+    if digit_end > 0 && r[digit_end..].starts_with('<') {
+        return Err(PError::expected("generic radix literal"));
+    }
 
     // :!name
     if let Some(r) = r.strip_prefix('!') {

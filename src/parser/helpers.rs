@@ -272,7 +272,7 @@ pub(super) fn is_loop_label_name(name: &str) -> bool {
 
 /// Raku identifier start: underscore or Unicode alphabetic character.
 pub(super) fn is_raku_identifier_start(c: char) -> bool {
-    c == '_' || c.is_alphabetic()
+    c == '_' || (c.is_alphabetic() && !c.is_numeric())
 }
 
 /// Raku identifier continuation: start chars, decimal digits, and combining marks.
