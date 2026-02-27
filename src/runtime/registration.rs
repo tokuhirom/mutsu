@@ -268,6 +268,7 @@ impl Interpreter {
                 cond,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.validate_private_access_in_expr(caller_class, cond)?;
                 self.validate_private_access_in_stmts(caller_class, then_branch)?;
@@ -483,19 +484,89 @@ impl Interpreter {
         self.functions.keys().any(|k| k.starts_with(&fq_slash))
     }
 
+    fn malformed_return_value_compile_error() -> RuntimeError {
+        let mut err = RuntimeError::new("Malformed return value");
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::Str("Malformed return value".to_string()),
+        );
+        err.exception = Some(Box::new(Value::make_instance(
+            "X::AdHoc".to_string(),
+            attrs,
+        )));
+        err
+    }
+
+    fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Return(expr) => {
+                    if !matches!(expr, Expr::Literal(Value::Nil)) {
+                        return true;
+                    }
+                }
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    if Self::body_contains_non_nil_return(then_branch)
+                        || Self::body_contains_non_nil_return(else_branch)
+                    {
+                        return true;
+                    }
+                }
+                Stmt::While { body, .. }
+                | Stmt::React { body }
+                | Stmt::SyntheticBlock(body)
+                | Stmt::Block(body)
+                | Stmt::Subtest { body, .. } => {
+                    if Self::body_contains_non_nil_return(body) {
+                        return true;
+                    }
+                }
+                Stmt::For { body, .. } => {
+                    if Self::body_contains_non_nil_return(body) {
+                        return true;
+                    }
+                }
+                Stmt::Loop { init, body, .. } => {
+                    if let Some(init) = init
+                        && Self::body_contains_non_nil_return(std::slice::from_ref(init.as_ref()))
+                    {
+                        return true;
+                    }
+                    if Self::body_contains_non_nil_return(body) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_decl(
         &mut self,
         name: &str,
         params: &[String],
         param_defs: &[ParamDef],
-        _return_type: Option<&String>,
+        return_type: Option<&String>,
+        associativity: Option<&String>,
         body: &[Stmt],
         multi: bool,
         is_rw: bool,
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        if let Some(spec) = return_type
+            && self.is_definite_return_spec(spec)
+            && Self::body_contains_non_nil_return(body)
+        {
+            return Err(Self::malformed_return_value_compile_error());
+        }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
         let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {
             let (use_positional, use_named) = Self::auto_signature_uses(body);
@@ -607,6 +678,13 @@ impl Interpreter {
             )));
         }
         let def = new_def;
+        if let Some(assoc) = associativity
+            && name.starts_with("infix:<")
+        {
+            self.operator_assoc.insert(name.to_string(), assoc.clone());
+            self.operator_assoc
+                .insert(format!("{}::{}", self.current_package, name), assoc.clone());
+        }
         if multi {
             let arity = param_defs
                 .iter()
@@ -727,13 +805,20 @@ impl Interpreter {
         name: &str,
         params: &[String],
         param_defs: &[ParamDef],
-        _return_type: Option<&String>,
+        return_type: Option<&String>,
+        associativity: Option<&String>,
         body: &[Stmt],
         multi: bool,
         is_rw: bool,
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        if let Some(spec) = return_type
+            && self.is_definite_return_spec(spec)
+            && Self::body_contains_non_nil_return(body)
+        {
+            return Err(Self::malformed_return_value_compile_error());
+        }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
         let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {
             let (use_positional, use_named) = Self::auto_signature_uses(body);
@@ -803,6 +888,13 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
+        if let Some(assoc) = associativity
+            && name.starts_with("infix:<")
+        {
+            self.operator_assoc.insert(name.to_string(), assoc.clone());
+            self.operator_assoc
+                .insert(format!("GLOBAL::{}", name), assoc.clone());
+        }
         if let Some(existing) = self.functions.get(&single_key) {
             let same = existing.package == def.package
                 && existing.name == def.name

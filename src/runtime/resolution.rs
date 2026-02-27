@@ -404,6 +404,9 @@ impl Interpreter {
             }
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            if let Some(line) = self.test_pending_callsite_line {
+                self.env.insert("?LINE".to_string(), Value::Int(line));
+            }
             self.push_caller_env();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
@@ -476,6 +479,11 @@ impl Interpreter {
             self.routine_stack
                 .push((data.package.clone(), data.name.clone()));
             self.block_stack.push(block_sub);
+            let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
+                Value::Str(s) => Some(s.clone()),
+                _ => None,
+            });
+            self.prepare_definite_return_slot(return_spec.as_deref());
             let let_mark = self.let_saves.len();
             let result = self.eval_block_value(&data.body);
             self.block_stack.pop();
@@ -495,8 +503,8 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
-            self.pop_caller_env();
             let mut merged = saved_env;
+            self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
                     if merged.contains_key(k) {
@@ -515,14 +523,13 @@ impl Interpreter {
             self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             self.env = merged;
             self.restore_readonly_vars(saved_readonly);
-            return match result {
-                Err(e) if e.return_value.is_some() => {
-                    self.maybe_fetch_rw_proxy(e.return_value.unwrap(), data.is_rw)
-                }
-                Err(e) if e.is_fail => Ok(Value::Nil),
-                Ok(v) => self.maybe_fetch_rw_proxy(v, data.is_rw),
-                Err(e) => Err(e),
-            };
+            if let Err(e) = &result
+                && e.is_fail
+            {
+                return Ok(self.fail_error_to_failure_value(e));
+            }
+            let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
+            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, data.is_rw));
         }
         Err(RuntimeError::new("Callable expected"))
     }
@@ -637,12 +644,10 @@ impl Interpreter {
 
             let underscore = "_".to_string();
 
-            // Save original values for keys we'll modify
-            let mut touched_keys: Vec<String> =
-                Vec::with_capacity(data.env.len() + data.params.len() + 1);
-            for k in data.env.keys() {
-                touched_keys.push(k.clone());
-            }
+            // Save/restore only temporary bindings introduced by map itself.
+            // Captured lexical vars (in data.env) must keep mutations done inside
+            // the mapper block (e.g. `{ $a++ }`).
+            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
             for p in &data.params {
                 if !touched_keys.contains(p) {
                     touched_keys.push(p.clone());
@@ -748,6 +753,17 @@ impl Interpreter {
                     None => {
                         self.env.remove(&k);
                     }
+                }
+            }
+            return Ok(Value::array(result));
+        }
+        if let Some(func) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                let value = self.call_sub_value(func.clone(), vec![item], false)?;
+                match value {
+                    Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                    v => result.push(v),
                 }
             }
             return Ok(Value::array(result));
@@ -914,6 +930,16 @@ impl Interpreter {
             let mut result = Vec::new();
             for item in list_items {
                 if self.smart_match(&item, &pattern) {
+                    result.push(item);
+                }
+            }
+            return Ok(Value::array(result));
+        }
+        if let Some(func) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
+                if pred.truthy() {
                     result.push(item);
                 }
             }

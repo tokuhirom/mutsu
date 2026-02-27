@@ -353,59 +353,106 @@ impl VM {
                 Value::Str(rendered)
             }
         } else {
-            // Try user-defined infix:<name> first, then callable forms for currying support.
             let mut call_args = vec![left_val.clone()];
             call_args.extend(right_vals.clone());
             if modifier.as_deref() == Some("R") && call_args.len() == 2 {
                 call_args.swap(0, 1);
             }
             let infix_name = format!("infix:<{}>", name);
-            let right_val = right_vals.first().cloned().unwrap_or(Value::Nil);
-            if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
-                result
-            } else {
-                match self.interpreter.call_function(&name, call_args.clone()) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        // `for foo-bar() -> ...` currently produces an infix AST fallback
-                        // call. If `foo-bar` has explicit empty signature `:()`, retry a
-                        // zero-arg callable dispatch instead of reporting unknown infix.
-                        let is_empty_sig_rejection =
-                            err.message.starts_with(
-                                "Too many positionals passed; expected 0 arguments but got more",
-                            ) || err.message.starts_with("Unexpected named argument '");
-                        if is_empty_sig_rejection {
-                            if let Ok(v) = self.interpreter.call_function(&name, Vec::new()) {
-                                v
-                            } else {
-                                let env_name = format!("&{}", name);
-                                if let Some(code_val) =
-                                    self.interpreter.env().get(&env_name).cloned()
-                                {
-                                    self.interpreter.eval_call_on_value(code_val, Vec::new())?
-                                } else {
-                                    return Err(RuntimeError::new(format!(
-                                        "Unknown infix function: {}",
-                                        name
-                                    )));
-                                }
-                            }
+            let assoc = self
+                .interpreter
+                .infix_associativity(&infix_name)
+                .unwrap_or_else(|| "left".to_string());
+            if assoc == "chain" && call_args.len() > 2 {
+                let mut all_true = true;
+                for pair in call_args.windows(2) {
+                    let left = pair[0].clone();
+                    let right = pair[1].clone();
+                    let pair_result =
+                        if let Some(v) = self.try_user_infix(&infix_name, &left, &right)? {
+                            v
                         } else {
-                            let env_name = format!("&{}", name);
-                            if let Some(code_val) = self.interpreter.env().get(&env_name).cloned() {
-                                self.interpreter.eval_call_on_value(code_val, call_args)?
-                            } else {
-                                return Err(RuntimeError::new(format!(
-                                    "Unknown infix function: {}",
-                                    name
-                                )));
-                            }
-                        }
+                            self.call_infix_fallback(&name, Some(&infix_name), vec![left, right])?
+                        };
+                    if !pair_result.truthy() {
+                        all_true = false;
+                        break;
                     }
                 }
+                Value::Bool(all_true)
+            } else if call_args.len() == 2 {
+                let right_val = right_vals.first().cloned().unwrap_or(Value::Nil);
+                if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
+                    result
+                } else {
+                    self.call_infix_fallback(&name, Some(&infix_name), call_args)?
+                }
+            } else {
+                self.call_infix_fallback(&name, Some(&infix_name), call_args)?
             }
         };
         self.stack.push(result);
         Ok(())
+    }
+
+    fn call_infix_fallback(
+        &mut self,
+        name: &str,
+        infix_name: Option<&str>,
+        call_args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(op_name) = infix_name
+            && let Ok(v) = self
+                .interpreter
+                .call_user_routine_direct(op_name, call_args.clone())
+        {
+            return Ok(v);
+        }
+        match self.interpreter.call_function(name, call_args.clone()) {
+            Ok(v) => Ok(v),
+            Err(err) => {
+                // `for foo-bar() -> ...` currently produces an infix AST fallback call.
+                // If `foo-bar` has explicit empty signature `:()`, retry zero-arg dispatch.
+                let is_empty_sig_rejection = err
+                    .message
+                    .starts_with("Too many positionals passed; expected 0 arguments but got more")
+                    || err.message.starts_with("Unexpected named argument '");
+                if is_empty_sig_rejection {
+                    if let Ok(v) = self.interpreter.call_function(name, Vec::new()) {
+                        return Ok(v);
+                    }
+                    if let Some(op_name) = infix_name {
+                        let op_env_name = format!("&{}", op_name);
+                        if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
+                            return self.interpreter.eval_call_on_value(code_val, Vec::new());
+                        }
+                    }
+                    let bare_env_name = format!("&{}", name);
+                    if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
+                        return self.interpreter.eval_call_on_value(code_val, Vec::new());
+                    }
+                    Err(RuntimeError::new(format!(
+                        "Unknown infix function: {}",
+                        name
+                    )))
+                } else {
+                    if let Some(op_name) = infix_name {
+                        let op_env_name = format!("&{}", op_name);
+                        if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
+                            return self.interpreter.eval_call_on_value(code_val, call_args);
+                        }
+                    }
+                    let bare_env_name = format!("&{}", name);
+                    if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
+                        self.interpreter.eval_call_on_value(code_val, call_args)
+                    } else {
+                        Err(RuntimeError::new(format!(
+                            "Unknown infix function: {}",
+                            name
+                        )))
+                    }
+                }
+            }
+        }
     }
 }

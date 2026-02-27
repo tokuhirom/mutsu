@@ -39,6 +39,21 @@ impl Interpreter {
         names
     }
 
+    fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
+        let mut assoc = HashMap::new();
+        for (key, value) in &self.operator_assoc {
+            let name = if let Some(pos) = key.rfind("::") {
+                &key[pos + 2..]
+            } else {
+                key.as_str()
+            };
+            if name.starts_with("infix:<") {
+                assoc.insert(name.to_string(), value.clone());
+            }
+        }
+        assoc
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
@@ -46,16 +61,16 @@ impl Interpreter {
         self.collect_pod_blocks(trimmed);
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
+        let op_assoc = self.collect_operator_assoc_map();
         // General case: parse and evaluate as Raku code
-        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names).and_then(
-            |(stmts, _)| {
+        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names, &op_assoc)
+            .and_then(|(stmts, _)| {
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::new("X::Undeclared::Symbols"));
                 }
                 Ok(value)
-            },
-        );
+            });
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
         }
@@ -109,18 +124,112 @@ impl Interpreter {
         result
     }
 
-    pub(super) fn callframe_value(&self, depth: usize) -> Option<Value> {
-        self.routine_stack
-            .len()
-            .checked_sub(1 + depth)
-            .and_then(|idx| self.routine_stack.get(idx))
-            .map(|(package, name)| {
-                let mut info = HashMap::new();
-                info.insert("package".to_string(), Value::Str(package.clone()));
-                info.insert("name".to_string(), Value::Str(name.clone()));
-                info.insert("depth".to_string(), Value::Int(depth as i64));
-                Value::hash(info)
-            })
+    /// Build a CallFrame Instance for the given depth.
+    /// `callsite_line` is the line where `callframe()` was called (from hidden arg).
+    pub(super) fn callframe_value(
+        &self,
+        depth: usize,
+        callsite_line: Option<i64>,
+    ) -> Option<Value> {
+        let file = self
+            .env
+            .get("?FILE")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+
+        if depth == 0 {
+            // Current frame: use current env, current file/line, current code
+            let line = callsite_line.unwrap_or(0);
+            let code = self.current_routine_sub_value();
+            let my_hash = self.build_lexical_hash(&self.env, None);
+            let mut attrs = HashMap::new();
+            attrs.insert("line".to_string(), Value::Int(line));
+            attrs.insert("file".to_string(), Value::Str(file));
+            attrs.insert("code".to_string(), code);
+            attrs.insert("my".to_string(), my_hash);
+            attrs.insert("inline".to_string(), Value::Bool(false));
+            attrs.insert("__depth".to_string(), Value::Int(0));
+            attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
+            return Some(Value::make_instance("CallFrame".to_string(), attrs));
+        }
+
+        // depth >= 1: walk up the caller env stack
+        let stack_len = self.callframe_stack.len();
+        if depth > stack_len {
+            return None;
+        }
+        let entry = &self.callframe_stack[stack_len - depth];
+        let code = entry.code.clone().unwrap_or(Value::Nil);
+        let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
+        let mut attrs = HashMap::new();
+        attrs.insert("line".to_string(), Value::Int(entry.line));
+        attrs.insert("file".to_string(), Value::Str(entry.file.clone()));
+        attrs.insert("code".to_string(), code);
+        attrs.insert("my".to_string(), my_hash);
+        attrs.insert("inline".to_string(), Value::Bool(false));
+        attrs.insert("__depth".to_string(), Value::Int(depth as i64));
+        attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
+        Some(Value::make_instance("CallFrame".to_string(), attrs))
+    }
+
+    fn current_routine_sub_value(&self) -> Value {
+        // Try to find the current routine as a Sub value from the block stack
+        for v in self.block_stack.iter().rev() {
+            if matches!(v, Value::Sub(_)) {
+                return v.clone();
+            }
+        }
+        // Fallback: look at the most recent callframe stack entry for the code
+        if let Some(entry) = self.callframe_stack.last()
+            && let Some(ref code) = entry.code
+        {
+            return code.clone();
+        }
+        Value::Nil
+    }
+
+    fn build_lexical_hash(
+        &self,
+        env: &HashMap<String, Value>,
+        callframe_depth: Option<usize>,
+    ) -> Value {
+        let mut hash = HashMap::new();
+        for (k, v) in env {
+            // Skip internal keys and special variables
+            if k.starts_with("__") || k.starts_with('?') || k.starts_with('*') || k.starts_with('=')
+            {
+                continue;
+            }
+            // Skip type names, enum values, and signal names
+            if k.chars().next().is_some_and(|c| c.is_uppercase()) {
+                continue;
+            }
+            // Add sigil prefix based on the env key convention:
+            // - Keys starting with '@' or '%' already have sigils (array/hash vars)
+            // - Other keys are scalar variables that need '$' prefix
+            let sigiled = if k.starts_with('@') || k.starts_with('%') || k.starts_with('&') {
+                k.clone()
+            } else {
+                format!("${}", k)
+            };
+            hash.insert(sigiled, v.clone());
+        }
+        // Store callframe depth so assignments can write back to the caller env
+        if let Some(depth) = callframe_depth {
+            hash.insert("__callframe_depth".to_string(), Value::Int(depth as i64));
+        }
+        Value::hash(hash)
+    }
+
+    fn build_annotations(&self, attrs: &HashMap<String, Value>) -> Value {
+        let mut map = HashMap::new();
+        if let Some(file) = attrs.get("file") {
+            map.insert("file".to_string(), file.clone());
+        }
+        if let Some(line) = attrs.get("line") {
+            map.insert("line".to_string(), line.clone());
+        }
+        Value::hash(map)
     }
 
     pub(super) fn seconds_from_value(val: Option<Value>) -> Option<f64> {

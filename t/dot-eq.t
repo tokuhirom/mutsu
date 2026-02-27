@@ -1,5 +1,5 @@
 use Test;
-plan 4;
+plan 5;
 
 my $x = "hello";
 $x .= uc;
@@ -16,3 +16,8 @@ is $z, "cba", ".= flip";
 my $w = "  hi  ";
 $w .= trim;
 is $w, "hi", ".= trim";
+
+my %a;
+%a<foo> = <a b c b>;
+%a<foo>.=unique;
+is-deeply %a<foo>.List, <a b c>, ".= unique works on indexed hash values";

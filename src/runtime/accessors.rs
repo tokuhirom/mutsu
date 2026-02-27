@@ -25,6 +25,180 @@ impl Interpreter {
         Self::callable_return_type_inner(callable)
     }
 
+    pub(crate) fn routine_return_spec_by_name(&self, name: &str) -> Option<String> {
+        let code_key = format!("&{}", name);
+        for key in [code_key.as_str(), name] {
+            if let Some(Value::Sub(data)) = self.env.get(key)
+                && let Some(Value::Str(spec)) = data.env.get("__mutsu_return_type")
+            {
+                return Some(spec.clone());
+            }
+        }
+        None
+    }
+
+    fn return_spec_scalar_name(spec: &str) -> Option<String> {
+        let s = spec.trim();
+        let rest = s.strip_prefix('$')?;
+        if rest.is_empty()
+            || !rest
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return None;
+        }
+        Some(rest.to_string())
+    }
+
+    pub(crate) fn is_definite_return_spec(&self, spec: &str) -> bool {
+        let s = spec.trim();
+        if s.is_empty() {
+            return false;
+        }
+        if Self::return_spec_scalar_name(s).is_some() {
+            return true;
+        }
+        if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi") {
+            return true;
+        }
+        if s.starts_with('\"')
+            || s.starts_with('\'')
+            || s.chars().next().is_some_and(|c| c.is_ascii_digit())
+            || (s.starts_with('-') && s[1..].chars().next().is_some_and(|c| c.is_ascii_digit()))
+        {
+            return true;
+        }
+        if crate::runtime::utils::is_known_type_constraint(s) || self.has_type(s) {
+            return false;
+        }
+        if let Some(base) = s.strip_suffix(":D").or_else(|| s.strip_suffix(":U"))
+            && (crate::runtime::utils::is_known_type_constraint(base) || self.has_type(base))
+        {
+            return false;
+        }
+        if s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '_')
+        {
+            return false;
+        }
+        true
+    }
+
+    fn failure_value_to_error(exception: &Value) -> RuntimeError {
+        let message = if let Value::Instance { attributes, .. } = exception {
+            attributes
+                .get("message")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| "Died".to_string())
+        } else {
+            "Died".to_string()
+        };
+        let mut err = RuntimeError::new(&message);
+        err.exception = Some(Box::new(exception.clone()));
+        err
+    }
+
+    pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
+        let exception = err.exception.as_deref().cloned().unwrap_or_else(|| {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+            Value::make_instance("X::AdHoc".to_string(), attrs)
+        });
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance("Failure".to_string(), failure_attrs)
+    }
+
+    fn malformed_return_value_error(&self, value: &Value) -> RuntimeError {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+            && class_name == "Failure"
+            && let Some(ex) = attributes.get("exception")
+        {
+            return Self::failure_value_to_error(ex);
+        }
+        RuntimeError::new("Malformed return value")
+    }
+
+    fn evaluate_definite_return_value(&mut self, spec: &str) -> Result<Value, RuntimeError> {
+        if let Some(name) = Self::return_spec_scalar_name(spec) {
+            return Ok(self.env.get(&name).cloned().unwrap_or(Value::Nil));
+        }
+        self.eval_eval_string(spec.trim())
+    }
+
+    fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        match value {
+            Value::LazyList(list) => {
+                let items = self.force_lazy_list(list)?;
+                for item in &items {
+                    self.sink_for_definite_return(item)?;
+                }
+                Ok(())
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    self.sink_for_definite_return(item)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub(crate) fn prepare_definite_return_slot(&mut self, return_spec: Option<&str>) {
+        let Some(spec) = return_spec else {
+            return;
+        };
+        if !self.is_definite_return_spec(spec) {
+            return;
+        }
+        if let Some(name) = Self::return_spec_scalar_name(spec) {
+            self.env.insert(name, Value::Nil);
+        }
+    }
+
+    pub(crate) fn finalize_return_with_spec(
+        &mut self,
+        result: Result<Value, RuntimeError>,
+        return_spec: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        let Some(spec) = return_spec else {
+            return match result {
+                Ok(v) => Ok(v),
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) => Err(e),
+            };
+        };
+        if !self.is_definite_return_spec(spec) {
+            return match result {
+                Ok(v) => Ok(v),
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) => Err(e),
+            };
+        }
+
+        match result {
+            Ok(v) => {
+                self.sink_for_definite_return(&v)?;
+                self.evaluate_definite_return_value(spec)
+            }
+            Err(e) if e.return_value.is_some() => {
+                let explicit = e.return_value.unwrap();
+                if !matches!(explicit, Value::Nil) {
+                    return Err(self.malformed_return_value_error(&explicit));
+                }
+                self.evaluate_definite_return_value(spec)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub(crate) fn callable_signature(&self, callable: &Value) -> (Vec<String>, Vec<ParamDef>) {
         match callable {
             Value::Sub(data) => (data.params.clone(), data.param_defs.clone()),
@@ -40,6 +214,36 @@ impl Interpreter {
             }
             _ => (vec!["arg0".to_string()], Vec::new()),
         }
+    }
+
+    pub(crate) fn infix_associativity(&self, full_name: &str) -> Option<String> {
+        let fq = format!("{}::{}", self.current_package, full_name);
+        self.operator_assoc
+            .get(&fq)
+            .cloned()
+            .or_else(|| self.operator_assoc.get(full_name).cloned())
+            .or_else(|| {
+                let global = format!("GLOBAL::{}", full_name);
+                self.operator_assoc.get(&global).cloned()
+            })
+    }
+
+    pub(crate) fn call_user_routine_direct(
+        &mut self,
+        full_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(def) = self.resolve_function_with_alias(full_name, &args) {
+            return self.call_function_def(&def, &args);
+        }
+        let env_name = format!("&{}", full_name);
+        if let Some(callable) = self.env.get(&env_name).cloned() {
+            return self.eval_call_on_value(callable, args);
+        }
+        Err(RuntimeError::new(format!(
+            "X::Undeclared::Symbols: Unknown function: {}",
+            full_name
+        )))
     }
 
     pub(crate) fn compose_callables(&self, left: Value, right: Value) -> Value {
@@ -269,6 +473,14 @@ impl Interpreter {
 
     pub(crate) fn block_stack_top(&self) -> Option<&Value> {
         self.block_stack.last()
+    }
+
+    pub(crate) fn push_block(&mut self, val: Value) {
+        self.block_stack.push(val);
+    }
+
+    pub(crate) fn pop_block(&mut self) {
+        self.block_stack.pop();
     }
 
     /// Stringify a value, calling the `.Str` method for Instance and Package types.

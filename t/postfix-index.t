@@ -11,5 +11,5 @@ my $v2 = @a[1]--;
 is $v2, 20, 'postfix -- on array index returns old value';
 is @a[1], 19, 'postfix -- on array index updates value';
 
-my $v3 = (1 + 2)++;
-is $v3, Nil, 'postfix ++ on unsupported target returns Nil';
+throws-like '(1 + 2)++', X::Multi::NoMatch,
+    'postfix ++ on unsupported target throws X::Multi::NoMatch';

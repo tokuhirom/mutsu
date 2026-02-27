@@ -1,4 +1,4 @@
-use super::super::parse_result::{PError, PResult, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
@@ -18,13 +18,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
     let (r2, _) = ws(r)?;
     r = r2;
     if let Some(after_arrow) = r.strip_prefix("-->") {
-        let (after_arrow, _) = ws(after_arrow)?;
-        // Keep this permissive for now: simple type-like names only.
-        let (after_arrow, type_name) = take_while1(after_arrow, |c: char| {
-            c.is_alphanumeric() || c == '_' || c == ':'
-        })?;
-        let (after_arrow, _) = ws(after_arrow)?;
-        Ok((after_arrow, Some(type_name.to_string())))
+        let (after_arrow, type_name) =
+            crate::parser::stmt::parse_return_type_annotation_pub(after_arrow)?;
+        Ok((after_arrow, Some(type_name)))
     } else {
         Ok((r, None))
     }
@@ -120,6 +116,13 @@ fn is_custom_reduction_op(op: &str) -> bool {
     if let Some(name) = op.strip_prefix('&') {
         return is_callable_reduction_name(name);
     }
+    if !op
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
+        return false;
+    }
     if let Ok((rest, _)) = parse_ident_with_hyphens(op) {
         return rest.is_empty();
     }
@@ -205,6 +208,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
+    let mut items = merge_sequence_seeds(items);
     let expr = if items.len() == 1 {
         items.remove(0)
     } else {
@@ -233,6 +237,30 @@ fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
         ));
     }
     expression(r)
+}
+
+fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::Binary { left, op, right } = last
+        && matches!(
+            op,
+            crate::token_kind::TokenKind::DotDotDot | crate::token_kind::TokenKind::DotDotDotCaret
+        )
+    {
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::Binary {
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            op: op.clone(),
+            right: right.clone(),
+        };
+        vec![merged]
+    } else {
+        items
+    }
 }
 
 pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, Expr> {
@@ -806,6 +834,21 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     if r.starts_with('{') {
         let (r, body) = parse_block_body(r)?;
         return Ok((r, Expr::AnonSub { body, is_rw: false }));
+    }
+    // Zero-param with explicit return spec: -> --> 42 { body }
+    if r.starts_with("-->") {
+        let (r, return_type) = skip_pointy_return_type(r)?;
+        let (r, body) = parse_block_body(r)?;
+        return Ok((
+            r,
+            Expr::AnonSubParams {
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                return_type,
+                body,
+                is_rw: false,
+            },
+        ));
     }
     // Sub-signature destructuring: -> (:key($var), :value($var2)) { body }
     if r.starts_with('(') {

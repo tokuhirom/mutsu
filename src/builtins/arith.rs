@@ -44,6 +44,10 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::Complex(ar + br, ai + bi)
+    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+    {
+        Value::from_bigint(a + b)
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
@@ -81,6 +85,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::Complex(ar - br, ai - bi)
+    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+    {
+        Value::from_bigint(a - b)
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
@@ -95,6 +103,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
                 _ => Value::Int(0),
             }
         }
+    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+    {
+        Value::from_bigint(a - b)
     } else {
         let lf = runtime::to_float_value(&l);
         let rf = runtime::to_float_value(&r);
@@ -118,6 +130,10 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::Complex(ar * br - ai * bi, ar * bi + ai * br)
+    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+    {
+        Value::from_bigint(a * b)
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {

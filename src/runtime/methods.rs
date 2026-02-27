@@ -36,6 +36,7 @@ impl Interpreter {
                     cond,
                     then_branch,
                     else_branch,
+                    ..
                 } => {
                     scan_expr(cond, positional, named);
                     for s in then_branch {
@@ -590,6 +591,25 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Format"
+        {
+            let fmt = attributes
+                .get("format")
+                .map(Value::to_string_value)
+                .unwrap_or_default();
+            match method {
+                "CALL-ME" => {
+                    return Ok(Value::Str(super::sprintf::format_sprintf_args(&fmt, &args)));
+                }
+                "Str" | "gist" => return Ok(Value::Str(fmt)),
+                _ => {}
+            }
+        }
         if matches!(method, "max" | "min" | "lines")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {
@@ -997,6 +1017,24 @@ impl Interpreter {
             }
         }
         if let Value::Sub(data) = &target {
+            if method == "nextwith" {
+                // Tail-style dispatch: call target with caller frame and return from current frame.
+                let saved_env = self.env.clone();
+                if let Some(parent_env) = self.caller_env_stack.last().cloned() {
+                    self.env = parent_env;
+                }
+                let call_result = self.call_sub_value(target.clone(), args, false);
+                self.env = saved_env;
+                let value = match call_result {
+                    Ok(v) => v,
+                    Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                    Err(e) => return Err(e),
+                };
+                return Err(RuntimeError {
+                    return_value: Some(value),
+                    ..RuntimeError::new("")
+                });
+            }
             if method == "assuming" {
                 let mut next = (**data).clone();
                 let make_failure =
@@ -2003,6 +2041,9 @@ impl Interpreter {
             "sort" => {
                 return self.dispatch_sort(target, &args);
             }
+            "unique" => {
+                return self.dispatch_unique(target, &args);
+            }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
             }
@@ -2284,6 +2325,9 @@ impl Interpreter {
                 Value::ValuePair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 _ => return Ok(Value::array(Vec::new())),
             },
+            "rotate" => {
+                return self.dispatch_rotate(target, &args);
+            }
             _ => {}
         }
 
@@ -4828,6 +4872,32 @@ impl Interpreter {
         }
     }
 
+    fn dispatch_rotate(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let items = match target {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::Capture { positional, .. } => positional,
+            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+            _ => return Ok(Value::Nil),
+        };
+        if items.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+        let len = items.len() as i64;
+        let by = match args.first() {
+            Some(Value::Int(i)) => *i,
+            Some(Value::Num(n)) => *n as i64,
+            Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
+            None => 1,
+        };
+        let shift = ((by % len) + len) % len;
+        let mut out = vec![Value::Nil; items.len()];
+        for (i, item) in items.into_iter().enumerate() {
+            let dst = ((i as i64 + len - shift) % len) as usize;
+            out[dst] = item;
+        }
+        Ok(Value::array(out))
+    }
+
     fn dispatch_minmaxpairs(&mut self, target: Value, method: &str) -> Result<Value, RuntimeError> {
         if matches!(target, Value::Instance { .. })
             && let Ok(pairs) = self.call_method_with_values(target.clone(), "pairs", Vec::new())
@@ -5092,6 +5162,65 @@ impl Interpreter {
             }
             other => Ok(other),
         }
+    }
+
+    fn dispatch_unique(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut as_func: Option<Value> = None;
+        let mut with_func: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "as" && value.truthy() {
+                    as_func = Some(value.as_ref().clone());
+                    continue;
+                }
+                if key == "with" && value.truthy() {
+                    with_func = Some(value.as_ref().clone());
+                    continue;
+                }
+            }
+        }
+
+        let items: Vec<Value> = match target {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+            v @ (Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. }) => Self::value_to_list(&v),
+            other => vec![other],
+        };
+
+        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut unique_items: Vec<Value> = Vec::new();
+        for item in items {
+            let key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            } else {
+                item.clone()
+            };
+
+            let mut duplicate = false;
+            for seen in &seen_keys {
+                let is_same = if let Some(func) = with_func.clone() {
+                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
+                        .truthy()
+                } else {
+                    values_identical(seen, &key)
+                };
+                if is_same {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if !duplicate {
+                seen_keys.push(key);
+                unique_items.push(item);
+            }
+        }
+
+        Ok(Value::array(unique_items))
     }
 
     fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
@@ -5513,9 +5642,28 @@ impl Interpreter {
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
                             Value::Array(items, ..) => items.to_vec(),
+                            Value::Seq(items) => items.to_vec(),
+                            Value::Slip(items) => items.to_vec(),
                             Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
                             Value::RangeExcl(start, end) => {
                                 (*start..*end).map(Value::Int).collect()
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "Buf"
+                                || class_name == "Blob"
+                                || class_name.starts_with("Buf[")
+                                || class_name.starts_with("Blob[")
+                                || class_name.starts_with("buf")
+                                || class_name.starts_with("blob") =>
+                            {
+                                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                                    items.to_vec()
+                                } else {
+                                    Vec::new()
+                                }
                             }
                             _ => vec![],
                         })
@@ -5923,6 +6071,18 @@ impl Interpreter {
         }
         // Fallback .new on basic types
         match target {
+            Value::Package(name) if name == "CallFrame" => {
+                // CallFrame.new(depth) — equivalent to callframe(depth)
+                let depth = args
+                    .first()
+                    .and_then(|v| match v {
+                        Value::Int(i) => Some(*i as usize),
+                        Value::Num(f) => Some(*f as usize),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                self.builtin_callframe(&args, depth)
+            }
             Value::Package(name) => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
                 name

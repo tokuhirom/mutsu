@@ -148,6 +148,10 @@ pub(crate) enum OpCode {
     IsNil,
 
     // -- Control flow --
+    /// No-op label marker for `goto`.
+    Label(u32),
+    /// Jump to `Label` by runtime-evaluated name on stack.
+    Goto,
     Jump(i32),
     JumpIfFalse(i32),
     JumpIfTrue(i32),
@@ -270,8 +274,6 @@ pub(crate) enum OpCode {
     MakeAnonSubParams(u32),
     MakeLambda(u32),
     MakeBlockClosure(u32),
-    IndexAssignInvalid,
-
     // -- Indexing --
     Index,
     DeleteIndexNamed(u32),
@@ -305,6 +307,8 @@ pub(crate) enum OpCode {
     // -- Prefix increment/decrement (returns NEW value) --
     PreIncrement(u32),
     PreDecrement(u32),
+    PreIncrementIndex(u32),
+    PreDecrementIndex(u32),
 
     // -- Variable access --
     GetCaptureVar(u32),
@@ -322,6 +326,10 @@ pub(crate) enum OpCode {
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
     IndexAssignExprNested(u32),
+    /// Generic index assignment on a stack-computed target.
+    /// Stack: [target, index, value] → assigns value to target[index].
+    /// Supports callframe .my hash writeback for dynamic variables.
+    IndexAssignGeneric,
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
@@ -333,6 +341,7 @@ pub(crate) enum OpCode {
         cond_end: u32,
         body_end: u32,
         label: Option<String>,
+        collect: bool,
     },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
@@ -352,6 +361,7 @@ pub(crate) enum OpCode {
         step_start: u32,
         body_end: u32,
         label: Option<String>,
+        collect: bool,
     },
 
     // -- Given/When/Default (compound opcodes) --
@@ -764,6 +774,7 @@ pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) return_type: Option<String>,
     pub(crate) fingerprint: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,

@@ -895,7 +895,16 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         Value::Str(s) => s.parse::<f64>().ok(),
         Value::Nil => Some(0.0),
-        Value::Array(items, ..) => Some(items.len() as f64),
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            Some(items.len() as f64)
+        }
+        Value::LazyList(ll) => {
+            if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
+                Some(cached.len() as f64)
+            } else {
+                Some(0.0)
+            }
+        }
         Value::Instance {
             class_name,
             attributes,

@@ -21,6 +21,7 @@ use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 
 fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
     if crate::parser::stmt::simple::is_test_assertion_callable(name) {
@@ -28,6 +29,13 @@ fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Ve
             left: Box::new(Expr::Literal(Value::Str(
                 TEST_CALLSITE_LINE_KEY.to_string(),
             ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        });
+    }
+    if name == "callframe" || name == "caller" {
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
         });
@@ -653,29 +661,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 },
                             ));
                         }
-                        let (r, first) = expression(r)?;
-                        let mut args = vec![first];
-                        let mut r = r;
-                        loop {
-                            let (r2, _) = ws(r)?;
-                            if let Some(r2) = r2.strip_prefix(')') {
-                                r = r2;
-                                break;
-                            }
-                            if let Some(r2) = r2.strip_prefix(',') {
-                                let (r2, _) = ws(r2)?;
-                                if let Some(r2) = r2.strip_prefix(')') {
-                                    r = r2;
-                                    break;
-                                }
-                                let (r2, arg) = expression(r2)?;
-                                args.push(arg);
-                                r = r2;
-                            } else {
-                                r = r2;
-                                break;
-                            }
-                        }
+                        let (r, args) = parse_call_arg_list(r)?;
+                        let (r, _) = ws(r)?;
+                        let Some(r) = r.strip_prefix(')') else {
+                            return Err(PError::expected("')'"));
+                        };
                         return Ok((
                             r,
                             Expr::Call {
@@ -760,6 +750,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         cond,
                         then_branch,
                         else_branch,
+                        binding_var: None,
                     })),
                 ));
             }
@@ -778,12 +769,28 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         },
                         then_branch: body,
                         else_branch: Vec::new(),
+                        binding_var: None,
                     })),
                 ));
             }
         }
         "for" => {
             if let Ok((r, stmt)) = super::super::stmt::for_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "while" => {
+            if let Ok((r, stmt)) = super::super::stmt::while_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "until" => {
+            if let Ok((r, stmt)) = super::super::stmt::until_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "loop" => {
+            if let Ok((r, stmt)) = super::super::stmt::loop_stmt_pub(input) {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
@@ -1030,6 +1037,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         _ => {}
     }
 
+    if matches!(name.as_str(), "R" | "S") && rest.starts_with("??") {
+        return Err(PError::expected("expression"));
+    }
+
     // Labeled loop in expression context, e.g. `MEOW: for ^10 { ... }`
     if name.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
         let (r_ws, _) = ws(rest)?;
@@ -1169,6 +1180,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        let mut args = args;
+        if args.is_empty() {
+            args.push(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(
+                    TEST_CALLSITE_LINE_KEY.to_string(),
+                ))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+            });
+        }
         return Ok((rest, make_call_expr(name, input, args)));
     }
 
@@ -1360,11 +1381,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         || crate::parser::stmt::simple::is_imported_function(&name))
         && is_terminator
     {
-        return Ok((rest, make_call_expr(name, input, vec![])));
+        let args = vec![Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(
+                TEST_CALLSITE_LINE_KEY.to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        }];
+        return Ok((rest, make_call_expr(name, input, args)));
     }
 
     // Functions that can be called with no arguments as bare words
     if matches!(name.as_str(), "await" | "slip" | "set" | "bag" | "mix") && is_terminator {
+        return Ok((rest, make_call_expr(name, input, vec![])));
+    }
+
+    // callframe and caller are term-like functions: always a zero-arg call
+    if matches!(name.as_str(), "callframe" | "caller") {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

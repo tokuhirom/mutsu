@@ -395,6 +395,51 @@ impl Interpreter {
         }
     }
 
+    fn optional_type_object_name(constraint: &str) -> String {
+        if let Some((target, _source)) = parse_coercion_type(constraint) {
+            return target.to_string();
+        }
+        let mut end = constraint.len();
+        for (idx, ch) in constraint.char_indices() {
+            if ch == '[' || ch == '(' || ch == ':' {
+                end = idx;
+                break;
+            }
+        }
+        constraint[..end].to_string()
+    }
+
+    fn missing_optional_param_value(pd: &ParamDef) -> Value {
+        if pd.name.starts_with('@') {
+            return Value::array(Vec::new());
+        }
+        if pd.name.starts_with('%') {
+            return Value::hash(std::collections::HashMap::new());
+        }
+        if let Some(constraint) = &pd.type_constraint {
+            return Value::Package(Self::optional_type_object_name(constraint));
+        }
+        Value::Nil
+    }
+
+    fn checked_default_param_value(
+        &mut self,
+        pd: &ParamDef,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(constraint) = &pd.type_constraint
+            && !self.type_matches_value(constraint, &value)
+        {
+            return Err(RuntimeError::new(format!(
+                "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter '{}'; expected {}, got {}",
+                pd.name,
+                constraint,
+                super::value_type_name(&value)
+            )));
+        }
+        Ok(value)
+    }
+
     fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {
         let open = constraint.find('[')?;
         if open == 0 || !constraint.ends_with(']') {
@@ -1375,6 +1420,7 @@ impl Interpreter {
                 }
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                    let value = self.checked_default_param_value(pd, value)?;
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
@@ -1576,6 +1622,7 @@ impl Interpreter {
                     positional_idx += 1;
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                    let value = self.checked_default_param_value(pd, value)?;
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
@@ -1585,8 +1632,8 @@ impl Interpreter {
                         bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
                 } else if !pd.required && !pd.name.is_empty() {
-                    // Optional parameter with no default and no arg: bind Nil
-                    self.bind_param_value(&pd.name, Value::Nil);
+                    // Optional parameters use typed empties/type objects when omitted.
+                    self.bind_param_value(&pd.name, Self::missing_optional_param_value(pd));
                     self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                 }
             }
