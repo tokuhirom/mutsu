@@ -316,6 +316,28 @@ pub(in crate::parser) fn scan_to_delim(
     close_ch: char,
     is_paired: bool,
 ) -> Option<(&str, &str)> {
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false)
+}
+
+/// Like `scan_to_delim` but with an option to skip Raku-specific handling
+/// (angle brackets, single-quoted strings, `$` variable detection).
+/// In P5 mode, only backslash escapes and the close delimiter are significant.
+pub(in crate::parser) fn scan_to_delim_p5(
+    input: &str,
+    open_ch: char,
+    close_ch: char,
+    is_paired: bool,
+) -> Option<(&str, &str)> {
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, true)
+}
+
+fn scan_to_delim_inner(
+    input: &str,
+    open_ch: char,
+    close_ch: char,
+    is_paired: bool,
+    p5_mode: bool,
+) -> Option<(&str, &str)> {
     let mut depth = 1u32;
     let mut chars = input.char_indices();
     while let Some((i, c)) = chars.next() {
@@ -331,7 +353,7 @@ pub(in crate::parser) fn scan_to_delim(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
-        } else if c == '<' && input[i + 1..].starts_with('[') {
+        } else if !p5_mode && c == '<' && input[i + 1..].starts_with('[') {
             // Skip character class <[...]> content without interpreting quotes
             // Handles <['"]>, <[\s]>, etc.
             chars.next(); // consume the '[' we already checked
@@ -358,7 +380,8 @@ pub(in crate::parser) fn scan_to_delim(
                     None => return None,
                 }
             }
-        } else if c == '<'
+        } else if !p5_mode
+            && c == '<'
             && !is_paired
             && !input[i + 1..].starts_with('[')
             && !input[i + 1..].starts_with('(')
@@ -412,7 +435,7 @@ pub(in crate::parser) fn scan_to_delim(
                     }
                 }
             }
-        } else if is_regex_quote_open(c) {
+        } else if !p5_mode && is_regex_quote_open(c) {
             // Skip quoted string content in regex (e.g., '/' or '\\').
             // This prevents delimiters inside string atoms like m/ "/" ** 2 /
             // from prematurely ending the regex literal.
@@ -426,7 +449,7 @@ pub(in crate::parser) fn scan_to_delim(
                     None => return None,
                 }
             }
-        } else if c == '$' && !is_paired {
+        } else if !p5_mode && c == '$' && !is_paired {
             // In non-paired delimiters (like /), $ followed by the close
             // delimiter MIGHT be a variable reference ($/ is the match variable)
             // or it might be the end-of-string anchor followed by the closing
@@ -463,7 +486,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("regex delimiter"));
         };
         let r = &spec[1..];
-        if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+        let scan_result = if adverbs.perl5 {
+            scan_to_delim_p5(r, open_ch, close_ch, is_paired)
+        } else {
+            scan_to_delim(r, open_ch, close_ch, is_paired)
+        };
+        if let Some((pattern, rest)) = scan_result {
             if !adverbs.perl5 {
                 validate_regex_pattern_or_perror(pattern)?;
             }
@@ -779,7 +807,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
-                if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                let scan_result = if adverbs.perl5 {
+                    scan_to_delim_p5(r, open_ch, close_ch, is_paired)
+                } else {
+                    scan_to_delim(r, open_ch, close_ch, is_paired)
+                };
+                if let Some((pattern, rest)) = scan_result {
                     let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;

@@ -1,6 +1,5 @@
 use super::*;
 use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
-use ::regex::Regex;
 
 impl Interpreter {
     fn signature_capture_like(value: &Value) -> Option<(Vec<Value>, HashMap<String, Value>)> {
@@ -277,10 +276,334 @@ impl Interpreter {
         out
     }
 
-    fn compile_p5_regex(&self, pattern: &str) -> Option<Regex> {
+    fn compile_p5_regex(&self, pattern: &str) -> Option<fancy_regex::Regex> {
         let interpolated = self.expand_p5_interpolation(pattern);
         let converted = Self::p5_pattern_to_rust_regex(&interpolated);
-        Regex::new(&converted).ok()
+        let transformed = Self::transform_p5_pattern(&converted);
+        fancy_regex::Regex::new(&transformed).ok()
+    }
+
+    /// Transform P5 regex patterns to handle Perl 5 semantics that
+    /// fancy-regex doesn't support directly:
+    /// - `\Z` → `(?=\n?\z)` (match before optional final newline)
+    /// - `$` without `(?m)` → `(?=\n?\z)` (P5 $ matches before optional trailing newline)
+    /// - Fix `[[` inside character classes for compatibility
+    /// - `(?(?=X)yes|no)` → `(?:(?=X)yes|(?!X)no)` (conditional with lookahead)
+    /// - `(?(?!X)yes|no)` → `(?:(?!X)yes|(?=X)no)` (conditional with neg lookahead)
+    /// - `(?(?{0})yes|no)` → `(?:no)` (code eval returning false)
+    /// - `(?(?{1})yes|no)` → `(?:yes)` (code eval returning true)
+    /// - `(?(N)yes|no)` with undefined group N → `(?:no)`
+    fn transform_p5_pattern(pattern: &str) -> String {
+        // First pass: count defined capture groups
+        let num_groups = Self::count_capture_groups(pattern);
+        // Second pass: transform
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut out = String::new();
+        let mut i = 0;
+        let mut in_char_class = false;
+        let mut multiline_active = false;
+        while i < chars.len() {
+            if !in_char_class && chars[i] == '\\' && i + 1 < chars.len() {
+                if chars[i + 1] == 'Z' {
+                    out.push_str("(?=\\n?\\z)");
+                    i += 2;
+                    continue;
+                }
+                out.push(chars[i]);
+                out.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            if chars[i] == '[' && !in_char_class {
+                in_char_class = true;
+                out.push(chars[i]);
+                i += 1;
+                if i < chars.len() && chars[i] == '^' {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                if i < chars.len() && chars[i] == ']' {
+                    out.push('\\');
+                    out.push(']');
+                    i += 1;
+                }
+                continue;
+            }
+            if in_char_class && chars[i] == '[' {
+                out.push('\\');
+                out.push('[');
+                i += 1;
+                continue;
+            }
+            if in_char_class && chars[i] == ']' {
+                in_char_class = false;
+                out.push(chars[i]);
+                i += 1;
+                continue;
+            }
+            // Handle P5 conditional patterns: (?(COND)yes|no)
+            if !in_char_class && chars[i] == '(' && i + 1 < chars.len() && chars[i + 1] == '?' {
+                let rest: String = chars[i + 2..].iter().collect();
+                // Track (?m) flag
+                if rest.starts_with('m') {
+                    multiline_active = true;
+                }
+                // Conditional with lookahead/lookbehind: (?(?=X)yes|no)
+                if (rest.starts_with("(?=") || rest.starts_with("(?!"))
+                    && let Some(transformed) =
+                        Self::transform_conditional_lookahead(&chars, i, false)
+                {
+                    out.push_str(&transformed.0);
+                    i = transformed.1;
+                    continue;
+                }
+                if (rest.starts_with("(?<=") || rest.starts_with("(?<!"))
+                    && let Some(transformed) =
+                        Self::transform_conditional_lookahead(&chars, i, true)
+                {
+                    out.push_str(&transformed.0);
+                    i = transformed.1;
+                    continue;
+                }
+                // Conditional with code: (?(?{0})yes|no) or (?(?{1})yes|no)
+                if rest.starts_with("(?{")
+                    && let Some(transformed) = Self::transform_conditional_code(&chars, i)
+                {
+                    out.push_str(&transformed.0);
+                    i = transformed.1;
+                    continue;
+                }
+                // Conditional with backreference: (?(N)yes|no)
+                if rest.starts_with('(')
+                    && let Some(transformed) =
+                        Self::transform_conditional_backref(&chars, i, num_groups)
+                {
+                    out.push_str(&transformed.0);
+                    i = transformed.1;
+                    continue;
+                }
+            }
+            if !in_char_class && chars[i] == '$' && !multiline_active {
+                let next = chars.get(i + 1);
+                let is_end_anchor = next.is_none()
+                    || *next.unwrap() == ')'
+                    || *next.unwrap() == '|'
+                    || *next.unwrap() == '/';
+                if is_end_anchor {
+                    out.push_str("(?=\\n?\\z)");
+                    i += 1;
+                    continue;
+                }
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+        out
+    }
+
+    /// Count the number of capture groups in a P5 regex pattern.
+    fn count_capture_groups(pattern: &str) -> usize {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut count = 0;
+        let mut i = 0;
+        let mut in_class = false;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                i += 2;
+                continue;
+            }
+            if chars[i] == '[' && !in_class {
+                in_class = true;
+                i += 1;
+                continue;
+            }
+            if chars[i] == ']' && in_class {
+                in_class = false;
+                i += 1;
+                continue;
+            }
+            if !in_class && chars[i] == '(' {
+                if i + 1 < chars.len() && chars[i + 1] == '?' {
+                    // Check for conditional: (?(N)...) or (?(...) ...)
+                    // The inner (N) or (...) is NOT a capture group
+                    if i + 2 < chars.len() && chars[i + 2] == '(' {
+                        // Skip the condition part: (?(...)
+                        i += 3; // skip (?(
+                        let mut depth = 1;
+                        while i < chars.len() && depth > 0 {
+                            if chars[i] == '(' {
+                                depth += 1;
+                            } else if chars[i] == ')' {
+                                depth -= 1;
+                            }
+                            i += 1;
+                        }
+                        continue;
+                    }
+                    // Non-capturing or special group — don't count
+                } else {
+                    count += 1;
+                }
+            }
+            i += 1;
+        }
+        count
+    }
+
+    /// Transform `(?(?=X)yes|no)` or `(?(?!X)yes|no)` into
+    /// `(?:(?=X)yes|(?!X)no)` or `(?:(?!X)yes|(?=X)no)`.
+    /// Returns (replacement_string, new_index_after_the_conditional).
+    fn transform_conditional_lookahead(
+        chars: &[char],
+        start: usize,
+        _is_lookbehind: bool,
+    ) -> Option<(String, usize)> {
+        // start points to '(' of '(?(...'
+        // chars[start] = '('
+        // chars[start+1] = '?'
+        // chars[start+2] = '(' of the condition
+        let cond_start = start + 2;
+        // Find matching ')' for the condition
+        let cond_end = Self::find_matching_paren(chars, cond_start)?;
+        let condition: String = chars[cond_start..=cond_end].iter().collect();
+
+        // After condition, parse yes and optional no branches
+        let mut pos = cond_end + 1;
+        let (yes_branch, no_branch, end) = Self::parse_conditional_branches(chars, pos)?;
+        pos = end;
+
+        // Determine the negated condition
+        let negated = if condition.starts_with("(?=") {
+            condition.replacen("(?=", "(?!", 1)
+        } else if condition.starts_with("(?!") {
+            condition.replacen("(?!", "(?=", 1)
+        } else if condition.starts_with("(?<=") {
+            condition.replacen("(?<=", "(?<!", 1)
+        } else if condition.starts_with("(?<!") {
+            condition.replacen("(?<!", "(?<=", 1)
+        } else {
+            return None;
+        };
+
+        let result = format!("(?:{condition}{yes_branch}|{negated}{no_branch})");
+        Some((result, pos))
+    }
+
+    /// Transform `(?(?{0})yes|no)` → `(?:no)` and `(?(?{1})yes|no)` → `(?:yes)`.
+    fn transform_conditional_code(chars: &[char], start: usize) -> Option<(String, usize)> {
+        let cond_start = start + 2;
+        let cond_end = Self::find_matching_paren(chars, cond_start)?;
+        let condition: String = chars[cond_start + 1..cond_end].iter().collect();
+        // condition is like "?{0}" or "?{1}"
+        let code_value = if condition == "?{0}" {
+            false
+        } else if condition == "?{1}" {
+            true
+        } else {
+            // Unknown code — treat as false (safe default)
+            false
+        };
+
+        let pos = cond_end + 1;
+        let (yes_branch, no_branch, end) = Self::parse_conditional_branches(chars, pos)?;
+
+        let result = if code_value {
+            format!("(?:{yes_branch})")
+        } else {
+            format!("(?:{no_branch})")
+        };
+        Some((result, end))
+    }
+
+    /// Transform `(?(N)yes|no)` with undefined group N → `(?:no)`.
+    /// If group N IS defined, leave it as-is for fancy-regex to handle.
+    fn transform_conditional_backref(
+        chars: &[char],
+        start: usize,
+        num_groups: usize,
+    ) -> Option<(String, usize)> {
+        // chars[start] = '(', chars[start+1] = '?', chars[start+2] = '('
+        let mut pos = start + 3;
+        let mut num_str = String::new();
+        while pos < chars.len() && chars[pos].is_ascii_digit() {
+            num_str.push(chars[pos]);
+            pos += 1;
+        }
+        if num_str.is_empty() || pos >= chars.len() || chars[pos] != ')' {
+            return None;
+        }
+        let group_num: usize = num_str.parse().ok()?;
+        pos += 1; // skip ')'
+
+        if group_num <= num_groups {
+            // Group exists, fancy-regex can handle it — don't transform
+            return None;
+        }
+
+        // Group doesn't exist — always take the "no" branch
+        let (_, no_branch, end) = Self::parse_conditional_branches(chars, pos)?;
+        Some((format!("(?:{no_branch})"), end))
+    }
+
+    /// Find the matching ')' for a '(' at the given position.
+    fn find_matching_paren(chars: &[char], start: usize) -> Option<usize> {
+        if start >= chars.len() || chars[start] != '(' {
+            return None;
+        }
+        let mut depth = 1;
+        let mut i = start + 1;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                i += 2;
+                continue;
+            }
+            if chars[i] == '(' {
+                depth += 1;
+            } else if chars[i] == ')' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// Parse `yes|no)` or `yes)` branches of a conditional pattern.
+    /// Returns (yes_branch, no_branch, position_after_closing_paren).
+    fn parse_conditional_branches(chars: &[char], start: usize) -> Option<(String, String, usize)> {
+        let mut depth = 1; // We're inside the outer (? ... )
+        let mut i = start;
+        let mut pipe_pos = None;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                i += 2;
+                continue;
+            }
+            if chars[i] == '(' {
+                depth += 1;
+            } else if chars[i] == ')' {
+                depth -= 1;
+                if depth == 0 {
+                    let yes_branch: String = if let Some(pp) = pipe_pos {
+                        chars[start..pp].iter().collect()
+                    } else {
+                        chars[start..i].iter().collect()
+                    };
+                    let no_branch: String = if let Some(pp) = pipe_pos {
+                        chars[pp + 1..i].iter().collect()
+                    } else {
+                        String::new()
+                    };
+                    return Some((yes_branch, no_branch, i + 1));
+                }
+            } else if chars[i] == '|' && depth == 1 && pipe_pos.is_none() {
+                pipe_pos = Some(i);
+            }
+            i += 1;
+        }
+        None
     }
 
     fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
@@ -371,7 +694,7 @@ impl Interpreter {
 
     fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
-        let captures = re.captures(text)?;
+        let captures = re.captures(text).ok()??;
         let m0 = captures.get(0)?;
         let names: Vec<Option<&str>> = re.capture_names().collect();
         let mut out = RegexCaptures {
@@ -408,9 +731,13 @@ impl Interpreter {
         };
         let names: Vec<Option<&str>> = re.capture_names().collect();
         let mut out = Vec::new();
-        for captures in re.captures_iter(text) {
+        let mut start = 0;
+        while start <= text.len() {
+            let Ok(Some(captures)) = re.captures_from_pos(text, start) else {
+                break;
+            };
             let Some(m0) = captures.get(0) else {
-                continue;
+                break;
             };
             let mut item = RegexCaptures {
                 matched: m0.as_str().to_string(),
@@ -439,6 +766,12 @@ impl Interpreter {
                         .or_default()
                         .push(m.as_str().to_string());
                 }
+            }
+            // Advance past the match (at least 1 byte to avoid infinite loop)
+            if m0.end() == start {
+                start += 1;
+            } else {
+                start = m0.end();
             }
             out.push(item);
         }

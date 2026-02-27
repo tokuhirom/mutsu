@@ -13,6 +13,7 @@ wasm = ["wasm-bindgen", "console_error_panic_hook"]
 
 [dependencies]
 regex = "1.12.3"
+fancy-regex = "0.14"
 unicode_names2 = "2.0.0"
 num-bigint = "0.4"
 num-traits = "0.2"
