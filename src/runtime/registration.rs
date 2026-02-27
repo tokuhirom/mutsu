@@ -379,6 +379,18 @@ impl Interpreter {
                     self.validate_private_access_in_expr(caller_class, arg)?;
                 }
             }
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                ..
+            } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                self.validate_private_access_in_expr(caller_class, name_expr)?;
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
             Expr::Call { args, .. }
             | Expr::ArrayLiteral(args)
             | Expr::BracketArray(args)

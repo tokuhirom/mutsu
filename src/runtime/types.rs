@@ -1073,6 +1073,17 @@ impl Interpreter {
                         if !ok {
                             return false;
                         }
+                    } else if constraint == "Num"
+                        && matches!(
+                            arg,
+                            Value::Int(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        )
+                    {
+                        // Multi-dispatch numeric widening: Int/Rat/FatRat can satisfy Num.
                     } else if !is_coercion_constraint(constraint)
                         && !self.type_matches_value(constraint, arg)
                     {
@@ -1568,6 +1579,17 @@ impl Interpreter {
                                     super::value_type_name(&value)
                                 )));
                             }
+                        } else if constraint == "Num"
+                            && matches!(
+                                value,
+                                Value::Int(_)
+                                    | Value::Num(_)
+                                    | Value::Rat(_, _)
+                                    | Value::FatRat(_, _)
+                                    | Value::BigRat(_, _)
+                            )
+                        {
+                            // Binding accepts numeric widening into Num parameters.
                         } else if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
                                 "{}: Type check failed for {}: expected {}, got {}",

@@ -267,6 +267,7 @@ roast/S12-methods/fallback.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/parallel-dispatch.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
