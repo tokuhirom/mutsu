@@ -179,9 +179,167 @@ pub(super) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     parse_comma_or_expr(input)
 }
 
+fn method_lvalue_assign_expr(
+    target: Expr,
+    target_var_name: Option<String>,
+    method_name: String,
+    method_args: Vec<Expr>,
+    value: Expr,
+) -> Expr {
+    let mut args = vec![
+        target,
+        Expr::Literal(Value::Str(method_name)),
+        Expr::ArrayLiteral(method_args),
+        value,
+    ];
+    args.push(match target_var_name {
+        Some(name) => Expr::Literal(Value::Str(name)),
+        None => Expr::Literal(Value::Nil),
+    });
+    Expr::Call {
+        name: "__mutsu_assign_method_lvalue".to_string(),
+        args,
+    }
+}
+
+fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr) -> Expr {
+    Expr::Call {
+        name: "__mutsu_assign_named_sub_lvalue".to_string(),
+        args: vec![
+            Expr::Literal(Value::Str(name)),
+            Expr::ArrayLiteral(call_args),
+            value,
+        ],
+    }
+}
+
+fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
+    Expr::Call {
+        name: "__mutsu_assign_callable_lvalue".to_string(),
+        args: vec![target, Expr::ArrayLiteral(call_args), value],
+    }
+}
+
+fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
+    let (rest, _) = parse_char(input, '(')?;
+    let (rest, _) = ws(rest)?;
+    let (rest, lhs) = expression_no_sequence(rest)?;
+    let (rest, _) = ws(rest)?;
+    if !rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>") {
+        return Err(PError::expected("assignment expression"));
+    }
+    let rest = &rest[1..];
+    let (rest, _) = ws(rest)?;
+    let (rest, rhs) = match try_parse_assign_expr(rest) {
+        Ok(r) => r,
+        Err(_) => expression_no_sequence(rest)?,
+    };
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = parse_char(rest, ')')?;
+    let expr = match lhs {
+        Expr::Var(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(rhs),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(rhs),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(rhs),
+        },
+        Expr::Index { target, index } => Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(rhs),
+        },
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } => {
+            if name == "AT-POS" && args.len() == 1 {
+                Expr::IndexAssign {
+                    target,
+                    index: Box::new(args[0].clone()),
+                    value: Box::new(rhs),
+                }
+            } else {
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(name) => Some(name.clone()),
+                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                    Expr::HashVar(name) => Some(format!("%{}", name)),
+                    _ => None,
+                };
+                method_lvalue_assign_expr(*target, target_var_name, name, args, rhs)
+            }
+        }
+        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name, args, rhs),
+        Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
+        _ => return Err(PError::expected("assignment expression")),
+    };
+    Ok((rest, expr))
+}
+
+fn looks_like_parenthesized_assignment(input: &str) -> bool {
+    if !input.starts_with('(') {
+        return false;
+    }
+    let mut chars = input.char_indices().peekable();
+    let mut depth = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    while let Some((idx, ch)) = chars.next() {
+        if in_single {
+            if ch == '\'' {
+                in_single = false;
+            }
+            continue;
+        }
+        if in_double {
+            if ch == '\\' {
+                let _ = chars.next();
+                continue;
+            }
+            if ch == '"' {
+                in_double = false;
+            }
+            continue;
+        }
+        match ch {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            '=' if depth == 1 => {
+                let next = input[idx + ch.len_utf8()..].chars().next();
+                if !matches!(next, Some('=') | Some('>')) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Try to parse a single assignment expression: $var op= expr or $var = expr.
 /// Returns the expression as Expr::AssignExpr.
-pub(super) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with('(') {
+        if !looks_like_parenthesized_assignment(input) {
+            return Err(PError::expected("assignment expression"));
+        }
+        return parenthesized_assign_expr(input);
+    }
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
     if sigil == b'$' && input.as_bytes().get(1).is_some_and(|c| *c == b'=') {
         return Err(PError::expected("assignment expression"));

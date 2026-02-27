@@ -12,6 +12,7 @@ fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
 
 use super::super::expr::expression;
 use super::super::helpers::{consume_unspace, skip_balanced_parens, ws};
+use super::super::stmt::assign::try_parse_assign_expr;
 
 #[derive(Default)]
 struct MatchAdverbs {
@@ -228,11 +229,16 @@ fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> St
 /// Semicolons act as list-associative separators: each `;`-delimited group
 /// is collected into an `Array` node, producing one arg per group.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
+    fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
+        crate::parser::primary::misc::reduction_call_style_expr(input)
+            .or_else(|_| try_parse_assign_expr(input))
+            .or_else(|_| expression(input))
+    }
+
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
-    let (input, first) = crate::parser::primary::misc::reduction_call_style_expr(input)
-        .or_else(|_| expression(input))?;
+    let (input, first) = parse_call_arg_expr(input)?;
     let mut current_group = vec![first];
     let mut groups: Vec<Vec<Expr>> = Vec::new();
     let mut has_semicolon = false;
@@ -249,8 +255,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 // Trailing semicolon before close paren
                 return Ok((r, semicolon_groups_to_args(groups, current_group)));
             }
-            let (r, arg) = crate::parser::primary::misc::reduction_call_style_expr(r)
-                .or_else(|_| expression(r))?;
+            let (r, arg) = parse_call_arg_expr(r)?;
             current_group.push(arg);
             rest = r;
             continue;
@@ -280,8 +285,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             }
             return Ok((r, current_group));
         }
-        let (r, arg) = crate::parser::primary::misc::reduction_call_style_expr(r)
-            .or_else(|_| expression(r))?;
+        let (r, arg) = parse_call_arg_expr(r)?;
         current_group.push(arg);
         rest = r;
     }

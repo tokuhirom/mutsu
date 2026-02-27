@@ -31,6 +31,7 @@ impl Interpreter {
                 return_type,
                 body,
                 multi,
+                is_rw,
                 is_export,
                 is_test_assertion,
                 supersede,
@@ -51,6 +52,7 @@ impl Interpreter {
                     return_type.as_ref(),
                     body,
                     *multi,
+                    *is_rw,
                     *is_test_assertion,
                     *supersede,
                 )?;
@@ -62,6 +64,7 @@ impl Interpreter {
                         return_type.as_ref(),
                         body,
                         *multi,
+                        *is_rw,
                         *is_test_assertion,
                         *supersede,
                     )?;
