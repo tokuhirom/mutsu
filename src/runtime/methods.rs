@@ -5504,9 +5504,28 @@ impl Interpreter {
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
                             Value::Array(items, ..) => items.to_vec(),
+                            Value::Seq(items) => items.to_vec(),
+                            Value::Slip(items) => items.to_vec(),
                             Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
                             Value::RangeExcl(start, end) => {
                                 (*start..*end).map(Value::Int).collect()
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "Buf"
+                                || class_name == "Blob"
+                                || class_name.starts_with("Buf[")
+                                || class_name.starts_with("Blob[")
+                                || class_name.starts_with("buf")
+                                || class_name.starts_with("blob") =>
+                            {
+                                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                                    items.to_vec()
+                                } else {
+                                    Vec::new()
+                                }
                             }
                             _ => vec![],
                         })

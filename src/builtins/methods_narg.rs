@@ -2,6 +2,8 @@
 
 use crate::runtime;
 use crate::value::{RuntimeError, Value};
+use num_bigint::BigInt;
+use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
 fn flatten_with_depth(
@@ -695,7 +697,12 @@ fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         attributes,
         ..
     } = target
-        && (class_name == "Buf" || class_name == "Blob")
+        && (class_name == "Buf"
+            || class_name == "Blob"
+            || class_name.starts_with("Buf[")
+            || class_name.starts_with("Blob[")
+            || class_name.starts_with("buf")
+            || class_name.starts_with("blob"))
         && let Some(Value::Array(items, ..)) = attributes.get("bytes")
     {
         return Some(
@@ -716,6 +723,25 @@ fn to_int_val(v: &Value) -> i64 {
         Value::Int(i) => *i,
         Value::Num(f) => *f as i64,
         _ => 0,
+    }
+}
+
+fn read_ubits_from_bytes(bytes: &[u8], from: usize, bits: usize) -> BigInt {
+    let mut acc = BigInt::ZERO;
+    for i in 0..bits {
+        let bit_index = from + i;
+        let byte = bytes[bit_index / 8];
+        let bit = (byte >> (7 - (bit_index % 8))) & 1;
+        acc = (acc << 1) + BigInt::from(bit);
+    }
+    acc
+}
+
+fn bigint_to_value(value: BigInt) -> Value {
+    if let Some(i) = value.to_i64() {
+        Value::Int(i)
+    } else {
+        Value::BigInt(value)
     }
 }
 
@@ -793,6 +819,28 @@ pub(crate) fn native_method_2arg(
             let start = start.min(chars.len());
             Some(Ok(Value::Str(chars[start..end].iter().collect())))
         }
+        "fmt" => {
+            let fmt = arg1.to_string_value();
+            let separator = arg2.to_string_value();
+            match target {
+                Value::Array(..)
+                | Value::Seq(..)
+                | Value::Slip(..)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => {
+                    let rendered = runtime::value_to_list(target)
+                        .iter()
+                        .map(|item| runtime::format_sprintf(&fmt, Some(item)))
+                        .collect::<Vec<_>>()
+                        .join(&separator);
+                    Some(Ok(Value::Str(rendered)))
+                }
+                _ => None,
+            }
+        }
         "base" => {
             let radix = match arg1 {
                 Value::Int(r) if (2..=36).contains(r) => *r as u32,
@@ -825,6 +873,36 @@ pub(crate) fn native_method_2arg(
                 Value::Rat(n, d) => Some(Ok(Value::Str(rat_to_base(*n, *d, radix, Some(digits))))),
                 _ => None,
             }
+        }
+        "read-ubits" | "read-bits" => {
+            let bytes = buf_get_bytes(target)?;
+            let from = runtime::to_int(arg1);
+            let bits = runtime::to_int(arg2);
+            if from < 0 || bits < 0 {
+                return Some(Err(RuntimeError::new(
+                    "bit offset/length must be non-negative",
+                )));
+            }
+            let from = from as usize;
+            let bits = bits as usize;
+            let total_bits = bytes.len().saturating_mul(8);
+            if from.checked_add(bits).is_none_or(|end| end > total_bits) {
+                return Some(Err(RuntimeError::new(format!(
+                    "read from out of range. Is: {}, should be in 0..{}",
+                    from, total_bits
+                ))));
+            }
+            let unsigned = read_ubits_from_bytes(&bytes, from, bits);
+            if method == "read-ubits" || bits == 0 {
+                return Some(Ok(bigint_to_value(unsigned)));
+            }
+            let sign_bit = BigInt::from(1u8) << (bits - 1);
+            let signed = if (&unsigned & &sign_bit).is_zero() {
+                unsigned
+            } else {
+                unsigned - (BigInt::from(1u8) << bits)
+            };
+            Some(Ok(bigint_to_value(signed)))
         }
         // Buf/Blob read-num methods (2 args: offset + endian)
         "read-num32" | "read-num64" => {
