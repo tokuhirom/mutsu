@@ -726,15 +726,15 @@ impl VM {
                 *ip += 1;
             }
             OpCode::JunctionAny => {
-                self.exec_junction_any_op();
+                self.exec_junction_any_op(code)?;
                 *ip += 1;
             }
             OpCode::JunctionAll => {
-                self.exec_junction_all_op();
+                self.exec_junction_all_op(code)?;
                 *ip += 1;
             }
             OpCode::JunctionOne => {
-                self.exec_junction_one_op();
+                self.exec_junction_one_op(code)?;
                 *ip += 1;
             }
 

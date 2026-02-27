@@ -118,10 +118,7 @@ impl Interpreter {
         };
         let mut elems = Vec::new();
         for arg in args {
-            match arg {
-                Value::Array(items, ..) => elems.extend(items.iter().cloned()),
-                other => elems.push(other),
-            }
+            elems.extend(crate::runtime::utils::value_to_list(&arg));
         }
         Ok(Value::junction(kind, elems))
     }
