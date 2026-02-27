@@ -197,90 +197,24 @@ impl VM {
             .push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
     }
 
-    pub(super) fn exec_junction_any_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
+    pub(super) fn exec_junction_any_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let should_try_user = !matches!(
-            (&left, &right),
-            (
-                Value::Junction {
-                    kind: JunctionKind::Any,
-                    ..
-                },
-                _
-            ) | (
-                _,
-                Value::Junction {
-                    kind: JunctionKind::Any,
-                    ..
-                }
-            )
-        );
-        if should_try_user && let Some(result) = self.try_user_infix("infix:<|>", &left, &right)? {
-            self.stack.push(result);
-            self.sync_locals_from_env(code);
-            return Ok(());
-        }
         self.stack
             .push(runtime::merge_junction(JunctionKind::Any, left, right));
-        Ok(())
     }
 
-    pub(super) fn exec_junction_all_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
+    pub(super) fn exec_junction_all_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let should_try_user = !matches!(
-            (&left, &right),
-            (
-                Value::Junction {
-                    kind: JunctionKind::All,
-                    ..
-                },
-                _
-            ) | (
-                _,
-                Value::Junction {
-                    kind: JunctionKind::All,
-                    ..
-                }
-            )
-        );
-        if should_try_user && let Some(result) = self.try_user_infix("infix:<&>", &left, &right)? {
-            self.stack.push(result);
-            self.sync_locals_from_env(code);
-            return Ok(());
-        }
         self.stack
             .push(runtime::merge_junction(JunctionKind::All, left, right));
-        Ok(())
     }
 
-    pub(super) fn exec_junction_one_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
+    pub(super) fn exec_junction_one_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let should_try_user = !matches!(
-            (&left, &right),
-            (
-                Value::Junction {
-                    kind: JunctionKind::One,
-                    ..
-                },
-                _
-            ) | (
-                _,
-                Value::Junction {
-                    kind: JunctionKind::One,
-                    ..
-                }
-            )
-        );
-        if should_try_user && let Some(result) = self.try_user_infix("infix:<^>", &left, &right)? {
-            self.stack.push(result);
-            self.sync_locals_from_env(code);
-            return Ok(());
-        }
         self.stack
             .push(runtime::merge_junction(JunctionKind::One, left, right));
-        Ok(())
     }
 }
