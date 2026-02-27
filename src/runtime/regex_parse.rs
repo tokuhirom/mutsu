@@ -537,6 +537,30 @@ impl Interpreter {
                 });
                 continue;
             }
+            // Handle :my, :our, :constant variable declarations in regex
+            if c == ':' {
+                let remaining: String = chars.clone().collect();
+                if remaining.starts_with("my ")
+                    || remaining.starts_with("our ")
+                    || remaining.starts_with("constant ")
+                {
+                    // Collect everything up to and including the semicolon
+                    let mut decl_code = String::new();
+                    for ch in chars.by_ref() {
+                        if ch == ';' {
+                            break;
+                        }
+                        decl_code.push(ch);
+                    }
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::VarDecl { code: decl_code },
+                        quant: RegexQuant::One,
+                        named_capture: pending_named_capture.take(),
+                        ratchet,
+                    });
+                    continue;
+                }
+            }
             let atom = match c {
                 '.' => RegexAtom::Any,
                 '\\' => {
@@ -760,10 +784,16 @@ impl Interpreter {
                         // Check for code assertion: <?{...}> or <!{...}>
                         // These need special handling because code may contain < and >
                         let peek_str: String = chars.clone().collect();
-                        if peek_str.starts_with("?{") || peek_str.starts_with("!{") {
-                            let negated = peek_str.starts_with('!');
-                            // Skip '?' or '!'
-                            chars.next();
+                        if peek_str.starts_with("?{")
+                            || peek_str.starts_with("!{")
+                            || peek_str.starts_with('{')
+                        {
+                            let is_closure_interp = peek_str.starts_with('{');
+                            let negated = !is_closure_interp && peek_str.starts_with('!');
+                            if !is_closure_interp {
+                                // Skip '?' or '!'
+                                chars.next();
+                            }
                             // Skip '{'
                             chars.next();
                             let mut code = String::new();
@@ -786,10 +816,14 @@ impl Interpreter {
                             if chars.peek() == Some(&'>') {
                                 chars.next();
                             }
-                            RegexAtom::CodeAssertion {
-                                code,
-                                negated,
-                                is_assertion: true,
+                            if is_closure_interp {
+                                RegexAtom::ClosureInterpolation { code }
+                            } else {
+                                RegexAtom::CodeAssertion {
+                                    code,
+                                    negated,
+                                    is_assertion: true,
+                                }
                             }
                         } else {
                             // Read content between < and >, handling nested <...>

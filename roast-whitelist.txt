@@ -165,6 +165,7 @@ roast/S05-metachars/closure.t
 roast/S05-metachars/newline.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
+roast/S05-metasyntax/interpolating-closure.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/single-quotes.t
@@ -263,6 +264,7 @@ roast/S12-meta/grammarhow.t
 roast/S12-meta/primitives.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
+roast/S12-methods/fallback.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t

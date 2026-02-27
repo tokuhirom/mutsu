@@ -1488,6 +1488,7 @@ impl Compiler {
                         export_tags: Vec::new(),
                         is_test_assertion: false,
                         supersede: false,
+                        custom_traits: Vec::new(),
                     });
                     self.code.emit(OpCode::MakeAnonSubParams(idx));
                 } else {
@@ -1524,6 +1525,7 @@ impl Compiler {
                     export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
+                    custom_traits: Vec::new(),
                 });
                 self.code.emit(OpCode::MakeAnonSubParams(idx));
             }
@@ -1547,6 +1549,7 @@ impl Compiler {
                     export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
+                    custom_traits: Vec::new(),
                 });
                 self.code.emit(OpCode::MakeLambda(idx));
             }

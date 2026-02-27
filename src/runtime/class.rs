@@ -109,6 +109,18 @@ impl Interpreter {
         false
     }
 
+    /// Collect wildcard-handles attribute var names from the class and its MRO.
+    pub(super) fn collect_wildcard_handles(&mut self, class_name: &str) -> Vec<String> {
+        let mro = self.class_mro(class_name);
+        let mut result = Vec::new();
+        for cn in &mro {
+            if let Some(class_def) = self.classes.get(cn) {
+                result.extend(class_def.wildcard_handles.iter().cloned());
+            }
+        }
+        result
+    }
+
     pub(super) fn collect_class_attributes(
         &mut self,
         class_name: &str,

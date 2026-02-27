@@ -1652,7 +1652,9 @@ impl Interpreter {
             | RegexAtom::CodeAssertion { .. }
             | RegexAtom::UnicodePropAssert { .. }
             | RegexAtom::CaptureStartMarker
-            | RegexAtom::CaptureEndMarker => unreachable!(),
+            | RegexAtom::CaptureEndMarker
+            | RegexAtom::VarDecl { .. }
+            | RegexAtom::ClosureInterpolation { .. } => unreachable!(),
         };
         if matched {
             match atom {
@@ -1768,6 +1770,35 @@ impl Interpreter {
                     .push((code.clone(), current_caps.named.clone()));
                 return Some((pos, new_caps));
             }
+            RegexAtom::ClosureInterpolation { code } => {
+                // <{ code }> — closure interpolation: evaluate code and use
+                // the result as a regex pattern to match at current position
+                let target: String = chars.iter().collect();
+                let pattern_str =
+                    self.eval_regex_closure_interpolation(code, current_caps, &target);
+                if let Some(pat_str) = pattern_str
+                    && let Some(parsed) = self.parse_regex(&pat_str)
+                {
+                    let pkg = self.current_package.clone();
+                    if let Some((end, inner_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, &pkg)
+                    {
+                        let mut new_caps = current_caps.clone();
+                        for v in &inner_caps.positional {
+                            new_caps.positional.push(v.clone());
+                        }
+                        for (k, v) in &inner_caps.named {
+                            new_caps
+                                .named
+                                .entry(k.clone())
+                                .or_default()
+                                .extend(v.clone());
+                        }
+                        return Some((end, new_caps));
+                    }
+                }
+                return None;
+            }
             RegexAtom::CaptureStartMarker => {
                 let mut new_caps = current_caps.clone();
                 new_caps.capture_start = Some(pos);
@@ -1777,6 +1808,32 @@ impl Interpreter {
                 let mut new_caps = current_caps.clone();
                 new_caps.capture_end = Some(pos);
                 return Some((pos, new_caps));
+            }
+            RegexAtom::VarDecl { code } => {
+                // Evaluate the variable declaration and store in env
+                // so subsequent <{ }> closures can access the variables.
+                let source = format!("{};", code);
+                if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
+                    let mut interp = Interpreter {
+                        env: self.env.clone(),
+                        functions: self.functions.clone(),
+                        current_package: self.current_package.clone(),
+                        ..Default::default()
+                    };
+                    let _ = interp.eval_block_value(&stmts);
+                    // Copy any new/changed variables back into self.env
+                    // We use unsafe interior mutability pattern since self is &self
+                    // and the regex engine needs to be &self for recursive matching.
+                    // Store declarations in captures for later propagation.
+                    let mut new_caps = current_caps.clone();
+                    for (k, v) in &interp.env {
+                        if !self.env.contains_key(k) || self.env.get(k) != Some(v) {
+                            new_caps.regex_vars.insert(k.clone(), v.clone());
+                        }
+                    }
+                    return Some((pos, new_caps));
+                }
+                return Some((pos, current_caps.clone()));
             }
             _ => {}
         }
@@ -1918,6 +1975,74 @@ impl Interpreter {
             _ => self
                 .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                 .map(|next| (next, current_caps.clone())),
+        }
+    }
+
+    /// Evaluate a closure interpolation `<{ code }>` inside a regex.
+    /// Returns the regex pattern string to match against.
+    fn eval_regex_closure_interpolation(
+        &self,
+        code: &str,
+        caps: &RegexCaptures,
+        target: &str,
+    ) -> Option<String> {
+        let mut env = self.make_regex_eval_env(caps);
+        // Set $_ to the match target string
+        env.insert("_".to_string(), Value::Str(target.to_string()));
+        // Add variables declared via :my inside the regex
+        for (k, v) in &caps.regex_vars {
+            env.insert(k.clone(), v.clone());
+        }
+        let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
+        let mut interp = Interpreter {
+            env,
+            functions: self.functions.clone(),
+            token_defs: self.token_defs.clone(),
+            current_package: self.current_package.clone(),
+            ..Default::default()
+        };
+        let val = match interp.eval_block_value(&stmts) {
+            Ok(v) => v,
+            Err(e) => e.return_value?,
+        };
+        match val {
+            Value::Regex(pat) => Some(pat),
+            Value::RegexWithAdverbs { pattern, .. } => Some(pattern),
+            Value::Routine {
+                is_regex: true,
+                name,
+                package,
+            } => {
+                let full_name = if package.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{}::{}", package, name)
+                };
+                Some(format!("<{}>", full_name))
+            }
+            Value::Array(ref elems, ..) | Value::Seq(ref elems) => {
+                // Array/List → alternation of escaped literals
+                let alts: Vec<String> = elems
+                    .iter()
+                    .map(|v| match v {
+                        Value::Regex(pat) => pat.clone(),
+                        Value::RegexWithAdverbs { pattern, .. } => pattern.clone(),
+                        other => {
+                            let s = other.to_string_value();
+                            // Quote as regex literal using single quotes
+                            format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
+                        }
+                    })
+                    .collect();
+                if alts.is_empty() {
+                    return None;
+                }
+                Some(format!("[ {} ]", alts.join(" | ")))
+            }
+            other => {
+                let s = other.to_string_value();
+                Some(s)
+            }
         }
     }
 

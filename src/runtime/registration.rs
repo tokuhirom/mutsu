@@ -560,6 +560,7 @@ impl Interpreter {
         is_rw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        custom_traits: &[String],
     ) -> Result<(), RuntimeError> {
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
@@ -638,11 +639,15 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
-        if self.env.contains_key(&format!("&{}", name)) {
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared as code variable",
-                name
-            )));
+        let code_var_key = format!("&{}", name);
+        if let Some(existing) = self.env.get(&code_var_key) {
+            // Mixin values in &name come from trait_mod and should not block registration
+            if !matches!(existing, Value::Mixin(..)) {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared as code variable",
+                    name
+                )));
+            }
         }
         if let Some(existing) = self.functions.get(&single_key) {
             let same = existing.package == new_def.package
@@ -751,6 +756,29 @@ impl Interpreter {
             callable_key,
             Value::Int(crate::value::next_instance_id() as i64),
         );
+        // Apply custom trait_mod:<is> for each non-builtin trait (only if trait_mod:<is> is defined)
+        if !custom_traits.is_empty()
+            && (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
+        {
+            for trait_name in custom_traits {
+                let sub_val = Value::make_sub(
+                    self.current_package.clone(),
+                    name.to_string(),
+                    params.to_vec(),
+                    param_defs.to_vec(),
+                    body.to_vec(),
+                    is_rw,
+                    self.env.clone(),
+                );
+                let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                let result = self.call_function("trait_mod:<is>", vec![sub_val, named_arg])?;
+                // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
+                // store it in the env so function dispatch can find it.
+                if matches!(result, Value::Mixin(..)) {
+                    self.env.insert(format!("&{}", name), result);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1202,6 +1230,7 @@ impl Interpreter {
             methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: Vec::new(),
+            wildcard_handles: Vec::new(),
         };
         if is_hidden {
             self.hidden_classes.insert(name.to_string());
@@ -1313,24 +1342,29 @@ impl Interpreter {
                         format!("!{}", attr_name)
                     };
                     for handle_name in handles {
-                        class_def
-                            .methods
-                            .entry(handle_name.clone())
-                            .or_default()
-                            .push(MethodDef {
-                                params: Vec::new(),
-                                param_defs: Vec::new(),
-                                body: vec![Stmt::Expr(Expr::MethodCall {
-                                    target: Box::new(Expr::Var(attr_var_name.clone())),
-                                    name: handle_name.clone(),
-                                    args: Vec::new(),
-                                    modifier: None,
-                                    quoted: false,
-                                })],
-                                is_rw: false,
-                                is_private: false,
-                                return_type: None,
-                            });
+                        if handle_name == "*" {
+                            // Wildcard delegation: forward unknown methods to this attribute
+                            class_def.wildcard_handles.push(attr_var_name.clone());
+                        } else {
+                            class_def
+                                .methods
+                                .entry(handle_name.clone())
+                                .or_default()
+                                .push(MethodDef {
+                                    params: Vec::new(),
+                                    param_defs: Vec::new(),
+                                    body: vec![Stmt::Expr(Expr::MethodCall {
+                                        target: Box::new(Expr::Var(attr_var_name.clone())),
+                                        name: handle_name.clone(),
+                                        args: Vec::new(),
+                                        modifier: None,
+                                        quoted: false,
+                                    })],
+                                    is_rw: false,
+                                    is_private: false,
+                                    return_type: None,
+                                });
+                        }
                     }
                 }
                 Stmt::MethodDecl {
