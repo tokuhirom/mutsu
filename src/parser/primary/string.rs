@@ -359,6 +359,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     // unsupported adverbs while still accepting the quoting delimiter.
     let mut after_q = after_q;
     let mut q_closure_interp = false;
+    let mut q_format_quote = false;
     if let Some(mut r) = after_q.strip_prefix(':') {
         loop {
             let end = r
@@ -370,6 +371,8 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             let adverb_name = &r[..end];
             if adverb_name == "c" {
                 q_closure_interp = true;
+            } else if adverb_name == "o" || adverb_name == "format" {
+                q_format_quote = true;
             }
             r = &r[end..];
             if let Some(next) = r.strip_prefix(':') {
@@ -402,10 +405,10 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     } else if let Some(rest) = after_prefix.strip_prefix(":format") {
         (rest, true)
     } else {
-        (after_prefix, false)
+        (after_prefix, q_format_quote)
     };
 
-    let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq)?;
+    let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq, q_closure_interp)?;
     if is_format_quote {
         return Ok((
             rest,
@@ -418,7 +421,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     Ok((rest, content_expr))
 }
 
-fn parse_q_quoted_content(input: &str, is_qq: bool) -> PResult<'_, Expr> {
+fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> PResult<'_, Expr> {
     // Must be followed by a delimiter
     let (open, close) = match input.chars().next() {
         Some('{') => ('{', '}'),

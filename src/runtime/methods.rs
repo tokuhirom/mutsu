@@ -1,7 +1,8 @@
 use super::*;
 use crate::ast::CallArg;
 use crate::value::signature::{
-    make_params_value_from_param_defs, make_signature_value, param_defs_to_sig_info,
+    extract_sig_info, make_params_value_from_param_defs, make_signature_value,
+    param_defs_to_sig_info,
 };
 
 impl Interpreter {
@@ -494,6 +495,58 @@ impl Interpreter {
         make_signature_value(info)
     }
 
+    fn signature_required_positional_count(info: &crate::value::signature::SigInfo) -> i64 {
+        info.params
+            .iter()
+            .filter(|p| !p.named && !p.slurpy && !p.has_default && !p.optional_marker)
+            .count() as i64
+    }
+
+    fn signature_positional_count(info: &crate::value::signature::SigInfo) -> Option<i64> {
+        let mut count = 0i64;
+        for p in &info.params {
+            if p.named || (p.slurpy && p.sigil == '%') {
+                continue;
+            }
+            if p.slurpy {
+                return None;
+            }
+            count += 1;
+        }
+        Some(count)
+    }
+
+    fn signature_count_value(info: &crate::value::signature::SigInfo) -> Value {
+        match Self::signature_positional_count(info) {
+            Some(count) => Value::Int(count),
+            None => Value::Num(f64::INFINITY),
+        }
+    }
+
+    fn candidate_arity_value(infos: &[crate::value::signature::SigInfo]) -> Value {
+        let arity = infos
+            .iter()
+            .map(Self::signature_required_positional_count)
+            .min()
+            .unwrap_or(0);
+        Value::Int(arity)
+    }
+
+    fn candidate_count_value(infos: &[crate::value::signature::SigInfo]) -> Value {
+        let mut max_count = 0i64;
+        for info in infos {
+            match Self::signature_positional_count(info) {
+                Some(count) => {
+                    if count > max_count {
+                        max_count = count;
+                    }
+                }
+                None => return Value::Num(f64::INFINITY),
+            }
+        }
+        Value::Int(max_count)
+    }
+
     fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
         let shape_val = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
@@ -591,6 +644,17 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if matches!(method, "arity" | "count")
+            && args.is_empty()
+            && let Some(sig_info) = extract_sig_info(&target)
+        {
+            return Ok(if method == "arity" {
+                Value::Int(Self::signature_required_positional_count(&sig_info))
+            } else {
+                Self::signature_count_value(&sig_info)
+            });
+        }
+
         if let Value::Instance {
             class_name,
             attributes,
@@ -998,6 +1062,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "arity"
+                        | "count"
                         | "candidates"
                         | "cando"
                         | "of"
@@ -1009,6 +1075,63 @@ impl Interpreter {
                         | "can"
                 );
                 return Ok(Value::Bool(can));
+            }
+            if matches!(method, "arity" | "count") && args.is_empty() {
+                let candidates = self.routine_candidate_subs(package, name);
+                if !candidates.is_empty() {
+                    let mut infos = Vec::new();
+                    for candidate in candidates {
+                        if let Value::Sub(data) = candidate {
+                            let sig = self.sub_signature_value(&data);
+                            if let Some(info) = extract_sig_info(&sig) {
+                                infos.push(info);
+                            }
+                        }
+                    }
+                    if infos.is_empty() {
+                        return Ok(Value::Int(0));
+                    }
+                    return Ok(if method == "arity" {
+                        Self::candidate_arity_value(&infos)
+                    } else {
+                        Self::candidate_count_value(&infos)
+                    });
+                }
+
+                let (params, param_defs) = self.callable_signature(&target);
+                let defs = if !param_defs.is_empty() {
+                    param_defs
+                } else {
+                    params
+                        .into_iter()
+                        .map(|name| ParamDef {
+                            name,
+                            default: None,
+                            multi_invocant: true,
+                            required: true,
+                            named: false,
+                            slurpy: false,
+                            double_slurpy: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
+                            is_invocant: false,
+                            shape_constraints: None,
+                        })
+                        .collect()
+                };
+                let info = param_defs_to_sig_info(&defs, None);
+                return Ok(if method == "arity" {
+                    Value::Int(Self::signature_required_positional_count(&info))
+                } else {
+                    Self::signature_count_value(&info)
+                });
             }
         }
         if let Value::Sub(data) = &target {
@@ -1121,6 +1244,17 @@ impl Interpreter {
                     .unwrap_or_else(|| "Mu".to_string());
                 return Ok(Value::Package(type_name));
             }
+            if matches!(method, "arity" | "count") && args.is_empty() {
+                let sig = self.sub_signature_value(data);
+                if let Some(info) = extract_sig_info(&sig) {
+                    return Ok(if method == "arity" {
+                        Value::Int(Self::signature_required_positional_count(&info))
+                    } else {
+                        Self::signature_count_value(&info)
+                    });
+                }
+                return Ok(Value::Int(0));
+            }
             if method == "can" {
                 let method_name = args
                     .first()
@@ -1130,6 +1264,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "arity"
+                        | "count"
                         | "candidates"
                         | "cando"
                         | "of"

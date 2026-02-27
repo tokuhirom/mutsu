@@ -917,7 +917,17 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
-        let simple_single = first.traits.is_empty() && first.shape_constraints.is_none();
+        let simple_single = first.traits.is_empty()
+            && first.shape_constraints.is_none()
+            && !first.named
+            && !first.slurpy
+            && !first.double_slurpy
+            && first.default.is_none()
+            && !first.optional_marker
+            && first.type_constraint.is_none()
+            && first.sub_signature.is_none()
+            && first.outer_sub_signature.is_none()
+            && first.code_signature.is_none();
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first
