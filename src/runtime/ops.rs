@@ -1,6 +1,49 @@
 use super::*;
 
 impl Interpreter {
+    fn shift_left_i64(a: i64, b: i64) -> Value {
+        if b < 0 {
+            let shift = b.unsigned_abs();
+            let shifted = if shift >= i64::BITS as u64 {
+                if a < 0 { -1 } else { 0 }
+            } else {
+                a >> (shift as u32)
+            };
+            return Value::Int(shifted);
+        }
+        let shift = b as u64;
+        if shift >= i64::BITS as u64 {
+            return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
+        }
+        if let Some(v) = a.checked_shl(shift as u32) {
+            Value::Int(v)
+        } else {
+            Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
+        }
+    }
+
+    fn shift_right_i64(a: i64, b: i64) -> Value {
+        if b < 0 {
+            let shift = b.unsigned_abs();
+            if shift >= i64::BITS as u64 {
+                return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
+            }
+            if let Some(v) = a.checked_shl(shift as u32) {
+                Value::Int(v)
+            } else {
+                Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
+            }
+        } else {
+            let shift = b as u64;
+            let shifted = if shift >= i64::BITS as u64 {
+                if a < 0 { -1 } else { 0 }
+            } else {
+                a >> (shift as u32)
+            };
+            Value::Int(shifted)
+        }
+    }
+
     pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,
@@ -158,9 +201,21 @@ impl Interpreter {
                     Ok(right.clone())
                 }
             }
-            "+&" => Ok(Value::Int(to_int(left) & to_int(right))),
-            "+|" => Ok(Value::Int(to_int(left) | to_int(right))),
-            "+^" => Ok(Value::Int(to_int(left) ^ to_int(right))),
+            "+&" => {
+                let a = left.to_bigint();
+                let b = right.to_bigint();
+                Ok(Value::from_bigint(a & b))
+            }
+            "+|" => {
+                let a = left.to_bigint();
+                let b = right.to_bigint();
+                Ok(Value::from_bigint(a | b))
+            }
+            "+^" => {
+                let a = left.to_bigint();
+                let b = right.to_bigint();
+                Ok(Value::from_bigint(a ^ b))
+            }
             "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
             "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
@@ -360,8 +415,8 @@ impl Interpreter {
                 }
                 Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
             }
-            "+<" => Ok(Value::Int(to_int(left) << (to_int(right) as u32))),
-            "+>" => Ok(Value::Int(to_int(left) >> (to_int(right) as u32))),
+            "+<" => Ok(Self::shift_left_i64(to_int(left), to_int(right))),
+            "+>" => Ok(Self::shift_right_i64(to_int(left), to_int(right))),
             "x" => {
                 let s = crate::runtime::utils::coerce_to_str(left);
                 let n = to_int(right).max(0) as usize;

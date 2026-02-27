@@ -162,7 +162,13 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
         Some((AdditiveOp::BitOr, 2))
     } else if r.starts_with("+^") {
         Some((AdditiveOp::BitXor, 2))
-    } else if r.starts_with('+') && !r.starts_with("++") && !r.starts_with("+=") {
+    } else if r.starts_with('+')
+        && !r.starts_with("++")
+        && !r.starts_with("+=")
+        && !r.starts_with("+<")
+        && !r.starts_with("+>")
+        && !r.starts_with("+&")
+    {
         Some((AdditiveOp::Add, 1))
     } else if r.starts_with('-')
         && !r.starts_with("--")
