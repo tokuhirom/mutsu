@@ -1432,6 +1432,10 @@ impl VM {
                 self.exec_use_module_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::ImportModule { name_idx, tags_idx } => {
+                self.exec_import_module_op(code, *name_idx, *tags_idx)?;
+                *ip += 1;
+            }
             OpCode::NoModule(name_idx) => {
                 self.exec_no_module_op(code, *name_idx)?;
                 *ip += 1;
@@ -1494,6 +1498,10 @@ impl VM {
             }
             OpCode::SetVarDynamic { name_idx, dynamic } => {
                 self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
+                *ip += 1;
+            }
+            OpCode::RegisterVarExport { name_idx, tags_idx } => {
+                self.exec_register_var_export_op(code, *name_idx, *tags_idx)?;
                 *ip += 1;
             }
             OpCode::GetCallerVar { name_idx, depth } => {

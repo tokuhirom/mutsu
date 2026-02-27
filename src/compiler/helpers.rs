@@ -918,7 +918,7 @@ impl Compiler {
     pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
         stmts
             .iter()
-            .any(|s| matches!(s, Stmt::Use { .. } | Stmt::No { .. }))
+            .any(|s| matches!(s, Stmt::Use { .. } | Stmt::Import { .. } | Stmt::No { .. }))
     }
 
     pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {
@@ -982,6 +982,8 @@ impl Compiler {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
@@ -990,6 +992,8 @@ impl Compiler {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             },
         ];
 
