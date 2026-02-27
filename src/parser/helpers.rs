@@ -64,21 +64,33 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
 
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
-        // Skip the rest of the =begin line
-        let end = rest.find('\n').unwrap_or(rest.len());
-        let rest = &rest[end..];
-        if rest.is_empty() {
-            return Ok((rest, ""));
+        // Match the identifier and ignore nested matching begin/end blocks.
+        let begin_line_end = rest.find('\n').unwrap_or(rest.len());
+        let begin_line = &rest[..begin_line_end];
+        let target = begin_line.split_whitespace().next().unwrap_or("");
+        let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();
+        let mut depth = 1usize;
+
+        while !remaining.is_empty() {
+            let line_end = remaining.find('\n').unwrap_or(remaining.len());
+            let line = &remaining[..line_end];
+            let next = remaining.get(line_end + 1..).unwrap_or_default();
+
+            if let Some((directive, directive_target)) = parse_pod_directive_line(line) {
+                if directive == "begin" && directive_target == target {
+                    depth += 1;
+                } else if directive == "end" && directive_target == target {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok((next, ""));
+                    }
+                }
+            }
+
+            remaining = next;
         }
-        if let Some(idx) = rest.find("\n=end") {
-            let after = &rest[idx + 1..];
-            // skip =end line
-            let nl = after.find('\n').unwrap_or(after.len());
-            let rest = &after[nl..];
-            Ok((rest, ""))
-        } else {
-            Ok(("", ""))
-        }
+
+        Ok(("", ""))
     } else {
         // =for, =head1, =item, =comment, etc. — skip to end of paragraph (blank line)
         let end = rest.find('\n').unwrap_or(rest.len());
@@ -107,6 +119,36 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         }
         Ok((rest, ""))
     }
+}
+
+fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
+    let trimmed = line.trim_start();
+    let rest = trimmed.strip_prefix('=')?;
+    if rest.is_empty() || !rest.as_bytes()[0].is_ascii_alphabetic() {
+        return None;
+    }
+
+    let mut end = 0usize;
+    for (idx, ch) in rest.char_indices() {
+        if ch.is_alphanumeric() || ch == '-' {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == 0 {
+        return None;
+    }
+    let directive = &rest[..end];
+    let after = &rest[end..];
+    if let Some(ch) = after.chars().next()
+        && !ch.is_whitespace()
+    {
+        return None;
+    }
+
+    let target = after.split_whitespace().next().unwrap_or("");
+    Some((directive, target))
 }
 
 /// Skip an embedded comment `#`<bracket>...<close>`.
@@ -326,6 +368,20 @@ mod tests {
     #[test]
     fn test_pod_begin_end() {
         let input = "=begin pod\nsome docs\n=end pod\ncode";
+        let (rest, _) = ws(input).unwrap();
+        assert_eq!(rest, "code");
+    }
+
+    #[test]
+    fn test_pod_begin_end_ignores_inner_end_with_different_target() {
+        let input = "=begin pod\n=begin item\nfoo\n=end item\nbar\n=end pod\ncode";
+        let (rest, _) = ws(input).unwrap();
+        assert_eq!(rest, "code");
+    }
+
+    #[test]
+    fn test_pod_begin_end_supports_nested_same_target() {
+        let input = "=begin pod\n=begin pod\ninner\n=end pod\nouter\n=end pod\ncode";
         let (rest, _) = ws(input).unwrap();
         assert_eq!(rest, "code");
     }

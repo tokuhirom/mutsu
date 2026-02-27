@@ -28,6 +28,24 @@ impl Interpreter {
         Value::make_instance("Pod::Block::Comment".to_string(), attrs)
     }
 
+    fn make_pod_para(lines: Vec<String>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "contents".to_string(),
+            Value::array(lines.into_iter().map(Value::Str).collect::<Vec<_>>()),
+        );
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Block::Para".to_string(), attrs)
+    }
+
+    fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("level".to_string(), Value::Int(level));
+        Value::make_instance("Pod::Item".to_string(), attrs)
+    }
+
     fn make_pod_table(rows: Vec<Vec<String>>) -> Value {
         let mut attrs = HashMap::new();
         let contents = rows
@@ -86,6 +104,47 @@ impl Interpreter {
             idx += 1;
         }
         (text, idx)
+    }
+
+    fn collect_pod_para(lines: &[&str], mut idx: usize) -> (Value, usize) {
+        let mut para_lines = Vec::new();
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('=') {
+                break;
+            }
+            para_lines.push(lines[idx].trim_end().to_string());
+            idx += 1;
+        }
+        (Self::make_pod_para(para_lines), idx)
+    }
+
+    fn parse_item_level(token: &str) -> Option<i64> {
+        let suffix = token
+            .strip_prefix("=item")
+            .or_else(|| token.strip_prefix("item"))?;
+        if suffix.is_empty() {
+            return Some(1);
+        }
+        suffix.parse::<i64>().ok().filter(|n| *n > 0)
+    }
+
+    fn parse_item_directive(line: &str) -> Option<(i64, &str)> {
+        let trimmed = line.trim_start();
+        let rest = trimmed.strip_prefix("=item")?;
+        let digit_len = rest.bytes().take_while(|b| b.is_ascii_digit()).count();
+        let level = if digit_len == 0 {
+            1
+        } else {
+            rest[..digit_len].parse::<i64>().ok().filter(|n| *n > 0)?
+        };
+        let after = &rest[digit_len..];
+        if let Some(ch) = after.chars().next()
+            && !ch.is_whitespace()
+        {
+            return None;
+        }
+        Some((level, after.trim_start()))
     }
 
     pub(super) fn collect_pod_blocks(&mut self, input: &str) {
@@ -193,6 +252,52 @@ impl Interpreter {
                         let (tail, next_idx) = Self::collect_paragraph(&lines, idx + 1);
                         text.push_str(&tail);
                         contents.push(Self::make_pod_comment(text));
+                        idx = next_idx;
+                        continue;
+                    }
+                    if let Some((level, inline)) = Self::parse_item_directive(inner) {
+                        let mut item_contents = Vec::new();
+                        if !inline.is_empty() {
+                            item_contents.push(Self::make_pod_para(vec![inline.to_string()]));
+                        }
+                        contents.push(Self::make_pod_item(level, item_contents));
+                        idx += 1;
+                        continue;
+                    }
+                    if inner_first == Some("=begin")
+                        && let Some(level) = inner_second.and_then(Self::parse_item_level)
+                    {
+                        idx += 1;
+                        let mut item_contents = Vec::new();
+                        while idx < lines.len() {
+                            let item_line = lines[idx].trim_start();
+                            let mut item_words = item_line.split_whitespace();
+                            let item_first = item_words.next();
+                            let item_second = item_words.next();
+                            if item_first == Some("=end")
+                                && item_second.and_then(Self::parse_item_level) == Some(level)
+                            {
+                                idx += 1;
+                                break;
+                            }
+                            if item_line.is_empty() {
+                                idx += 1;
+                                continue;
+                            }
+                            if !item_line.starts_with('=') {
+                                let (para, next_idx) = Self::collect_pod_para(&lines, idx);
+                                item_contents.push(para);
+                                idx = next_idx;
+                                continue;
+                            }
+                            idx += 1;
+                        }
+                        contents.push(Self::make_pod_item(level, item_contents));
+                        continue;
+                    }
+                    if !inner.is_empty() && !inner.starts_with('=') {
+                        let (para, next_idx) = Self::collect_pod_para(&lines, idx);
+                        contents.push(para);
                         idx = next_idx;
                         continue;
                     }
