@@ -77,6 +77,7 @@ roast/S03-feeds/basic.t
 roast/S03-metaops/not.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
+roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
@@ -136,11 +137,13 @@ roast/S04-statement-parsing/hash.t
 roast/S04-statements/for-scope.t
 roast/S04-statements/for_with_only_one_item.t
 roast/S04-statements/goto.t
+roast/S04-statements/label.t
 roast/S04-statements/last.t
 roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/quietly.t
 roast/S04-statements/repeat.t
+roast/S04-statements/sink.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S04-statements/when.t
@@ -205,6 +208,7 @@ roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
+roast/S06-signature/arity.t
 roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
@@ -249,6 +253,7 @@ roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
+roast/S12-class/mro-6e.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
@@ -267,8 +272,10 @@ roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/fallback.t
 roast/S12-methods/how.t
+roast/S12-methods/indirect_notation.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/parallel-dispatch.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
@@ -354,6 +361,7 @@ roast/S16-io/cwd.t
 roast/S16-io/home.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
+roast/S16-io/prompt.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
@@ -464,6 +472,7 @@ roast/S32-list/first-p.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-list/map_function_return_values.t
+roast/S32-list/produce.t
 roast/S32-list/rotor.t
 roast/S32-list/unique.t
 roast/S32-num/abs.t
@@ -474,6 +483,7 @@ roast/S32-num/is-prime.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
+roast/S32-num/power.t
 roast/S32-num/sqrt.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t

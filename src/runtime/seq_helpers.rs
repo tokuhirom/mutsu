@@ -1289,6 +1289,19 @@ impl Interpreter {
                     type_args: rhs_args,
                 },
             ) => {
+                // For Package values (type objects), check class hierarchy
+                if let Value::Package(_) = left_value {
+                    let args_str = rhs_args
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) => n.clone(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let full_name = format!("{}[{}]", rhs_base, args_str);
+                    return self.type_matches_value(&full_name, left_value);
+                }
                 if !left_value.does_check(rhs_base) {
                     return false;
                 }

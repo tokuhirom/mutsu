@@ -366,6 +366,8 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '*'
             || c.is_ascii_digit()
             || c.is_ascii_alphabetic()
+            || crate::builtins::unicode::unicode_rat_value(c).is_some()
+            || crate::builtins::unicode::unicode_numeric_int_value(c).is_some()
     };
     if input.starts_with('!')
         && !input.starts_with("!!")

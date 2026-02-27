@@ -879,6 +879,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_paren_expr_mutating_method_stmt() {
+        let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::Expr(Expr::Call { name, .. }) if name == "sink"
+        ));
+    }
+
+    #[test]
     fn parse_gather_for_expression() {
         let (rest, stmts) = program("my $x = (gather for ^5 { take 1 });").unwrap();
         assert_eq!(rest, "");
@@ -1288,6 +1299,13 @@ mod tests {
     fn assign_stmt_reports_missing_method_name_for_mutating_call() {
         let err = assign::assign_stmt("$x .=").unwrap_err();
         assert!(err.message().contains("method name after '.='"));
+    }
+
+    #[test]
+    fn assign_stmt_parses_zip_compound_assign() {
+        let (rest, stmt) = assign::assign_stmt("$a Z+= 2;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(stmt, Stmt::Assign { .. }));
     }
 
     #[test]

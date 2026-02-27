@@ -34,7 +34,7 @@ fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
 #[inline]
 fn is_coercion_constraint(constraint: &str) -> bool {
     let bytes = constraint.as_bytes();
-    bytes.last() == Some(&b')') && bytes.contains(&b'(')
+    bytes.last() == Some(&b')') && bytes.contains(&b'(') && !bytes.contains(&b'[')
 }
 
 /// Coerce a value to the target type.
@@ -664,6 +664,19 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        // Metamodel:: is an alias for Perl6::Metamodel::
+        if constraint.starts_with("Metamodel::") {
+            let full = format!("Perl6::{}", constraint);
+            if full == value_type {
+                return true;
+            }
+        }
+        if value_type.starts_with("Metamodel::") {
+            let full = format!("Perl6::{}", value_type);
+            if full == constraint {
+                return true;
+            }
+        }
         // Native type aliases: num → Num, int → Int, str → Str
         if constraint == "num" && value_type == "Num" {
             return true;
@@ -969,6 +982,70 @@ impl Interpreter {
         if self.roles.contains_key(constraint) && value.does_check(constraint) {
             return true;
         }
+        // Type-object checks: Package values should respect declared class/role ancestry.
+        if let Value::Package(package_name) = value {
+            if Self::type_matches(constraint, package_name) {
+                return true;
+            }
+            let mro = self.class_mro(package_name);
+            if mro.iter().any(|parent| parent == constraint) {
+                return true;
+            }
+            // Check transitive role composition through class_composed_roles and role_parents
+            if self.roles.contains_key(constraint) {
+                let mut role_stack: Vec<String> = Vec::new();
+                let mut seen_roles = HashSet::new();
+                // Collect all composed roles from the class and its parents
+                for cn in &mro {
+                    if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
+                        for cr in composed {
+                            let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                            role_stack.push(base.to_string());
+                        }
+                    }
+                }
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if role_name == constraint {
+                        return true;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name) {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                role_stack.push(rp_base.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(constraint_base) = constraint.split_once('[').map(|(base, _)| base)
+                && mro.iter().any(|parent| {
+                    parent == constraint_base || parent.starts_with(&format!("{constraint_base}["))
+                })
+            {
+                return true;
+            }
+            if self.roles.contains_key(package_name) {
+                let mut stack = vec![package_name.clone()];
+                let mut seen = HashSet::new();
+                while let Some(role) = stack.pop() {
+                    if !seen.insert(role.clone()) {
+                        continue;
+                    }
+                    if let Some(parents) = self.role_parents.get(&role) {
+                        for parent in parents {
+                            if parent == constraint {
+                                return true;
+                            }
+                            stack.push(parent.clone());
+                        }
+                    }
+                }
+            }
+        }
         // Check Instance class name against constraint (including parent classes)
         if let Value::Instance { class_name, .. } = value {
             if Self::type_matches(constraint, class_name) {
@@ -1115,6 +1192,17 @@ impl Interpreter {
                         if !ok {
                             return false;
                         }
+                    } else if constraint == "Num"
+                        && matches!(
+                            arg,
+                            Value::Int(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        )
+                    {
+                        // Multi-dispatch numeric widening: Int/Rat/FatRat can satisfy Num.
                     } else if !is_coercion_constraint(constraint)
                         && !self.type_matches_value(constraint, arg)
                     {
@@ -1610,6 +1698,17 @@ impl Interpreter {
                                     super::value_type_name(&value)
                                 )));
                             }
+                        } else if constraint == "Num"
+                            && matches!(
+                                value,
+                                Value::Int(_)
+                                    | Value::Num(_)
+                                    | Value::Rat(_, _)
+                                    | Value::FatRat(_, _)
+                                    | Value::BigRat(_, _)
+                            )
+                        {
+                            // Binding accepts numeric widening into Num parameters.
                         } else if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
                                 "{}: Type check failed for {}: expected {}, got {}",
