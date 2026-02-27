@@ -696,6 +696,26 @@ impl Interpreter {
     }
 
     fn build_infix_expr(op: &str, left: Value, right: Value) -> Expr {
+        if op == "∉" {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Literal(left)),
+                    op: TokenKind::SetElem,
+                    right: Box::new(Expr::Literal(right)),
+                }),
+            };
+        }
+        if op == "∌" {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Literal(left)),
+                    op: TokenKind::SetCont,
+                    right: Box::new(Expr::Literal(right)),
+                }),
+            };
+        }
         if let Some(inner) = op.strip_prefix("![")
             && let Some(inner) = inner.strip_suffix(']')
         {

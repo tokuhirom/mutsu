@@ -1433,6 +1433,10 @@ impl Compiler {
                 value,
             } => {
                 if let Some(name) = Self::index_assign_target_name(target) {
+                    if Self::index_assign_target_requires_eval(target) {
+                        self.compile_expr(target);
+                        self.code.emit(OpCode::Pop);
+                    }
                     self.compile_expr(value);
                     self.compile_expr(index);
                     let name_idx = self.code.add_constant(Value::Str(name));
