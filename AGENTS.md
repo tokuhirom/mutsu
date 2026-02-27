@@ -41,3 +41,6 @@ If submodules are missing, run:
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
 - Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
+
+## External Repository Policy
+- Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
