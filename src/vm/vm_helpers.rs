@@ -433,7 +433,7 @@ impl VM {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let bypass_supply_extrema_fastpath = matches!(method, "max" | "min")
+        let bypass_supply_extrema_fastpath = matches!(method, "max" | "min" | "lines")
             && args.len() <= 1
             && (matches!(
                 target,

@@ -1,5 +1,5 @@
 mod args;
-pub(super) mod assign;
+pub(crate) mod assign;
 pub(super) mod class;
 mod control;
 pub(crate) mod decl;

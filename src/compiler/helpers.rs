@@ -207,9 +207,20 @@ impl Compiler {
     /// compiled as Pair values so they survive VM execution.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
         if let Expr::AssignExpr { name, expr } = arg {
-            self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
-            self.compile_expr(expr);
-            self.code.emit(OpCode::MakePair);
+            // `foo(arg = 1)` in method-call argument position is treated as a named
+            // argument only for sigilless identifiers. Sigiled targets (`$x = ...`,
+            // `@x = ...`, `%x = ...`) are real assignment expressions.
+            if name.starts_with('$')
+                || name.starts_with('@')
+                || name.starts_with('%')
+                || name.starts_with('&')
+            {
+                self.compile_expr(arg);
+            } else {
+                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                self.compile_expr(expr);
+                self.code.emit(OpCode::MakePair);
+            }
         } else {
             self.compile_expr(arg);
         }
