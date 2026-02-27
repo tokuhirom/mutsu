@@ -453,6 +453,7 @@ pub(super) fn sub_decl_body(
                 body: Vec::new(),
                 multi,
                 is_export: traits.is_export,
+                export_tags: traits.export_tags.clone(),
                 is_test_assertion: traits.is_test_assertion,
                 supersede,
             },
