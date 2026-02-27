@@ -933,18 +933,15 @@ impl Interpreter {
                 // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
                 let is_callable_expr = matches!(
                     pred,
-                    Expr::AnonSub { .. }
-                        | Expr::AnonSubParams { .. }
-                        | Expr::Block(_)
+                    Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_)
                 );
                 if is_callable_expr {
                     // Evaluate to get a callable, then call with the value
                     match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
-                        Ok(callable @ Value::Sub(_)) => {
-                            self.call_sub_value(callable, vec![predicate_value], false)
-                                .map(|v| v.truthy())
-                                .unwrap_or(false)
-                        }
+                        Ok(callable @ Value::Sub(_)) => self
+                            .call_sub_value(callable, vec![predicate_value], false)
+                            .map(|v| v.truthy())
+                            .unwrap_or(false),
                         Ok(v) => v.truthy(),
                         Err(_) => false,
                     }
