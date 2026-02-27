@@ -1476,7 +1476,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 return parse_statement_modifier(r, stmt);
             }
             _ => {
-                return Err(PError::expected("assignable expression before '.='"));
+                // Non-lvalue targets still support `.=` dispatch in statement position,
+                // but must not sink the returned value.
+                let stmt = Stmt::Expr(Expr::Call {
+                    name: "sink".to_string(),
+                    args: vec![make_rhs(expr)],
+                });
+                return parse_statement_modifier(r, stmt);
             }
         }
     }

@@ -104,6 +104,15 @@ pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAss
             return Some((stripped, *op));
         }
     }
+    // Metaop zip compound assignment (`Z+=`, `Z//=`, ...).
+    // For now this reuses the base compound-assignment operator parsing.
+    if let Some(after_z) = input.strip_prefix('Z') {
+        for op in COMPOUND_ASSIGN_OPS {
+            if let Some(stripped) = after_z.strip_prefix(op.symbol()) {
+                return Some((stripped, *op));
+            }
+        }
+    }
     None
 }
 
