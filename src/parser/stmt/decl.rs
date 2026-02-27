@@ -43,6 +43,69 @@ fn is_supported_variable_trait(trait_name: &str) -> bool {
         .is_some_and(|c| c.is_ascii_uppercase())
 }
 
+fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
+    let (mut rest, _) = ws(input)?;
+    let mut tags = Vec::new();
+    if !rest.starts_with('(') {
+        return Ok((rest, tags));
+    }
+    let after_open = &rest[1..];
+    let mut depth = 1usize;
+    let mut end: Option<usize> = None;
+    for (i, ch) in after_open.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let end = end.ok_or_else(|| PError::expected("closing ')' in export trait"))?;
+    let inner = &after_open[..end];
+    rest = &after_open[end + 1..];
+    let mut i = 0usize;
+    while i < inner.len() {
+        let c = inner[i..].chars().next().unwrap_or('\0');
+        let c_len = c.len_utf8();
+        if c.is_whitespace() || c == ',' {
+            i += c_len;
+            continue;
+        }
+        if c == ':' {
+            i += c_len;
+            if let Some(next) = inner[i..].chars().next()
+                && next == '!'
+            {
+                i += next.len_utf8();
+            }
+            let start = i;
+            while i < inner.len() {
+                let ch = inner[i..].chars().next().unwrap_or('\0');
+                if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                    i += ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if i > start {
+                let tag = inner[start..i].to_string();
+                if !tags.iter().any(|t| t == &tag) {
+                    tags.push(tag);
+                }
+            }
+            continue;
+        }
+        i += c_len;
+    }
+    let (rest, _) = ws(rest)?;
+    Ok((rest, tags))
+}
+
 fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::parse_sub_name_pub(input)
 }
@@ -211,6 +274,35 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Use { module, arg }))
 }
 
+/// Parse `import Module [:TAG ...];`
+pub(super) fn import_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("import", input).ok_or_else(|| PError::expected("import statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let (mut rest, module) = qualified_ident(rest)?;
+    let mut tags = Vec::new();
+    loop {
+        let (r, _) = ws(rest)?;
+        let mut r = r;
+        if let Some(after_comma) = r.strip_prefix(',') {
+            let (r2, _) = ws(after_comma)?;
+            r = r2;
+        }
+        if !r.starts_with(':') || r.starts_with("::") {
+            rest = r;
+            break;
+        }
+        let r = &r[1..];
+        let (r, name) = ident(r)?;
+        if !tags.iter().any(|t| t == &name) {
+            tags.push(name);
+        }
+        rest = r;
+    }
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    Ok((rest, Stmt::Import { module, tags }))
+}
+
 /// Parse `need Module;` — load module without importing its exports.
 pub(super) fn need_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("need", input).ok_or_else(|| PError::expected("need statement"))?;
@@ -366,6 +458,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_state,
                 is_our,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -383,6 +477,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_state,
                 is_our,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -398,6 +494,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_state,
                 is_our,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             },
         ));
     }
@@ -438,6 +536,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_state,
                 is_our,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -455,6 +555,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_state,
                 is_our,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -472,6 +574,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_state,
                 is_our,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             },
         ));
     }
@@ -536,6 +640,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // Parse variable traits. Only a small set is currently supported on
     // lexical/package variable declarations; unknown traits are compile-time errors.
     let mut has_dynamic_trait = false;
+    let mut has_export_trait = false;
+    let mut export_tags: Vec<String> = Vec::new();
     let mut rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
@@ -550,6 +656,29 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             }
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
+            }
+            if trait_name == "export" {
+                if !is_our {
+                    return Err(PError::fatal(
+                        "X::Comp::Trait::Scope: Trait 'is export' not allowed on my-scoped variable"
+                            .to_string(),
+                    ));
+                }
+                has_export_trait = true;
+                let (r3, tags) = parse_export_trait_tags(r2)?;
+                if tags.is_empty() {
+                    if !export_tags.iter().any(|t| t == "DEFAULT") {
+                        export_tags.push("DEFAULT".to_string());
+                    }
+                } else {
+                    for tag in tags {
+                        if !export_tags.iter().any(|t| t == &tag) {
+                            export_tags.push(tag);
+                        }
+                    }
+                }
+                r = r3;
+                continue;
             }
             let (r2, _) = ws(r2)?;
             // Parse optional trait argument: (expr)
@@ -640,6 +769,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_state,
             is_our,
             is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -680,6 +811,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_state,
             is_our,
             is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -710,6 +843,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_state,
             is_our,
             is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -740,6 +875,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_state,
             is_our,
             is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags,
         },
     ))
 }
@@ -800,6 +937,8 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_state: false,
             is_our: false,
             is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
         }];
         for (i, var_name) in names.iter().enumerate() {
             stmts.push(Stmt::VarDecl {
@@ -812,6 +951,8 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             });
         }
         return Ok((rest, Stmt::SyntheticBlock(stmts)));
@@ -828,6 +969,8 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_state: false,
             is_our: false,
             is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
         });
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
@@ -1120,7 +1263,33 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         register_term_symbol_from_decl_name(&n);
         (r, n)
     };
-    let (rest, _) = ws(rest)?;
+    let (mut rest, _) = ws(rest)?;
+    let mut is_export = false;
+    let mut export_tags: Vec<String> = Vec::new();
+    while let Some(after_is) = keyword("is", rest) {
+        let (r2, _) = ws1(after_is)?;
+        let (r2, trait_name) = ident(r2)?;
+        if trait_name != "export" {
+            return Err(PError::fatal(format!(
+                "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
+                trait_name
+            )));
+        }
+        is_export = true;
+        let (r3, tags) = parse_export_trait_tags(r2)?;
+        if tags.is_empty() {
+            if !export_tags.iter().any(|t| t == "DEFAULT") {
+                export_tags.push("DEFAULT".to_string());
+            }
+        } else {
+            for tag in tags {
+                if !export_tags.iter().any(|t| t == &tag) {
+                    export_tags.push(tag);
+                }
+            }
+        }
+        rest = r3;
+    }
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
         let rest = if let Some(stripped) = rest.strip_prefix("::=") {
             stripped
@@ -1144,8 +1313,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 expr,
                 type_constraint: None,
                 is_state: false,
-                is_our: false,
+                is_our: true,
                 is_dynamic: false,
+                is_export,
+                export_tags: export_tags.clone(),
             },
         ));
     }
@@ -1157,8 +1328,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             expr: Expr::Literal(Value::Nil),
             type_constraint: None,
             is_state: false,
-            is_our: false,
+            is_our: true,
             is_dynamic: false,
+            is_export,
+            export_tags,
         },
     ))
 }

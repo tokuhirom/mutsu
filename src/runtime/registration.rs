@@ -706,6 +706,7 @@ impl Interpreter {
     }
 
     /// Register a sub under GLOBAL:: (used for `is export` trait).
+    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_decl_as_global(
         &mut self,

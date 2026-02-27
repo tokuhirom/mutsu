@@ -305,6 +305,8 @@ pub(crate) enum Stmt {
         is_state: bool,
         is_our: bool,
         is_dynamic: bool,
+        is_export: bool,
+        export_tags: Vec<String>,
     },
     Assign {
         name: String,
@@ -321,6 +323,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
         is_export: bool,
+        export_tags: Vec<String>,
         is_test_assertion: bool,
         supersede: bool,
     },
@@ -373,6 +376,11 @@ pub(crate) enum Stmt {
     /// `need Module;` — load module without importing exports
     Need {
         module: String,
+    },
+    /// `import Module :tag;` — import exports from an already-declared/loaded module.
+    Import {
+        module: String,
+        tags: Vec<String>,
     },
     Subtest {
         name: Expr,
