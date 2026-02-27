@@ -1027,6 +1027,28 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Pod::Block::Named".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block::Named".to_string(), "Pod::Block".to_string()],
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Pod::Heading".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Heading".to_string(), "Pod::Block".to_string()],
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Pod::Block::Table".to_string(),
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],

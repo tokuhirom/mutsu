@@ -422,6 +422,7 @@ roast/S24-testing/7-bail_out.t
 roast/S24-testing/8-die_on_fail.t
 roast/S24-testing/9-is_deeply.t
 roast/S24-testing/line-numbers.t
+roast/S26-documentation/03-abbreviated.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
