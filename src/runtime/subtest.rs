@@ -204,6 +204,13 @@ impl Interpreter {
                         }
                         sub.done = true;
                     }
+                    Ok(SupplyEvent::Quit(error)) => {
+                        sub.done = true;
+                        let msg = error.to_string_value();
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(error));
+                        return Err(err);
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         sub.done = true;
