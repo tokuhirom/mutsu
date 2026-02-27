@@ -146,6 +146,7 @@ impl Interpreter {
             "make" => self.builtin_make(&args),
             "made" => self.builtin_made(),
             "undefine" => Ok(Value::Nil),
+            "local" => Ok(Value::Nil),
             "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "HOW" => {
                 if args.len() != 1 {

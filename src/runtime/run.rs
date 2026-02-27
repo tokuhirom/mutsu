@@ -2,6 +2,75 @@ use super::*;
 use crate::ast::Stmt;
 
 impl Interpreter {
+    /// Register top-level, non-empty sub bodies before execution so calls that appear
+    /// earlier in source can resolve to later definitions.
+    fn preregister_top_level_subs(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let mut forward_sigs = std::collections::HashSet::new();
+        for stmt in stmts {
+            if let Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+                ..
+            } = stmt
+            {
+                if *multi || !body.is_empty() {
+                    continue;
+                }
+                forward_sigs.insert(format!("{}|{:?}|{:?}", name, params, param_defs));
+            }
+        }
+
+        for stmt in stmts {
+            if let Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                return_type,
+                body,
+                multi,
+                is_export,
+                is_test_assertion,
+                supersede,
+                ..
+            } = stmt
+            {
+                if *multi || body.is_empty() {
+                    continue;
+                }
+                let sig_key = format!("{}|{:?}|{:?}", name, params, param_defs);
+                if !forward_sigs.contains(&sig_key) {
+                    continue;
+                }
+                self.register_sub_decl(
+                    name,
+                    params,
+                    param_defs,
+                    return_type.as_ref(),
+                    body,
+                    *multi,
+                    *is_test_assertion,
+                    *supersede,
+                )?;
+                if *is_export {
+                    self.register_sub_decl_as_global(
+                        name,
+                        params,
+                        param_defs,
+                        return_type.as_ref(),
+                        body,
+                        *multi,
+                        *is_test_assertion,
+                        *supersede,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// If the first non-Use/non-Package statement is a `unit class Foo;` (ClassDecl with empty
     /// body), merge all subsequent method/sub declarations into the class body.
     fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
@@ -323,6 +392,7 @@ impl Interpreter {
                 }
             })
             .collect();
+        self.preregister_top_level_subs(&body_main)?;
         self.run_block_raw(&enter_ph)?;
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package.clone());

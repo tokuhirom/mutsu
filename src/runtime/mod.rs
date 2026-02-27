@@ -2166,4 +2166,23 @@ mod tests {
             .unwrap();
         assert!(output.contains("ok 1 - regex"));
     }
+
+    #[test]
+    fn test_more_tests_arg_emits_plan() {
+        let mut interp = Interpreter::new();
+        let output = interp
+            .run("use Test::More tests => 1; is 1, 1, 'one';")
+            .unwrap();
+        assert!(output.starts_with("1..1\n"));
+        assert!(output.contains("ok 1 - one"));
+    }
+
+    #[test]
+    fn forward_decl_uses_later_top_level_definition() {
+        let mut interp = Interpreter::new();
+        let output = interp
+            .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
+            .unwrap();
+        assert_eq!(output, "3\n");
+    }
 }

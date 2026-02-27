@@ -578,6 +578,13 @@ impl Interpreter {
             if same {
                 return Ok(());
             }
+            let same_signature = existing.package == new_def.package
+                && existing.name == new_def.name
+                && existing.params == new_def.params
+                && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
+            if body.is_empty() && same_signature {
+                return Ok(());
+            }
         }
         let existing_is_stub = self
             .functions
@@ -793,6 +800,13 @@ impl Interpreter {
                 && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs)
                 && format!("{:?}", existing.body) == format!("{:?}", def.body);
             if same {
+                return Ok(());
+            }
+            let same_signature = existing.package == def.package
+                && existing.name == def.name
+                && existing.params == def.params
+                && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs);
+            if body.is_empty() && same_signature {
                 return Ok(());
             }
         }
