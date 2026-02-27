@@ -159,6 +159,7 @@ roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
+roast/S05-modifier/Perl_2.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t

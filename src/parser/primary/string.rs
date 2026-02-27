@@ -482,6 +482,7 @@ pub(super) fn process_escape_sequence<'a>(
         'n' => current.push('\n'),
         't' => current.push('\t'),
         'r' => current.push('\r'),
+        'b' => current.push('\u{0008}'),
         '0' => current.push('\0'),
         '\\' => current.push('\\'),
         '$' => current.push('$'),

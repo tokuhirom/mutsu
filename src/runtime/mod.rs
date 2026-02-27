@@ -162,6 +162,11 @@ pub(crate) struct RegexCaptures {
     /// value is inner captures from the subrule (parallel to entries in `named`).
     pub(crate) named_subcaps: HashMap<String, Vec<RegexCaptures>>,
     pub(crate) positional: Vec<String>,
+    /// Character offsets (start, end) for each entry in `positional`.
+    pub(crate) positional_offsets: Vec<(usize, usize)>,
+    /// Unnamed capture slots by capture index (for $0, $1, ...), where `None`
+    /// represents an unmatched capture.
+    pub(crate) positional_slots: Vec<Option<(String, usize, usize)>>,
     pub(crate) matched: String,
     pub(crate) from: usize,
     pub(crate) to: usize,
