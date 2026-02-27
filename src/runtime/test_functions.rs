@@ -508,6 +508,7 @@ impl Interpreter {
         let Value::Junction { kind, values } = v else {
             return None;
         };
+        // Normalize recursively so nested junction structures compare order-independently.
         let mut guts: Vec<Value> = values
             .iter()
             .map(|value| Self::junction_guts_value(value).unwrap_or_else(|| value.clone()))
