@@ -42,6 +42,36 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn infix_associativity(&self, full_name: &str) -> Option<String> {
+        let fq = format!("{}::{}", self.current_package, full_name);
+        self.operator_assoc
+            .get(&fq)
+            .cloned()
+            .or_else(|| self.operator_assoc.get(full_name).cloned())
+            .or_else(|| {
+                let global = format!("GLOBAL::{}", full_name);
+                self.operator_assoc.get(&global).cloned()
+            })
+    }
+
+    pub(crate) fn call_user_routine_direct(
+        &mut self,
+        full_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(def) = self.resolve_function_with_alias(full_name, &args) {
+            return self.call_function_def(&def, &args);
+        }
+        let env_name = format!("&{}", full_name);
+        if let Some(callable) = self.env.get(&env_name).cloned() {
+            return self.eval_call_on_value(callable, args);
+        }
+        Err(RuntimeError::new(format!(
+            "X::Undeclared::Symbols: Unknown function: {}",
+            full_name
+        )))
+    }
+
     pub(crate) fn compose_callables(&self, left: Value, right: Value) -> Value {
         use std::sync::atomic::{AtomicU64, Ordering};
 

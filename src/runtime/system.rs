@@ -39,6 +39,21 @@ impl Interpreter {
         names
     }
 
+    fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
+        let mut assoc = HashMap::new();
+        for (key, value) in &self.operator_assoc {
+            let name = if let Some(pos) = key.rfind("::") {
+                &key[pos + 2..]
+            } else {
+                key.as_str()
+            };
+            if name.starts_with("infix:<") {
+                assoc.insert(name.to_string(), value.clone());
+            }
+        }
+        assoc
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
@@ -46,16 +61,16 @@ impl Interpreter {
         self.collect_pod_blocks(trimmed);
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
+        let op_assoc = self.collect_operator_assoc_map();
         // General case: parse and evaluate as Raku code
-        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names).and_then(
-            |(stmts, _)| {
+        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names, &op_assoc)
+            .and_then(|(stmts, _)| {
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::new("X::Undeclared::Symbols"));
                 }
                 Ok(value)
-            },
-        );
+            });
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
         }

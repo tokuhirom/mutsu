@@ -206,6 +206,21 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             },
         ));
     }
+    if input.starts_with("so")
+        && !is_ident_char(input.as_bytes().get(2).copied())
+        && !input[2..].starts_with('(')
+    {
+        let r = &input[2..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = not_expr_mode(r, mode)?;
+        return Ok((
+            r,
+            Expr::Unary {
+                op: TokenKind::Question,
+                expr: Box::new(expr),
+            },
+        ));
+    }
     or_or_expr_mode(input, mode)
 }
 
@@ -234,10 +249,7 @@ fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
-            if r.starts_with("not")
-                && !is_ident_char(r.as_bytes().get(3).copied())
-                && !r[3..].starts_with('(')
-            {
+            if is_loose_not_or_so_prefix(r) {
                 not_expr_mode(r, mode).map_err(|err| {
                     enrich_expected_error(
                         err,
@@ -254,10 +266,7 @@ fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     )
                 })?
             }
-        } else if r.starts_with("not")
-            && !is_ident_char(r.as_bytes().get(3).copied())
-            && !r[3..].starts_with('(')
-        {
+        } else if is_loose_not_or_so_prefix(r) {
             not_expr_mode(r, mode)?
         } else {
             and_and_expr_mode(r, mode)?
@@ -278,6 +287,15 @@ fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         rest = r;
     }
     Ok((rest, left))
+}
+
+fn is_loose_not_or_so_prefix(input: &str) -> bool {
+    (input.starts_with("not")
+        && !is_ident_char(input.as_bytes().get(3).copied())
+        && !input[3..].starts_with('('))
+        || (input.starts_with("so")
+            && !is_ident_char(input.as_bytes().get(2).copied())
+            && !input[2..].starts_with('('))
 }
 
 /// &&
@@ -676,16 +694,83 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         if !ws_before.contains('\n')
             && let Some((name, len)) = parse_custom_infix_word(r)
         {
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            let (r, right) = range_expr(r).map_err(|err| {
+            let mut r = &r[len..];
+            let (r2, _) = ws(r)?;
+            let (r2, right) = range_expr(r2).map_err(|err| {
                 enrich_expected_error(err, "expected expression after infix operator", r.len())
             })?;
-            *left = Expr::InfixFunc {
-                name,
-                left: Box::new(left.clone()),
-                right: vec![right],
-                modifier: None,
+            let assoc = super::super::stmt::simple::lookup_user_infix_assoc(&name)
+                .unwrap_or_else(|| "left".to_string());
+            let mut args = vec![left.clone(), right];
+            r = r2;
+            if assoc != "left" {
+                loop {
+                    let (r_ws, _) = ws(r)?;
+                    let ws_between = &r[..r.len() - r_ws.len()];
+                    if ws_between.contains('\n') {
+                        break;
+                    }
+                    let Some((next_name, next_len)) = parse_custom_infix_word(r_ws) else {
+                        break;
+                    };
+                    if next_name != name {
+                        break;
+                    }
+                    let r_after_op = &r_ws[next_len..];
+                    let (r_after_op, _) = ws(r_after_op)?;
+                    let (r_after_arg, arg) = range_expr(r_after_op).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after infix operator",
+                            r_after_op.len(),
+                        )
+                    })?;
+                    args.push(arg);
+                    r = r_after_arg;
+                }
+            }
+            *left = match assoc.as_str() {
+                "right" => {
+                    let mut iter = args.into_iter().rev();
+                    let mut acc = iter
+                        .next()
+                        .unwrap_or(Expr::Literal(crate::value::Value::Nil));
+                    for lhs in iter {
+                        acc = Expr::InfixFunc {
+                            name: name.clone(),
+                            left: Box::new(lhs),
+                            right: vec![acc],
+                            modifier: None,
+                        };
+                    }
+                    acc
+                }
+                "list" | "chain" => Expr::InfixFunc {
+                    name: name.clone(),
+                    left: Box::new(args[0].clone()),
+                    right: args[1..].to_vec(),
+                    modifier: None,
+                },
+                "non" => {
+                    if args.len() > 2 {
+                        return Err(PError::fatal(format!(
+                            "Non-associative operator '{}' cannot be chained",
+                            name
+                        )));
+                    }
+                    Expr::InfixFunc {
+                        name: name.clone(),
+                        left: Box::new(args[0].clone()),
+                        right: args[1..].to_vec(),
+                        modifier: None,
+                    }
+                }
+                _ => Expr::InfixFunc {
+                    name: name.clone(),
+                    left: Box::new(args[0].clone()),
+                    right: args[1..].to_vec(),
+                    modifier: None,
+                },
             };
             rest = r;
             continue;

@@ -23,6 +23,7 @@ enum TermBinding {
 #[derive(Clone, Default)]
 struct LexicalScope {
     user_subs: HashSet<String>,
+    infix_assoc: HashMap<String, String>,
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
     term_symbols: HashMap<String, TermBinding>,
@@ -47,6 +48,9 @@ thread_local! {
 
     /// Operator sub names to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Infix associativity traits to pre-register after scope reset (for EVAL).
+    static EVAL_OPERATOR_ASSOC_PRESEED: RefCell<HashMap<String, String>> =
+        RefCell::new(HashMap::new());
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -235,6 +239,31 @@ pub(in crate::parser) fn register_user_sub(name: &str) {
     }
 }
 
+pub(in crate::parser) fn register_user_infix_assoc(name: &str, assoc: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .infix_assoc
+            .insert(name.to_string(), assoc.to_string());
+    });
+}
+
+pub(in crate::parser) fn lookup_user_infix_assoc(symbol: &str) -> Option<String> {
+    let key = format!("infix:<{}>", symbol);
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            if let Some(v) = scope.infix_assoc.get(&key) {
+                return Some(v.clone());
+            }
+        }
+        None
+    })
+}
+
 /// Register a user-declared sub with `is test-assertion`.
 pub(in crate::parser) fn register_user_test_assertion_sub(name: &str) {
     SCOPES.with(|s| {
@@ -259,12 +288,24 @@ pub(in crate::parser) fn reset_user_subs() {
             register_user_callable_term_symbol(name);
         }
     });
+    EVAL_OPERATOR_ASSOC_PRESEED.with(|preseed| {
+        let assoc_map = preseed.borrow();
+        for (name, assoc) in assoc_map.iter() {
+            register_user_infix_assoc(name, assoc);
+        }
+    });
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).
 pub(in crate::parser) fn set_eval_operator_preseed(names: Vec<String>) {
     EVAL_OPERATOR_PRESEED.with(|preseed| {
         *preseed.borrow_mut() = names;
+    });
+}
+
+pub(in crate::parser) fn set_eval_operator_assoc_preseed(assoc: HashMap<String, String>) {
+    EVAL_OPERATOR_ASSOC_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = assoc;
     });
 }
 
