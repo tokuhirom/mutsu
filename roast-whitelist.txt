@@ -87,6 +87,7 @@ roast/S03-operators/composition.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/equality.t
+roast/S03-operators/flip-flop.t
 roast/S03-operators/gcd.t
 roast/S03-operators/increment.t
 roast/S03-operators/infixed-function.t

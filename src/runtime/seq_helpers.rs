@@ -813,6 +813,76 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
+            // Smartmatch against a flip-flop matcher object produced by ff/fff
+            // in SmartMatchExpr RHS context.
+            (_, Value::Hash(map))
+                if matches!(map.get("__mutsu_ff_matcher"), Some(Value::Bool(true))) =>
+            {
+                let key = map
+                    .get("key")
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "__mutsu_ff_matcher::default".to_string());
+                let lhs_pat = map.get("lhs").cloned().unwrap_or(Value::Nil);
+                let rhs_pat = map.get("rhs").cloned().unwrap_or(Value::Nil);
+                let exclude_start = matches!(map.get("exclude_start"), Some(Value::Bool(true)));
+                let exclude_end = matches!(map.get("exclude_end"), Some(Value::Bool(true)));
+                let is_fff = matches!(map.get("is_fff"), Some(Value::Bool(true)));
+
+                let seq = self
+                    .get_state_var(&key)
+                    .and_then(|v| match v {
+                        Value::Int(i) if *i > 0 => Some(*i),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+
+                let (lhs_hit, rhs_hit) = if seq > 0 {
+                    (false, self.smart_match(left, &rhs_pat))
+                } else {
+                    let lhs_match = self.smart_match(left, &lhs_pat);
+                    if !lhs_match {
+                        (false, false)
+                    } else if is_fff {
+                        (true, false)
+                    } else {
+                        (true, self.smart_match(left, &rhs_pat))
+                    }
+                };
+
+                let out = if seq > 0 {
+                    let current = seq;
+                    if rhs_hit {
+                        self.set_state_var(key.clone(), Value::Int(0));
+                        if exclude_end {
+                            Value::Nil
+                        } else {
+                            Value::Int(current)
+                        }
+                    } else {
+                        self.set_state_var(key.clone(), Value::Int(current + 1));
+                        Value::Int(current)
+                    }
+                } else if lhs_hit {
+                    if !is_fff && rhs_hit {
+                        self.set_state_var(key.clone(), Value::Int(0));
+                        if exclude_start || exclude_end {
+                            Value::Nil
+                        } else {
+                            Value::Int(1)
+                        }
+                    } else {
+                        self.set_state_var(key.clone(), Value::Int(2));
+                        if exclude_start {
+                            Value::Nil
+                        } else {
+                            Value::Int(1)
+                        }
+                    }
+                } else {
+                    Value::Nil
+                };
+                out.truthy()
+            }
             // Named regex/token used as smartmatch RHS — perform regex match
             (
                 _,

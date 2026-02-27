@@ -650,6 +650,12 @@ impl Interpreter {
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
                 && format!("{:?}", existing.body) == format!("{:?}", new_def.body);
             if same {
+                let callable_key =
+                    format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                self.env.insert(
+                    callable_key,
+                    Value::Int(crate::value::next_instance_id() as i64),
+                );
                 return Ok(());
             }
             let same_signature = existing.package == new_def.package
@@ -657,6 +663,12 @@ impl Interpreter {
                 && existing.params == new_def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
             if body.is_empty() && same_signature {
+                let callable_key =
+                    format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                self.env.insert(
+                    callable_key,
+                    Value::Int(crate::value::next_instance_id() as i64),
+                );
                 return Ok(());
             }
         }
@@ -733,6 +745,11 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package, name);
             self.functions.insert(fq, def);
         }
+        let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+        self.env.insert(
+            callable_key,
+            Value::Int(crate::value::next_instance_id() as i64),
+        );
         Ok(())
     }
 
@@ -976,6 +993,11 @@ impl Interpreter {
             let fq = format!("GLOBAL::{}", name);
             self.functions.insert(fq, def);
         }
+        let callable_key = format!("__mutsu_callable_id::GLOBAL::{}", name);
+        self.env.insert(
+            callable_key,
+            Value::Int(crate::value::next_instance_id() as i64),
+        );
         Ok(())
     }
 

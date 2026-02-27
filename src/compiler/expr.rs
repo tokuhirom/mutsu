@@ -1193,6 +1193,40 @@ impl Compiler {
                 right,
                 modifier,
             } => {
+                let flip_flop_mode = match name.as_str() {
+                    "ff" => Some((false, false, false)),
+                    "^ff" => Some((true, false, false)),
+                    "ff^" => Some((false, true, false)),
+                    "^ff^" => Some((true, true, false)),
+                    "fff" => Some((false, false, true)),
+                    "^fff" => Some((true, false, true)),
+                    "fff^" => Some((false, true, true)),
+                    "^fff^" => Some((true, true, true)),
+                    _ => None,
+                };
+                if let Some((exclude_start, exclude_end, is_fff)) = flip_flop_mode
+                    && right.len() == 1
+                    && modifier.is_none()
+                {
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    name.hash(&mut hasher);
+                    format!("{:?}", left).hash(&mut hasher);
+                    format!("{:?}", &right[0]).hash(&mut hasher);
+                    let ff_idx = self.code.emit(OpCode::FlipFlopExpr {
+                        lhs_end: 0,
+                        rhs_end: 0,
+                        site_id: hasher.finish(),
+                        exclude_start,
+                        exclude_end,
+                        is_fff,
+                    });
+                    self.compile_expr(left);
+                    self.code.patch_flip_flop_lhs_end(ff_idx);
+                    self.compile_expr(&right[0]);
+                    self.code.patch_flip_flop_rhs_end(ff_idx);
+                    return;
+                }
                 self.compile_expr(left);
                 for r in right {
                     self.compile_expr(r);
