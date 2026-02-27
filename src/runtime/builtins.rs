@@ -503,6 +503,7 @@ impl Interpreter {
                 return Err(Self::reject_args_for_empty_sig(args));
             }
             let routine_is_rw = true;
+            let return_spec = self.routine_return_spec_by_name(&def.name);
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             let rw_bindings =
@@ -517,6 +518,7 @@ impl Interpreter {
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
                 .push((def.package.clone(), def.name.clone()));
+            self.prepare_definite_return_slot(return_spec.as_deref());
             let result = self.eval_block_value(&def.body);
             self.routine_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);
@@ -528,13 +530,8 @@ impl Interpreter {
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
             }
-            return match result {
-                Err(e) if e.return_value.is_some() => {
-                    self.maybe_fetch_rw_proxy(e.return_value.unwrap(), routine_is_rw)
-                }
-                Ok(v) => self.maybe_fetch_rw_proxy(v, routine_is_rw),
-                Err(e) => Err(e),
-            };
+            let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
+            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, routine_is_rw));
         }
         if self.has_proto(name) {
             let mut err =

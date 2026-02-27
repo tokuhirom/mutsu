@@ -783,6 +783,7 @@ impl VM {
         let saved_readonly = self.interpreter.save_readonly_vars();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
+        let return_spec = cf.return_type.clone();
 
         // Push caller environment for $CALLER:: / $DYNAMIC:: resolution
         self.interpreter.push_caller_env();
@@ -820,6 +821,8 @@ impl VM {
                     return Err(e);
                 }
             };
+        self.interpreter
+            .prepare_definite_return_slot(return_spec.as_deref());
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
@@ -837,11 +840,14 @@ impl VM {
         let let_mark = self.interpreter.let_saves_len();
         let mut ip = 0;
         let mut result = Ok(());
+        let mut explicit_return: Option<Value> = None;
+        let mut fail_bypass = false;
         while ip < cf.code.ops.len() {
             match self.exec_one(&cf.code, &mut ip, compiled_fns) {
                 Ok(()) => {}
                 Err(e) if e.return_value.is_some() => {
                     let ret_val = e.return_value.unwrap();
+                    explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
                     self.interpreter.discard_let_saves(let_mark);
@@ -849,10 +855,12 @@ impl VM {
                     break;
                 }
                 Err(e) if e.is_fail => {
-                    // fail() — restore let saves and return Nil
+                    // fail() — restore let saves and return a Failure value
+                    fail_bypass = true;
+                    let failure = self.interpreter.fail_error_to_failure_value(&e);
                     self.interpreter.restore_let_saves(let_mark);
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(Value::Nil);
+                    self.stack.push(failure);
                     result = Ok(());
                     break;
                 }
@@ -917,7 +925,18 @@ impl VM {
         self.interpreter.restore_readonly_vars(saved_readonly);
 
         match result {
-            Ok(()) => Ok(ret_val),
+            Ok(()) if fail_bypass => Ok(ret_val),
+            Ok(()) => {
+                let base_result = if let Some(v) = explicit_return {
+                    let mut e = RuntimeError::new("return");
+                    e.return_value = Some(v);
+                    Err(e)
+                } else {
+                    Ok(ret_val)
+                };
+                self.interpreter
+                    .finalize_return_with_spec(base_result, return_spec.as_deref())
+            }
             Err(e) => Err(e),
         }
     }
