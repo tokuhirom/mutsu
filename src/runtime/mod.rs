@@ -920,6 +920,16 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Pod::Block::Para".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block::Para".to_string(), "Pod::Block".to_string()],
+            },
+        );
+        classes.insert(
             "Pod::Block::Table".to_string(),
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
@@ -927,6 +937,16 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Table".to_string(), "Pod::Block".to_string()],
+            },
+        );
+        classes.insert(
+            "Pod::Item".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Item".to_string(), "Pod::Block".to_string()],
             },
         );
         classes.insert(
