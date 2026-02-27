@@ -356,6 +356,9 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             && op
                 .chars()
                 .all(|c| !c.is_whitespace() && !c.is_alphanumeric() && c != '_' && c != '\'')
+            && !op
+                .chars()
+                .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'))
             && after.chars().next().is_some_and(char::is_whitespace)
         {
             let (after, _) = ws(after)?;
@@ -1242,6 +1245,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Custom postfix operator call: $x§ -> postfix:<§>($x)
+        if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
+        {
+            let after = &rest[len..];
+            if is_postfix_operator_boundary(after) {
+                expr = Expr::Call {
+                    name,
+                    args: vec![expr],
+                };
+                rest = after;
+                continue;
+            }
+        }
+
         if let Some((op, len)) = parse_custom_postfix_operator(rest) {
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {

@@ -1105,6 +1105,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_parenthesized_sequence_with_empty_paren_seed_and_postfix_index() {
+        let (rest, expr) = expression("(() ... *)[0]").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
     fn parse_s_metaop_infix_and() {
         let (rest, expr) = expression("1 S& 2").unwrap();
         assert_eq!(rest, "");

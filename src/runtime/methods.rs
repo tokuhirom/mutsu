@@ -2275,6 +2275,9 @@ impl Interpreter {
                 Value::ValuePair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 _ => return Ok(Value::array(Vec::new())),
             },
+            "rotate" => {
+                return self.dispatch_rotate(target, &args);
+            }
             _ => {}
         }
 
@@ -4817,6 +4820,32 @@ impl Interpreter {
                 Ok(Value::hash(map))
             }
         }
+    }
+
+    fn dispatch_rotate(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let items = match target {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::Capture { positional, .. } => positional,
+            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+            _ => return Ok(Value::Nil),
+        };
+        if items.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+        let len = items.len() as i64;
+        let by = match args.first() {
+            Some(Value::Int(i)) => *i,
+            Some(Value::Num(n)) => *n as i64,
+            Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
+            None => 1,
+        };
+        let shift = ((by % len) + len) % len;
+        let mut out = vec![Value::Nil; items.len()];
+        for (i, item) in items.into_iter().enumerate() {
+            let dst = ((i as i64 + len - shift) % len) as usize;
+            out[dst] = item;
+        }
+        Ok(Value::array(out))
     }
 
     fn dispatch_minmaxpairs(&mut self, target: Value, method: &str) -> Result<Value, RuntimeError> {
