@@ -103,6 +103,7 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
 - Do not rewrite or reformat unrelated code.
 - Do not use stubs, hardcoded outputs, or early returns to make tests pass.
 - Do NOT commit directly to the main branch. Always create a feature branch and open a pull request.
+- Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
 - PR workflow:
   1. Create a feature branch from main: `git checkout -b <branch-name>`
   2. Commit changes to the feature branch.
