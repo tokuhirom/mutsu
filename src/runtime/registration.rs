@@ -732,10 +732,31 @@ impl Interpreter {
                     arity,
                     type_sig.join(",")
                 );
-                self.functions.insert(typed_fq, def.clone());
+                if name == "trait_mod:<is>" {
+                    match self.functions.entry(typed_fq.clone()) {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(def.clone());
+                        }
+                        std::collections::hash_map::Entry::Occupied(_) => {
+                            let mut idx = 1usize;
+                            loop {
+                                let key = format!("{}__m{}", typed_fq, idx);
+                                if let std::collections::hash_map::Entry::Vacant(entry) =
+                                    self.functions.entry(key)
+                                {
+                                    entry.insert(def.clone());
+                                    break;
+                                }
+                                idx += 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.functions.insert(typed_fq, def.clone());
+                }
             }
             let fq = format!("{}::{}/{}", self.current_package, name, arity);
-            if !has_types {
+            if !has_types || name == "trait_mod:<is>" {
                 match self.functions.entry(fq.clone()) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);

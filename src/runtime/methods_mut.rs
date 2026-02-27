@@ -509,6 +509,14 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if method == "VAR" && args.is_empty() {
+            if let Value::Instance { attributes, .. } = &target
+                && matches!(attributes.get("__mutsu_var_target"), Some(Value::Str(_)))
+            {
+                return Ok(target);
+            }
+            if let Some(existing) = self.var_meta_value(target_var) {
+                return Ok(existing);
+            }
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
             let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
             let has_sigilless_meta =
@@ -541,10 +549,16 @@ impl Interpreter {
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::Str(display_name));
             attributes.insert(
+                "__mutsu_var_target".to_string(),
+                Value::Str(target_var.to_string()),
+            );
+            attributes.insert(
                 "dynamic".to_string(),
                 Value::Bool(self.is_var_dynamic(target_var)),
             );
-            return Ok(Value::make_instance(class_name.to_string(), attributes));
+            let meta = Value::make_instance(class_name.to_string(), attributes);
+            self.set_var_meta_value(target_var, meta.clone());
+            return Ok(meta);
         }
         // .of returns the element type constraint of a container
         if method == "of"

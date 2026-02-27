@@ -589,6 +589,16 @@ impl Interpreter {
             self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
+            for (k, v) in self.env.iter() {
+                if k != "_"
+                    && k != "@_"
+                    && ((restored_env.contains_key(k)
+                        && matches!(v, Value::Array(..) | Value::Hash(..)))
+                        || k.starts_with("__mutsu_var_meta::"))
+                {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+            }
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;

@@ -1629,6 +1629,14 @@ impl VM {
                 self.exec_register_var_export_op(code, *name_idx, *tags_idx)?;
                 *ip += 1;
             }
+            OpCode::ApplyVarTrait {
+                name_idx,
+                trait_name_idx,
+                has_arg,
+            } => {
+                self.exec_apply_var_trait_op(code, *name_idx, *trait_name_idx, *has_arg)?;
+                *ip += 1;
+            }
             OpCode::GetCallerVar { name_idx, depth } => {
                 let name = Self::const_str(code, *name_idx);
                 let val = self.interpreter.get_caller_var(name, *depth as usize)?;

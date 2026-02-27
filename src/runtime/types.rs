@@ -721,6 +721,9 @@ impl Interpreter {
         if constraint == "Routine" && matches!(value_type, "Sub" | "Method" | "Routine") {
             return true;
         }
+        if constraint == "Variable" && matches!(value_type, "Scalar" | "Array" | "Hash" | "Sub") {
+            return true;
+        }
         // Role-like type relationships
         if constraint == "Positional"
             && matches!(
@@ -783,14 +786,33 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args)) = self.extract_role_application(&right) {
-            return self.compose_role_on_value(left, &role_name, &args);
+            let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
+            if let Some(target_name) = Self::var_target_name_from_value(&left) {
+                self.set_var_meta_value(&target_name, result.clone());
+            }
+            return Ok(result);
         }
         let role_name = right.to_string_value();
         Ok(Value::Bool(left.does_check(&role_name)))
     }
 
+    fn var_target_name_from_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Mixin(inner, _) => Self::var_target_name_from_value(inner),
+            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
+                Some(Value::Str(name)) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
         match rhs {
+            Value::ParametricRole {
+                base_name,
+                type_args,
+            } if self.roles.contains_key(base_name) => Some((base_name.clone(), type_args.clone())),
             Value::Pair(name, boxed) if self.roles.contains_key(name) => {
                 if let Value::Array(args, ..) = boxed.as_ref() {
                     Some((name.clone(), args.as_ref().clone()))
@@ -840,6 +862,15 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if let Some((base, _)) = constraint.split_once(':')
+            && base == "Variable"
+            && varref_from_value(value).is_some()
+        {
+            return true;
+        }
+        if constraint == "Variable" && varref_from_value(value).is_some() {
+            return true;
+        }
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
             let package_base = package_name.split('[').next().unwrap_or(package_name);
             let (package_base, _) = strip_type_smiley(package_base);
@@ -1243,6 +1274,22 @@ impl Interpreter {
                     i = args.len();
                 } else if !pd.slurpy {
                     i += 1;
+                }
+            }
+            let has_named_slurpy = param_defs
+                .iter()
+                .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
+            if !has_named_slurpy {
+                for arg in args {
+                    let arg = unwrap_varref_value(arg.clone());
+                    if let Value::Pair(key, _) = arg {
+                        let consumed = param_defs.iter().any(|pd| {
+                            (pd.named && pd.name == key) || pd.name == format!(":{}", key)
+                        });
+                        if !consumed {
+                            return false;
+                        }
+                    }
                 }
             }
             true
