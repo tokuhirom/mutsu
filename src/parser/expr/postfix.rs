@@ -662,6 +662,16 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Dot postfix update shorthand: .++ / .--
+            // Equivalent to applying postfix update to the current expression.
+            if let Some((op, len)) = parse_postfix_update_op(r) {
+                expr = Expr::PostfixOp {
+                    op: op.token_kind(),
+                    expr: Box::new(expr),
+                };
+                rest = &r[len..];
+                continue;
+            }
             // Check for modifier: .?method, .^method, .+method, .*method
             let (r, modifier) = if let Some(stripped) = r.strip_prefix('?') {
                 (stripped, Some('?'))

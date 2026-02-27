@@ -641,12 +641,10 @@ impl Interpreter {
 
             let underscore = "_".to_string();
 
-            // Save original values for keys we'll modify
-            let mut touched_keys: Vec<String> =
-                Vec::with_capacity(data.env.len() + data.params.len() + 1);
-            for k in data.env.keys() {
-                touched_keys.push(k.clone());
-            }
+            // Save/restore only temporary bindings introduced by map itself.
+            // Captured lexical vars (in data.env) must keep mutations done inside
+            // the mapper block (e.g. `{ $a++ }`).
+            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
             for p in &data.params {
                 if !touched_keys.contains(p) {
                     touched_keys.push(p.clone());

@@ -84,6 +84,7 @@ roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/equality.t
 roast/S03-operators/gcd.t
+roast/S03-operators/increment.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t

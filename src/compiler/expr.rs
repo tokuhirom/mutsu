@@ -147,8 +147,22 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::PreIncrement(name_idx));
+                    } else if let Expr::Index { target, index } = expr.as_ref() {
+                        if let Some(name) = Self::postfix_index_name(target) {
+                            self.compile_expr(index);
+                            let name_idx = self.code.add_constant(Value::Str(name));
+                            self.code.emit(OpCode::PreIncrementIndex(name_idx));
+                        } else {
+                            self.compile_expr(&Expr::Call {
+                                name: "__mutsu_incdec_nomatch".to_string(),
+                                args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
+                            });
+                        }
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
+                        });
                     }
                 }
                 TokenKind::MinusMinus => {
@@ -160,8 +174,22 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::PreDecrement(name_idx));
+                    } else if let Expr::Index { target, index } = expr.as_ref() {
+                        if let Some(name) = Self::postfix_index_name(target) {
+                            self.compile_expr(index);
+                            let name_idx = self.code.add_constant(Value::Str(name));
+                            self.code.emit(OpCode::PreDecrementIndex(name_idx));
+                        } else {
+                            self.compile_expr(&Expr::Call {
+                                name: "__mutsu_incdec_nomatch".to_string(),
+                                args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
+                            });
+                        }
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
+                        });
                     }
                 }
                 TokenKind::IntBitNeg => {
@@ -879,16 +907,28 @@ impl Compiler {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
+                } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
+                    // state/my declarator in expression position: `state $x++`, `my $x.++`
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Pop);
+                    let name_idx = self.code.add_constant(Value::Str(var_name));
+                    self.code.emit(OpCode::PostIncrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostIncrementIndex(name_idx));
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
+                        });
                     }
                 } else {
-                    self.code.emit(OpCode::LoadNil);
+                    self.compile_expr(&Expr::Call {
+                        name: "__mutsu_incdec_nomatch".to_string(),
+                        args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
+                    });
                 }
             }
             // Postfix -- on variable
@@ -899,16 +939,27 @@ impl Compiler {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
+                } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Pop);
+                    let name_idx = self.code.add_constant(Value::Str(var_name));
+                    self.code.emit(OpCode::PostDecrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostDecrementIndex(name_idx));
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
+                        });
                     }
                 } else {
-                    self.code.emit(OpCode::LoadNil);
+                    self.compile_expr(&Expr::Call {
+                        name: "__mutsu_incdec_nomatch".to_string(),
+                        args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
+                    });
                 }
             }
             // Assignment as expression

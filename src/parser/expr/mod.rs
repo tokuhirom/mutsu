@@ -1164,6 +1164,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_dot_postfix_increment() {
+        let (rest, expr) = expression("$x.++").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus,
+                expr,
+            } => {
+                assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
+            }
+            _ => panic!("expected dot-postfix increment"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_postfix_decrement() {
+        let (rest, expr) = expression("$x.--").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::PostfixOp {
+                op: TokenKind::MinusMinus,
+                expr,
+            } => {
+                assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
+            }
+            _ => panic!("expected dot-postfix decrement"),
+        }
+    }
+
+    #[test]
     fn parse_ampersand_sigiled_callable_invocation() {
         let (rest, expr) = expression("&$x()").unwrap();
         assert_eq!(rest, "");

@@ -254,7 +254,7 @@ impl PrefixUnaryOp {
     }
 
     pub(super) fn parses_postfix_target(self) -> bool {
-        matches!(self, PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec)
+        false
     }
 }
 

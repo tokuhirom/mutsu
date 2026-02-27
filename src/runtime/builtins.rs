@@ -139,6 +139,7 @@ impl Interpreter {
             )),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
+            "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
             "exit" => self.builtin_exit(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Multi dispatch control flow
@@ -1302,6 +1303,25 @@ impl Interpreter {
             message.push_str(&arg.to_string_value());
         }
         Err(RuntimeError::warn_signal(message))
+    }
+
+    fn builtin_incdec_nomatch(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let caller = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| "postfix:<++>".to_string());
+        let msg = format!(
+            "Cannot resolve caller {}(...); the parameter requires mutable arguments",
+            caller
+        );
+        let mut err = RuntimeError::new(msg.clone());
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(msg));
+        err.exception = Some(Box::new(Value::make_instance(
+            "X::Multi::NoMatch".to_string(),
+            attrs,
+        )));
+        Err(err)
     }
 
     fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
