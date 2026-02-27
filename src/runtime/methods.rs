@@ -969,6 +969,7 @@ impl Interpreter {
                     | "name"
                     | "ver"
                     | "auth"
+                    | "mro"
                     | "methods"
             )
         {
@@ -1480,7 +1481,7 @@ impl Interpreter {
                     return Ok(Value::hash(map));
                 }
             }
-            "subparse" | "parse" => {
+            "subparse" | "parse" | "parsefile" => {
                 if let Value::Package(ref package_name) = target {
                     return self.dispatch_package_parse(package_name, method, &args);
                 }
@@ -3111,7 +3112,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut source: Option<String> = None;
+        let mut source_arg: Option<String> = None;
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();
         for arg in args {
@@ -3137,16 +3138,28 @@ impl Interpreter {
                 }
                 continue;
             }
-            if source.is_none() {
-                source = Some(arg.to_string_value());
+            if source_arg.is_none() {
+                source_arg = Some(arg.to_string_value());
             }
         }
-        let Some(text) = source else {
-            return Ok(Value::Nil);
+        let Some(source_text) = source_arg else {
+            return Err(RuntimeError::new(
+                "Too few positionals passed; expected 2 arguments but got 1",
+            ));
+        };
+        let text = if method == "parsefile" {
+            match std::fs::read_to_string(&source_text) {
+                Ok(contents) => contents,
+                Err(err) => return Err(RuntimeError::new(err.to_string())),
+            }
+        } else {
+            source_text
         };
 
         let saved_package = self.current_package.clone();
         let saved_topic = self.env.get("_").cloned();
+        let saved_made = self.env.get("made").cloned();
+        self.env.remove("made");
         self.current_package = package_name.to_string();
         let has_start_rule =
             self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
@@ -3168,7 +3181,7 @@ impl Interpreter {
                 Ok(Some(pattern)) => pattern,
                 Ok(None) => {
                     self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(Value::Nil);
+                    return Ok(self.parse_failure_for_pattern(&text, None));
                 }
                 Err(err)
                     if err
@@ -3176,7 +3189,7 @@ impl Interpreter {
                         .contains("No matching candidates for proto token") =>
                 {
                     self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(Value::Nil);
+                    return Ok(self.parse_failure_for_pattern(&text, None));
                 }
                 Err(err) => return Err(err),
             };
@@ -3192,15 +3205,16 @@ impl Interpreter {
 
             let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
                 self.env.insert("/".to_string(), Value::Nil);
-                return Ok(Value::Nil);
+                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             };
+            self.execute_regex_code_blocks(&captures.code_blocks);
             if captures.from != 0 {
                 self.env.insert("/".to_string(), Value::Nil);
-                return Ok(Value::Nil);
+                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             }
-            if method == "parse" && captures.to != text.chars().count() {
+            if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
                 self.env.insert("/".to_string(), Value::Nil);
-                return Ok(Value::Nil);
+                return Ok(self.make_parse_failure_value(&text, captures.to));
             }
             for (i, v) in captures.positional.iter().enumerate() {
                 self.env.insert(i.to_string(), Value::Str(v.clone()));
@@ -3214,6 +3228,20 @@ impl Interpreter {
                 &captures.named_subcaps,
                 Some(&text),
             );
+            let match_obj = if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &match_obj
+            {
+                let mut attrs = attributes.as_ref().clone();
+                if let Some(ast) = self.env.get("made").cloned() {
+                    attrs.insert("ast".to_string(), ast);
+                }
+                Value::make_instance(class_name.clone(), attrs)
+            } else {
+                match_obj
+            };
             // Set named capture env vars from match object
             if let Value::Instance { attributes, .. } = &match_obj
                 && let Some(Value::Hash(named_hash)) = attributes.get("named")
@@ -3232,7 +3260,70 @@ impl Interpreter {
         } else {
             self.env.remove("_");
         }
+        if let Some(old_made) = saved_made {
+            self.env.insert("made".to_string(), old_made);
+        } else {
+            self.env.remove("made");
+        }
         result
+    }
+
+    fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {
+        let best_end = pattern
+            .map(|pat| self.longest_complete_prefix_end(pat, text))
+            .unwrap_or(0);
+        self.make_parse_failure_value(text, best_end)
+    }
+
+    fn longest_complete_prefix_end(&mut self, pattern: &str, text: &str) -> usize {
+        let chars: Vec<char> = text.chars().collect();
+        for end in (0..=chars.len()).rev() {
+            let prefix: String = chars[..end].iter().collect();
+            if let Some(captures) = self.regex_match_with_captures(pattern, &prefix)
+                && captures.from == 0
+                && captures.to == end
+            {
+                return end;
+            }
+        }
+        0
+    }
+
+    fn make_parse_failure_value(&self, text: &str, best_end: usize) -> Value {
+        let chars: Vec<char> = text.chars().collect();
+        let pos = best_end.saturating_sub(1).min(chars.len());
+        let line_start = chars[..pos]
+            .iter()
+            .rposition(|ch| *ch == '\n')
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+        let line_end = chars[pos..]
+            .iter()
+            .position(|ch| *ch == '\n')
+            .map(|offset| pos + offset)
+            .unwrap_or(chars.len());
+        let pre: String = chars[line_start..pos].iter().collect();
+        let post = if pos >= chars.len() || chars[pos] == '\n' {
+            "<EOL>".to_string()
+        } else {
+            chars[pos..line_end].iter().collect()
+        };
+        let line = chars[..pos].iter().filter(|ch| **ch == '\n').count() as i64 + 1;
+
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("reason".to_string(), Value::Str("unknown".to_string()));
+        ex_attrs.insert("filename".to_string(), Value::Str("<anon>".to_string()));
+        ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
+        ex_attrs.insert("line".to_string(), Value::Int(line));
+        ex_attrs.insert("pre".to_string(), Value::Str(pre));
+        ex_attrs.insert("post".to_string(), Value::Str(post));
+        ex_attrs.insert("highexpect".to_string(), Value::array(Vec::new()));
+        let exception = Value::make_instance("X::Syntax::Confused".to_string(), ex_attrs);
+
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance("Failure".to_string(), failure_attrs)
     }
 
     fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
@@ -3253,6 +3344,21 @@ impl Interpreter {
     }
 
     fn classhow_find_method(&self, invocant: &Value, method_name: &str) -> Option<Value> {
+        if matches!(
+            method_name,
+            "name"
+                | "ver"
+                | "auth"
+                | "mro"
+                | "isa"
+                | "can"
+                | "lookup"
+                | "find_method"
+                | "add_method"
+                | "methods"
+        ) {
+            return Some(Value::Str(method_name.to_string()));
+        }
         if let Some(value) = self.classhow_lookup(invocant, method_name) {
             return Some(value);
         }
@@ -3295,11 +3401,17 @@ impl Interpreter {
                     }
                 };
                 let Some(meta) = self.type_metadata.get(&invocant_name) else {
+                    if invocant_name == "Grammar" {
+                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
+                    }
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
                     ));
                 };
                 let Some(value) = meta.get("ver").cloned() else {
+                    if invocant_name == "Grammar" {
+                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
+                    }
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
                     ));
@@ -3341,6 +3453,12 @@ impl Interpreter {
                 }
                 let mro = self.class_mro(class_name);
                 Ok(Value::Bool(mro.iter().any(|p| p == other_name)))
+            }
+            "mro" if args.len() == 1 => {
+                let mro = self.classhow_mro_names(&args[0]);
+                Ok(Value::array(
+                    mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+                ))
             }
             "can" if args.len() >= 2 => {
                 let invocant = &args[0];
@@ -3423,6 +3541,39 @@ impl Interpreter {
                 method
             ))),
         }
+    }
+
+    fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+        let mut mro = if self.classes.contains_key(&class_name) {
+            self.class_mro(&class_name)
+        } else {
+            vec![class_name.clone()]
+        };
+        if self.package_looks_like_grammar(&class_name) {
+            for parent in ["Grammar", "Match", "Capture", "Cool", "Any", "Mu"] {
+                if !mro.iter().any(|name| name == parent) {
+                    mro.push(parent.to_string());
+                }
+            }
+            return mro;
+        }
+        if class_name != "Mu" && !mro.iter().any(|name| name == "Any") {
+            mro.push("Any".to_string());
+        }
+        if !mro.iter().any(|name| name == "Mu") {
+            mro.push("Mu".to_string());
+        }
+        mro
+    }
+
+    fn package_looks_like_grammar(&self, package_name: &str) -> bool {
+        let prefix = format!("{package_name}::");
+        self.token_defs.keys().any(|key| key.starts_with(&prefix))
     }
 
     fn dispatch_classhow_methods(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
