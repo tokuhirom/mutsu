@@ -798,7 +798,20 @@ impl VM {
             }
 
             // -- Control flow --
-            OpCode::Label(_) => {
+            OpCode::Label(name_idx) => {
+                let label_name = Self::const_str(code, *name_idx);
+                let is_redeclared = code.ops[..*ip].iter().any(|op| match op {
+                    OpCode::Label(prev_name_idx) => {
+                        Self::const_str(code, *prev_name_idx) == label_name
+                    }
+                    _ => false,
+                });
+                if is_redeclared {
+                    return Err(RuntimeError::new(format!(
+                        "X::Redeclaration: Label '{}' already declared",
+                        label_name
+                    )));
+                }
                 *ip += 1;
             }
             OpCode::Goto => {
@@ -905,7 +918,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Pop => {
-                self.stack.pop();
+                if let Some(Value::LazyList(list)) = self.stack.pop() {
+                    // Sink context must realize lazy gathers for side effects.
+                    self.interpreter.force_lazy_list_bridge(&list)?;
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
 
