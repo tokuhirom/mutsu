@@ -640,6 +640,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Check for .{index} syntax: object.{$expr}
+            if let Some(r) = r.strip_prefix('{') {
+                let (r, _) = ws(r)?;
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, '}')?;
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                };
+                rest = r;
+                continue;
+            }
             // Check for .<key> angle-bracket hash access: %h.<foo>, $obj.<bar>
             if r.starts_with('<')
                 && !r.starts_with("<=")
