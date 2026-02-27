@@ -367,7 +367,8 @@ impl VM {
                 || Self::is_builtin_type(name)
             {
                 Value::Package(name.to_string())
-            } else if !name.starts_with('$')
+            } else if name.contains("::")
+                && !name.starts_with('$')
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
