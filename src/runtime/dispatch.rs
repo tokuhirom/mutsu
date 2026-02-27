@@ -50,7 +50,11 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Option<FunctionDef> {
-        let arity = arg_values.len();
+        // Arity counts only positional args, excluding named args (Pair values)
+        let arity = arg_values
+            .iter()
+            .filter(|v| !matches!(v, Value::Pair(..)))
+            .count();
         if name.contains("::") {
             let type_sig: Vec<&str> = arg_values
                 .iter()
@@ -91,6 +95,7 @@ impl Interpreter {
         }
         let type_sig: Vec<&str> = arg_values
             .iter()
+            .filter(|v| !matches!(v, Value::Pair(..)))
             .map(|v| super::value_type_name(v))
             .collect();
         let typed_key = format!(

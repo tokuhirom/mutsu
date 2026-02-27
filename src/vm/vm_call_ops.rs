@@ -93,7 +93,32 @@ impl VM {
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
-        if !self.interpreter.has_proto(&name)
+        // Check if there's a CALL-ME override from trait_mod mixin
+        let call_me_override = self
+            .interpreter
+            .env()
+            .get(&format!("&{}", name))
+            .cloned()
+            .and_then(|callable| {
+                if let Value::Mixin(_, ref mixins) = callable {
+                    let has_call_me = mixins.keys().any(|key| {
+                        key.strip_prefix("__mutsu_role__")
+                            .is_some_and(|rn| self.interpreter.role_has_method(rn, "CALL-ME"))
+                    });
+                    if has_call_me {
+                        return Some(callable);
+                    }
+                }
+                None
+            });
+        if let Some(callable) = call_me_override {
+            let result = self
+                .interpreter
+                .call_method_with_values(callable, "CALL-ME", args);
+            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+        } else if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             self.interpreter

@@ -722,6 +722,12 @@ impl Interpreter {
         self.roles.contains_key(name)
     }
 
+    pub(crate) fn role_has_method(&self, role_name: &str, method_name: &str) -> bool {
+        self.roles
+            .get(role_name)
+            .is_some_and(|r| r.methods.contains_key(method_name))
+    }
+
     pub(crate) fn is_definite_constraint(&self, constraint: &str) -> bool {
         let (base_constraint, smiley) = strip_type_smiley(constraint);
         if smiley == Some(":D") {
@@ -1132,7 +1138,11 @@ impl Interpreter {
         let mut has_hash_slurpy = false;
         for pd in &positional_params {
             if pd.slurpy {
-                if pd.name.starts_with('%') || pd.sigilless {
+                if pd.sigilless {
+                    // Capture parameter (|c) absorbs both positional and named args
+                    has_positional_slurpy = true;
+                    has_hash_slurpy = true;
+                } else if pd.name.starts_with('%') {
                     has_hash_slurpy = true;
                 } else {
                     has_positional_slurpy = true;

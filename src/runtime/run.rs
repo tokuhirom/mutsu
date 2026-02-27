@@ -57,6 +57,7 @@ impl Interpreter {
                     *is_rw,
                     *is_test_assertion,
                     *supersede,
+                    &[],
                 )?;
                 if *is_export {
                     self.register_sub_decl_as_global(
