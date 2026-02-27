@@ -947,6 +947,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_declared_postfix_operator_call_in_following_statement() {
+        let (rest, stmts) = program("sub postfix:<!!>($x) { $x }; (4!!, 5!!).join(' ');").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "postfix:<!!>"));
+        assert!(matches!(&stmts[1], Stmt::Expr(Expr::MethodCall { .. })));
+    }
+
+    #[test]
     fn parse_forward_sub_without_signature_is_invalid() {
         let err = program("sub foo;").err().expect("expected parse error");
         assert!(err.to_string().contains("X::UnitScope::Invalid"));

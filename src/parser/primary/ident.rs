@@ -661,29 +661,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 },
                             ));
                         }
-                        let (r, first) = expression(r)?;
-                        let mut args = vec![first];
-                        let mut r = r;
-                        loop {
-                            let (r2, _) = ws(r)?;
-                            if let Some(r2) = r2.strip_prefix(')') {
-                                r = r2;
-                                break;
-                            }
-                            if let Some(r2) = r2.strip_prefix(',') {
-                                let (r2, _) = ws(r2)?;
-                                if let Some(r2) = r2.strip_prefix(')') {
-                                    r = r2;
-                                    break;
-                                }
-                                let (r2, arg) = expression(r2)?;
-                                args.push(arg);
-                                r = r2;
-                            } else {
-                                r = r2;
-                                break;
-                            }
-                        }
+                        let (r, args) = parse_call_arg_list(r)?;
+                        let (r, _) = ws(r)?;
+                        let Some(r) = r.strip_prefix(')') else {
+                            return Err(PError::expected("')'"));
+                        };
                         return Ok((
                             r,
                             Expr::Call {

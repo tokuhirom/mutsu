@@ -101,6 +101,7 @@ roast/S03-operators/spaceship.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
+roast/S03-sequence/misc.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-callable.t

@@ -325,6 +325,52 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
     })
 }
 
+/// Match a user-declared postfix operator against the current input.
+/// Returns `(full_name, consumed_len)` when input begins with an in-scope
+/// `postfix:<...>` operator symbol.
+pub(in crate::parser) fn match_user_declared_postfix_op(input: &str) -> Option<(String, usize)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize)> = None;
+
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let Some(op) = name
+                    .strip_prefix("postfix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                else {
+                    continue;
+                };
+                if !input.starts_with(op) {
+                    continue;
+                }
+                let consumed = op.len();
+                // For word-like operators, require identifier boundary.
+                if op
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len)| consumed > *best_len)
+                {
+                    best = Some((name.clone(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
 /// Register a user-declared term symbol.
 /// The canonical name must be in `term:<...>` form.
 pub(in crate::parser) fn register_user_term_symbol(name: &str) {
