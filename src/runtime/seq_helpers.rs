@@ -1,5 +1,6 @@
 use super::*;
 use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
+#[cfg(feature = "pcre2")]
 use pcre2::bytes::{Regex as PcreRegex, RegexBuilder as PcreRegexBuilder};
 
 impl Interpreter {
@@ -277,6 +278,7 @@ impl Interpreter {
         out
     }
 
+    #[cfg(feature = "pcre2")]
     fn compile_p5_regex(&self, pattern: &str) -> Option<PcreRegex> {
         let interpolated = self.expand_p5_interpolation(pattern);
         let converted = Self::p5_pattern_to_rust_regex(&interpolated);
@@ -734,6 +736,7 @@ impl Interpreter {
         0
     }
 
+    #[cfg(feature = "pcre2")]
     fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
         let mut locs = re.capture_locations();
@@ -768,6 +771,7 @@ impl Interpreter {
         Some(out)
     }
 
+    #[cfg(feature = "pcre2")]
     fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
         let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
@@ -1058,7 +1062,11 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
-                if let Some(captures) = self.regex_match_with_captures_p5(pat, &text) {
+                #[cfg(feature = "pcre2")]
+                let result = self.regex_match_with_captures_p5(pat, &text);
+                #[cfg(not(feature = "pcre2"))]
+                let result = self.regex_match_with_captures(pat, &text);
+                if let Some(captures) = result {
                     self.apply_single_regex_captures(&captures);
                     return true;
                 }
@@ -1077,7 +1085,14 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 let mut all = if *perl5 {
-                    self.regex_match_all_with_captures_p5(pattern, &text)
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
                 } else {
                     self.regex_match_all_with_captures(pattern, &text)
                 };
