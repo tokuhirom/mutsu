@@ -262,6 +262,11 @@ fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, St
     while rest.starts_with(':') && !rest.starts_with("::") {
         let after_colon = &rest[1..];
         if let Ok((r2, suffix)) = parse_ident_with_hyphens(after_colon) {
+            // Keep postfix adverb names available to postfix parsing.
+            // This avoids treating `$a:delete` as a variable named `a:delete`.
+            if matches!(suffix, "delete" | "exists" | "v" | "kv" | "k" | "p") {
+                break;
+            }
             name.push(':');
             name.push_str(suffix);
             rest = r2;
