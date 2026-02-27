@@ -1102,6 +1102,28 @@ impl Interpreter {
                 wildcard_handles: Vec::new(),
             },
         );
+        classes.insert(
+            "X::TypeCheck::Return".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::TypeCheck::Return".to_string(), "Exception".to_string()],
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "X::Coerce::Impossible".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::Coerce::Impossible".to_string(), "Exception".to_string()],
+                wildcard_handles: Vec::new(),
+            },
+        );
         let mut interpreter = Self {
             env,
             output: String::new(),
