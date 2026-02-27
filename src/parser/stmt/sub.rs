@@ -449,6 +449,11 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
+    if let Some(assoc) = traits.associativity.as_ref()
+        && name.starts_with("infix:<")
+    {
+        super::simple::register_user_infix_assoc(&name, assoc);
+    }
     if traits.is_test_assertion {
         super::simple::register_user_test_assertion_sub(&name);
     }
@@ -490,6 +495,7 @@ pub(super) fn sub_decl_body(
                     params,
                     param_defs,
                     return_type,
+                    associativity: traits.associativity.clone(),
                     signature_alternates,
                     body: Vec::new(),
                     multi,
@@ -527,6 +533,7 @@ pub(super) fn sub_decl_body(
                 params,
                 param_defs,
                 return_type,
+                associativity: traits.associativity.clone(),
                 signature_alternates,
                 body: Vec::new(),
                 multi,
@@ -566,6 +573,7 @@ pub(super) fn sub_decl_body(
             params,
             param_defs,
             return_type,
+            associativity: traits.associativity,
             signature_alternates,
             body,
             multi,
@@ -645,6 +653,7 @@ pub(crate) struct SubTraits {
     pub is_test_assertion: bool,
     pub is_rw: bool,
     pub return_type: Option<String>,
+    pub associativity: Option<String>,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
@@ -655,6 +664,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_test_assertion = false;
     let mut is_rw = false;
     let mut return_type = None;
+    let mut associativity = None;
     let mut seen_traits: Vec<String> = Vec::new();
     loop {
         let (r, _) = ws(input)?;
@@ -667,6 +677,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     is_test_assertion,
                     is_rw,
                     return_type,
+                    associativity,
                 },
             ));
         }
@@ -703,8 +714,16 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             } else if trait_name == "rw" {
                 is_rw = true;
             }
-            // Skip optional parenthesized trait args: is export(:DEFAULT)
-            let r = skip_balanced_parens(r);
+            let (mut r, _) = ws(r)?;
+            if r.starts_with('<') {
+                let (r2, arg) = parse_trait_angle_arg(r)?;
+                if trait_name == "assoc" {
+                    associativity = Some(arg);
+                }
+                r = r2;
+            }
+            // Skip optional parenthesized trait args: is export(:DEFAULT), is equiv(&prefix:<+>)
+            r = skip_balanced_parens(r);
             input = r;
             continue;
         }
@@ -740,9 +759,36 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion,
                 is_rw,
                 return_type,
+                associativity,
             },
         ));
     }
+}
+
+fn parse_trait_angle_arg(input: &str) -> PResult<'_, String> {
+    let after_open = input
+        .strip_prefix('<')
+        .ok_or_else(|| PError::expected("trait angle argument"))?;
+    let mut depth = 1u32;
+    let mut chars = after_open.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    let arg = after_open[..i].trim().to_string();
+                    let after_close = &after_open[i + 1..];
+                    return Ok((after_close, arg));
+                }
+            }
+            '<' => depth += 1,
+            '\\' => {
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    Err(PError::expected("closing '>' in trait argument"))
 }
 
 fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {

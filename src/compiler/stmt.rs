@@ -885,6 +885,7 @@ impl Compiler {
                     params: params.clone(),
                     param_defs: param_defs.clone(),
                     return_type: return_type.clone(),
+                    associativity: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: *multi,
