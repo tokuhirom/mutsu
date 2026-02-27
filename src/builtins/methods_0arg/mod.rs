@@ -1452,6 +1452,33 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(make_rat(numer, denom)))
             }
             Value::FatRat(n, d) => Some(Ok(make_rat(*n, *d))),
+            Value::Str(s) => {
+                // Try parsing as rational: "3/5", "0.2", or plain integer
+                if let Some((n_str, d_str)) = s.split_once('/') {
+                    let n = n_str.trim().parse::<i64>().unwrap_or(0);
+                    let d = d_str.trim().parse::<i64>().unwrap_or(1);
+                    Some(Ok(make_rat(n, if d == 0 { 1 } else { d })))
+                } else if s.contains('.') {
+                    // Decimal string: count decimal places for exact rational
+                    let trimmed = s.trim();
+                    let negative = trimmed.starts_with('-');
+                    let abs_str = if negative { &trimmed[1..] } else { trimmed };
+                    if let Some((int_part, frac_part)) = abs_str.split_once('.') {
+                        let frac_digits = frac_part.len() as u32;
+                        let denom = 10i64.pow(frac_digits);
+                        let int_val = int_part.parse::<i64>().unwrap_or(0);
+                        let frac_val = frac_part.parse::<i64>().unwrap_or(0);
+                        let numer = int_val * denom + frac_val;
+                        let numer = if negative { -numer } else { numer };
+                        Some(Ok(make_rat(numer, denom)))
+                    } else {
+                        Some(Ok(make_rat(0, 1)))
+                    }
+                } else {
+                    let n = s.trim().parse::<i64>().unwrap_or(0);
+                    Some(Ok(make_rat(n, 1)))
+                }
+            }
             Value::Instance { .. } => None,
             Value::Package(_) => Some(Ok(make_rat(0, 1))),
             _ => Some(Ok(make_rat(0, 1))),

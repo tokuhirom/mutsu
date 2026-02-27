@@ -215,6 +215,11 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
+        // Set ::?CLASS / ::?ROLE compile-time variable for the method body
+        self.env.insert(
+            "?CLASS".to_string(),
+            Value::Package(owner_class.to_string()),
+        );
         self.env.insert("self".to_string(), base.clone());
 
         let mut bind_params = Vec::new();

@@ -251,6 +251,7 @@ roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
+roast/S12-coercion/coercion-return.t
 roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
 roast/S12-construction/named-params-in-BUILD.t
