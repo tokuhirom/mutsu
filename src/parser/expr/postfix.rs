@@ -1444,9 +1444,27 @@ fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
         }
     }
     let mut chars = input.chars();
+    let mut len = 0usize;
+    let mut sign = 1i64;
+    if let Some(first) = chars.clone().next() {
+        match first {
+            '\u{207A}' => {
+                // ⁺
+                len += first.len_utf8();
+                chars.next();
+            }
+            '\u{207B}' | '\u{00AF}' => {
+                // ⁻ or ¯
+                sign = -1;
+                len += first.len_utf8();
+                chars.next();
+            }
+            _ => {}
+        }
+    }
     let first = chars.next()?;
     let mut value = superscript_digit(first)?;
-    let mut len = first.len_utf8();
+    len += first.len_utf8();
     for c in chars {
         if let Some(d) = superscript_digit(c) {
             value = value * 10 + d;
@@ -1455,5 +1473,5 @@ fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
             break;
         }
     }
-    Some((value, len))
+    Some((sign * value, len))
 }

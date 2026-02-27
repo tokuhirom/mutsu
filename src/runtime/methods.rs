@@ -4423,7 +4423,7 @@ impl Interpreter {
                 "fmt",
             ],
             "Int" | "Num" | "Rat" | "Complex" => &[
-                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp",
+                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp", "roots",
                 "is-prime", "chr", "base", "polymod", "pred", "succ", "Numeric", "Int", "Num",
                 "Rat", "Bool", "Str", "gist", "raku",
             ],
