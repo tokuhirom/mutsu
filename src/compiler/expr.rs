@@ -1364,6 +1364,21 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerizePair);
             }
             Expr::CallOn { target, args } => {
+                // @($x) — array contextualizer: coerce single arg to Array
+                if let Expr::ArrayVar(name) = target.as_ref()
+                    && name == "__ANON_ARRAY__"
+                    && args.len() == 1
+                {
+                    self.compile_expr(&args[0]);
+                    let method_idx = self.code.add_constant(Value::Str("Array".to_string()));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: method_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                    });
+                    return;
+                }
                 // %($x) — hash contextualizer: coerce single arg to Hash
                 if let Expr::HashVar(name) = target.as_ref()
                     && name == "__ANON_HASH__"
