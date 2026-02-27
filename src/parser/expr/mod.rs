@@ -979,8 +979,13 @@ mod tests {
         match expr {
             Expr::Call { name, args } => {
                 assert_eq!(name, "foo");
-                assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::AnonSub { .. }));
+                assert_eq!(args.len(), 2);
+                assert!(args.iter().any(|arg| matches!(arg, Expr::AnonSub { .. })));
+                assert!(args.iter().any(|arg| matches!(
+                    arg,
+                    Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
+                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s == "__mutsu_test_callsite_line")
+                )));
             }
             _ => panic!("expected call expression"),
         }
@@ -993,9 +998,18 @@ mod tests {
         match expr {
             Expr::Call { name, args } => {
                 assert_eq!(name, "fiddle");
-                assert_eq!(args.len(), 2);
-                assert!(matches!(args[0], Expr::Binary { .. }));
-                assert!(matches!(args[1], Expr::Binary { .. }));
+                assert_eq!(args.len(), 3);
+                assert!(
+                    args.iter()
+                        .filter(|arg| matches!(arg, Expr::Binary { .. }))
+                        .count()
+                        >= 3
+                );
+                assert!(args.iter().any(|arg| matches!(
+                    arg,
+                    Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
+                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s == "__mutsu_test_callsite_line")
+                )));
             }
             _ => panic!("expected call expression"),
         }

@@ -1798,6 +1798,16 @@ impl Interpreter {
         self.callframe_stack.pop();
     }
 
+    pub(crate) fn get_caller_line(&self, depth: usize) -> Option<Value> {
+        let stack_len = self.caller_env_stack.len();
+        if depth == 0 || depth > stack_len {
+            return None;
+        }
+        self.caller_env_stack
+            .get(stack_len - depth)
+            .and_then(|env| env.get("?LINE").cloned())
+    }
+
     /// Look up a variable through the $CALLER:: chain.
     /// `depth` is the number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
     /// `name` is the bare variable name without sigil (e.g. "a" for $a).

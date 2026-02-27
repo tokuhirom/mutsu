@@ -148,6 +148,10 @@ pub(crate) enum OpCode {
     IsNil,
 
     // -- Control flow --
+    /// No-op label marker for `goto`.
+    Label(u32),
+    /// Jump to `Label` by runtime-evaluated name on stack.
+    Goto,
     Jump(i32),
     JumpIfFalse(i32),
     JumpIfTrue(i32),

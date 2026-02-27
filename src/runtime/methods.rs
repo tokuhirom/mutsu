@@ -993,6 +993,24 @@ impl Interpreter {
             }
         }
         if let Value::Sub(data) = &target {
+            if method == "nextwith" {
+                // Tail-style dispatch: call target with caller frame and return from current frame.
+                let saved_env = self.env.clone();
+                if let Some(parent_env) = self.caller_env_stack.last().cloned() {
+                    self.env = parent_env;
+                }
+                let call_result = self.call_sub_value(target.clone(), args, false);
+                self.env = saved_env;
+                let value = match call_result {
+                    Ok(v) => v,
+                    Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                    Err(e) => return Err(e),
+                };
+                return Err(RuntimeError {
+                    return_value: Some(value),
+                    ..RuntimeError::new("")
+                });
+            }
             if method == "assuming" {
                 let mut next = (**data).clone();
                 let make_failure =
