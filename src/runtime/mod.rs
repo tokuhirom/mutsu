@@ -1964,6 +1964,15 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
+        let name_key = format!("__mutsu_atomic_name::{name}");
+        let mut shared = self.shared_vars.lock().unwrap();
+        if let Some(Value::Str(value_key)) = self.env.remove(&name_key) {
+            shared.remove(&value_key);
+        }
+        shared.remove(&name_key);
+    }
+
     pub(crate) fn merge_sigilless_alias_writes(
         &self,
         saved_env: &mut HashMap<String, Value>,

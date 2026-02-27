@@ -225,10 +225,37 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, _) = ws(rest)?;
     let (rest, lhs) = expression_no_sequence(rest)?;
     let (rest, _) = ws(rest)?;
-    if !rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>") {
+    if let Some(stripped) = rest.strip_prefix("⚛+=") {
+        let name = match lhs {
+            Expr::Var(name) => name,
+            _ => return Err(PError::expected("atomic compound assignment expression")),
+        };
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((
+            rest,
+            Expr::Call {
+                name: "__mutsu_atomic_add_var".to_string(),
+                args: vec![Expr::Literal(Value::Str(name)), rhs],
+            },
+        ));
+    }
+    if (!rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>"))
+        && !rest.starts_with("⚛=")
+    {
         return Err(PError::expected("assignment expression"));
     }
-    let rest = &rest[1..];
+    let is_atomic = rest.starts_with("⚛=");
+    let rest = if is_atomic {
+        &rest["⚛=".len()..]
+    } else {
+        &rest[1..]
+    };
     let (rest, _) = ws(rest)?;
     let (rest, rhs) = match try_parse_assign_expr(rest) {
         Ok(r) => r,
@@ -281,6 +308,18 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
         _ => return Err(PError::expected("assignment expression")),
     };
+    if is_atomic {
+        if let Expr::AssignExpr { name, expr } = expr {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_atomic_store_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name)), *expr],
+                },
+            ));
+        }
+        return Err(PError::expected("atomic assignment expression"));
+    }
     Ok((rest, expr))
 }
 
@@ -363,8 +402,14 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (r_idx, _) = parse_char(r_idx, closing)?;
         let (r_after, _) = ws(r_idx)?;
         // Check for simple assignment
-        if r_after.starts_with('=') && !r_after.starts_with("==") && !r_after.starts_with("=>") {
-            let r3 = &r_after[1..];
+        if (r_after.starts_with('=') && !r_after.starts_with("==") && !r_after.starts_with("=>"))
+            || r_after.starts_with("⚛=")
+        {
+            let r3 = if let Some(stripped) = r_after.strip_prefix("⚛=") {
+                stripped
+            } else {
+                &r_after[1..]
+            };
             let (rest, _) = ws(r3)?;
             let (rest, rhs) = match try_parse_assign_expr(rest) {
                 Ok(r) => r,
@@ -484,15 +529,46 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             },
         ));
     }
+    if let Some(stripped) = r2.strip_prefix("⚛+=") {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::Call {
+                name: "__mutsu_atomic_add_var".to_string(),
+                args: vec![Expr::Literal(Value::Str(name)), rhs],
+            },
+        ));
+    }
     // Check simple chained assignment: $var = ...
-    if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
-        let r3 = &r2[1..];
+    if (r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>"))
+        || r2.starts_with("⚛=")
+    {
+        let is_atomic = r2.starts_with("⚛=");
+        let r3 = if is_atomic {
+            &r2["⚛=".len()..]
+        } else {
+            &r2[1..]
+        };
         let (rest, _) = ws(r3)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
             Err(_) => expression(rest)?,
         };
         let name = format!("{}{}", prefix, var);
+        if is_atomic {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_atomic_store_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name)), rhs],
+                },
+            ));
+        }
         return Ok((
             rest,
             Expr::AssignExpr {
@@ -613,10 +689,24 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     if !is_sigiled {
         if let Ok((after_ident, bare_name)) = ident(input) {
             let (after_ws, _) = ws(after_ident)?;
-            if after_ws.starts_with('=') && !after_ws.starts_with("==") {
-                let rest = &after_ws[1..];
+            if (after_ws.starts_with('=') && !after_ws.starts_with("=="))
+                || after_ws.starts_with("⚛=")
+            {
+                let is_atomic = after_ws.starts_with("⚛=");
+                let rest = if is_atomic {
+                    &after_ws["⚛=".len()..]
+                } else {
+                    &after_ws[1..]
+                };
                 let (rest, _) = ws(rest)?;
                 let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+                if is_atomic {
+                    let stmt = Stmt::Expr(Expr::Call {
+                        name: "__mutsu_atomic_store_var".to_string(),
+                        args: vec![Expr::Literal(Value::Str(bare_name)), expr],
+                    });
+                    return parse_statement_modifier(rest, stmt);
+                }
                 let stmt = Stmt::Assign {
                     name: bare_name,
                     expr,
@@ -824,8 +914,31 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
     // Simple assignment
-    if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
-        let rest = &rest[1..];
+    if let Some(stripped) = rest.strip_prefix("⚛+=") {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after atomic compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let stmt = Stmt::Expr(Expr::Call {
+            name: "__mutsu_atomic_add_var".to_string(),
+            args: vec![Expr::Literal(Value::Str(name)), rhs],
+        });
+        return parse_statement_modifier(rest, stmt);
+    }
+
+    if (rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>"))
+        || rest.starts_with("⚛=")
+    {
+        let is_atomic = rest.starts_with("⚛=");
+        let rest = if is_atomic {
+            &rest["⚛=".len()..]
+        } else {
+            &rest[1..]
+        };
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
             messages: merge_expected_messages(
@@ -834,6 +947,13 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
         })?;
+        if is_atomic {
+            let stmt = Stmt::Expr(Expr::Call {
+                name: "__mutsu_atomic_store_var".to_string(),
+                args: vec![Expr::Literal(Value::Str(name)), expr],
+            });
+            return parse_statement_modifier(rest, stmt);
+        }
         let stmt = Stmt::Assign {
             name,
             expr,

@@ -1618,6 +1618,9 @@ impl VM {
         {
             return Err(RuntimeError::new("X::Assignment::RO"));
         }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key(name);
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(symbol) = Self::term_symbol_from_name(name) {
@@ -1726,6 +1729,9 @@ impl VM {
         ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
         {
             return Err(RuntimeError::new("X::Assignment::RO"));
+        }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key(name);
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());

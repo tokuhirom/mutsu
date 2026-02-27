@@ -1,5 +1,8 @@
 use super::*;
 use crate::token_kind::TokenKind;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 enum OpAssoc {
     Left,
@@ -355,6 +358,14 @@ impl Interpreter {
             // Concurrency (single-threaded simulation)
             "start" => self.builtin_start(args),
             "await" => self.builtin_await(&args),
+            "atomic-fetch" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
+            "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
+            "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(&args),
+            "__mutsu_atomic_post_inc_var" => self.builtin_atomic_post_inc_var(&args),
+            "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
+            "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
+            "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(&args),
             "signal" => self.builtin_signal(&args),
             // Boolean coercion functions
             "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
@@ -1087,6 +1098,158 @@ impl Interpreter {
         let call_args = Self::sub_call_args_from_value(args.get(1));
         let value = args[2].clone();
         self.assign_callable_lvalue_with_values(callable, call_args, value)
+    }
+
+    fn atomic_var_name_arg(args: &[Value]) -> Result<String, RuntimeError> {
+        let Some(name) = args.first() else {
+            return Err(RuntimeError::new(
+                "atomic variable operation requires variable name",
+            ));
+        };
+        Ok(name.to_string_value())
+    }
+
+    fn atomic_shared_value_key(id: u64) -> String {
+        format!("__mutsu_atomic_value::{id}")
+    }
+
+    fn atomic_shared_name_key(name: &str) -> String {
+        format!("__mutsu_atomic_name::{name}")
+    }
+
+    fn atomic_assign_coerced_value(
+        &mut self,
+        name: &str,
+        mut value: Value,
+    ) -> Result<Value, RuntimeError> {
+        self.check_readonly_for_modify(name)?;
+        if let Some(constraint) = self.var_type_constraint(name)
+            && !name.starts_with('%')
+            && !name.starts_with('@')
+        {
+            if matches!(value, Value::Nil) {
+                value = Value::Package(constraint.clone());
+            } else if !self.type_matches_value(&constraint, &value) {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                    name,
+                    constraint,
+                    crate::runtime::utils::value_type_name(&value)
+                )));
+            }
+            if !matches!(value, Value::Nil | Value::Package(_)) {
+                value = self.try_coerce_value_for_constraint(&constraint, value)?;
+            }
+        }
+        Ok(value)
+    }
+
+    fn atomic_value_key_for_name(&mut self, name: &str) -> String {
+        let name_key = Self::atomic_shared_name_key(name);
+        if let Some(Value::Str(existing)) = self.env.get(&name_key) {
+            return existing.clone();
+        }
+        let value_key = {
+            let mut shared = self.shared_vars.lock().unwrap();
+            if let Some(Value::Str(existing)) = shared.get(&name_key) {
+                existing.clone()
+            } else {
+                let id = ATOMIC_VAR_KEY_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let value_key = Self::atomic_shared_value_key(id);
+                shared.insert(name_key.clone(), Value::Str(value_key.clone()));
+                value_key
+            }
+        };
+        self.env.insert(name_key, Value::Str(value_key.clone()));
+        value_key
+    }
+
+    fn atomic_current_value(
+        &self,
+        shared: &std::collections::HashMap<String, Value>,
+        name: &str,
+        value_key: &str,
+    ) -> Value {
+        shared
+            .get(value_key)
+            .cloned()
+            .or_else(|| self.env.get(name).cloned())
+            .unwrap_or(Value::Nil)
+    }
+
+    fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let name = Self::atomic_var_name_arg(args)?;
+        let value_key = self.atomic_value_key_for_name(&name);
+        let shared = self.shared_vars.lock().unwrap();
+        Ok(self.atomic_current_value(&shared, &name, &value_key))
+    }
+
+    fn builtin_atomic_store_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "atomic store requires variable name and value",
+            ));
+        }
+        let name = args[0].to_string_value();
+        let value = self.atomic_assign_coerced_value(&name, args[1].clone())?;
+        let value_key = self.atomic_value_key_for_name(&name);
+        self.env.insert(name, value.clone());
+        self.shared_vars
+            .lock()
+            .unwrap()
+            .insert(value_key, value.clone());
+        Ok(value)
+    }
+
+    fn builtin_atomic_add_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "atomic add requires variable name and increment value",
+            ));
+        }
+        let name = args[0].to_string_value();
+        let delta = args[1].clone();
+        self.check_readonly_for_modify(&name)?;
+        let value_key = self.atomic_value_key_for_name(&name);
+        let mut shared = self.shared_vars.lock().unwrap();
+        let current = self.atomic_current_value(&shared, &name, &value_key);
+        let next = crate::builtins::arith_add(current, delta)?;
+        self.env.insert(name.clone(), next.clone());
+        shared.insert(value_key, next.clone());
+        Ok(next)
+    }
+
+    fn builtin_atomic_update_unit(
+        &mut self,
+        args: &[Value],
+        delta: i64,
+        return_old: bool,
+    ) -> Result<Value, RuntimeError> {
+        let name = Self::atomic_var_name_arg(args)?;
+        self.check_readonly_for_modify(&name)?;
+        let value_key = self.atomic_value_key_for_name(&name);
+        let mut shared = self.shared_vars.lock().unwrap();
+        let current = self.atomic_current_value(&shared, &name, &value_key);
+        let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
+        self.env.insert(name.clone(), next.clone());
+        shared.insert(value_key, next.clone());
+        if return_old { Ok(current) } else { Ok(next) }
+    }
+
+    fn builtin_atomic_post_inc_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_atomic_update_unit(args, 1, true)
+    }
+
+    fn builtin_atomic_pre_inc_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_atomic_update_unit(args, 1, false)
+    }
+
+    fn builtin_atomic_post_dec_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_atomic_update_unit(args, -1, true)
+    }
+
+    fn builtin_atomic_pre_dec_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_atomic_update_unit(args, -1, false)
     }
 
     fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
