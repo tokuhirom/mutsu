@@ -500,6 +500,7 @@ type StmtParser = fn(&str) -> PResult<'_, Stmt>;
 /// Order is critical — do not reorder without careful consideration.
 const STMT_PARSERS: &[StmtParser] = &[
     decl::use_stmt,
+    decl::import_stmt,
     decl::no_stmt,
     decl::need_stmt,
     class::unit_module_stmt,

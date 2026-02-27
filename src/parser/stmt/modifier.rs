@@ -26,6 +26,8 @@ fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             });
         }
         rewritten.extend(body.clone());

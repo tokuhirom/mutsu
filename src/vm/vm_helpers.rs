@@ -489,6 +489,25 @@ impl VM {
             .iter()
             .map(|v| runtime::value_type_name(v).to_string())
             .collect();
+        if name.contains("::") {
+            let key_typed = format!("{name}/{arity}:{}", type_sig.join(","));
+            if let Some(cf) = compiled_fns.get(&key_typed)
+                && matches_resolved(cf)
+            {
+                return Some(cf);
+            }
+            let key_arity = format!("{name}/{arity}");
+            if let Some(cf) = compiled_fns.get(&key_arity)
+                && matches_resolved(cf)
+            {
+                return Some(cf);
+            }
+            if let Some(cf) = compiled_fns.get(name)
+                && matches_resolved(cf)
+            {
+                return Some(cf);
+            }
+        }
         let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
         if let Some(cf) = compiled_fns.get(&key_typed)
             && matches_resolved(cf)
@@ -515,11 +534,7 @@ impl VM {
                 return Some(cf);
             }
         }
-        if name.contains("::") {
-            compiled_fns.get(name).filter(|cf| matches_resolved(cf))
-        } else {
-            None
-        }
+        None
     }
 
     pub(super) fn call_compiled_function_named(

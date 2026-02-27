@@ -295,6 +295,10 @@ pub struct Interpreter {
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
     module_load_stack: Vec<String>,
+    /// Exported subroutine symbols by package and export tag.
+    exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
+    /// Exported variable/constant symbols by package and export tag.
+    exported_vars: HashMap<String, HashMap<String, HashSet<String>>>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     pub(crate) newline_mode: NewlineMode,
@@ -1067,6 +1071,8 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: HashSet::new(),
             module_load_stack: Vec::new(),
+            exported_subs: HashMap::new(),
+            exported_vars: HashMap::new(),
             suppress_exports: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
@@ -1263,7 +1269,11 @@ impl Interpreter {
             if module == "strict" {
                 self.strict_mode = true;
             }
-            return Ok(());
+            return match self.import_module(module, &[]) {
+                Ok(()) => Ok(()),
+                Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
+                Err(err) => Err(err),
+            };
         }
         if self.module_load_stack.iter().any(|m| m == module) {
             let mut chain = self.module_load_stack.clone();
@@ -1309,8 +1319,135 @@ impl Interpreter {
                 self.strict_mode = true;
             }
             self.loaded_modules.insert(module.to_string());
+            if let Err(err) = self.import_module(module, &[])
+                && !err.message.starts_with("No exports found for module:")
+            {
+                return Err(err);
+            }
         }
         result
+    }
+
+    pub(crate) fn register_exported_sub(
+        &mut self,
+        package: String,
+        name: String,
+        mut tags: Vec<String>,
+    ) {
+        if tags.is_empty() {
+            tags.push("DEFAULT".to_string());
+        }
+        let entry = self
+            .exported_subs
+            .entry(package)
+            .or_default()
+            .entry(name)
+            .or_default();
+        for tag in tags {
+            entry.insert(tag);
+        }
+    }
+
+    pub(crate) fn register_exported_var(
+        &mut self,
+        package: String,
+        name: String,
+        mut tags: Vec<String>,
+    ) {
+        if tags.is_empty() {
+            tags.push("DEFAULT".to_string());
+        }
+        let entry = self
+            .exported_vars
+            .entry(package)
+            .or_default()
+            .entry(name)
+            .or_default();
+        for tag in tags {
+            entry.insert(tag);
+        }
+    }
+
+    pub(crate) fn import_module(
+        &mut self,
+        module: &str,
+        tags: &[String],
+    ) -> Result<(), RuntimeError> {
+        let requested: HashSet<String> = if tags.is_empty() {
+            ["DEFAULT".to_string()].into_iter().collect()
+        } else {
+            tags.iter().cloned().collect()
+        };
+        let import_all = requested.contains("ALL");
+
+        let subs = self.exported_subs.get(module).cloned().unwrap_or_default();
+        let vars = self.exported_vars.get(module).cloned().unwrap_or_default();
+        if subs.is_empty() && vars.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "No exports found for module: {}",
+                module
+            )));
+        }
+
+        for (name, symbol_tags) in subs {
+            if !import_all && symbol_tags.is_disjoint(&requested) {
+                continue;
+            }
+            let source_single = format!("{module}::{name}");
+            let source_prefix = format!("{module}::{name}/");
+            let target_single = format!("GLOBAL::{name}");
+            let target_prefix = format!("GLOBAL::{name}/");
+
+            let function_entries: Vec<(String, FunctionDef)> = self
+                .functions
+                .iter()
+                .filter_map(|(k, v)| {
+                    if k == &source_single {
+                        Some((target_single.clone(), v.clone()))
+                    } else if k.starts_with(&source_prefix) {
+                        Some((k.replacen(&source_prefix, &target_prefix, 1), v.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for (k, v) in function_entries {
+                self.functions.insert(k, v);
+            }
+
+            let proto_entries: Vec<(String, FunctionDef)> = self
+                .proto_functions
+                .iter()
+                .filter_map(|(k, v)| {
+                    if k == &source_single {
+                        Some((target_single.clone(), v.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for (k, v) in proto_entries {
+                self.proto_functions.insert(k, v);
+            }
+        }
+
+        for (name, symbol_tags) in vars {
+            if !import_all && symbol_tags.is_disjoint(&requested) {
+                continue;
+            }
+            let (source, target) = if let Some(sigil) = name.chars().next()
+                && matches!(sigil, '$' | '@' | '%' | '&')
+            {
+                let bare = &name[1..];
+                (format!("{sigil}{module}::{bare}"), name.clone())
+            } else {
+                (format!("{module}::{name}"), name.clone())
+            };
+            if let Some(value) = self.env.get(&source).cloned() {
+                self.env.insert(target, value);
+            }
+        }
+        Ok(())
     }
 
     /// Load a module without importing its exports (Raku `need` keyword).
@@ -1759,6 +1896,8 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             module_load_stack: Vec::new(),
+            exported_subs: self.exported_subs.clone(),
+            exported_vars: self.exported_vars.clone(),
             suppress_exports: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),

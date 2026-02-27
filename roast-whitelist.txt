@@ -42,6 +42,7 @@ roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/caller.t
 roast/S02-names/dynamic-scope.t
+roast/S02-names/identifier.t
 roast/S02-names/indirect.t
 roast/S02-names/strict.t
 roast/S02-one-pass-parsing/less-than.t
@@ -116,6 +117,7 @@ roast/S03-smartmatch/signature-signature.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-statement-modifiers/given.t
+roast/S04-statement-modifiers/if.t
 roast/S04-statement-modifiers/unless.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
@@ -213,6 +215,7 @@ roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/gh2979.t
+roast/S11-modules/import.t
 roast/S11-modules/lexical.t
 roast/S11-modules/module-file.t
 roast/S11-modules/module.t

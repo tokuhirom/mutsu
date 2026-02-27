@@ -497,6 +497,10 @@ pub(crate) enum OpCode {
         target_var_idx: Option<u32>,
     },
     UseModule(u32),
+    ImportModule {
+        name_idx: u32,
+        tags_idx: Option<u32>,
+    },
     NoModule(u32),
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
@@ -526,6 +530,10 @@ pub(crate) enum OpCode {
     SetVarDynamic {
         name_idx: u32,
         dynamic: bool,
+    },
+    RegisterVarExport {
+        name_idx: u32,
+        tags_idx: Option<u32>,
     },
 
     /// Get a variable from the caller's scope ($CALLER::varname).
