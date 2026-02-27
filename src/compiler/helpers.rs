@@ -371,15 +371,20 @@ impl Compiler {
     }
 
     /// Compile a SubDecl body to a CompiledFunction and store it.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_sub_body(
         &mut self,
         name: &str,
         params: &[String],
         param_defs: &[crate::ast::ParamDef],
+        return_type: Option<&String>,
         body: &[Stmt],
         multi: bool,
         state_group: Option<&str>,
     ) {
+        let sink_last_expr = return_type
+            .map(|s| Self::is_definite_return_spec(s))
+            .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
         let arity = param_defs
             .iter()
@@ -426,6 +431,16 @@ impl Compiler {
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);
             sub_compiler.code.emit(OpCode::Pop);
+            if sink_last_expr {
+                let nil_idx = sub_compiler.code.add_constant(Value::Nil);
+                sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
+            }
+        } else if sink_last_expr {
+            for stmt in body {
+                sub_compiler.compile_stmt(stmt);
+            }
+            let nil_idx = sub_compiler.code.add_constant(Value::Nil);
+            sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
         } else {
             // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
             for (i, stmt) in body.iter().enumerate() {
@@ -484,6 +499,7 @@ impl Compiler {
             code: sub_compiler.code,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
+            return_type: return_type.cloned(),
             fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
             // Named subs with no params and no param_defs that don't use @_/%_ have
             // explicit empty signature :() and should reject any arguments.
@@ -498,6 +514,23 @@ impl Compiler {
     fn body_uses_legacy_args(body: &[Stmt]) -> bool {
         let body_str = format!("{:?}", body);
         body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
+    }
+
+    fn is_definite_return_spec(spec: &str) -> bool {
+        let s = spec.trim();
+        if s.is_empty() {
+            return false;
+        }
+        if s.starts_with('$')
+            || s.starts_with('\"')
+            || s.starts_with('\'')
+            || s.chars().next().is_some_and(|c| c.is_ascii_digit())
+            || (s.starts_with('-') && s[1..].chars().next().is_some_and(|c| c.is_ascii_digit()))
+        {
+            return true;
+        }
+        matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "e" | "tau")
+            || s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
     }
 
     fn emit_nil_value(&mut self) {

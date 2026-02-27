@@ -622,6 +622,18 @@ impl Interpreter {
                             for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
                             }
+                            let restore_env_with_side_effects =
+                                |saved: std::collections::HashMap<String, Value>,
+                                 current: &std::collections::HashMap<String, Value>|
+                                 -> std::collections::HashMap<String, Value> {
+                                    let mut merged = saved;
+                                    for (k, v) in current {
+                                        if merged.contains_key(k) {
+                                            merged.insert(k.clone(), v.clone());
+                                        }
+                                    }
+                                    merged
+                                };
 
                             let slurpy_index = data
                                 .params
@@ -678,15 +690,15 @@ impl Interpreter {
                                 Ok(v) => v,
                                 Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
                                 Err(e) if e.is_last => {
-                                    self.env = saved;
+                                    self.env = restore_env_with_side_effects(saved, &self.env);
                                     break;
                                 }
                                 Err(e) => {
-                                    self.env = saved;
+                                    self.env = restore_env_with_side_effects(saved, &self.env);
                                     return Err(e);
                                 }
                             };
-                            self.env = saved;
+                            self.env = restore_env_with_side_effects(saved, &self.env);
                             val
                         }
                     } else if let Value::Routine { name: rname, .. } = genfn {

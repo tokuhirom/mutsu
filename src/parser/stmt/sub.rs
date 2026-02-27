@@ -936,19 +936,90 @@ pub(super) fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
 /// Parse a return type annotation (--> Type) and return both remainder and type name.
 pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let (rest, _) = ws(input)?;
-    let start = rest;
-    let mut rest = rest;
-    while !rest.is_empty() && !rest.starts_with(')') && !rest.starts_with(',') {
-        let ch = rest.chars().next().unwrap();
-        if ch.is_alphanumeric() || ch == ':' || ch == '_' || ch == '-' {
-            rest = &rest[ch.len_utf8()..];
-        } else {
-            break;
+    let bytes = rest.as_bytes();
+    let mut idx = 0usize;
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut brace_depth = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    while idx < bytes.len() {
+        let b = bytes[idx];
+
+        if in_single {
+            if b == b'\'' {
+                in_single = false;
+            }
+            idx += 1;
+            continue;
+        }
+        if in_double {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_double = false;
+            }
+            idx += 1;
+            continue;
+        }
+
+        match b {
+            b'\'' => {
+                in_single = true;
+                idx += 1;
+            }
+            b'"' => {
+                in_double = true;
+                idx += 1;
+            }
+            b'(' => {
+                paren_depth += 1;
+                idx += 1;
+            }
+            b')' => {
+                if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
+                    break;
+                }
+                paren_depth = paren_depth.saturating_sub(1);
+                idx += 1;
+            }
+            b'[' => {
+                bracket_depth += 1;
+                idx += 1;
+            }
+            b']' => {
+                bracket_depth = bracket_depth.saturating_sub(1);
+                idx += 1;
+            }
+            b'{' => {
+                if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
+                    break;
+                }
+                brace_depth += 1;
+                idx += 1;
+            }
+            b'}' => {
+                if brace_depth == 0 {
+                    break;
+                }
+                brace_depth -= 1;
+                idx += 1;
+            }
+            b',' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => break,
+            _ => idx += 1,
         }
     }
-    let type_name = start[..start.len() - rest.len()].to_string();
-    let (rest, _) = ws(rest)?;
-    Ok((rest, type_name))
+
+    let annotation = rest[..idx].trim().to_string();
+    if annotation.is_empty() {
+        return Err(PError::expected("return type annotation"));
+    }
+    let (tail, _) = ws(&rest[idx..])?;
+    Ok((tail, annotation))
 }
 
 /// Parse parameter list with return type annotation.
