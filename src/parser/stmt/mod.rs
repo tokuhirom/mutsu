@@ -45,6 +45,10 @@ pub(super) fn set_eval_operator_preseed(names: Vec<String>) {
     simple::set_eval_operator_preseed(names);
 }
 
+pub(super) fn set_eval_operator_assoc_preseed(assoc: std::collections::HashMap<String, String>) {
+    simple::set_eval_operator_assoc_preseed(assoc);
+}
+
 pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
     STMT_MEMO.stats()
 }
@@ -185,7 +189,17 @@ fn var_name(input: &str) -> PResult<'_, String> {
             }
         }
         // Handle bare $ (anonymous variable) — no name after sigil
-        if let Ok((rest, name)) = qualified_ident(r) {
+        if let Ok((mut rest, mut name)) = qualified_ident(r) {
+            while rest.starts_with(':') && !rest.starts_with("::") {
+                let after_colon = &rest[1..];
+                if let Ok((r2, suffix)) = ident(after_colon) {
+                    name.push(':');
+                    name.push_str(&suffix);
+                    rest = r2;
+                } else {
+                    break;
+                }
+            }
             let full = if twigil.is_empty() {
                 name
             } else {
@@ -283,6 +297,21 @@ pub(super) fn my_decl_expr_pub(input: &str) -> PResult<'_, Stmt> {
 /// Public accessor for `for` statement parser (used by primary.rs for `for` expressions).
 pub(super) fn for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::for_stmt(input)
+}
+
+/// Public accessor for `while` statement parser (used by primary.rs for `while` expressions).
+pub(super) fn while_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::while_stmt(input)
+}
+
+/// Public accessor for `until` statement parser (used by primary.rs for `until` expressions).
+pub(super) fn until_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::until_stmt(input)
+}
+
+/// Public accessor for `loop` statement parser (used by primary.rs for `loop` expressions).
+pub(super) fn loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::loop_stmt(input)
 }
 
 pub(super) fn labeled_loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
@@ -547,6 +576,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::when_stmt,
     control::default_stmt,
     simple::return_stmt,
+    simple::goto_stmt,
     simple::last_stmt,
     simple::next_stmt,
     simple::redo_stmt,
@@ -944,6 +974,15 @@ mod tests {
         } else {
             panic!("expected SubDecl");
         }
+    }
+
+    #[test]
+    fn parse_declared_postfix_operator_call_in_following_statement() {
+        let (rest, stmts) = program("sub postfix:<!!>($x) { $x }; (4!!, 5!!).join(' ');").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "postfix:<!!>"));
+        assert!(matches!(&stmts[1], Stmt::Expr(Expr::MethodCall { .. })));
     }
 
     #[test]

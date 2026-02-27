@@ -40,6 +40,8 @@ pub(crate) struct FunctionDef {
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_test_assertion: bool,
     pub(crate) is_rw: bool,
+    /// True when this routine represents an `our method` code reference.
+    pub(crate) is_method: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
 }
@@ -324,6 +326,7 @@ pub(crate) enum Stmt {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         return_type: Option<String>,
+        associativity: Option<String>,
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,
@@ -399,6 +402,8 @@ pub(crate) enum Stmt {
         cond: Expr,
         then_branch: Vec<Stmt>,
         else_branch: Vec<Stmt>,
+        /// Optional binding variable: `if EXPR -> $var { }`
+        binding_var: Option<String>,
     },
     While {
         cond: Expr,
@@ -440,6 +445,11 @@ pub(crate) enum Stmt {
     Catch(Vec<Stmt>),
     Control(Vec<Stmt>),
     Take(Expr),
+    Goto(Expr),
+    Label {
+        name: String,
+        stmt: Box<Stmt>,
+    },
     EnumDecl {
         name: String,
         variants: Vec<(String, Option<Expr>)>,
@@ -563,7 +573,12 @@ fn placeholder_sort_key(name: &str) -> &str {
 
 fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     match stmt {
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e)
+        | Stmt::Goto(e) => {
             collect_ph_expr(e, out);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_ph_expr(expr, out),
@@ -586,6 +601,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             cond,
             then_branch,
             else_branch,
+            ..
         } => {
             collect_ph_expr(cond, out);
             for s in then_branch {
@@ -665,6 +681,9 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_expr(e, out);
             }
             collect_ph_expr(value, out);
+        }
+        Stmt::Label { stmt, .. } => {
+            collect_ph_stmt(stmt, out);
         }
         Stmt::ProtoDecl { .. } => {}
         Stmt::DoesDecl { .. } => {}

@@ -100,6 +100,240 @@ impl VM {
         }
     }
 
+    fn superscript_digit_value(c: char) -> Option<u32> {
+        match c {
+            '\u{2070}' => Some(0), // ⁰
+            '\u{00B9}' => Some(1), // ¹
+            '\u{00B2}' => Some(2), // ²
+            '\u{00B3}' => Some(3), // ³
+            '\u{2074}' => Some(4), // ⁴
+            '\u{2075}' => Some(5), // ⁵
+            '\u{2076}' => Some(6), // ⁶
+            '\u{2077}' => Some(7), // ⁷
+            '\u{2078}' => Some(8), // ⁸
+            '\u{2079}' => Some(9), // ⁹
+            _ => None,
+        }
+    }
+
+    fn superscript_digit_char(d: u32) -> char {
+        match d {
+            0 => '\u{2070}', // ⁰
+            1 => '\u{00B9}', // ¹
+            2 => '\u{00B2}', // ²
+            3 => '\u{00B3}', // ³
+            4 => '\u{2074}', // ⁴
+            5 => '\u{2075}', // ⁵
+            6 => '\u{2076}', // ⁶
+            7 => '\u{2077}', // ⁷
+            8 => '\u{2078}', // ⁸
+            9 => '\u{2079}', // ⁹
+            _ => unreachable!("superscript digit out of range"),
+        }
+    }
+
+    fn superscript_succ(s: &str) -> Option<String> {
+        let mut digits = Vec::new();
+        for ch in s.chars() {
+            digits.push(Self::superscript_digit_value(ch)?);
+        }
+        if digits.is_empty() {
+            return None;
+        }
+        let mut carry = 1u32;
+        for d in digits.iter_mut().rev() {
+            if carry == 0 {
+                break;
+            }
+            let sum = *d + carry;
+            *d = sum % 10;
+            carry = sum / 10;
+        }
+        if carry > 0 {
+            digits.insert(0, carry);
+        }
+        Some(
+            digits
+                .into_iter()
+                .map(Self::superscript_digit_char)
+                .collect(),
+        )
+    }
+
+    fn superscript_pred(s: &str) -> Option<String> {
+        let mut digits = Vec::new();
+        for ch in s.chars() {
+            digits.push(Self::superscript_digit_value(ch)?);
+        }
+        if digits.is_empty() {
+            return None;
+        }
+        let mut borrow = 1u32;
+        for d in digits.iter_mut().rev() {
+            if borrow == 0 {
+                break;
+            }
+            if *d >= borrow {
+                *d -= borrow;
+                borrow = 0;
+            } else {
+                *d = 10 + *d - borrow;
+                borrow = 1;
+            }
+        }
+        if borrow > 0 {
+            return None;
+        }
+        Some(
+            digits
+                .into_iter()
+                .map(Self::superscript_digit_char)
+                .collect(),
+        )
+    }
+
+    fn string_succ(s: &str) -> String {
+        if s.is_empty() {
+            return String::new();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        let mut carry = true;
+        for ch in chars.iter_mut().rev() {
+            if !carry {
+                break;
+            }
+            if ch.is_ascii_lowercase() {
+                if *ch == 'z' {
+                    *ch = 'a';
+                } else {
+                    *ch = (*ch as u8 + 1) as char;
+                    carry = false;
+                }
+            } else if ch.is_ascii_uppercase() {
+                if *ch == 'Z' {
+                    *ch = 'A';
+                } else {
+                    *ch = (*ch as u8 + 1) as char;
+                    carry = false;
+                }
+            } else if ch.is_ascii_digit() {
+                if *ch == '9' {
+                    *ch = '0';
+                } else {
+                    *ch = (*ch as u8 + 1) as char;
+                    carry = false;
+                }
+            } else {
+                *ch = char::from_u32(*ch as u32 + 1).unwrap_or(*ch);
+                carry = false;
+            }
+        }
+        if carry {
+            let first = chars[0];
+            let prefix = if first.is_ascii_lowercase() {
+                'a'
+            } else if first.is_ascii_uppercase() {
+                'A'
+            } else if first.is_ascii_digit() {
+                '1'
+            } else {
+                first
+            };
+            chars.insert(0, prefix);
+        }
+        chars.into_iter().collect()
+    }
+
+    fn string_pred(s: &str) -> String {
+        if s.is_empty() {
+            return String::new();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        if chars.len() == 1 {
+            let ch = chars[0];
+            if let Some(prev) = char::from_u32(ch as u32 - 1) {
+                return prev.to_string();
+            }
+            return s.to_string();
+        }
+        let mut borrow = true;
+        for ch in chars.iter_mut().rev() {
+            if !borrow {
+                break;
+            }
+            if ch.is_ascii_lowercase() {
+                if *ch == 'a' {
+                    *ch = 'z';
+                } else {
+                    *ch = (*ch as u8 - 1) as char;
+                    borrow = false;
+                }
+            } else if ch.is_ascii_uppercase() {
+                if *ch == 'A' {
+                    *ch = 'Z';
+                } else {
+                    *ch = (*ch as u8 - 1) as char;
+                    borrow = false;
+                }
+            } else if ch.is_ascii_digit() {
+                if *ch == '0' {
+                    *ch = '9';
+                } else {
+                    *ch = (*ch as u8 - 1) as char;
+                    borrow = false;
+                }
+            } else {
+                if let Some(prev) = char::from_u32(*ch as u32 - 1) {
+                    *ch = prev;
+                }
+                borrow = false;
+            }
+        }
+        if borrow && chars.len() > 1 {
+            chars.remove(0);
+        }
+        chars.into_iter().collect()
+    }
+
+    pub(super) fn increment_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => Value::Int(i + 1),
+            Value::Bool(_) => Value::Bool(true),
+            Value::Rat(n, d) => make_rat(n + d, *d),
+            Value::Str(s) => {
+                if let Some(next) = Self::superscript_succ(s) {
+                    Value::Str(next)
+                } else {
+                    Value::Str(Self::string_succ(s))
+                }
+            }
+            _ => Value::Int(1),
+        }
+    }
+
+    pub(super) fn normalize_incdec_source(value: Value) -> Value {
+        match value {
+            Value::Nil | Value::Package(_) => Value::Int(0),
+            other => other,
+        }
+    }
+
+    pub(super) fn decrement_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => Value::Int(i - 1),
+            Value::Bool(_) => Value::Bool(false),
+            Value::Rat(n, d) => make_rat(n - d, *d),
+            Value::Str(s) => {
+                if let Some(prev) = Self::superscript_pred(s) {
+                    Value::Str(prev)
+                } else {
+                    Value::Str(Self::string_pred(s))
+                }
+            }
+            _ => Value::Int(-1),
+        }
+    }
+
     pub(super) fn strict_undeclared_error(&self, name: &str) -> RuntimeError {
         let suggestion = if name.is_empty() {
             String::new()
@@ -225,6 +459,8 @@ impl VM {
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
                 | "Proxy"
+                | "CallFrame"
+                | "Backtrace"
                 | "array"
         )
     }
@@ -545,24 +781,64 @@ impl VM {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        if callsite_line.is_some() {
+            self.interpreter.set_pending_callsite_line(callsite_line);
+        }
         let saved_env = self.interpreter.env().clone();
         let saved_readonly = self.interpreter.save_readonly_vars();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
         let return_spec = cf.return_type.clone();
 
-        // Push caller environment for $CALLER:: / $DYNAMIC:: resolution
+        self.interpreter.inject_pending_callsite_line();
         self.interpreter.push_caller_env();
+
+        // Push Sub value to block_stack for callframe().code
+        let sub_val = Value::make_sub(
+            fn_package.to_string(),
+            fn_name.to_string(),
+            cf.params.clone(),
+            cf.param_defs.clone(),
+            vec![],
+            false,
+            self.interpreter.env().clone(),
+        );
+        self.interpreter.push_block(sub_val);
 
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
+            let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
+            let callable_id = self
+                .interpreter
+                .env()
+                .get(&callable_key)
+                .and_then(|v| match v {
+                    Value::Int(i) => Some(*i),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            self.interpreter
+                .env_mut()
+                .insert("__mutsu_callable_id".to_string(), Value::Int(callable_id));
         }
+        let is_test_assertion = if fn_name.is_empty() {
+            false
+        } else {
+            self.interpreter
+                .routine_is_test_assertion_by_name(fn_name, &args)
+        };
+        let pushed_assertion = self
+            .interpreter
+            .push_test_assertion_context(is_test_assertion);
 
         if cf.empty_sig && !args.is_empty() {
             if !fn_name.is_empty() {
                 self.interpreter.pop_routine();
             }
+            self.interpreter
+                .pop_test_assertion_context(pushed_assertion);
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             self.locals = saved_locals;
@@ -579,6 +855,8 @@ impl VM {
                     if !fn_name.is_empty() {
                         self.interpreter.pop_routine();
                     }
+                    self.interpreter
+                        .pop_test_assertion_context(pushed_assertion);
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
                     self.locals = saved_locals;
@@ -670,10 +948,13 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }
-
-        self.interpreter.pop_caller_env();
+        self.interpreter
+            .pop_test_assertion_context(pushed_assertion);
+        self.interpreter.pop_block();
 
         let mut restored_env = saved_env;
+        self.interpreter
+            .pop_caller_env_with_writeback(&mut restored_env);
         self.interpreter
             .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         let rw_sources: std::collections::HashSet<String> = rw_bindings

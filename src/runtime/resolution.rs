@@ -327,7 +327,7 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
-    pub(super) fn call_sub_value(
+    pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
         args: Vec<Value>,
@@ -404,6 +404,9 @@ impl Interpreter {
             }
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            if let Some(line) = self.test_pending_callsite_line {
+                self.env.insert("?LINE".to_string(), Value::Int(line));
+            }
             self.push_caller_env();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
@@ -437,13 +440,20 @@ impl Interpreter {
                 }
             }
             // Bind implicit $_ for bare blocks called with arguments
+            let (uses_positional, _) = Self::auto_signature_uses(&data.body);
             if data.params.is_empty()
+                && !uses_positional
                 && !sanitized_args.is_empty()
                 && let Some(first_positional) = sanitized_args
                     .iter()
                     .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
+            } else if data.params.is_empty()
+                && sanitized_args.is_empty()
+                && let Some(caller_topic) = saved_env.get("_")
+            {
+                new_env.insert("_".to_string(), caller_topic.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -473,6 +483,10 @@ impl Interpreter {
                 new_env.clone(),
             );
             self.env = new_env;
+            self.env.insert(
+                "__mutsu_callable_id".to_string(),
+                Value::Int(data.id as i64),
+            );
             self.routine_stack
                 .push((data.package.clone(), data.name.clone()));
             self.block_stack.push(block_sub);
@@ -500,17 +514,17 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
-            self.pop_caller_env();
             let mut merged = saved_env;
+            self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    if merged.contains_key(k) {
+                    if k != "_" && k != "@_" && merged.contains_key(k) {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
             } else {
                 for (k, v) in self.env.iter() {
-                    if matches!(v, Value::Array(..)) {
+                    if k != "_" && k != "@_" && matches!(v, Value::Array(..)) {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
@@ -641,11 +655,14 @@ impl Interpreter {
 
             let underscore = "_".to_string();
 
-            // Save original values for keys we'll modify
-            let mut touched_keys: Vec<String> =
-                Vec::with_capacity(data.env.len() + data.params.len() + 1);
+            // Save/restore only temporary bindings introduced by map itself.
+            // Captured lexical vars (in data.env) must keep mutations done inside
+            // the mapper block (e.g. `{ $a++ }`).
+            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
             for k in data.env.keys() {
-                touched_keys.push(k.clone());
+                if !self.env.contains_key(k) {
+                    touched_keys.push(k.clone());
+                }
             }
             for p in &data.params {
                 if !touched_keys.contains(p) {
@@ -662,7 +679,9 @@ impl Interpreter {
 
             // Pre-insert closure env
             for (k, v) in &data.env {
-                self.env.insert(k.clone(), v.clone());
+                if !self.env.contains_key(k) {
+                    self.env.insert(k.clone(), v.clone());
+                }
             }
 
             // Create VM once, reuse across iterations
@@ -752,6 +771,17 @@ impl Interpreter {
                     None => {
                         self.env.remove(&k);
                     }
+                }
+            }
+            return Ok(Value::array(result));
+        }
+        if let Some(func) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                let value = self.call_sub_value(func.clone(), vec![item], false)?;
+                match value {
+                    Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                    v => result.push(v),
                 }
             }
             return Ok(Value::array(result));
@@ -918,6 +948,16 @@ impl Interpreter {
             let mut result = Vec::new();
             for item in list_items {
                 if self.smart_match(&item, &pattern) {
+                    result.push(item);
+                }
+            }
+            return Ok(Value::array(result));
+        }
+        if let Some(func) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
+                if pred.truthy() {
                     result.push(item);
                 }
             }

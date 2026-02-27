@@ -110,6 +110,13 @@ impl VM {
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+                if e.is_goto
+                    && let Some(label) = e.label.as_deref()
+                    && let Some(target_ip) = self.find_label_target(code, label)
+                {
+                    ip = target_ip;
+                    continue;
+                }
                 if e.is_warn {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
@@ -152,6 +159,13 @@ impl VM {
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+                if e.is_goto
+                    && let Some(label) = e.label.as_deref()
+                    && let Some(target_ip) = self.find_label_target(code, label)
+                {
+                    ip = target_ip;
+                    continue;
+                }
                 if e.is_warn {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
@@ -216,12 +230,32 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let mut ip = start;
         while ip < end {
-            self.exec_one(code, &mut ip, compiled_fns)?;
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+                if e.is_goto
+                    && let Some(label) = e.label.as_deref()
+                    && let Some(target_ip) = self.find_label_target(code, label)
+                    && (start..end).contains(&target_ip)
+                {
+                    ip = target_ip;
+                    continue;
+                }
+                return Err(e);
+            }
             if self.interpreter.is_halted() {
                 break;
             }
         }
         Ok(())
+    }
+
+    fn find_label_target(&self, code: &CompiledCode, label: &str) -> Option<usize> {
+        code.ops.iter().enumerate().find_map(|(i, op)| match op {
+            OpCode::Label(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                if name == label { Some(i + 1) } else { None }
+            }
+            _ => None,
+        })
     }
 
     /// Execute one opcode at *ip, advancing ip for the next instruction.
@@ -259,6 +293,12 @@ impl VM {
             // -- Variables --
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
+                if name == "?CALLER::LINE" {
+                    let line = self.interpreter.get_caller_line(1).unwrap_or(Value::Nil);
+                    self.stack.push(line);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
                     if name.starts_with('^') {
                         Value::Bool(true)
@@ -758,6 +798,17 @@ impl VM {
             }
 
             // -- Control flow --
+            OpCode::Label(_) => {
+                *ip += 1;
+            }
+            OpCode::Goto => {
+                let target = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
+                if let Some(target_ip) = self.find_label_target(code, &target) {
+                    *ip = target_ip;
+                } else {
+                    return Err(RuntimeError::goto_signal(target));
+                }
+            }
             OpCode::Jump(target) => {
                 *ip = *target as usize;
             }
@@ -1106,6 +1157,14 @@ impl VM {
                 self.exec_pre_decrement_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::PreIncrementIndex(name_idx) => {
+                self.exec_pre_increment_index_op(code, *name_idx);
+                *ip += 1;
+            }
+            OpCode::PreDecrementIndex(name_idx) => {
+                self.exec_pre_decrement_index_op(code, *name_idx);
+                *ip += 1;
+            }
 
             // -- Variable access --
             OpCode::GetCaptureVar(name_idx) => {
@@ -1128,8 +1187,15 @@ impl VM {
                 cond_end,
                 body_end,
                 label,
+                collect,
             } => {
-                self.exec_while_loop_op(code, *cond_end, *body_end, label, ip, compiled_fns)?;
+                let spec = vm_control_ops::WhileLoopSpec {
+                    cond_end: *cond_end,
+                    body_end: *body_end,
+                    label: label.clone(),
+                    collect: *collect,
+                };
+                self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
             OpCode::ForLoop {
                 param_idx,
@@ -1154,12 +1220,14 @@ impl VM {
                 step_start,
                 body_end,
                 label,
+                collect,
             } => {
                 let spec = vm_control_ops::CStyleLoopSpec {
                     cond_end: *cond_end,
                     step_start: *step_start,
                     body_end: *body_end,
                     label: label.clone(),
+                    collect: *collect,
                 };
                 self.exec_cstyle_loop_op(code, &spec, ip, compiled_fns)?;
             }
@@ -1350,6 +1418,26 @@ impl VM {
                 self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx)?;
                 *ip += 1;
             }
+            OpCode::FlipFlopExpr {
+                lhs_end,
+                rhs_end,
+                site_id,
+                exclude_start,
+                exclude_end,
+                is_fff,
+            } => {
+                self.exec_flip_flop_expr_op(
+                    code,
+                    ip,
+                    *lhs_end,
+                    *rhs_end,
+                    *site_id,
+                    *exclude_start,
+                    *exclude_end,
+                    *is_fff,
+                    compiled_fns,
+                )?;
+            }
 
             // -- Type checking --
             OpCode::TypeCheck(tc_idx) => {
@@ -1405,8 +1493,9 @@ impl VM {
                 self.exec_make_lambda_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::IndexAssignInvalid => {
-                return Err(RuntimeError::new("Invalid assignment target"));
+            OpCode::IndexAssignGeneric => {
+                self.exec_index_assign_generic_op()?;
+                *ip += 1;
             }
             OpCode::MakeBlockClosure(idx) => {
                 self.exec_make_block_closure_op(code, *idx)?;

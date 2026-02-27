@@ -44,6 +44,81 @@ fn validate_param_trait<'a>(
     Ok((input, ()))
 }
 
+fn static_default_type(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Value::Int(_)) => Some("Int".to_string()),
+        Expr::Literal(Value::Num(_)) => Some("Num".to_string()),
+        Expr::Literal(Value::Rat(_, _)) => Some("Rat".to_string()),
+        Expr::Literal(Value::Bool(_)) => Some("Bool".to_string()),
+        Expr::Literal(Value::Str(_)) => Some("Str".to_string()),
+        Expr::Literal(Value::Package(name)) => Some(name.clone()),
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
+        _ => None,
+    }
+}
+
+fn constraint_base_type(constraint: &str) -> &str {
+    let mut end = constraint.len();
+    for (idx, ch) in constraint.char_indices() {
+        if ch == '[' || ch == '(' || ch == ':' {
+            end = idx;
+            break;
+        }
+    }
+    &constraint[..end]
+}
+
+fn default_type_matches_constraint(constraint: &str, default_type: &str) -> bool {
+    let base = constraint_base_type(constraint);
+    if matches!(base, "Any" | "Mu" | "Cool") {
+        return true;
+    }
+    if base == default_type {
+        return true;
+    }
+    match base {
+        "Numeric" | "Real" => matches!(default_type, "Int" | "Num" | "Rat"),
+        "Num" => matches!(default_type, "Int" | "Num" | "Rat"),
+        "Rat" => matches!(default_type, "Int" | "Rat"),
+        "Callable" | "Code" | "Block" => default_type == "Callable",
+        _ => false,
+    }
+}
+
+fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
+    let mut saw_optional_positional = false;
+    for pd in params {
+        if pd.traits.iter().any(|t| t == "rw") && (pd.optional_marker || pd.default.is_some()) {
+            return Err(PError::fatal(
+                "X::Trait::Invalid: Cannot make an 'is rw' parameter optional".to_string(),
+            ));
+        }
+        if let (Some(constraint), Some(default_expr)) = (&pd.type_constraint, &pd.default)
+            && let Some(default_type) = static_default_type(default_expr)
+            && !default_type_matches_constraint(constraint, &default_type)
+        {
+            return Err(PError::fatal(format!(
+                "X::Parameter::Default::TypeCheck: Default value type '{}' does not satisfy '{}'",
+                default_type, constraint
+            )));
+        }
+        if pd.named || pd.slurpy {
+            continue;
+        }
+        let is_optional_positional = pd.optional_marker || pd.default.is_some();
+        if saw_optional_positional && !is_optional_positional {
+            return Err(PError::fatal(
+                "X::Parameter::WrongOrder: required positional parameters must come before optional positional parameters"
+                    .to_string(),
+            ));
+        }
+        if is_optional_positional {
+            saw_optional_positional = true;
+        }
+    }
+    Ok(())
+}
+
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
 pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
@@ -362,6 +437,7 @@ pub(super) fn sub_decl_body(
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
+        validate_signature_params(&pd)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
@@ -373,6 +449,11 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
+    if let Some(assoc) = traits.associativity.as_ref()
+        && name.starts_with("infix:<")
+    {
+        super::simple::register_user_infix_assoc(&name, assoc);
+    }
     if traits.is_test_assertion {
         super::simple::register_user_test_assertion_sub(&name);
     }
@@ -393,6 +474,7 @@ pub(super) fn sub_decl_body(
             let (r4, _) = parse_char(r3, '(')?;
             let (r4, _) = ws(r4)?;
             let (r4, alt_param_defs) = parse_param_list(r4)?;
+            validate_signature_params(&alt_param_defs)?;
             let (r4, _) = ws(r4)?;
             let (r4, _) = parse_char(r4, ')')?;
             let alt_params: Vec<String> = alt_param_defs.iter().map(|p| p.name.clone()).collect();
@@ -413,6 +495,7 @@ pub(super) fn sub_decl_body(
                     params,
                     param_defs,
                     return_type,
+                    associativity: traits.associativity.clone(),
                     signature_alternates,
                     body: Vec::new(),
                     multi,
@@ -450,6 +533,7 @@ pub(super) fn sub_decl_body(
                 params,
                 param_defs,
                 return_type,
+                associativity: traits.associativity.clone(),
                 signature_alternates,
                 body: Vec::new(),
                 multi,
@@ -489,6 +573,7 @@ pub(super) fn sub_decl_body(
             params,
             param_defs,
             return_type,
+            associativity: traits.associativity,
             signature_alternates,
             body,
             multi,
@@ -568,6 +653,7 @@ pub(crate) struct SubTraits {
     pub is_test_assertion: bool,
     pub is_rw: bool,
     pub return_type: Option<String>,
+    pub associativity: Option<String>,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
@@ -578,6 +664,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_test_assertion = false;
     let mut is_rw = false;
     let mut return_type = None;
+    let mut associativity = None;
     let mut seen_traits: Vec<String> = Vec::new();
     loop {
         let (r, _) = ws(input)?;
@@ -590,6 +677,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     is_test_assertion,
                     is_rw,
                     return_type,
+                    associativity,
                 },
             ));
         }
@@ -626,8 +714,16 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             } else if trait_name == "rw" {
                 is_rw = true;
             }
-            // Skip optional parenthesized trait args: is export(:DEFAULT)
-            let r = skip_balanced_parens(r);
+            let (mut r, _) = ws(r)?;
+            if r.starts_with('<') {
+                let (r2, arg) = parse_trait_angle_arg(r)?;
+                if trait_name == "assoc" {
+                    associativity = Some(arg);
+                }
+                r = r2;
+            }
+            // Skip optional parenthesized trait args: is export(:DEFAULT), is equiv(&prefix:<+>)
+            r = skip_balanced_parens(r);
             input = r;
             continue;
         }
@@ -663,9 +759,36 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion,
                 is_rw,
                 return_type,
+                associativity,
             },
         ));
     }
+}
+
+fn parse_trait_angle_arg(input: &str) -> PResult<'_, String> {
+    let after_open = input
+        .strip_prefix('<')
+        .ok_or_else(|| PError::expected("trait angle argument"))?;
+    let mut depth = 1u32;
+    let mut chars = after_open.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    let arg = after_open[..i].trim().to_string();
+                    let after_close = &after_open[i + 1..];
+                    return Ok((after_close, arg));
+                }
+            }
+            '<' => depth += 1,
+            '\\' => {
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    Err(PError::expected("closing '>' in trait argument"))
 }
 
 fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
@@ -2027,6 +2150,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResul
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
+        validate_signature_params(&pd)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();

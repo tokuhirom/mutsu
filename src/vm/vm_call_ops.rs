@@ -91,6 +91,8 @@ impl VM {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -176,6 +178,8 @@ impl VM {
             }
         }
         let args = self.normalize_call_args_for_target(&name, args);
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -278,11 +282,12 @@ impl VM {
 
         // When the method name was quoted (e.g. ."DEFINITE"()), skip the native
         // pseudo-method fast path so user-defined methods are called instead.
-        let mut skip_native = quoted
-            && matches!(
-                method.as_str(),
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-            );
+        let mut skip_native = method == "VAR"
+            || (quoted
+                && matches!(
+                    method.as_str(),
+                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+                ));
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -302,7 +307,13 @@ impl VM {
                 skip_native = true;
             }
         }
-        if skip_native {
+        if quoted
+            && skip_native
+            && matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
+        {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
         let call_result = if !skip_native {
@@ -363,18 +374,27 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic name"))?;
-        let method = name_val.to_string_value();
         let target = self
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
-        let call_result =
+        let call_result = if matches!(
+            &name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target);
+            call_args.extend(args);
+            self.interpreter.call_sub_value(name_val, call_args, false)
+        } else {
+            let method = name_val.to_string_value();
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
                     .call_method_with_values(target, &method, args)
-            };
+            }
+        };
         self.stack.push(call_result?);
         self.sync_locals_from_env(code);
         Ok(())
@@ -584,6 +604,8 @@ impl VM {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
             None
@@ -687,6 +709,8 @@ impl VM {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());

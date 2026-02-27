@@ -539,7 +539,12 @@ impl Interpreter {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
         let ok = match &block {
-            Value::Sub(data) => self.eval_block_value(&data.body).is_ok(),
+            Value::Sub(data) => {
+                self.push_caller_env();
+                let result = self.eval_block_value(&data.body).is_ok();
+                self.pop_caller_env();
+                result
+            }
             _ => true,
         };
         self.test_ok(ok, &desc, todo)?;
@@ -551,7 +556,12 @@ impl Interpreter {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
         let ok = match &block {
-            Value::Sub(data) => self.eval_block_value(&data.body).is_err(),
+            Value::Sub(data) => {
+                self.push_caller_env();
+                let result = self.eval_block_value(&data.body).is_err();
+                self.pop_caller_env();
+                result
+            }
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;

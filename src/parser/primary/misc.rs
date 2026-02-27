@@ -116,6 +116,13 @@ fn is_custom_reduction_op(op: &str) -> bool {
     if let Some(name) = op.strip_prefix('&') {
         return is_callable_reduction_name(name);
     }
+    if !op
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
+        return false;
+    }
     if let Ok((rest, _)) = parse_ident_with_hyphens(op) {
         return rest.is_empty();
     }
@@ -201,6 +208,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
+    let mut items = merge_sequence_seeds(items);
     let expr = if items.len() == 1 {
         items.remove(0)
     } else {
@@ -229,6 +237,30 @@ fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
         ));
     }
     expression(r)
+}
+
+fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::Binary { left, op, right } = last
+        && matches!(
+            op,
+            crate::token_kind::TokenKind::DotDotDot | crate::token_kind::TokenKind::DotDotDotCaret
+        )
+    {
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::Binary {
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            op: op.clone(),
+            right: right.clone(),
+        };
+        vec![merged]
+    } else {
+        items
+    }
 }
 
 pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, Expr> {

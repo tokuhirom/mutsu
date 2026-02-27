@@ -1,6 +1,154 @@
 use super::*;
+use num_bigint::BigInt;
+use num_traits::Signed;
+
+fn value_to_bigint(value: &Value) -> BigInt {
+    match value {
+        Value::Int(i) => BigInt::from(*i),
+        Value::BigInt(n) => n.clone(),
+        Value::Num(f) => BigInt::from(*f as i64),
+        Value::Rat(n, d) | Value::FatRat(n, d) => {
+            if *d == 0 {
+                BigInt::from(0)
+            } else {
+                BigInt::from(*n / *d)
+            }
+        }
+        Value::Bool(b) => BigInt::from(i64::from(*b)),
+        Value::Str(s) => s
+            .trim()
+            .parse::<i64>()
+            .map(BigInt::from)
+            .unwrap_or_else(|_| BigInt::from(0)),
+        _ => BigInt::from(0),
+    }
+}
+
+fn normalize_twos_complement(mut value: BigInt, bits: usize) -> BigInt {
+    if bits == 0 {
+        return BigInt::from(0);
+    }
+    let modulus = BigInt::from(1u8) << bits;
+    value %= &modulus;
+    if value.is_negative() {
+        value += modulus;
+    }
+    value
+}
+
+fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &BigInt) {
+    for i in 0..bits {
+        let bit_index = from + i;
+        let byte_index = bit_index / 8;
+        let bit_in_byte = 7 - (bit_index % 8);
+        let src_shift = bits - 1 - i;
+        let bit_is_set = ((value >> src_shift) & BigInt::from(1u8)) == BigInt::from(1u8);
+        if bit_is_set {
+            bytes[byte_index] |= 1 << bit_in_byte;
+        } else {
+            bytes[byte_index] &= !(1 << bit_in_byte);
+        }
+    }
+}
 
 impl Interpreter {
+    fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
+        match value {
+            Value::Int(i) => Some(*i),
+            Value::Num(f) => Some(*f as i64),
+            Value::BigInt(i) => num_traits::ToPrimitive::to_i64(i),
+            _ => None,
+        }
+    }
+
+    fn buf_blob_read_bits(
+        bytes: &[u8],
+        from: i64,
+        bits: i64,
+        signed: bool,
+    ) -> Result<Value, RuntimeError> {
+        if from < 0 || bits < 0 {
+            return Err(RuntimeError::new(
+                "read from out of range. Is: negative offset/length",
+            ));
+        }
+        let from_u = from as usize;
+        let bits_u = bits as usize;
+        let total_bits = bytes.len().saturating_mul(8);
+        if from_u
+            .checked_add(bits_u)
+            .is_none_or(|end| end > total_bits)
+        {
+            return Err(RuntimeError::new(format!(
+                "read from out of range. Is: {}, should be in 0..{}",
+                from, total_bits
+            )));
+        }
+        let mut out = num_bigint::BigInt::from(0u8);
+        for i in 0..bits_u {
+            let bit_index = from_u + i;
+            let byte_index = bit_index / 8;
+            let bit_in_byte = 7 - (bit_index % 8);
+            let bit = (bytes[byte_index] >> bit_in_byte) & 1;
+            out = (out << 1) + num_bigint::BigInt::from(bit);
+        }
+        if !signed || bits_u == 0 {
+            return Ok(Value::from_bigint(out));
+        }
+        let sign_mask = num_bigint::BigInt::from(1u8) << (bits_u - 1);
+        if (&out & &sign_mask) != num_bigint::BigInt::from(0u8) {
+            let modulus = num_bigint::BigInt::from(1u8) << bits_u;
+            Ok(Value::from_bigint(out - modulus))
+        } else {
+            Ok(Value::from_bigint(out))
+        }
+    }
+
+    fn buf_blob_write_bits(
+        bytes: &[u8],
+        from: i64,
+        bits: i64,
+        value: &Value,
+    ) -> Result<Vec<u8>, RuntimeError> {
+        if from < 0 || bits < 0 {
+            return Err(RuntimeError::new(
+                "write out of range. Is: negative offset/length",
+            ));
+        }
+        let from_u = from as usize;
+        let bits_u = bits as usize;
+        let required_bits = from_u.saturating_add(bits_u);
+        let required_bytes = required_bits.div_ceil(8);
+
+        let mut out = bytes.to_vec();
+        if out.len() < required_bytes {
+            out.resize(required_bytes, 0);
+        }
+
+        if bits_u == 0 {
+            return Ok(out);
+        }
+
+        let modulus = num_bigint::BigInt::from(1u8) << bits_u;
+        let mut encoded = value.to_bigint();
+        encoded = ((encoded % &modulus) + &modulus) % &modulus;
+
+        for i in 0..bits_u {
+            let shift = bits_u - 1 - i;
+            let bit_is_set = ((&encoded >> shift) & num_bigint::BigInt::from(1u8))
+                != num_bigint::BigInt::from(0u8);
+            let bit_index = from_u + i;
+            let byte_index = bit_index / 8;
+            let bit_in_byte = 7 - (bit_index % 8);
+            if bit_is_set {
+                out[byte_index] |= 1u8 << bit_in_byte;
+            } else {
+                out[byte_index] &= !(1u8 << bit_in_byte);
+            }
+        }
+        Ok(out)
+    }
+
     pub(super) fn overwrite_array_bindings_by_identity(
         &mut self,
         needle: &std::sync::Arc<Vec<Value>>,
@@ -408,6 +556,87 @@ impl Interpreter {
                 .unwrap_or_else(|| "Mu".to_string());
             return Ok(Value::Package(type_name));
         }
+
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id,
+        } = &target
+            && (class_name == "Buf" || class_name == "Blob")
+        {
+            let bytes = attributes
+                .get("bytes")
+                .and_then(|v| match v {
+                    Value::Array(items, ..) => Some(
+                        items
+                            .iter()
+                            .map(|v| match v {
+                                Value::Int(i) => (*i).clamp(0, 255) as u8,
+                                Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
+                                Value::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi)
+                                    .unwrap_or(0)
+                                    .clamp(0, 255)
+                                    as u8,
+                                _ => 0u8,
+                            })
+                            .collect::<Vec<u8>>(),
+                    ),
+                    _ => None,
+                })
+                .unwrap_or_default();
+
+            if (method == "read-ubits" || method == "read-bits") && args.len() == 2 {
+                let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
+                    return Err(RuntimeError::new("read-ubits/read-bits expects Int offset"));
+                };
+                let Some(bits) = Self::value_to_non_negative_i64(&args[1]) else {
+                    return Err(RuntimeError::new(
+                        "read-ubits/read-bits expects Int bit count",
+                    ));
+                };
+                return Self::buf_blob_read_bits(&bytes, from, bits, method == "read-bits");
+            }
+
+            if (method == "write-ubits" || method == "write-bits") && args.len() == 3 {
+                if class_name == "Blob" {
+                    return Err(RuntimeError::new(
+                        "Cannot modify immutable Blob with write-bits/write-ubits",
+                    ));
+                }
+                let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
+                    return Err(RuntimeError::new(
+                        "write-ubits/write-bits expects Int offset",
+                    ));
+                };
+                let Some(bits) = Self::value_to_non_negative_i64(&args[1]) else {
+                    return Err(RuntimeError::new(
+                        "write-ubits/write-bits expects Int bit count",
+                    ));
+                };
+                let written = Self::buf_blob_write_bits(&bytes, from, bits, &args[2])?;
+                let mut updated_attrs = attributes.as_ref().clone();
+                updated_attrs.insert(
+                    "bytes".to_string(),
+                    Value::array(
+                        written
+                            .iter()
+                            .map(|b| Value::Int(*b as i64))
+                            .collect::<Vec<_>>(),
+                    ),
+                );
+                self.overwrite_instance_bindings_by_identity(
+                    class_name,
+                    *id,
+                    updated_attrs.clone(),
+                );
+                return Ok(Value::Instance {
+                    class_name: class_name.clone(),
+                    attributes: std::sync::Arc::new(updated_attrs),
+                    id: *id,
+                });
+            }
+        }
+
         if target_var.starts_with('@') {
             // Check for shaped (multidimensional) arrays - these don't support
             // mutating operations like push/pop/shift/unshift/splice/append/prepend
@@ -667,6 +896,59 @@ impl Interpreter {
             id: target_id,
         } = target.clone()
         {
+            if (class_name == "Buf"
+                || class_name.starts_with("Buf[")
+                || class_name.starts_with("buf"))
+                && matches!(method, "write-ubits" | "write-bits")
+                && args.len() == 3
+            {
+                let from = super::to_int(&args[0]);
+                let bits = super::to_int(&args[1]);
+                if from < 0 || bits < 0 {
+                    return Err(RuntimeError::new("bit offset/length must be non-negative"));
+                }
+                let from = from as usize;
+                let bits = bits as usize;
+                let mut updated = (*attributes).clone();
+                let mut bytes = if let Some(Value::Array(items, ..)) = updated.get("bytes") {
+                    items
+                        .iter()
+                        .map(|v| match v {
+                            Value::Int(i) => *i as u8,
+                            _ => 0,
+                        })
+                        .collect::<Vec<u8>>()
+                } else {
+                    Vec::new()
+                };
+                let required_bits = from.saturating_add(bits);
+                let required_len = required_bits.div_ceil(8);
+                if bytes.len() < required_len {
+                    bytes.resize(required_len, 0);
+                }
+                let value = normalize_twos_complement(value_to_bigint(&args[2]), bits);
+                if bits > 0 {
+                    write_bits_into_bytes(&mut bytes, from, bits, &value);
+                }
+                updated.insert(
+                    "bytes".to_string(),
+                    Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                );
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
+                let updated_instance = Value::Instance {
+                    class_name: class_name.clone(),
+                    attributes: std::sync::Arc::new(updated),
+                    id: target_id,
+                };
+                self.env
+                    .insert(target_var.to_string(), updated_instance.clone());
+                return Ok(updated_instance);
+            }
+
             if class_name == "Iterator" {
                 let mut updated = (*attributes).clone();
                 let items = match updated.get("items") {
@@ -908,7 +1190,18 @@ impl Interpreter {
                     }
                 }
             }
-            if self.has_user_method(&class_name, method) {
+            let skip_pseudo = self
+                .skip_pseudo_method_native
+                .as_ref()
+                .is_some_and(|m| m == method);
+            if skip_pseudo {
+                self.skip_pseudo_method_native = None;
+            }
+            let is_pseudo_method = matches!(
+                method,
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            );
+            if self.has_user_method(&class_name, method) && (!is_pseudo_method || skip_pseudo) {
                 let (result, updated) = self.run_instance_method(
                     &class_name,
                     (*attributes).clone(),

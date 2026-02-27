@@ -1,6 +1,27 @@
 use super::*;
 
 impl Interpreter {
+    fn normalize_sequence_arg(value: &Value) -> Value {
+        match value {
+            Value::Capture { positional, .. } => Value::array(positional.clone()),
+            other => other.clone(),
+        }
+    }
+
+    fn sequence_deduction_error(from: &[Value]) -> RuntimeError {
+        let from_str = from
+            .iter()
+            .map(Value::to_string_value)
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("from".to_string(), Value::Str(from_str));
+        let ex = Value::make_instance("X::Sequence::Deduction".to_string(), attrs);
+        let mut err = RuntimeError::new("X::Sequence::Deduction");
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     fn collect_sequence_args_fixed(
         result: &[Value],
         arity: usize,
@@ -14,15 +35,18 @@ impl Interpreter {
                 result.len()
             )));
         }
-        Ok(result[result.len() - arity..].to_vec())
+        Ok(result[result.len() - arity..]
+            .iter()
+            .map(Self::normalize_sequence_arg)
+            .collect())
     }
 
     fn collect_sequence_args_slurpy(result: &[Value], min_arity: usize) -> Vec<Value> {
         if result.len() >= min_arity {
-            return result.to_vec();
+            return result.iter().map(Self::normalize_sequence_arg).collect();
         }
         let mut args = vec![Value::Nil; min_arity - result.len()];
-        args.extend(result.iter().cloned());
+        args.extend(result.iter().map(Self::normalize_sequence_arg));
         args
     }
 
@@ -99,9 +123,71 @@ impl Interpreter {
         right: Value,
         exclusive: bool,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Array(items, ..) = &right
+            && items.len() > 1
+        {
+            // Parenthesized chained syntax `(a ... b, c, d ... e, f, g ... h)`
+            // lowers to RHS waypoint items where nested `...` terms are already
+            // evaluated (finite Arrays or infinite LazyLists). Reconstruct
+            // segment seeds as:
+            //   prev-endpoint + accumulated scalars + next-seq-start.
+            let seq_bounds = |value: &Value| -> Option<(Value, Value)> {
+                match value {
+                    Value::Array(inner, ..) if !inner.is_empty() => {
+                        Some((inner[0].clone(), inner[inner.len() - 1].clone()))
+                    }
+                    Value::LazyList(ll) => ll
+                        .cache
+                        .lock()
+                        .ok()
+                        .and_then(|c| c.as_ref().and_then(|v| v.first().cloned()))
+                        .map(|start| (start, Value::Whatever)),
+                    _ => None,
+                }
+            };
+
+            if let Some((mut prev_endpoint, _)) =
+                seq_bounds(&items[0]).or_else(|| Some((items[0].clone(), items[0].clone())))
+            {
+                let mut saw_seq_waypoint = false;
+                let mut pending_scalars: Vec<Value> = Vec::new();
+                let mut chain_args: Vec<Value> = vec![left.clone()];
+
+                for item in items.iter().skip(1) {
+                    if let Some((seq_start, seq_end)) = seq_bounds(item) {
+                        saw_seq_waypoint = true;
+                        let mut seeds = vec![prev_endpoint.clone()];
+                        seeds.append(&mut pending_scalars);
+                        seeds.push(seq_start);
+                        chain_args.push(Value::array(seeds));
+                        prev_endpoint = seq_end;
+                    } else {
+                        pending_scalars.push(item.clone());
+                    }
+                }
+
+                if saw_seq_waypoint {
+                    let final_endpoint = if pending_scalars.is_empty() {
+                        prev_endpoint
+                    } else {
+                        if pending_scalars.len() > 1 {
+                            let mut seeds = vec![prev_endpoint.clone()];
+                            seeds.extend(
+                                pending_scalars[..pending_scalars.len() - 1].iter().cloned(),
+                            );
+                            chain_args.push(Value::array(seeds));
+                        }
+                        pending_scalars[pending_scalars.len() - 1].clone()
+                    };
+                    chain_args.push(final_endpoint);
+                    return self.eval_chained_sequence(&chain_args, exclusive);
+                }
+            }
+        }
+
         let seeds_raw = Self::value_to_list(&left);
         if seeds_raw.is_empty() {
-            return Ok(Value::array(vec![]));
+            return Err(RuntimeError::new("X::Cannot::Empty"));
         }
 
         // Separate seed values from generator closure
@@ -262,7 +348,10 @@ impl Interpreter {
                             SeqMode::Geometric(r2)
                         }
                     } else {
-                        // Use last difference as arithmetic step
+                        if seeds.len() == 3 {
+                            return Err(Self::sequence_deduction_error(&seeds));
+                        }
+                        // For longer histories, follow the most recent trend.
                         SeqMode::Arithmetic(diffs[diffs.len() - 1])
                     }
                 } else {
@@ -600,9 +689,11 @@ impl Interpreter {
                 _ => false,
             };
 
-        for _ in 0..max_gen {
+        'seq_gen: for _ in 0..max_gen {
             let next = match &mode {
                 SeqMode::Closure => {
+                    let suppress_generator_error =
+                        matches!(endpoint_kind, Some(EndpointKind::Value(_)));
                     let genfn = generator.as_ref().unwrap();
                     if let Value::Sub(data) = genfn {
                         if self.sequence_has_registered_routine(&data.package, &data.name) {
@@ -616,12 +707,12 @@ impl Interpreter {
                                     }
                                 };
                             let call_name = data.name.strip_prefix('&').unwrap_or(&data.name);
-                            self.call_function(call_name, args)?
-                        } else {
-                            let saved = self.env.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
+                            match self.call_function(call_name, args) {
+                                Ok(v) => v,
+                                Err(e) if suppress_generator_error => break 'seq_gen,
+                                Err(e) => return Err(e),
                             }
+                        } else {
                             let restore_env_with_side_effects =
                                 |saved: std::collections::HashMap<String, Value>,
                                  current: &std::collections::HashMap<String, Value>|
@@ -634,7 +725,6 @@ impl Interpreter {
                                     }
                                     merged
                                 };
-
                             let slurpy_index = data
                                 .params
                                 .iter()
@@ -648,58 +738,82 @@ impl Interpreter {
                                 let arity = data.params.len();
                                 Self::collect_sequence_args_fixed(&result, arity)?
                             };
-
-                            // Bind parameters
-                            for (i, param) in data.params.iter().enumerate() {
-                                if param.starts_with('@') {
-                                    let rest = if i < args.len() {
-                                        args[i..].to_vec()
-                                    } else {
-                                        Vec::new()
-                                    };
-                                    self.env.insert(param.clone(), Value::array(rest));
-                                    break;
+                            let needs_full_binding = data.param_defs.iter().any(|pd| {
+                                pd.type_constraint.is_some()
+                                    || pd.literal_value.is_some()
+                                    || pd.shape_constraints.is_some()
+                                    || pd.named
+                                    || pd.slurpy
+                                    || pd.double_slurpy
+                            });
+                            if needs_full_binding {
+                                match self.call_sub_value(Value::Sub(data.clone()), args, false) {
+                                    Ok(v) => v,
+                                    Err(e) if suppress_generator_error => break 'seq_gen,
+                                    Err(e) => return Err(e),
                                 }
-                                if param.starts_with('%') {
-                                    let mut map = std::collections::HashMap::new();
-                                    for item in args.iter().skip(i) {
-                                        if let Value::Pair(k, v) = item {
-                                            map.insert(k.clone(), (**v).clone());
-                                        }
+                            } else {
+                                let saved = self.env.clone();
+                                for (k, v) in &data.env {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+
+                                // Bind parameters
+                                for (i, param) in data.params.iter().enumerate() {
+                                    if param.starts_with('@') {
+                                        let rest = if i < args.len() {
+                                            args[i..].to_vec()
+                                        } else {
+                                            Vec::new()
+                                        };
+                                        self.env.insert(param.clone(), Value::array(rest));
+                                        break;
                                     }
-                                    self.env.insert(
-                                        param.clone(),
-                                        Value::Hash(std::sync::Arc::new(map)),
-                                    );
-                                    break;
+                                    if param.starts_with('%') {
+                                        let mut map = std::collections::HashMap::new();
+                                        for item in args.iter().skip(i) {
+                                            if let Value::Pair(k, v) = item {
+                                                map.insert(k.clone(), (**v).clone());
+                                            }
+                                        }
+                                        self.env.insert(
+                                            param.clone(),
+                                            Value::Hash(std::sync::Arc::new(map)),
+                                        );
+                                        break;
+                                    }
+                                    if let Some(arg) = args.get(i) {
+                                        self.env.insert(param.clone(), arg.clone());
+                                    }
                                 }
-                                if let Some(arg) = args.get(i) {
-                                    self.env.insert(param.clone(), arg.clone());
-                                }
-                            }
 
-                            // Bind $_ to last arg
-                            if let Some(last_arg) = args.last() {
-                                self.env.insert("_".to_string(), last_arg.clone());
-                            }
-                            // Bind @_ to the argument history window.
-                            self.env
-                                .insert("@_".to_string(), Value::array(args.clone()));
+                                // Bind $_ to last arg
+                                if let Some(last_arg) = args.last() {
+                                    self.env.insert("_".to_string(), last_arg.clone());
+                                }
+                                // Bind @_ to the argument history window.
+                                self.env
+                                    .insert("@_".to_string(), Value::array(args.clone()));
 
-                            let val = match self.eval_block_value(&data.body) {
-                                Ok(v) => v,
-                                Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-                                Err(e) if e.is_last => {
-                                    self.env = restore_env_with_side_effects(saved, &self.env);
-                                    break;
-                                }
-                                Err(e) => {
-                                    self.env = restore_env_with_side_effects(saved, &self.env);
-                                    return Err(e);
-                                }
-                            };
-                            self.env = restore_env_with_side_effects(saved, &self.env);
-                            val
+                                let val = match self.eval_block_value(&data.body) {
+                                    Ok(v) => v,
+                                    Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                                    Err(e) if e.is_last => {
+                                        self.env = restore_env_with_side_effects(saved, &self.env);
+                                        break;
+                                    }
+                                    Err(e) if suppress_generator_error => {
+                                        self.env = restore_env_with_side_effects(saved, &self.env);
+                                        break 'seq_gen;
+                                    }
+                                    Err(e) => {
+                                        self.env = restore_env_with_side_effects(saved, &self.env);
+                                        return Err(e);
+                                    }
+                                };
+                                self.env = restore_env_with_side_effects(saved, &self.env);
+                                val
+                            }
                         }
                     } else if let Value::Routine { name: rname, .. } = genfn {
                         let package = match genfn {
@@ -714,7 +828,11 @@ impl Interpreter {
                                 Self::collect_sequence_args_slurpy(&result, min_arity)
                             }
                         };
-                        self.call_sub_value(genfn.clone(), args, false)?
+                        match self.call_sub_value(genfn.clone(), args, false) {
+                            Ok(v) => v,
+                            Err(e) if suppress_generator_error => break 'seq_gen,
+                            Err(e) => return Err(e),
+                        }
                     } else {
                         break;
                     }

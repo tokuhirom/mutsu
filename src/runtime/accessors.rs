@@ -216,6 +216,36 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn infix_associativity(&self, full_name: &str) -> Option<String> {
+        let fq = format!("{}::{}", self.current_package, full_name);
+        self.operator_assoc
+            .get(&fq)
+            .cloned()
+            .or_else(|| self.operator_assoc.get(full_name).cloned())
+            .or_else(|| {
+                let global = format!("GLOBAL::{}", full_name);
+                self.operator_assoc.get(&global).cloned()
+            })
+    }
+
+    pub(crate) fn call_user_routine_direct(
+        &mut self,
+        full_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(def) = self.resolve_function_with_alias(full_name, &args) {
+            return self.call_function_def(&def, &args);
+        }
+        let env_name = format!("&{}", full_name);
+        if let Some(callable) = self.env.get(&env_name).cloned() {
+            return self.eval_call_on_value(callable, args);
+        }
+        Err(RuntimeError::new(format!(
+            "X::Undeclared::Symbols: Unknown function: {}",
+            full_name
+        )))
+    }
+
     pub(crate) fn compose_callables(&self, left: Value, right: Value) -> Value {
         use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -369,6 +399,13 @@ impl Interpreter {
                     || self.has_proto_token(lookup_name),
             }
         } else if let Some(def) = def {
+            let mut captured_env = self.env.clone();
+            if def.is_method {
+                captured_env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::Str("Method".to_string()),
+                );
+            }
             Value::make_sub(
                 def.package,
                 def.name,
@@ -376,7 +413,7 @@ impl Interpreter {
                 def.param_defs,
                 def.body,
                 def.is_rw,
-                self.env.clone(),
+                captured_env,
             )
         } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {
@@ -436,6 +473,14 @@ impl Interpreter {
 
     pub(crate) fn block_stack_top(&self) -> Option<&Value> {
         self.block_stack.last()
+    }
+
+    pub(crate) fn push_block(&mut self, val: Value) {
+        self.block_stack.push(val);
+    }
+
+    pub(crate) fn pop_block(&mut self) {
+        self.block_stack.pop();
     }
 
     /// Stringify a value, calling the `.Str` method for Instance and Package types.

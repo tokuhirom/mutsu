@@ -188,9 +188,18 @@ impl Value {
             Value::Instance { class_name, .. } => class_name.as_str(),
             Value::Package(name) => name.as_str(),
             Value::Enum { enum_type, .. } => enum_type.as_str(),
-            Value::Sub(_)
-            | Value::WeakSub(_)
-            | Value::Routine {
+            Value::Sub(data) => {
+                if matches!(
+                    data.env.get("__mutsu_callable_type"),
+                    Some(Value::Str(kind)) if kind == "Method"
+                ) {
+                    "Method"
+                } else {
+                    "Sub"
+                }
+            }
+            Value::WeakSub(_) => "Sub",
+            Value::Routine {
                 is_regex: false, ..
             } => "Sub",
             Value::Regex(_)
@@ -284,6 +293,19 @@ impl Value {
                         if matches!(name.as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
                 )
             }
+            "Method" => {
+                matches!(
+                    self,
+                    Value::Sub(data)
+                        if matches!(
+                            data.env.get("__mutsu_callable_type"),
+                            Some(Value::Str(kind)) if kind == "Method"
+                        )
+                ) || matches!(
+                    self,
+                    Value::Instance { class_name, .. } if class_name == "Method"
+                ) || matches!(self, Value::Package(name) if name == "Method")
+            }
             "Exception" => {
                 if let Value::Instance { class_name, .. } = self {
                     class_name.starts_with("X::") || class_name == "Exception"
@@ -346,7 +368,9 @@ impl Value {
                 Value::Instance { class_name, .. }
                     if class_name == "Pod::Block"
                         || class_name == "Pod::Block::Comment"
+                        || class_name == "Pod::Block::Para"
                         || class_name == "Pod::Block::Table"
+                        || class_name == "Pod::Item"
             ),
             _ => false,
         }

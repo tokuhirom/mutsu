@@ -268,6 +268,7 @@ impl Interpreter {
                 cond,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.validate_private_access_in_expr(caller_class, cond)?;
                 self.validate_private_access_in_stmts(caller_class, then_branch)?;
@@ -553,6 +554,7 @@ impl Interpreter {
         params: &[String],
         param_defs: &[ParamDef],
         return_type: Option<&String>,
+        associativity: Option<&String>,
         body: &[Stmt],
         multi: bool,
         is_rw: bool,
@@ -627,6 +629,7 @@ impl Interpreter {
             body: body.to_vec(),
             is_test_assertion,
             is_rw,
+            is_method: false,
             empty_sig,
         };
         let single_key = format!("{}::{}", self.current_package, name);
@@ -647,6 +650,12 @@ impl Interpreter {
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
                 && format!("{:?}", existing.body) == format!("{:?}", new_def.body);
             if same {
+                let callable_key =
+                    format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                self.env.insert(
+                    callable_key,
+                    Value::Int(crate::value::next_instance_id() as i64),
+                );
                 return Ok(());
             }
             let same_signature = existing.package == new_def.package
@@ -654,6 +663,12 @@ impl Interpreter {
                 && existing.params == new_def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
             if body.is_empty() && same_signature {
+                let callable_key =
+                    format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                self.env.insert(
+                    callable_key,
+                    Value::Int(crate::value::next_instance_id() as i64),
+                );
                 return Ok(());
             }
         }
@@ -675,6 +690,13 @@ impl Interpreter {
             )));
         }
         let def = new_def;
+        if let Some(assoc) = associativity
+            && name.starts_with("infix:<")
+        {
+            self.operator_assoc.insert(name.to_string(), assoc.clone());
+            self.operator_assoc
+                .insert(format!("{}::{}", self.current_package, name), assoc.clone());
+        }
         if multi {
             let arity = param_defs
                 .iter()
@@ -723,6 +745,11 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package, name);
             self.functions.insert(fq, def);
         }
+        let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+        self.env.insert(
+            callable_key,
+            Value::Int(crate::value::next_instance_id() as i64),
+        );
         Ok(())
     }
 
@@ -742,6 +769,7 @@ impl Interpreter {
             body: body.to_vec(),
             is_test_assertion: false,
             is_rw: false,
+            is_method: false,
             empty_sig: false,
         };
         self.insert_token_def(name, def, multi);
@@ -779,6 +807,7 @@ impl Interpreter {
                 body: body.to_vec(),
                 is_test_assertion: false,
                 is_rw: false,
+                is_method: false,
                 empty_sig: false,
             },
         );
@@ -794,6 +823,7 @@ impl Interpreter {
         params: &[String],
         param_defs: &[ParamDef],
         return_type: Option<&String>,
+        associativity: Option<&String>,
         body: &[Stmt],
         multi: bool,
         is_rw: bool,
@@ -867,6 +897,7 @@ impl Interpreter {
             body: body.to_vec(),
             is_test_assertion,
             is_rw,
+            is_method: false,
             empty_sig,
         };
         let single_key = format!("GLOBAL::{}", name);
@@ -874,6 +905,13 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
+        if let Some(assoc) = associativity
+            && name.starts_with("infix:<")
+        {
+            self.operator_assoc.insert(name.to_string(), assoc.clone());
+            self.operator_assoc
+                .insert(format!("GLOBAL::{}", name), assoc.clone());
+        }
         if let Some(existing) = self.functions.get(&single_key) {
             let same = existing.package == def.package
                 && existing.name == def.name
@@ -955,6 +993,11 @@ impl Interpreter {
             let fq = format!("GLOBAL::{}", name);
             self.functions.insert(fq, def);
         }
+        let callable_key = format!("__mutsu_callable_id::GLOBAL::{}", name);
+        self.env.insert(
+            callable_key,
+            Value::Int(crate::value::next_instance_id() as i64),
+        );
         Ok(())
     }
 
@@ -994,6 +1037,7 @@ impl Interpreter {
                 body: body.to_vec(),
                 is_test_assertion: false,
                 is_rw: false,
+                is_method: false,
                 empty_sig: false,
             },
         );
@@ -1375,6 +1419,7 @@ impl Interpreter {
                             body: method_body.clone(),
                             is_test_assertion: false,
                             is_rw: *is_rw,
+                            is_method: true,
                             empty_sig: false,
                         };
                         self.functions.insert(qualified_name, func_def);

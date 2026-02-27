@@ -114,7 +114,7 @@ impl Interpreter {
         eprint!("{}", diag);
     }
 
-    pub(super) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {
+    pub(crate) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {
         let mut out = Vec::with_capacity(args.len());
         let mut callsite_line = None;
         for arg in args {
@@ -154,7 +154,17 @@ impl Interpreter {
         (out, callsite_line)
     }
 
-    pub(super) fn push_test_assertion_context(&mut self, is_test_assertion: bool) -> bool {
+    pub(crate) fn set_pending_callsite_line(&mut self, line: Option<i64>) {
+        self.test_pending_callsite_line = line;
+    }
+
+    pub(crate) fn inject_pending_callsite_line(&mut self) {
+        if let Some(line) = self.test_pending_callsite_line {
+            self.env.insert("?LINE".to_string(), Value::Int(line));
+        }
+    }
+
+    pub(crate) fn push_test_assertion_context(&mut self, is_test_assertion: bool) -> bool {
         if !is_test_assertion {
             return false;
         }
@@ -168,7 +178,7 @@ impl Interpreter {
         true
     }
 
-    pub(super) fn pop_test_assertion_context(&mut self, pushed: bool) {
+    pub(crate) fn pop_test_assertion_context(&mut self, pushed: bool) {
         if pushed {
             self.test_assertion_line_stack.pop();
         }
@@ -180,6 +190,12 @@ impl Interpreter {
             .copied()
             .or(self.test_pending_callsite_line)
             .unwrap_or(1)
+    }
+
+    pub(crate) fn routine_is_test_assertion_by_name(&mut self, name: &str, args: &[Value]) -> bool {
+        self.resolve_function_with_alias(name, args)
+            .map(|def| def.is_test_assertion)
+            .unwrap_or(false)
     }
 
     fn env_value(&self, key: &str) -> Option<Value> {

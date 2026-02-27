@@ -1,8 +1,17 @@
 use crate::value::Value;
+use num_bigint::BigInt;
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
+    match arg {
+        Some(value) => format_sprintf_args(fmt, std::slice::from_ref(value)),
+        None => format_sprintf_args(fmt, &[]),
+    }
+}
+
+pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
     let mut chars = fmt.chars().peekable();
     let mut out = String::new();
+    let mut arg_index = 0usize;
     while let Some(c) = chars.next() {
         if c != '%' {
             out.push(c);
@@ -50,8 +59,17 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let left_align = flags.contains('-');
         let plus_sign = flags.contains('+');
         let hash_flag = flags.contains('#');
+        let arg = args.get(arg_index);
+        arg_index += 1;
         let int_val = || match arg {
             Some(Value::Int(i)) => *i,
+            Some(Value::BigInt(bi)) => num_traits::ToPrimitive::to_i64(bi).unwrap_or_else(|| {
+                if bi.sign() == num_bigint::Sign::Minus {
+                    i64::MIN
+                } else {
+                    i64::MAX
+                }
+            }),
             Some(Value::Num(f)) => *f as i64,
             Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
             Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
@@ -63,6 +81,19 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
                 }
             }
             _ => 0,
+        };
+        let bigint_val = || match arg {
+            Some(Value::BigInt(bi)) => bi.clone(),
+            Some(Value::Int(i)) => BigInt::from(*i),
+            Some(Value::Num(f)) => BigInt::from(*f as i64),
+            Some(Value::Rat(n, d)) if *d != 0 => BigInt::from(*n / *d),
+            Some(Value::Str(s)) => s
+                .trim()
+                .parse::<BigInt>()
+                .unwrap_or_else(|_| BigInt::from(0)),
+            Some(Value::Bool(true)) => BigInt::from(1),
+            Some(Value::Bool(false)) => BigInt::from(0),
+            _ => BigInt::from(0),
         };
         let float_val = || match arg {
             Some(Value::Int(i)) => *i as f64,
@@ -84,33 +115,68 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
                 _ => String::new(),
             },
             'd' | 'i' => {
-                let i = int_val();
-                if plus_sign && i >= 0 {
+                let i = bigint_val();
+                if plus_sign && i >= BigInt::from(0) {
                     format!("+{}", i)
                 } else {
                     format!("{}", i)
                 }
             }
-            'u' => format!("{}", int_val().max(0) as u64),
-            'x' => {
-                if hash_flag {
-                    format!("0x{:x}", int_val())
+            'u' => {
+                let i = bigint_val();
+                if i < BigInt::from(0) {
+                    "0".to_string()
                 } else {
-                    format!("{:x}", int_val())
+                    i.to_str_radix(10)
+                }
+            }
+            'x' => {
+                let i = bigint_val();
+                if i < BigInt::from(0) {
+                    format!("{}", i)
+                } else {
+                    let body = i.to_str_radix(16);
+                    if hash_flag {
+                        format!("0x{}", body)
+                    } else {
+                        body
+                    }
                 }
             }
             'X' => {
-                if hash_flag {
-                    format!("0X{:X}", int_val())
+                let i = bigint_val();
+                if i < BigInt::from(0) {
+                    format!("{}", i)
                 } else {
-                    format!("{:X}", int_val())
+                    let body = i.to_str_radix(16).to_uppercase();
+                    if hash_flag {
+                        format!("0X{}", body)
+                    } else {
+                        body
+                    }
                 }
             }
             'o' => {
-                if hash_flag {
-                    format!("0o{:o}", int_val())
+                let i = bigint_val();
+                if i < BigInt::from(0) {
+                    format!("{}", i)
                 } else {
-                    format!("{:o}", int_val())
+                    let body = i.to_str_radix(8);
+                    if hash_flag {
+                        format!("0o{}", body)
+                    } else {
+                        body
+                    }
+                }
+            }
+            'b' => {
+                let i = bigint_val();
+                if i < BigInt::from(0) {
+                    format!("{}", i)
+                } else if hash_flag {
+                    format!("0b{}", i.to_str_radix(2))
+                } else {
+                    i.to_str_radix(2)
                 }
             }
             'f' | 'F' => {

@@ -148,6 +148,10 @@ pub(crate) enum OpCode {
     IsNil,
 
     // -- Control flow --
+    /// No-op label marker for `goto`.
+    Label(u32),
+    /// Jump to `Label` by runtime-evaluated name on stack.
+    Goto,
     Jump(i32),
     JumpIfFalse(i32),
     JumpIfTrue(i32),
@@ -270,8 +274,6 @@ pub(crate) enum OpCode {
     MakeAnonSubParams(u32),
     MakeLambda(u32),
     MakeBlockClosure(u32),
-    IndexAssignInvalid,
-
     // -- Indexing --
     Index,
     DeleteIndexNamed(u32),
@@ -305,6 +307,8 @@ pub(crate) enum OpCode {
     // -- Prefix increment/decrement (returns NEW value) --
     PreIncrement(u32),
     PreDecrement(u32),
+    PreIncrementIndex(u32),
+    PreDecrementIndex(u32),
 
     // -- Variable access --
     GetCaptureVar(u32),
@@ -322,6 +326,10 @@ pub(crate) enum OpCode {
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
     IndexAssignExprNested(u32),
+    /// Generic index assignment on a stack-computed target.
+    /// Stack: [target, index, value] → assigns value to target[index].
+    /// Supports callframe .my hash writeback for dynamic variables.
+    IndexAssignGeneric,
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
@@ -333,6 +341,7 @@ pub(crate) enum OpCode {
         cond_end: u32,
         body_end: u32,
         label: Option<String>,
+        collect: bool,
     },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
@@ -352,6 +361,7 @@ pub(crate) enum OpCode {
         step_start: u32,
         body_end: u32,
         label: Option<String>,
+        collect: bool,
     },
 
     // -- Given/When/Default (compound opcodes) --
@@ -455,6 +465,15 @@ pub(crate) enum OpCode {
         name_idx: u32,
         right_arity: u32,
         modifier_idx: Option<u32>,
+    },
+    /// Stateful scalar flip-flop (ff/fff) with lazily evaluated lhs/rhs bytecode spans.
+    FlipFlopExpr {
+        lhs_end: u32,
+        rhs_end: u32,
+        site_id: u64,
+        exclude_start: bool,
+        exclude_end: bool,
+        is_fff: bool,
     },
 
     // -- Exception handling --
@@ -686,6 +705,22 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::SmartMatchExpr { rhs_end, .. } => *rhs_end = target,
             _ => panic!("patch_smart_match_rhs_end on non-SmartMatchExpr opcode"),
+        }
+    }
+
+    pub(crate) fn patch_flip_flop_lhs_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::FlipFlopExpr { lhs_end, .. } => *lhs_end = target,
+            _ => panic!("patch_flip_flop_lhs_end on non-FlipFlopExpr opcode"),
+        }
+    }
+
+    pub(crate) fn patch_flip_flop_rhs_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::FlipFlopExpr { rhs_end, .. } => *rhs_end = target,
+            _ => panic!("patch_flip_flop_rhs_end on non-FlipFlopExpr opcode"),
         }
     }
 

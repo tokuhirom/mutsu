@@ -355,9 +355,39 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return parse_to_heredoc(r);
     }
 
+    // q:adverb/.../ forms (e.g. q:c/%08b/) — parse and ignore currently
+    // unsupported adverbs while still accepting the quoting delimiter.
+    let mut after_q = after_q;
+    let mut q_closure_interp = false;
+    let mut q_format_quote = false;
+    if let Some(mut r) = after_q.strip_prefix(':') {
+        loop {
+            let end = r
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(r.len());
+            if end == 0 {
+                return Err(PError::expected("q adverb name"));
+            }
+            let adverb_name = &r[..end];
+            if adverb_name == "c" {
+                q_closure_interp = true;
+            }
+            if adverb_name == "o" || adverb_name == "format" {
+                q_format_quote = true;
+            }
+            r = &r[end..];
+            if let Some(next) = r.strip_prefix(':') {
+                r = next;
+                continue;
+            }
+            break;
+        }
+        after_q = r;
+    }
+
     // Check for qq forms
     let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
-        // Accept any non-alphanumeric, non-whitespace character as qq delimiter
+        // Accept any non-alphanumeric, non-whitespace character as qq delimiter/adverb marker
         let is_qq_delim = after_qq
             .chars()
             .next()
@@ -370,15 +400,39 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     } else {
         (after_q, false)
     };
+
+    let (after_adverb, is_format_adverb) = if let Some(rest) = after_prefix.strip_prefix(":o") {
+        (rest, true)
+    } else if let Some(rest) = after_prefix.strip_prefix(":format") {
+        (rest, true)
+    } else {
+        (after_prefix, false)
+    };
+    let is_format_quote = q_format_quote || is_format_adverb;
+
+    let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq, q_closure_interp)?;
+    if is_format_quote {
+        return Ok((
+            rest,
+            Expr::Call {
+                name: "__mutsu_make_format".to_string(),
+                args: vec![content_expr],
+            },
+        ));
+    }
+    Ok((rest, content_expr))
+}
+
+fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> PResult<'_, Expr> {
     // Must be followed by a delimiter
-    let (open, close) = match after_prefix.chars().next() {
+    let (open, close) = match input.chars().next() {
         Some('{') => ('{', '}'),
         Some('[') => ('[', ']'),
         Some('(') => ('(', ')'),
         Some('<') => ('<', '>'),
         Some('/') => {
             // q/.../ — find closing /
-            let rest = &after_prefix[1..];
+            let rest = &input[1..];
             let end = rest
                 .find('/')
                 .ok_or_else(|| PError::expected("closing /"))?;
@@ -387,12 +441,18 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             if is_qq {
                 return Ok((rest, interpolate_string_content(content)));
             }
+            if q_closure_interp {
+                return Ok((
+                    rest,
+                    interpolate_string_content_with_modes(content, false, true),
+                ));
+            }
             let s = content.replace("\\'", "'").replace("\\\\", "\\");
             return Ok((rest, Expr::Literal(Value::Str(s))));
         }
         Some(c) => {
             if let Some(close_char) = unicode_bracket_close(c) {
-                let rest = &after_prefix[c.len_utf8()..];
+                let rest = &input[c.len_utf8()..];
                 let end = rest
                     .find(close_char)
                     .ok_or_else(|| PError::expected("closing Unicode bracket"))?;
@@ -401,12 +461,18 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
                 if is_qq {
                     return Ok((rest, interpolate_string_content(content)));
                 }
+                if q_closure_interp {
+                    return Ok((
+                        rest,
+                        interpolate_string_content_with_modes(content, false, true),
+                    ));
+                }
                 let s = content.replace("\\'", "'").replace("\\\\", "\\");
                 return Ok((rest, Expr::Literal(Value::Str(s))));
             }
             // Non-bracket, non-/ delimiter (e.g. q|...|, q!...!) — symmetric delimiter
             if !c.is_alphanumeric() && !c.is_whitespace() {
-                let rest = &after_prefix[c.len_utf8()..];
+                let rest = &input[c.len_utf8()..];
                 let end = rest
                     .find(c)
                     .ok_or_else(|| PError::expected(&format!("closing '{c}'")))?;
@@ -415,6 +481,12 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
                 if is_qq {
                     return Ok((rest, interpolate_string_content(content)));
                 }
+                if q_closure_interp {
+                    return Ok((
+                        rest,
+                        interpolate_string_content_with_modes(content, false, true),
+                    ));
+                }
                 let s = content.replace("\\'", "'").replace("\\\\", "\\");
                 return Ok((rest, Expr::Literal(Value::Str(s))));
             }
@@ -422,9 +494,15 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
-    let (rest, content) = read_bracketed(after_prefix, open, close, true)?;
+    let (rest, content) = read_bracketed(input, open, close, true)?;
     if is_qq {
         return Ok((rest, interpolate_string_content(content)));
+    }
+    if q_closure_interp {
+        return Ok((
+            rest,
+            interpolate_string_content_with_modes(content, false, true),
+        ));
     }
     let s = content.replace("\\'", "'").replace("\\\\", "\\");
     Ok((rest, Expr::Literal(Value::Str(s))))
@@ -789,16 +867,23 @@ pub(super) fn try_interpolate_var<'a>(
     if rest.starts_with('%') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
         if next.is_alphabetic() || next == '_' {
-            if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
-            }
             let var_rest = &rest[1..];
             let end = var_rest
                 .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                 .unwrap_or(var_rest.len());
             let name = &var_rest[..end];
             let expr = Expr::HashVar(name.to_string());
-            let (expr, remainder) = parse_postcircumfix_index(&var_rest[end..], expr);
+            let tail = &var_rest[end..];
+            let (expr, remainder) = parse_postcircumfix_index(tail, expr);
+            // In qq-like strings, `%hash` without a postcircumfix remains literal.
+            // Only interpolate hash variables for explicit access forms like
+            // `%hash<key>` / `%hash{...}`.
+            if remainder.len() == tail.len() {
+                return None;
+            }
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+            }
             parts.push(expr);
             return Some(remainder);
         }
@@ -824,6 +909,14 @@ pub(super) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr 
 
 /// Interpolate variables in string content (used by qq// etc.)
 pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
+    interpolate_string_content_with_modes(content, true, false)
+}
+
+fn interpolate_string_content_with_modes(
+    content: &str,
+    interpolate_vars: bool,
+    interpolate_closures: bool,
+) -> Expr {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;
@@ -843,7 +936,20 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
             }
             continue;
         }
-        if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
+        if interpolate_closures
+            && rest.starts_with('{')
+            && let Some((after, inner)) = parse_braced_interpolation(rest)
+            && let Ok((remaining, expr)) = expression(inner.trim())
+            && remaining.trim().is_empty()
+        {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+            }
+            parts.push(expr);
+            rest = after;
+            continue;
+        }
+        if interpolate_vars && let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
             rest = r;
             continue;
         }
@@ -853,6 +959,26 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
     }
 
     finalize_interpolation(parts, current)
+}
+
+fn parse_braced_interpolation(input: &str) -> Option<(&str, &str)> {
+    if !input.starts_with('{') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (idx, ch) in input.char_indices() {
+        if ch == '{' {
+            depth += 1;
+        } else if ch == '}' {
+            depth -= 1;
+            if depth == 0 {
+                let inner = &input[1..idx];
+                let after = &input[idx + 1..];
+                return Some((after, inner));
+            }
+        }
+    }
+    None
 }
 
 fn parse_single_quote_qq(content: &str) -> Expr {
