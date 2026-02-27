@@ -764,6 +764,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                 param_defs,
                 body,
                 is_export: traits.is_export,
+                custom_traits: traits.custom_traits.clone(),
             },
         ));
     }
@@ -776,6 +777,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
             param_defs,
             body,
             is_export: traits.is_export,
+            custom_traits: traits.custom_traits,
         },
     ))
 }

@@ -159,6 +159,7 @@ impl VM {
             export_tags,
             is_test_assertion,
             supersede,
+            custom_traits,
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
@@ -179,6 +180,7 @@ impl VM {
                 *is_rw,
                 *is_test_assertion,
                 *supersede,
+                custom_traits,
             )?;
             if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter.register_exported_sub(
@@ -199,6 +201,7 @@ impl VM {
                     *is_rw,
                     *is_test_assertion,
                     *supersede,
+                    custom_traits,
                 )?;
             }
             Ok(())
@@ -250,6 +253,7 @@ impl VM {
             param_defs,
             body,
             is_export,
+            custom_traits,
         } = stmt
         {
             self.interpreter
@@ -257,6 +261,34 @@ impl VM {
             if *is_export {
                 self.interpreter
                     .register_proto_decl_as_global(name, params, param_defs, body)?;
+            }
+            // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
+            if !custom_traits.is_empty()
+                && (self.interpreter.has_proto("trait_mod:<is>")
+                    || self.interpreter.has_multi_candidates("trait_mod:<is>"))
+            {
+                for trait_name in custom_traits {
+                    let sub_val = Value::make_sub(
+                        self.interpreter.current_package().to_string(),
+                        name.clone(),
+                        params.clone(),
+                        param_defs.clone(),
+                        body.clone(),
+                        false,
+                        self.interpreter.env().clone(),
+                    );
+                    let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                    let result = self
+                        .interpreter
+                        .call_function("trait_mod:<is>", vec![sub_val, named_arg])?;
+                    // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
+                    // store it in the env so function dispatch can find it.
+                    if matches!(result, Value::Mixin(..)) {
+                        self.interpreter
+                            .env_mut()
+                            .insert(format!("&{}", name), result);
+                    }
+                }
             }
             Ok(())
         } else {
