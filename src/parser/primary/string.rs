@@ -371,6 +371,8 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             let adverb_name = &r[..end];
             if adverb_name == "c" {
                 q_closure_interp = true;
+            } else if adverb_name == "o" || adverb_name == "format" {
+                q_format_quote = true;
             }
             if adverb_name == "o" || adverb_name == "format" {
                 q_format_quote = true;
@@ -912,7 +914,7 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
     interpolate_string_content_with_modes(content, true, false)
 }
 
-fn interpolate_string_content_with_modes(
+pub(in crate::parser) fn interpolate_string_content_with_modes(
     content: &str,
     interpolate_vars: bool,
     interpolate_closures: bool,
