@@ -193,6 +193,7 @@ roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
 roast/S06-signature/closure-over-parameters.t
+roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
