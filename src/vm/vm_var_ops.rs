@@ -1193,29 +1193,21 @@ impl VM {
         let name = Self::const_str(code, name_idx);
         // Handle $CALLER::varname++ — increment through caller scope
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
-            let val = self.interpreter.get_caller_var(&bare_name, depth)?;
-            let new_val = match &val {
-                Value::Int(i) => Value::Int(i + 1),
-                Value::Bool(_) => Value::Bool(true),
-                Value::Rat(n, d) => make_rat(n + d, *d),
-                _ => Value::Int(1),
-            };
+            let raw_val = self.interpreter.get_caller_var(&bare_name, depth)?;
+            let val = Self::normalize_incdec_source(raw_val);
+            let new_val = Self::increment_value(&val);
             self.interpreter
                 .set_caller_var(&bare_name, depth, new_val)?;
             self.stack.push(val);
             return Ok(());
         }
         self.interpreter.check_readonly_for_increment(name)?;
-        let val = self
+        let raw_val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let new_val = match &val {
-            Value::Int(i) => Value::Int(i + 1),
-            Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) => make_rat(n + d, *d),
-            _ => Value::Int(1),
-        };
+        let val = Self::normalize_incdec_source(raw_val);
+        let new_val = Self::increment_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1238,16 +1230,12 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         self.interpreter.check_readonly_for_increment(name)?;
-        let val = self
+        let raw_val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let new_val = match &val {
-            Value::Int(i) => Value::Int(i - 1),
-            Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) => make_rat(n - d, *d),
-            _ => Value::Int(-1),
-        };
+        let val = Self::normalize_incdec_source(raw_val);
+        let new_val = Self::decrement_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1256,14 +1244,28 @@ impl VM {
     }
 
     pub(super) fn exec_post_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_post_inc_dec_index_op(code, name_idx, true);
+        self.exec_inc_dec_index_op(code, name_idx, true, false);
     }
 
     pub(super) fn exec_post_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_post_inc_dec_index_op(code, name_idx, false);
+        self.exec_inc_dec_index_op(code, name_idx, false, false);
     }
 
-    fn exec_post_inc_dec_index_op(&mut self, code: &CompiledCode, name_idx: u32, increment: bool) {
+    pub(super) fn exec_pre_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        self.exec_inc_dec_index_op(code, name_idx, true, true);
+    }
+
+    pub(super) fn exec_pre_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        self.exec_inc_dec_index_op(code, name_idx, false, true);
+    }
+
+    fn exec_inc_dec_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        increment: bool,
+        return_new: bool,
+    ) {
         let name = Self::const_str(code, name_idx).to_string();
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
@@ -1286,21 +1288,16 @@ impl VM {
             Value::Nil => Value::Int(0),
             other => other.clone(),
         };
-        let new_val = match &effective {
-            Value::Int(i) => Value::Int(if increment { i + 1 } else { i - 1 }),
-            Value::Rat(n, d) => {
-                if increment {
-                    make_rat(n + d, *d)
-                } else {
-                    make_rat(n - d, *d)
-                }
-            }
-            _ => Value::Int(if increment { 1 } else { -1 }),
+        let effective = Self::normalize_incdec_source(effective);
+        let new_val = if increment {
+            Self::increment_value(&effective)
+        } else {
+            Self::decrement_value(&effective)
         };
         if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
             match *container {
                 Value::Hash(ref mut h) => {
-                    Arc::make_mut(h).insert(key, new_val);
+                    Arc::make_mut(h).insert(key, new_val.clone());
                 }
                 Value::Array(ref mut arr, ..) => {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
@@ -1308,13 +1305,17 @@ impl VM {
                         while a.len() <= i {
                             a.push(Value::Nil);
                         }
-                        a[i] = new_val;
+                        a[i] = new_val.clone();
                     }
                 }
                 _ => {}
             }
         }
-        self.stack.push(effective);
+        if return_new {
+            self.stack.push(new_val);
+        } else {
+            self.stack.push(effective);
+        }
     }
 
     pub(super) fn exec_index_assign_expr_named_op(

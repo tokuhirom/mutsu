@@ -1180,6 +1180,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "succ" => match target {
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i + 1))),
+            Value::Bool(_) => Some(Ok(Value::Bool(true))),
             Value::Str(s) => {
                 if s.is_empty() {
                     Some(Ok(Value::Str(String::new())))
@@ -1196,6 +1197,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "pred" => match target {
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i - 1))),
+            Value::Bool(_) => Some(Ok(Value::Bool(false))),
             _ => Some(Ok(target.clone())),
         },
         "log" => match target {

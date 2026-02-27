@@ -1106,6 +1106,14 @@ impl VM {
                 self.exec_pre_decrement_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::PreIncrementIndex(name_idx) => {
+                self.exec_pre_increment_index_op(code, *name_idx);
+                *ip += 1;
+            }
+            OpCode::PreDecrementIndex(name_idx) => {
+                self.exec_pre_decrement_index_op(code, *name_idx);
+                *ip += 1;
+            }
 
             // -- Variable access --
             OpCode::GetCaptureVar(name_idx) => {

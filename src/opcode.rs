@@ -305,6 +305,8 @@ pub(crate) enum OpCode {
     // -- Prefix increment/decrement (returns NEW value) --
     PreIncrement(u32),
     PreDecrement(u32),
+    PreIncrementIndex(u32),
+    PreDecrementIndex(u32),
 
     // -- Variable access --
     GetCaptureVar(u32),
