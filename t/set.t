@@ -1,5 +1,5 @@
 use Test;
-plan 60;
+plan 64;
 
 # --- Set ---
 
@@ -16,6 +16,8 @@ is $s2.elems, 3, "Set.new has 3 elements";
 # Duplicates removed
 my $s3 = set(<a b a c b>);
 is $s3.elems, 3, "duplicates removed in set";
+my $s4 = set <a b a c b>;
+is $s4.elems, 3, "set listop form deduplicates";
 
 # Subscript access (returns Bool)
 ok $s<a>, "set subscript for existing element is True";
@@ -59,6 +61,8 @@ my $b = bag(<a b a c a b>);
 isa-ok $b, Bag, "bag() returns a Bag";
 is $b.elems, 3, "bag has 3 distinct elements";
 is $b.total, 6, "bag total is 6";
+my $b3 = bag <a b a c a b>;
+is $b3<a>, 3, "bag listop form counts duplicates";
 
 # Bag.new
 my $b2 = Bag.new("x", "y", "x");
@@ -114,6 +118,10 @@ is $m.WHAT, "(Mix)", ".WHAT returns (Mix)";
 # Truthiness
 ok ?$m, "non-empty mix is truthy";
 nok ?mix(), "empty mix is falsy";
+my $m3 = mix;
+nok ?$m3, "bare mix call is falsy";
+
+ok "isn't" (elem) set <I'm afraid it isn't your day>, "set listop handles apostrophes in angle words";
 
 # --- Coercions ---
 
