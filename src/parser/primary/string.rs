@@ -355,20 +355,23 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return parse_to_heredoc(r);
     }
 
-    // Check for qq forms
-    let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
+    // Check for qq or q:c forms.
+    let (after_prefix, is_qq, is_closure_interp) = if let Some(after_qq) = after_q.strip_prefix('q')
+    {
         // Accept any non-alphanumeric, non-whitespace character as qq delimiter
         let is_qq_delim = after_qq
             .chars()
             .next()
             .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace());
         if is_qq_delim {
-            (after_qq, true)
+            (after_qq, true, false)
         } else {
-            (after_q, false)
+            (after_q, false, false)
         }
+    } else if let Some(after_c) = after_q.strip_prefix(":c") {
+        (after_c, false, true)
     } else {
-        (after_q, false)
+        (after_q, false, false)
     };
     // Must be followed by a delimiter
     let (open, close) = match after_prefix.chars().next() {
@@ -387,6 +390,9 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             if is_qq {
                 return Ok((rest, interpolate_string_content(content)));
             }
+            if is_closure_interp {
+                return Ok((rest, interpolate_closure_content(content)));
+            }
             let s = content.replace("\\'", "'").replace("\\\\", "\\");
             return Ok((rest, Expr::Literal(Value::Str(s))));
         }
@@ -400,6 +406,9 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
                 let rest = &rest[end + close_char.len_utf8()..];
                 if is_qq {
                     return Ok((rest, interpolate_string_content(content)));
+                }
+                if is_closure_interp {
+                    return Ok((rest, interpolate_closure_content(content)));
                 }
                 let s = content.replace("\\'", "'").replace("\\\\", "\\");
                 return Ok((rest, Expr::Literal(Value::Str(s))));
@@ -415,6 +424,9 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
                 if is_qq {
                     return Ok((rest, interpolate_string_content(content)));
                 }
+                if is_closure_interp {
+                    return Ok((rest, interpolate_closure_content(content)));
+                }
                 let s = content.replace("\\'", "'").replace("\\\\", "\\");
                 return Ok((rest, Expr::Literal(Value::Str(s))));
             }
@@ -425,6 +437,9 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     let (rest, content) = read_bracketed(after_prefix, open, close, true)?;
     if is_qq {
         return Ok((rest, interpolate_string_content(content)));
+    }
+    if is_closure_interp {
+        return Ok((rest, interpolate_closure_content(content)));
     }
     let s = content.replace("\\'", "'").replace("\\\\", "\\");
     Ok((rest, Expr::Literal(Value::Str(s))))
@@ -846,6 +861,69 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
         if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
             rest = r;
             continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        current.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    finalize_interpolation(parts, current)
+}
+
+/// Interpolate only closure blocks (`{ ... }`) in string content.
+/// Used by `q:c//`, which does not interpolate sigils like `$x`.
+fn interpolate_closure_content(content: &str) -> Expr {
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut rest = content;
+
+    while !rest.is_empty() {
+        if rest.starts_with('\\') && rest.len() > 1 {
+            if let Some((r, needs_continue)) =
+                process_escape_sequence(rest, &mut current, &['{', '}'])
+            {
+                rest = r;
+                if needs_continue {
+                    continue;
+                }
+            } else {
+                let c = rest.as_bytes()[1] as char;
+                current.push('\\');
+                current.push(c);
+                rest = &rest[2..];
+            }
+            continue;
+        }
+        if rest.starts_with('{') {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+            }
+            let mut depth = 0;
+            let mut end = 0;
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if end > 0 {
+                let block_src = rest[1..end].trim();
+                if !block_src.is_empty()
+                    && let Ok((expr_rest, expr)) = expression(block_src)
+                    && expr_rest.trim().is_empty()
+                {
+                    parts.push(expr);
+                }
+                rest = &rest[end + 1..];
+                continue;
+            }
         }
         let ch = rest.chars().next().unwrap();
         current.push(ch);

@@ -1098,10 +1098,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyper_prefix_metaop_negate() {
+        let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "__mutsu_hyper_prefix");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0], Expr::Literal(Value::Str(ref s)) if s == "-"));
+            }
+            _ => panic!("expected hyper prefix metaop call"),
+        }
+    }
+
+    #[test]
     fn parse_parenthesized_sequence_with_following_smartmatch() {
         let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Binary { .. }));
+    }
+
+    #[test]
+    fn parse_parenthesized_sequence_with_empty_paren_seed_and_postfix_index() {
+        let (rest, expr) = expression("(() ... *)[0]").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
     }
 
     #[test]
@@ -1160,6 +1181,36 @@ mod tests {
                 assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
             }
             _ => panic!("expected dot-postfix operator call"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_postfix_increment() {
+        let (rest, expr) = expression("$x.++").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus,
+                expr,
+            } => {
+                assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
+            }
+            _ => panic!("expected dot-postfix increment"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_postfix_decrement() {
+        let (rest, expr) = expression("$x.--").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::PostfixOp {
+                op: TokenKind::MinusMinus,
+                expr,
+            } => {
+                assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
+            }
+            _ => panic!("expected dot-postfix decrement"),
         }
     }
 

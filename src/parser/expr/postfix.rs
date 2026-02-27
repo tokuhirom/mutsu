@@ -367,6 +367,9 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             && op
                 .chars()
                 .all(|c| !c.is_whitespace() && !c.is_alphanumeric() && c != '_' && c != '\'')
+            && !op
+                .chars()
+                .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'))
             && after.chars().next().is_some_and(char::is_whitespace)
         {
             let (after, _) = ws(after)?;
@@ -392,6 +395,32 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![arg],
             },
         ));
+    }
+
+    // Hyper prefix metaop: -« expr / -<< expr / +« expr / ?« expr ...
+    if let Some((op, len)) = parse_prefix_unary_op(input) {
+        let after_op = &input[len..];
+        let marker_len = if after_op.starts_with('\u{00AB}') {
+            Some('\u{00AB}'.len_utf8())
+        } else if after_op.starts_with("<<") {
+            Some(2)
+        } else {
+            None
+        };
+        if let Some(marker_len) = marker_len
+            && let Some(symbol) = op.prefix_symbol()
+        {
+            let rest = &after_op[marker_len..];
+            let (rest, _) = ws(rest)?;
+            let (rest, arg) = prefix_expr(rest)?;
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_hyper_prefix".to_string(),
+                    args: vec![Expr::Literal(Value::Str(symbol.to_string())), arg],
+                },
+            ));
+        }
     }
 
     if let Some((op, len)) = parse_prefix_unary_op(input) {
@@ -596,6 +625,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // Also handles call-on: .(args)
         if rest.starts_with('.') && !rest.starts_with("..") {
             let r = &rest[1..];
+            // `.=` is handled by statement-level assignment parsing, not postfix
+            // method-call parsing. Stop postfix parsing and let the caller consume it.
+            if r.starts_with('=') {
+                break;
+            }
             // Check for .[index] syntax: object.[expr]
             if let Some(r) = r.strip_prefix('[') {
                 let (r, _) = ws(r)?;
@@ -632,6 +666,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                         || c == '?'
                                         || c == '+'
                                         || c == '/'
+                                        || c == '$'
+                                        || c == '@'
+                                        || c == '%'
+                                        || c == '&'
                                 })
                         })
                     {
@@ -666,6 +704,16 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     args,
                 };
                 rest = r;
+                continue;
+            }
+            // Dot postfix update shorthand: .++ / .--
+            // Equivalent to applying postfix update to the current expression.
+            if let Some((op, len)) = parse_postfix_update_op(r) {
+                expr = Expr::PostfixOp {
+                    op: op.token_kind(),
+                    expr: Box::new(expr),
+                };
+                rest = &r[len..];
                 continue;
             }
             // Check for modifier: .?method, .^method, .+method, .*method
@@ -905,6 +953,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 || c == '?'
                                 || c == '+'
                                 || c == '/'
+                                || c == '$'
+                                || c == '@'
+                                || c == '%'
+                                || c == '&'
                                 || is_non_breaking_space(c)
                         })
                 })
@@ -1260,6 +1312,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Custom postfix operator call: $x§ -> postfix:<§>($x)
+        if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
+        {
+            let after = &rest[len..];
+            if is_postfix_operator_boundary(after) {
+                expr = Expr::Call {
+                    name,
+                    args: vec![expr],
+                };
+                rest = after;
+                continue;
+            }
+        }
+
         if let Some((op, len)) = parse_custom_postfix_operator(rest) {
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {

@@ -38,6 +38,7 @@ roast/S02-magicals/block.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
+roast/S02-names-vars/list_array_perl.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/caller.t
@@ -70,6 +71,7 @@ roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
+roast/S03-buf/read-write-bits.t
 roast/S03-metaops/not.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
@@ -83,6 +85,7 @@ roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/equality.t
 roast/S03-operators/gcd.t
+roast/S03-operators/increment.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
@@ -99,6 +102,7 @@ roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
+roast/S03-sequence/misc.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-callable.t
@@ -175,6 +179,7 @@ roast/S05-substitution/67222.t
 roast/S05-substitution/match.t
 roast/S05-transliteration/79778.t
 roast/S05-transliteration/trans-TR-operator.t
+roast/S06-advanced/callframe.t
 roast/S06-advanced/recurse.t
 roast/S06-advanced/stub.t
 roast/S06-currying/assuming-and-mmd.t
@@ -194,9 +199,11 @@ roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
 roast/S06-signature/closure-over-parameters.t
+roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
+roast/S06-signature/optional.t
 roast/S06-signature/passing-hashes.t
 roast/S06-signature/positional-placeholders.t
 roast/S06-signature/scalar-type.t
@@ -444,6 +451,7 @@ roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-list/map_function_return_values.t
 roast/S32-list/rotor.t
+roast/S32-list/unique.t
 roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t

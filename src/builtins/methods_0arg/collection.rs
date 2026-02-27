@@ -1,5 +1,6 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value};
+use std::sync::Arc;
 
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
@@ -92,8 +93,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
                     Some(Ok(Value::array(keys)))
                 }
-                Value::Pair(key, _) => Some(Ok(Value::array(vec![Value::Str(key.clone())]))),
-                Value::ValuePair(key, _) => Some(Ok(Value::array(vec![*key.clone()]))),
+                Value::Pair(key, _) => {
+                    Some(Ok(Value::Seq(Arc::new(vec![Value::Str(key.clone())]))))
+                }
+                Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s) => Some(Ok(Value::array(
                     s.iter().map(|k| Value::Str(k.clone())).collect(),
@@ -124,7 +127,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array(values)))
                 }
                 Value::Pair(_, value) | Value::ValuePair(_, value) => {
-                    Some(Ok(Value::array(vec![*value.clone()])))
+                    Some(Ok(Value::Seq(Arc::new(vec![*value.clone()]))))
                 }
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s) => Some(Ok(Value::array(
@@ -164,12 +167,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::array(kv)))
                 }
-                Value::Pair(key, value) => Some(Ok(Value::array(vec![
+                Value::Pair(key, value) => Some(Ok(Value::Seq(Arc::new(vec![
                     Value::Str(key.clone()),
                     *value.clone(),
-                ]))),
+                ])))),
                 Value::ValuePair(key, value) => {
-                    Some(Ok(Value::array(vec![*key.clone(), *value.clone()])))
+                    Some(Ok(Value::Seq(Arc::new(vec![*key.clone(), *value.clone()]))))
                 }
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s) => {
@@ -196,10 +199,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::array(kv)))
                 }
-                Value::Enum { key, value, .. } => Some(Ok(Value::array(vec![
+                Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
                     Value::Str(key.clone()),
                     Value::Int(*value),
-                ]))),
+                ])))),
                 Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
                 v if v.is_range() => Some(Ok(Value::array(positional_kv(
                     &crate::runtime::utils::value_to_list(v),

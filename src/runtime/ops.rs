@@ -1,4 +1,6 @@
 use super::*;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 impl Interpreter {
     pub(crate) fn apply_reduction_op(
@@ -158,9 +160,9 @@ impl Interpreter {
                     Ok(right.clone())
                 }
             }
-            "+&" => Ok(Value::Int(to_int(left) & to_int(right))),
-            "+|" => Ok(Value::Int(to_int(left) | to_int(right))),
-            "+^" => Ok(Value::Int(to_int(left) ^ to_int(right))),
+            "+&" => Ok(Value::from_bigint(left.to_bigint() & right.to_bigint())),
+            "+|" => Ok(Value::from_bigint(left.to_bigint() | right.to_bigint())),
+            "+^" => Ok(Value::from_bigint(left.to_bigint() ^ right.to_bigint())),
             "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
             "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
@@ -360,8 +362,40 @@ impl Interpreter {
                 }
                 Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
             }
-            "+<" => Ok(Value::Int(to_int(left) << (to_int(right) as u32))),
-            "+>" => Ok(Value::Int(to_int(left) >> (to_int(right) as u32))),
+            "+<" => {
+                let left_big = match left {
+                    Value::BigInt(n) => n.clone(),
+                    _ => BigInt::from(to_int(left)),
+                };
+                let shift = to_int(right);
+                let shifted = if shift >= 0 {
+                    left_big << (shift as usize)
+                } else {
+                    left_big >> (shift.unsigned_abs() as usize)
+                };
+                if let Some(i) = shifted.to_i64() {
+                    Ok(Value::Int(i))
+                } else {
+                    Ok(Value::BigInt(shifted))
+                }
+            }
+            "+>" => {
+                let left_big = match left {
+                    Value::BigInt(n) => n.clone(),
+                    _ => BigInt::from(to_int(left)),
+                };
+                let shift = to_int(right);
+                let shifted = if shift >= 0 {
+                    left_big >> (shift as usize)
+                } else {
+                    left_big << (shift.unsigned_abs() as usize)
+                };
+                if let Some(i) = shifted.to_i64() {
+                    Ok(Value::Int(i))
+                } else {
+                    Ok(Value::BigInt(shifted))
+                }
+            }
             "x" => {
                 let s = crate::runtime::utils::coerce_to_str(left);
                 let n = to_int(right).max(0) as usize;
