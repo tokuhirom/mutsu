@@ -631,6 +631,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_dynamic_sigiled_method_call() {
+        let (rest, expr) = expression("$o.$meth").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::DynamicMethodCall { .. }));
+    }
+
+    #[test]
+    fn parse_dynamic_sigiled_method_call_with_args() {
+        let (rest, expr) = expression("$o.$meth(1, 2)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::DynamicMethodCall { args, .. } => assert_eq!(args.len(), 2),
+            _ => panic!("expected dynamic method call"),
+        }
+    }
+
+    #[test]
     fn parse_ternary() {
         let (rest, expr) = expression("$x ?? 1 !! 2").unwrap();
         assert_eq!(rest, "");

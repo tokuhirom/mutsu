@@ -908,7 +908,18 @@ impl Interpreter {
                     }
                 }
             }
-            if self.has_user_method(&class_name, method) {
+            let skip_pseudo = self
+                .skip_pseudo_method_native
+                .as_ref()
+                .is_some_and(|m| m == method);
+            if skip_pseudo {
+                self.skip_pseudo_method_native = None;
+            }
+            let is_pseudo_method = matches!(
+                method,
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            );
+            if self.has_user_method(&class_name, method) && (!is_pseudo_method || skip_pseudo) {
                 let (result, updated) = self.run_instance_method(
                     &class_name,
                     (*attributes).clone(),

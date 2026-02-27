@@ -778,6 +778,33 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Dynamic method name via sigiled expression: .$meth or .$meth(...)
+            if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&')
+            {
+                let (r_name, name_expr) = super::super::primary::primary(r)?;
+                let (r_name, _) = ws(r_name)?;
+                if r_name.starts_with('(') {
+                    let (r_name, _) = parse_char(r_name, '(')?;
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, args) = parse_call_arg_list(r_name)?;
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, _) = parse_char(r_name, ')')?;
+                    expr = Expr::DynamicMethodCall {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    };
+                    rest = r_name;
+                    continue;
+                }
+                expr = Expr::DynamicMethodCall {
+                    target: Box::new(expr),
+                    name_expr: Box::new(name_expr),
+                    args: Vec::new(),
+                };
+                rest = r_name;
+                continue;
+            }
             if let Some((op, len)) = parse_custom_postfix_operator(r) {
                 let after = &r[len..];
                 if is_postfix_operator_boundary(after) {

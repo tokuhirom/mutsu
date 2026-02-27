@@ -195,6 +195,13 @@ impl Interpreter {
                     || self.has_proto_token(lookup_name),
             }
         } else if let Some(def) = def {
+            let mut captured_env = self.env.clone();
+            if def.is_method {
+                captured_env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::Str("Method".to_string()),
+                );
+            }
             Value::make_sub(
                 def.package,
                 def.name,
@@ -202,7 +209,7 @@ impl Interpreter {
                 def.param_defs,
                 def.body,
                 def.is_rw,
-                self.env.clone(),
+                captured_env,
             )
         } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {

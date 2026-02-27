@@ -638,7 +638,7 @@ impl Interpreter {
         {
             return true;
         }
-        if constraint == "Routine" && matches!(value_type, "Sub" | "Routine") {
+        if constraint == "Routine" && matches!(value_type, "Sub" | "Method" | "Routine") {
             return true;
         }
         // Role-like type relationships
