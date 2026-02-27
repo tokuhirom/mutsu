@@ -236,6 +236,7 @@ roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
 roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
+roast/S12-construction/named-params-in-BUILD.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/WHAT.t

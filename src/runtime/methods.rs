@@ -5807,7 +5807,9 @@ impl Interpreter {
                 for val in &args {
                     match val {
                         Value::Pair(k, v) => {
-                            attrs.insert(k.clone(), *v.clone());
+                            if attrs.contains_key(k) {
+                                attrs.insert(k.clone(), *v.clone());
+                            }
                         }
                         Value::Instance {
                             class_name: src_class,
@@ -5828,7 +5830,7 @@ impl Interpreter {
                         class_name,
                         attrs.clone(),
                         "BUILD",
-                        Vec::new(),
+                        args.clone(),
                         Some(Value::make_instance(class_name.clone(), attrs.clone())),
                     )?;
                     attrs = updated;
@@ -5838,7 +5840,7 @@ impl Interpreter {
                         class_name,
                         attrs.clone(),
                         "TWEAK",
-                        Vec::new(),
+                        args.clone(),
                         Some(Value::make_instance(class_name.clone(), attrs.clone())),
                     )?;
                     attrs = updated;
