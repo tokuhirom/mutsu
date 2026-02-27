@@ -2969,6 +2969,43 @@ impl Interpreter {
             return Ok(Value::array(Vec::new()));
         }
 
+        // Wildcard delegation (`handles *`) and FALLBACK method dispatch.
+        // Dispatch order: wildcard delegation → FALLBACK → built-in fallbacks → error.
+        {
+            let fallback_class = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.clone()),
+                Value::Package(name) => Some(name.clone()),
+                _ => None,
+            };
+            if let Some(ref class_name) = fallback_class {
+                // Try wildcard delegation: forward to delegate attribute's object
+                let wildcard_attrs = self.collect_wildcard_handles(class_name);
+                if let Value::Instance { attributes, .. } = &target {
+                    for attr_var in &wildcard_attrs {
+                        let attr_key = attr_var.trim_start_matches('!').trim_start_matches('.');
+                        if let Some(delegate) = attributes.get(attr_key) {
+                            // Try calling the method on the delegate; if it succeeds, return
+                            match self.call_method_with_values(
+                                delegate.clone(),
+                                method,
+                                args.clone(),
+                            ) {
+                                Ok(val) => return Ok(val),
+                                Err(_) => continue, // delegate doesn't handle it either
+                            }
+                        }
+                    }
+                }
+
+                // Try user-defined FALLBACK method
+                if method != "FALLBACK" && self.has_user_method(class_name, "FALLBACK") {
+                    let mut fallback_args = vec![Value::Str(method.to_string())];
+                    fallback_args.extend(args);
+                    return self.call_method_with_values(target, "FALLBACK", fallback_args);
+                }
+            }
+        }
+
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target {

@@ -903,6 +903,7 @@ impl Compiler {
                     export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
+                    custom_traits: Vec::new(),
                 };
                 let idx = self.code.add_stmt(lowered);
                 self.code.emit(OpCode::RegisterSub(idx));
