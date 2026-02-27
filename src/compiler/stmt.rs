@@ -791,6 +791,7 @@ impl Compiler {
                 name_expr,
                 params,
                 param_defs,
+                return_type,
                 signature_alternates,
                 body,
                 multi,
@@ -827,6 +828,7 @@ impl Compiler {
                     name,
                     params,
                     param_defs,
+                    return_type.as_ref(),
                     body,
                     *multi,
                     state_group.as_deref(),
@@ -836,6 +838,7 @@ impl Compiler {
                         name,
                         alt_params,
                         alt_param_defs,
+                        return_type.as_ref(),
                         body,
                         *multi,
                         state_group.as_deref(),
@@ -873,7 +876,15 @@ impl Compiler {
                 let idx = self.code.add_stmt(lowered);
                 self.code.emit(OpCode::RegisterSub(idx));
                 if name_expr.is_none() {
-                    self.compile_sub_body(name, params, param_defs, body, *multi, None);
+                    self.compile_sub_body(
+                        name,
+                        params,
+                        param_defs,
+                        return_type.as_ref(),
+                        body,
+                        *multi,
+                        None,
+                    );
                 }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {

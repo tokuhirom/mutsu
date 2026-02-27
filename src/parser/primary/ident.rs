@@ -434,7 +434,19 @@ pub(super) fn is_listop(name: &str) -> bool {
 pub(super) fn is_expr_listop(name: &str) -> bool {
     matches!(
         name,
-        "EVAL" | "flat" | "slip" | "run" | "shell" | "cross" | "await" | "dir" | "first" | "make"
+        "EVAL"
+            | "flat"
+            | "slip"
+            | "run"
+            | "shell"
+            | "cross"
+            | "await"
+            | "dir"
+            | "first"
+            | "make"
+            | "set"
+            | "bag"
+            | "mix"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
@@ -1352,7 +1364,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Functions that can be called with no arguments as bare words
-    if matches!(name.as_str(), "await" | "slip") && is_terminator {
+    if matches!(name.as_str(), "await" | "slip" | "set" | "bag" | "mix") && is_terminator {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
