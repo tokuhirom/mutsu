@@ -678,6 +678,10 @@ impl Interpreter {
                         "Cannot delete from a natively typed array",
                     ));
                 }
+                ("clone", _) => {
+                    let cloned = items.to_vec();
+                    return Ok(Value::Array(Arc::new(cloned), *is_array));
+                }
                 _ => {}
             }
         }
@@ -5376,7 +5380,7 @@ impl Interpreter {
             } else {
                 (class_name.as_str(), None)
             };
-            match class_name.as_str() {
+            match base_class_name {
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
                         // Check for :data argument to populate the shaped array
@@ -5416,11 +5420,57 @@ impl Interpreter {
                             other => items.push(other.clone()),
                         }
                     }
-                    let result = if matches!(class_name.as_str(), "Array" | "array") {
+                    // Type check for typed arrays (e.g. Array[Int].new(...))
+                    // Skip for native types (int8, num32, etc.) which coerce rather than check
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                        && constraint.starts_with(char::is_uppercase)
+                    {
+                        for item in &items {
+                            if !self.type_matches_value(constraint, item) {
+                                let got_type = crate::value::what_type_name(item);
+                                let got_repr = item.to_string_value();
+                                let msg = format!(
+                                    "Type check failed in assignment to ; expected {} but got {} ({})",
+                                    constraint, got_type, got_repr,
+                                );
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("message".to_string(), Value::Str(msg.clone()));
+                                attrs.insert(
+                                    "operation".to_string(),
+                                    Value::Str("assignment".to_string()),
+                                );
+                                attrs.insert("got".to_string(), item.clone());
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(constraint.clone()),
+                                );
+                                let ex = Value::make_instance(
+                                    "X::TypeCheck::Assignment".to_string(),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(msg);
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                        }
+                    }
+                    let result = if matches!(base_class_name, "Array" | "array") {
                         Value::real_array(items)
                     } else {
                         Value::array(items)
                     };
+                    // Register type metadata for typed arrays (e.g. Array[Int].new)
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                    {
+                        let info = crate::runtime::ContainerTypeInfo {
+                            value_type: constraint.clone(),
+                            key_type: None,
+                            declared_type: Some(class_name.clone()),
+                        };
+                        self.register_container_type_metadata(&result, info);
+                    }
                     return Ok(result);
                 }
                 "Hash" | "Map" => {
@@ -5445,7 +5495,19 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Ok(Value::hash(map));
+                    let result = Value::hash(map);
+                    // Register type metadata for typed hashes (e.g. Hash[Int].new)
+                    if let Some(ref ta) = type_args {
+                        let value_type = ta.first().cloned().unwrap_or_default();
+                        let key_type = ta.get(1).cloned();
+                        let info = crate::runtime::ContainerTypeInfo {
+                            value_type,
+                            key_type,
+                            declared_type: Some(class_name.clone()),
+                        };
+                        self.register_container_type_metadata(&result, info);
+                    }
+                    return Ok(result);
                 }
                 "Uni" => {
                     let codepoints: Vec<Value> = args

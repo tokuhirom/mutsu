@@ -11,6 +11,7 @@ mod display;
 mod error;
 pub(crate) mod signature;
 mod types;
+pub(crate) use types::what_type_name;
 
 /// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
 pub(crate) fn current_time_secs_f64() -> f64 {

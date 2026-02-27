@@ -652,7 +652,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
-        "infix" | "prefix" | "postfix" => {
+        "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
             // infix:<OP>(args) — operator reference
             if rest.starts_with(":<") || rest.starts_with(":<<") {
                 let r = &rest[1..]; // skip ':'

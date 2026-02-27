@@ -402,3 +402,39 @@ impl Value {
         self.isa_check(role_name)
     }
 }
+
+/// Returns the Raku type name for a value (used in error messages).
+pub(crate) fn what_type_name(val: &Value) -> &str {
+    match val {
+        Value::Int(_) | Value::BigInt(_) => "Int",
+        Value::Num(_) => "Num",
+        Value::Str(_) => "Str",
+        Value::Bool(_) => "Bool",
+        Value::Rat(_, _) | Value::BigRat(_, _) => "Rat",
+        Value::FatRat(_, _) => "FatRat",
+        Value::Complex(_, _) => "Complex",
+        Value::Array(..) | Value::LazyList(_) => "Array",
+        Value::Seq(_) => "Seq",
+        Value::Hash(_) => "Hash",
+        Value::Set(_) => "Set",
+        Value::Bag(_) => "Bag",
+        Value::Mix(_) => "Mix",
+        Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
+        Value::Range(_, _)
+        | Value::RangeExcl(_, _)
+        | Value::RangeExclStart(_, _)
+        | Value::RangeExclBoth(_, _)
+        | Value::GenericRange { .. } => "Range",
+        Value::Nil => "Nil",
+        Value::Instance { class_name, .. } => class_name.as_str(),
+        Value::Package(name) => name.as_str(),
+        Value::Enum { enum_type, .. } => enum_type.as_str(),
+        Value::Sub(_) | Value::WeakSub(_) => "Sub",
+        Value::Routine { .. } => "Sub",
+        Value::Regex(_) => "Regex",
+        Value::Junction { .. } => "Junction",
+        Value::Slip(_) => "Slip",
+        Value::Mixin(_, _) => "Mixin",
+        _ => "Any",
+    }
+}

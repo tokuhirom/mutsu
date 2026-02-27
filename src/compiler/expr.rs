@@ -158,10 +158,14 @@ impl Compiler {
                             let name_idx = self.code.add_constant(Value::Str(name));
                             self.code.emit(OpCode::PreIncrementIndex(name_idx));
                         } else {
-                            self.compile_expr(&Expr::Call {
-                                name: "__mutsu_incdec_nomatch".to_string(),
-                                args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
-                            });
+                            let temp_name =
+                                format!("__mutsu_tmp_preinc_{}", self.code.constants.len());
+                            let temp_name_idx =
+                                self.code.add_constant(Value::Str(temp_name.clone()));
+                            self.compile_expr(target);
+                            self.code.emit(OpCode::SetGlobal(temp_name_idx));
+                            self.compile_expr(index);
+                            self.code.emit(OpCode::PreIncrementIndex(temp_name_idx));
                         }
                     } else {
                         self.compile_expr(&Expr::Call {
@@ -185,10 +189,14 @@ impl Compiler {
                             let name_idx = self.code.add_constant(Value::Str(name));
                             self.code.emit(OpCode::PreDecrementIndex(name_idx));
                         } else {
-                            self.compile_expr(&Expr::Call {
-                                name: "__mutsu_incdec_nomatch".to_string(),
-                                args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
-                            });
+                            let temp_name =
+                                format!("__mutsu_tmp_predec_{}", self.code.constants.len());
+                            let temp_name_idx =
+                                self.code.add_constant(Value::Str(temp_name.clone()));
+                            self.compile_expr(target);
+                            self.code.emit(OpCode::SetGlobal(temp_name_idx));
+                            self.compile_expr(index);
+                            self.code.emit(OpCode::PreDecrementIndex(temp_name_idx));
                         }
                     } else {
                         self.compile_expr(&Expr::Call {
@@ -925,10 +933,13 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostIncrementIndex(name_idx));
                     } else {
-                        self.compile_expr(&Expr::Call {
-                            name: "__mutsu_incdec_nomatch".to_string(),
-                            args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
-                        });
+                        // Arbitrary expression target: assign to temp, increment via temp
+                        let temp_name = format!("__mutsu_tmp_inc_{}", self.code.constants.len());
+                        let temp_name_idx = self.code.add_constant(Value::Str(temp_name.clone()));
+                        self.compile_expr(target);
+                        self.code.emit(OpCode::SetGlobal(temp_name_idx));
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::PostIncrementIndex(temp_name_idx));
                     }
                 } else {
                     self.compile_expr(&Expr::Call {
@@ -956,10 +967,12 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostDecrementIndex(name_idx));
                     } else {
-                        self.compile_expr(&Expr::Call {
-                            name: "__mutsu_incdec_nomatch".to_string(),
-                            args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
-                        });
+                        let temp_name = format!("__mutsu_tmp_dec_{}", self.code.constants.len());
+                        let temp_name_idx = self.code.add_constant(Value::Str(temp_name.clone()));
+                        self.compile_expr(target);
+                        self.code.emit(OpCode::SetGlobal(temp_name_idx));
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::PostDecrementIndex(temp_name_idx));
                     }
                 } else {
                     self.compile_expr(&Expr::Call {
