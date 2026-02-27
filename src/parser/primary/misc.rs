@@ -116,6 +116,13 @@ fn is_custom_reduction_op(op: &str) -> bool {
     if let Some(name) = op.strip_prefix('&') {
         return is_callable_reduction_name(name);
     }
+    if !op
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
+        return false;
+    }
     if let Ok((rest, _)) = parse_ident_with_hyphens(op) {
         return rest.is_empty();
     }

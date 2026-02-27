@@ -585,6 +585,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // Also handles call-on: .(args)
         if rest.starts_with('.') && !rest.starts_with("..") {
             let r = &rest[1..];
+            // `.=` is handled by statement-level assignment parsing, not postfix
+            // method-call parsing. Stop postfix parsing and let the caller consume it.
+            if r.starts_with('=') {
+                break;
+            }
             // Check for .[index] syntax: object.[expr]
             if let Some(r) = r.strip_prefix('[') {
                 let (r, _) = ws(r)?;

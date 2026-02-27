@@ -779,18 +779,34 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "unique" => match target {
             Value::Array(items, ..) => {
-                let mut seen = Vec::new();
+                let mut seen: Vec<Value> = Vec::new();
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    let key = item.to_string_value();
-                    if !seen.contains(&key) {
-                        seen.push(key);
+                    if !seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        seen.push(item.clone());
                         result.push(item.clone());
                     }
                 }
                 Some(Ok(Value::array(result)))
             }
-            _ => None,
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut seen: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    if !seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        seen.push(item.clone());
+                        result.push(item.clone());
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            _ => Some(Ok(target.clone())),
         },
         "floor" => match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
