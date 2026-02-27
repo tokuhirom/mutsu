@@ -23,6 +23,7 @@ enum TermBinding {
 #[derive(Clone, Default)]
 struct LexicalScope {
     user_subs: HashSet<String>,
+    infix_assoc: HashMap<String, String>,
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
     term_symbols: HashMap<String, TermBinding>,
@@ -47,6 +48,9 @@ thread_local! {
 
     /// Operator sub names to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Infix associativity traits to pre-register after scope reset (for EVAL).
+    static EVAL_OPERATOR_ASSOC_PRESEED: RefCell<HashMap<String, String>> =
+        RefCell::new(HashMap::new());
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -235,6 +239,31 @@ pub(in crate::parser) fn register_user_sub(name: &str) {
     }
 }
 
+pub(in crate::parser) fn register_user_infix_assoc(name: &str, assoc: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .infix_assoc
+            .insert(name.to_string(), assoc.to_string());
+    });
+}
+
+pub(in crate::parser) fn lookup_user_infix_assoc(symbol: &str) -> Option<String> {
+    let key = format!("infix:<{}>", symbol);
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            if let Some(v) = scope.infix_assoc.get(&key) {
+                return Some(v.clone());
+            }
+        }
+        None
+    })
+}
+
 /// Register a user-declared sub with `is test-assertion`.
 pub(in crate::parser) fn register_user_test_assertion_sub(name: &str) {
     SCOPES.with(|s| {
@@ -259,12 +288,24 @@ pub(in crate::parser) fn reset_user_subs() {
             register_user_callable_term_symbol(name);
         }
     });
+    EVAL_OPERATOR_ASSOC_PRESEED.with(|preseed| {
+        let assoc_map = preseed.borrow();
+        for (name, assoc) in assoc_map.iter() {
+            register_user_infix_assoc(name, assoc);
+        }
+    });
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).
 pub(in crate::parser) fn set_eval_operator_preseed(names: Vec<String>) {
     EVAL_OPERATOR_PRESEED.with(|preseed| {
         *preseed.borrow_mut() = names;
+    });
+}
+
+pub(in crate::parser) fn set_eval_operator_assoc_preseed(assoc: HashMap<String, String>) {
+    EVAL_OPERATOR_ASSOC_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = assoc;
     });
 }
 
@@ -291,6 +332,52 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
             for name in &scope.user_subs {
                 let Some(op) = name
                     .strip_prefix("prefix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                else {
+                    continue;
+                };
+                if !input.starts_with(op) {
+                    continue;
+                }
+                let consumed = op.len();
+                // For word-like operators, require identifier boundary.
+                if op
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len)| consumed > *best_len)
+                {
+                    best = Some((name.clone(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// Match a user-declared postfix operator against the current input.
+/// Returns `(full_name, consumed_len)` when input begins with an in-scope
+/// `postfix:<...>` operator symbol.
+pub(in crate::parser) fn match_user_declared_postfix_op(input: &str) -> Option<(String, usize)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize)> = None;
+
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let Some(op) = name
+                    .strip_prefix("postfix:<")
                     .and_then(|s| s.strip_suffix('>'))
                 else {
                     continue;
@@ -1067,6 +1154,18 @@ pub(super) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     parse_statement_modifier(rest, Stmt::Redo(None))
 }
 
+/// Parse `goto` statement.
+pub(super) fn goto_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("goto", input).ok_or_else(|| PError::expected("goto statement"))?;
+    let (rest, _) = ws1(rest)?;
+    // Bare identifier labels are treated as label names, not variable lookups.
+    if let Ok((r, label)) = ident(rest) {
+        return parse_statement_modifier(r, Stmt::Goto(Expr::Literal(Value::Str(label))));
+    }
+    let (rest, expr) = expression(rest)?;
+    parse_statement_modifier(rest, Stmt::Goto(expr))
+}
+
 /// Parse `die` statement.
 pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, is_fail) = if let Some(r) = keyword("fail", input) {
@@ -1291,6 +1390,96 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
 
     // Check for index assignment after expression
     let (rest, _) = ws(rest)?;
+    if let Some(stripped) = rest.strip_prefix(".=") {
+        let (stripped, _) = ws(stripped)?;
+        let (r, method_name) = take_while1(stripped, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })
+        .map_err(|err| PError {
+            messages: merge_expected_messages("expected method name after '.='", &err.messages),
+            remaining_len: err.remaining_len.or(Some(stripped.len())),
+        })?;
+        let method_name = method_name.to_string();
+        let (r, method_args) = if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else {
+            (r, Vec::new())
+        };
+        let make_rhs = |target: Expr| Expr::MethodCall {
+            target: Box::new(target),
+            name: method_name.clone(),
+            args: method_args.clone(),
+            modifier: None,
+            quoted: false,
+        };
+        match expr {
+            Expr::Var(name) => {
+                let stmt = Stmt::Assign {
+                    name: name.clone(),
+                    expr: make_rhs(Expr::Var(name.clone())),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
+            Expr::ArrayVar(name) => {
+                let stmt = Stmt::Assign {
+                    name: format!("@{}", name),
+                    expr: make_rhs(Expr::ArrayVar(name)),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
+            Expr::HashVar(name) => {
+                let stmt = Stmt::Assign {
+                    name: format!("%{}", name),
+                    expr: make_rhs(Expr::HashVar(name)),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
+            Expr::Index { target, index } => {
+                let tmp_idx = format!(
+                    "__mutsu_idx_{}",
+                    TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+                );
+                let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+                let lhs_expr = Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(tmp_idx_expr.clone()),
+                };
+                let assigned_value = make_rhs(lhs_expr);
+                let stmt = Stmt::Expr(Expr::DoBlock {
+                    body: vec![
+                        Stmt::VarDecl {
+                            name: tmp_idx.clone(),
+                            expr: *index,
+                            type_constraint: None,
+                            is_state: false,
+                            is_our: false,
+                            is_dynamic: false,
+                            is_export: false,
+                            export_tags: Vec::new(),
+                        },
+                        Stmt::Expr(Expr::IndexAssign {
+                            target,
+                            index: Box::new(tmp_idx_expr),
+                            value: Box::new(assigned_value),
+                        }),
+                    ],
+                    label: None,
+                });
+                return parse_statement_modifier(r, stmt);
+            }
+            _ => {
+                return Err(PError::expected("assignable expression before '.='"));
+            }
+        }
+    }
     if matches!(expr, Expr::Index { .. }) && rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
@@ -1801,12 +1990,33 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
     "dd", "exit", "proceed", "succeed", "push", "pop", "shift", "unshift", "append", "prepend",
-    "elems", "chars", "defined", "warn", "EVAL", "EVALFILE", "substr",
+    "elems", "chars", "defined", "warn", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.
 pub(super) fn is_known_call(name: &str) -> bool {
     KNOWN_CALLS.contains(&name) || is_imported_function(name)
+}
+
+/// Return true when parsing this known call as a standalone statement would
+/// truncate a larger expression (e.g. `defined($x) ?? 1 !! 2`).
+fn known_call_is_expression_prefix(input: &str, rest_after_call: &str) -> bool {
+    let Ok((rest_after_call, _)) = ws(rest_after_call) else {
+        return false;
+    };
+    if rest_after_call.is_empty()
+        || rest_after_call.starts_with(';')
+        || rest_after_call.starts_with('}')
+    {
+        return false;
+    }
+    if is_stmt_modifier_keyword(rest_after_call) {
+        return false;
+    }
+    if let Ok((expr_rest, _)) = expression(input) {
+        return expr_rest.len() < rest_after_call.len();
+    }
+    false
 }
 
 /// Parse a known function call as statement.
@@ -1842,6 +2052,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         })?
     };
     let mut args = args;
+    if known_call_is_expression_prefix(input, rest) {
+        return Err(PError::expected("known function call"));
+    }
     if is_test_assertion_callable(&name) {
         args.push(crate::ast::CallArg::Named {
             name: "__mutsu_test_callsite_line".to_string(),

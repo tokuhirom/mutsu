@@ -9,26 +9,45 @@ pub(super) struct ForLoopSpec {
     pub(super) collect: bool,
 }
 
+pub(super) struct WhileLoopSpec {
+    pub(super) cond_end: u32,
+    pub(super) body_end: u32,
+    pub(super) label: Option<String>,
+    pub(super) collect: bool,
+}
+
 pub(super) struct CStyleLoopSpec {
     pub(super) cond_end: u32,
     pub(super) step_start: u32,
     pub(super) body_end: u32,
     pub(super) label: Option<String>,
+    pub(super) collect: bool,
 }
 
 impl VM {
+    fn collect_loop_value(coll: &mut Vec<Value>, value: Value) {
+        match value {
+            Value::Slip(items) => coll.extend(items.iter().cloned()),
+            other => coll.push(other),
+        }
+    }
+
     pub(super) fn exec_while_loop_op(
         &mut self,
         code: &CompiledCode,
-        cond_end: u32,
-        body_end: u32,
-        label: &Option<String>,
+        spec: &WhileLoopSpec,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let cond_start = *ip + 1;
-        let body_start = cond_end as usize;
-        let loop_end = body_end as usize;
+        let body_start = spec.cond_end as usize;
+        let loop_end = spec.body_end as usize;
+        let stack_base = if spec.collect {
+            Some(self.stack.len())
+        } else {
+            None
+        };
+        let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
         'while_loop: loop {
             self.run_range(code, cond_start, body_start, compiled_fns)?;
@@ -38,17 +57,26 @@ impl VM {
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
-                    Ok(()) => break 'body_redo,
+                    Ok(()) => {
+                        if let Some(ref mut coll) = collected {
+                            let base = stack_base.unwrap();
+                            if self.stack.len() > base {
+                                Self::collect_loop_value(coll, self.stack.pop().unwrap());
+                            }
+                            self.stack.truncate(base);
+                        }
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_succeed => {
                         break 'body_redo;
                     }
-                    Err(e) if e.is_redo && Self::label_matches(&e.label, label) => {
+                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         continue 'body_redo;
                     }
-                    Err(e) if e.is_last && Self::label_matches(&e.label, label) => {
+                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'while_loop;
                     }
-                    Err(e) if e.is_next && Self::label_matches(&e.label, label) => {
+                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         break 'body_redo;
                     }
                     Err(e) => return Err(e),
@@ -57,6 +85,9 @@ impl VM {
             if self.interpreter.is_halted() {
                 break;
             }
+        }
+        if let Some(coll) = collected {
+            self.stack.push(Value::array(coll));
         }
         *ip = loop_end;
         Ok(())
@@ -136,7 +167,7 @@ impl VM {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
                                 let val = self.stack.pop().unwrap();
-                                coll.push(val);
+                                Self::collect_loop_value(coll, val);
                             }
                             // Drain any extra values pushed during this iteration
                             self.stack.truncate(base);
@@ -194,6 +225,12 @@ impl VM {
         let body_start = spec.cond_end as usize;
         let step_begin = spec.step_start as usize;
         let loop_end = spec.body_end as usize;
+        let stack_base = if spec.collect {
+            Some(self.stack.len())
+        } else {
+            None
+        };
+        let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
         'c_loop: loop {
             self.run_range(code, cond_start, body_start, compiled_fns)?;
@@ -203,7 +240,16 @@ impl VM {
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, step_begin, compiled_fns) {
-                    Ok(()) => break 'body_redo,
+                    Ok(()) => {
+                        if let Some(ref mut coll) = collected {
+                            let base = stack_base.unwrap();
+                            if self.stack.len() > base {
+                                Self::collect_loop_value(coll, self.stack.pop().unwrap());
+                            }
+                            self.stack.truncate(base);
+                        }
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_succeed => {
                         break 'body_redo;
                     }
@@ -223,6 +269,9 @@ impl VM {
                 break;
             }
             self.run_range(code, step_begin, loop_end, compiled_fns)?;
+        }
+        if let Some(coll) = collected {
+            self.stack.push(Value::array(coll));
         }
         *ip = loop_end;
         Ok(())

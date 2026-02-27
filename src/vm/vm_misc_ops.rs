@@ -253,12 +253,8 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let new_val = match val {
-            Value::Int(i) => Value::Int(i + 1),
-            Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) => make_rat(n + d, d),
-            _ => Value::Int(1),
-        };
+        let val = Self::normalize_incdec_source(val);
+        let new_val = Self::increment_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -271,12 +267,8 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let new_val = match val {
-            Value::Int(i) => Value::Int(i - 1),
-            Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) => make_rat(n - d, d),
-            _ => Value::Int(-1),
-        };
+        let val = Self::normalize_incdec_source(val);
+        let new_val = Self::decrement_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -483,6 +475,23 @@ impl VM {
                 }
             }
             list = flattened;
+        }
+        // Reduction is list-contextual; when the operand itself is a single list-like
+        // value, flatten that one value into reduction elements.
+        if list.len() == 1 {
+            let only = list.remove(0);
+            list = match only {
+                Value::Array(items, is_real) if !is_real => items.iter().cloned().collect(),
+                Value::Seq(items) => items.iter().cloned().collect(),
+                Value::LazyList(ll) => {
+                    if let Ok(items) = self.interpreter.force_lazy_list_bridge(&ll) {
+                        items
+                    } else {
+                        vec![Value::LazyList(ll)]
+                    }
+                }
+                other => vec![other],
+            };
         }
         if base_op == "," {
             if scan {

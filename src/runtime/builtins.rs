@@ -139,6 +139,7 @@ impl Interpreter {
             )),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
+            "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
             "exit" => self.builtin_exit(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Multi dispatch control flow
@@ -252,6 +253,7 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
+            "unique" => self.builtin_unique(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
@@ -366,6 +368,7 @@ impl Interpreter {
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
             "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(&args),
+            "__mutsu_hyper_prefix" => self.builtin_hyper_prefix(&args),
             "signal" => self.builtin_signal(&args),
             // Boolean coercion functions
             "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
@@ -502,24 +505,44 @@ impl Interpreter {
                 return Err(Self::reject_args_for_empty_sig(args));
             }
             let routine_is_rw = true;
+            let return_spec = self.routine_return_spec_by_name(&def.name);
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            if let Some(line) = self.test_pending_callsite_line {
+                self.env.insert("?LINE".to_string(), Value::Int(line));
+            }
+            self.push_caller_env();
             let rw_bindings =
                 match self.bind_function_args_values(&def.param_defs, &def.params, args) {
                     Ok(bindings) => bindings,
                     Err(e) => {
+                        self.pop_caller_env();
                         self.env = saved_env;
                         self.restore_readonly_vars(saved_readonly);
                         return Err(e);
                     }
                 };
+            let sub_val = Value::make_sub(
+                def.package.clone(),
+                def.name.clone(),
+                def.params.clone(),
+                def.param_defs.clone(),
+                def.body.clone(),
+                def.is_rw,
+                self.env.clone(),
+            );
+            self.block_stack.push(sub_val);
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
                 .push((def.package.clone(), def.name.clone()));
+            self.prepare_definite_return_slot(return_spec.as_deref());
             let result = self.eval_block_value(&def.body);
             self.routine_stack.pop();
+            self.block_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);
+            self.pop_caller_env();
             let mut restored_env = saved_env;
+            self.pop_caller_env_with_writeback(&mut restored_env);
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
@@ -527,13 +550,8 @@ impl Interpreter {
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
             }
-            return match result {
-                Err(e) if e.return_value.is_some() => {
-                    self.maybe_fetch_rw_proxy(e.return_value.unwrap(), routine_is_rw)
-                }
-                Ok(v) => self.maybe_fetch_rw_proxy(v, routine_is_rw),
-                Err(e) => Err(e),
-            };
+            let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
+            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, routine_is_rw));
         }
         if self.has_proto(name) {
             let mut err =
@@ -613,6 +631,9 @@ impl Interpreter {
         if args.len() == 1 {
             if is_chain_comparison_op(op) {
                 return Ok(Value::Bool(true));
+            }
+            if op == "~" {
+                return Ok(Value::Str(crate::runtime::utils::coerce_to_str(&args[0])));
             }
             return Ok(args[0].clone());
         }
@@ -1272,6 +1293,50 @@ impl Interpreter {
         self.builtin_atomic_update_unit(args, -1, false)
     }
 
+    fn builtin_hyper_prefix(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Ok(Value::array(vec![]));
+        }
+        let op = args[0].to_string_value();
+        let routine = format!("prefix:<{}>", op);
+        fn apply_hyper_prefix(
+            interp: &mut Interpreter,
+            routine: &str,
+            value: Value,
+        ) -> Result<Value, RuntimeError> {
+            match value {
+                Value::Array(items, is_array) => {
+                    let mut mapped = Vec::with_capacity(items.len());
+                    for item in items.iter() {
+                        mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
+                    }
+                    Ok(Value::Array(std::sync::Arc::new(mapped), is_array))
+                }
+                Value::Seq(items) => {
+                    let mut mapped = Vec::with_capacity(items.len());
+                    for item in items.iter() {
+                        mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
+                    }
+                    Ok(Value::Seq(std::sync::Arc::new(mapped)))
+                }
+                Value::Slip(items) => {
+                    let mut mapped = Vec::with_capacity(items.len());
+                    for item in items.iter() {
+                        mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
+                    }
+                    Ok(Value::Slip(std::sync::Arc::new(mapped)))
+                }
+                other => interp.call_function(routine, vec![other]),
+            }
+        }
+        let items = crate::runtime::value_to_list(&args[1]);
+        let mut results = Vec::with_capacity(items.len());
+        for item in items {
+            results.push(apply_hyper_prefix(self, &routine, item)?);
+        }
+        Ok(Value::array(results))
+    }
+
     fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut message = String::new();
         for arg in args {
@@ -1301,6 +1366,25 @@ impl Interpreter {
             message.push_str(&arg.to_string_value());
         }
         Err(RuntimeError::warn_signal(message))
+    }
+
+    fn builtin_incdec_nomatch(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let caller = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| "postfix:<++>".to_string());
+        let msg = format!(
+            "Cannot resolve caller {}(...); the parameter requires mutable arguments",
+            caller
+        );
+        let mut err = RuntimeError::new(msg.clone());
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(msg));
+        err.exception = Some(Box::new(Value::make_instance(
+            "X::Multi::NoMatch".to_string(),
+            attrs,
+        )));
+        Err(err)
     }
 
     fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1423,20 +1507,26 @@ impl Interpreter {
         Ok(self.env.get("made").cloned().unwrap_or(Value::Nil))
     }
 
-    fn builtin_callframe(
+    pub(crate) fn builtin_callframe(
         &self,
         args: &[Value],
         default_depth: usize,
     ) -> Result<Value, RuntimeError> {
-        let depth = args
-            .first()
-            .and_then(|v| match v {
-                Value::Int(i) if *i >= 0 => Some(*i as usize),
-                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-                _ => None,
-            })
-            .unwrap_or(default_depth);
-        if let Some(frame) = self.callframe_value(depth) {
+        let mut depth = default_depth;
+        let mut callsite_line: Option<i64> = None;
+        for arg in args {
+            match arg {
+                Value::Int(i) if *i >= 0 => depth = *i as usize,
+                Value::Num(f) if *f >= 0.0 => depth = *f as usize,
+                Value::Pair(k, v) if k == "__callframe_line" => {
+                    if let Value::Int(line) = v.as_ref() {
+                        callsite_line = Some(*line);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(frame) = self.callframe_value(depth, callsite_line) {
             return Ok(frame);
         }
         Ok(Value::Nil)

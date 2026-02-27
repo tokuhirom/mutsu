@@ -606,10 +606,12 @@ impl Interpreter {
                 cond,
                 then_branch,
                 else_branch,
+                binding_var,
             } => Stmt::If {
                 cond: Self::rewrite_proto_dispatch_expr(cond),
                 then_branch: Self::rewrite_proto_dispatch_stmts(then_branch),
                 else_branch: Self::rewrite_proto_dispatch_stmts(else_branch),
+                binding_var: binding_var.clone(),
             },
             Stmt::While { cond, body, label } => Stmt::While {
                 cond: Self::rewrite_proto_dispatch_expr(cond),

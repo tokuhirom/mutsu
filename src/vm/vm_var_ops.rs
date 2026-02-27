@@ -2,6 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
+const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
 impl VM {
     fn self_hash_ref_marker() -> Value {
@@ -18,6 +19,28 @@ impl VM {
             }
             Some(value) => value.clone(),
             None => Value::Nil,
+        }
+    }
+
+    fn self_array_ref_marker() -> Value {
+        Value::Pair(
+            SELF_ARRAY_REF_SENTINEL.to_string(),
+            Box::new(Value::Bool(true)),
+        )
+    }
+
+    fn resolve_array_entry(
+        items: &Arc<Vec<Value>>,
+        is_arr: bool,
+        idx: usize,
+        default: Value,
+    ) -> Value {
+        match items.get(idx) {
+            Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
+                Value::Array(items.clone(), is_arr)
+            }
+            Some(value) => value.clone(),
+            None => default,
         }
     }
 
@@ -495,25 +518,25 @@ impl VM {
                 } else {
                     let default =
                         self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                    items.get(i as usize).cloned().unwrap_or(default)
+                    Self::resolve_array_entry(&items, is_arr, i as usize, default)
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
                 let depth = Self::array_depth(&target);
                 if depth <= 1 && indices.len() > 1 {
                     // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
-                    let Value::Array(items, ..) = &target else {
+                    let Value::Array(items, is_arr) = &target else {
                         unreachable!()
                     };
                     let mut out = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
                         if let Some(i) = Self::index_to_usize(idx) {
-                            out.push(
-                                items
-                                    .get(i)
-                                    .cloned()
-                                    .unwrap_or_else(|| self.typed_container_default(&target)),
-                            );
+                            out.push(Self::resolve_array_entry(
+                                items,
+                                *is_arr,
+                                i,
+                                self.typed_container_default(&target),
+                            ));
                         } else {
                             out.push(self.typed_container_default(&target));
                         }
@@ -1193,29 +1216,21 @@ impl VM {
         let name = Self::const_str(code, name_idx);
         // Handle $CALLER::varname++ — increment through caller scope
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
-            let val = self.interpreter.get_caller_var(&bare_name, depth)?;
-            let new_val = match &val {
-                Value::Int(i) => Value::Int(i + 1),
-                Value::Bool(_) => Value::Bool(true),
-                Value::Rat(n, d) => make_rat(n + d, *d),
-                _ => Value::Int(1),
-            };
+            let raw_val = self.interpreter.get_caller_var(&bare_name, depth)?;
+            let val = Self::normalize_incdec_source(raw_val);
+            let new_val = Self::increment_value(&val);
             self.interpreter
                 .set_caller_var(&bare_name, depth, new_val)?;
             self.stack.push(val);
             return Ok(());
         }
         self.interpreter.check_readonly_for_increment(name)?;
-        let val = self
+        let raw_val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let new_val = match &val {
-            Value::Int(i) => Value::Int(i + 1),
-            Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) => make_rat(n + d, *d),
-            _ => Value::Int(1),
-        };
+        let val = Self::normalize_incdec_source(raw_val);
+        let new_val = Self::increment_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1238,16 +1253,12 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         self.interpreter.check_readonly_for_increment(name)?;
-        let val = self
+        let raw_val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let new_val = match &val {
-            Value::Int(i) => Value::Int(i - 1),
-            Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) => make_rat(n - d, *d),
-            _ => Value::Int(-1),
-        };
+        let val = Self::normalize_incdec_source(raw_val);
+        let new_val = Self::decrement_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1256,14 +1267,28 @@ impl VM {
     }
 
     pub(super) fn exec_post_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_post_inc_dec_index_op(code, name_idx, true);
+        self.exec_inc_dec_index_op(code, name_idx, true, false);
     }
 
     pub(super) fn exec_post_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_post_inc_dec_index_op(code, name_idx, false);
+        self.exec_inc_dec_index_op(code, name_idx, false, false);
     }
 
-    fn exec_post_inc_dec_index_op(&mut self, code: &CompiledCode, name_idx: u32, increment: bool) {
+    pub(super) fn exec_pre_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        self.exec_inc_dec_index_op(code, name_idx, true, true);
+    }
+
+    pub(super) fn exec_pre_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        self.exec_inc_dec_index_op(code, name_idx, false, true);
+    }
+
+    fn exec_inc_dec_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        increment: bool,
+        return_new: bool,
+    ) {
         let name = Self::const_str(code, name_idx).to_string();
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
@@ -1286,21 +1311,16 @@ impl VM {
             Value::Nil => Value::Int(0),
             other => other.clone(),
         };
-        let new_val = match &effective {
-            Value::Int(i) => Value::Int(if increment { i + 1 } else { i - 1 }),
-            Value::Rat(n, d) => {
-                if increment {
-                    make_rat(n + d, *d)
-                } else {
-                    make_rat(n - d, *d)
-                }
-            }
-            _ => Value::Int(if increment { 1 } else { -1 }),
+        let effective = Self::normalize_incdec_source(effective);
+        let new_val = if increment {
+            Self::increment_value(&effective)
+        } else {
+            Self::decrement_value(&effective)
         };
         if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
             match *container {
                 Value::Hash(ref mut h) => {
-                    Arc::make_mut(h).insert(key, new_val);
+                    Arc::make_mut(h).insert(key, new_val.clone());
                 }
                 Value::Array(ref mut arr, ..) => {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
@@ -1308,13 +1328,17 @@ impl VM {
                         while a.len() <= i {
                             a.push(Value::Nil);
                         }
-                        a[i] = new_val;
+                        a[i] = new_val.clone();
                     }
                 }
                 _ => {}
             }
         }
-        self.stack.push(effective);
+        if return_new {
+            self.stack.push(new_val);
+        } else {
+            self.stack.push(effective);
+        }
     }
 
     pub(super) fn exec_index_assign_expr_named_op(
@@ -1456,11 +1480,19 @@ impl VM {
                                 )?;
                             } else if let Some(i) = Self::index_to_usize(&idx) {
                                 if let Value::Array(items, ..) = container {
+                                    let is_self_array_ref = matches!(
+                                        &val,
+                                        Value::Array(source_items, ..) if Arc::ptr_eq(items, source_items)
+                                    );
                                     let arr = Arc::make_mut(items);
                                     if i >= arr.len() {
                                         arr.resize(i + 1, Value::Package("Any".to_string()));
                                     }
-                                    arr[i] = val.clone();
+                                    arr[i] = if is_self_array_ref {
+                                        Self::self_array_ref_marker()
+                                    } else {
+                                        val.clone()
+                                    };
                                 }
                             } else {
                                 return Err(RuntimeError::new("Index out of bounds"));
@@ -1529,6 +1561,42 @@ impl VM {
             self.update_local_if_exists(code, &var_name, &updated);
         }
         self.stack.push(val);
+    }
+
+    /// Generic index assignment on a stack-computed target.
+    /// Stack order: target (bottom), index, value (top).
+    /// If the target hash has `__callframe_depth`, routes through set_caller_var.
+    pub(super) fn exec_index_assign_generic_op(&mut self) -> Result<(), RuntimeError> {
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let target = self.stack.pop().unwrap_or(Value::Nil);
+        let key = idx.to_string_value();
+
+        match &target {
+            Value::Hash(h) => {
+                // Check for callframe .my hash with depth marker
+                if let Some(Value::Int(depth)) = h.get("__callframe_depth") {
+                    let depth = *depth as usize;
+                    // Strip sigil from key to get bare variable name
+                    let bare_name =
+                        if key.starts_with('$') || key.starts_with('@') || key.starts_with('%') {
+                            &key[1..]
+                        } else {
+                            &key
+                        };
+                    self.interpreter
+                        .set_caller_var(bare_name, depth, val.clone())?;
+                    self.stack.push(val);
+                    return Ok(());
+                }
+                // Regular hash: just do the assignment (on a temporary — won't persist)
+                self.stack.push(val);
+            }
+            _ => {
+                self.stack.push(val);
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn exec_get_local_op(

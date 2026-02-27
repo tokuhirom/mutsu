@@ -147,8 +147,22 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::PreIncrement(name_idx));
+                    } else if let Expr::Index { target, index } = expr.as_ref() {
+                        if let Some(name) = Self::postfix_index_name(target) {
+                            self.compile_expr(index);
+                            let name_idx = self.code.add_constant(Value::Str(name));
+                            self.code.emit(OpCode::PreIncrementIndex(name_idx));
+                        } else {
+                            self.compile_expr(&Expr::Call {
+                                name: "__mutsu_incdec_nomatch".to_string(),
+                                args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
+                            });
+                        }
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
+                        });
                     }
                 }
                 TokenKind::MinusMinus => {
@@ -160,8 +174,22 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::PreDecrement(name_idx));
+                    } else if let Expr::Index { target, index } = expr.as_ref() {
+                        if let Some(name) = Self::postfix_index_name(target) {
+                            self.compile_expr(index);
+                            let name_idx = self.code.add_constant(Value::Str(name));
+                            self.code.emit(OpCode::PreDecrementIndex(name_idx));
+                        } else {
+                            self.compile_expr(&Expr::Call {
+                                name: "__mutsu_incdec_nomatch".to_string(),
+                                args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
+                            });
+                        }
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
+                        });
                     }
                 }
                 TokenKind::IntBitNeg => {
@@ -566,6 +594,7 @@ impl Compiler {
                                     },
                                     then_branch: vec![assign_stmt],
                                     else_branch: vec![],
+                                    binding_var: None,
                                 },
                                 Stmt::Expr(Expr::Var(seen_name)),
                             ],
@@ -879,16 +908,28 @@ impl Compiler {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
+                } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
+                    // state/my declarator in expression position: `state $x++`, `my $x.++`
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Pop);
+                    let name_idx = self.code.add_constant(Value::Str(var_name));
+                    self.code.emit(OpCode::PostIncrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostIncrementIndex(name_idx));
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
+                        });
                     }
                 } else {
-                    self.code.emit(OpCode::LoadNil);
+                    self.compile_expr(&Expr::Call {
+                        name: "__mutsu_incdec_nomatch".to_string(),
+                        args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
+                    });
                 }
             }
             // Postfix -- on variable
@@ -899,16 +940,27 @@ impl Compiler {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
+                } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Pop);
+                    let name_idx = self.code.add_constant(Value::Str(var_name));
+                    self.code.emit(OpCode::PostDecrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostDecrementIndex(name_idx));
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.compile_expr(&Expr::Call {
+                            name: "__mutsu_incdec_nomatch".to_string(),
+                            args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
+                        });
                     }
                 } else {
-                    self.code.emit(OpCode::LoadNil);
+                    self.compile_expr(&Expr::Call {
+                        name: "__mutsu_incdec_nomatch".to_string(),
+                        args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
+                    });
                 }
             }
             // Assignment as expression
@@ -1202,6 +1254,7 @@ impl Compiler {
                     cond,
                     then_branch,
                     else_branch,
+                    ..
                 } if Self::do_if_branch_supported(then_branch)
                     && Self::do_if_branch_supported(else_branch) =>
                 {
@@ -1302,6 +1355,19 @@ impl Compiler {
                         label,
                     );
                 }
+                Stmt::While { cond, body, label } => {
+                    self.compile_do_while_expr(cond, body, label);
+                }
+                Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    repeat,
+                    label,
+                } if !*repeat => {
+                    self.compile_do_loop_expr(init, cond, step, body, label);
+                }
                 Stmt::ClassDecl {
                     name, name_expr, ..
                 } => {
@@ -1347,6 +1413,21 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerizePair);
             }
             Expr::CallOn { target, args } => {
+                // @($x) — array contextualizer: coerce single arg to Array
+                if let Expr::ArrayVar(name) = target.as_ref()
+                    && name == "__ANON_ARRAY__"
+                    && args.len() == 1
+                {
+                    self.compile_expr(&args[0]);
+                    let method_idx = self.code.add_constant(Value::Str("Array".to_string()));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: method_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                    });
+                    return;
+                }
                 // %($x) — hash contextualizer: coerce single arg to Hash
                 if let Expr::HashVar(name) = target.as_ref()
                     && name == "__ANON_HASH__"
@@ -1393,6 +1474,7 @@ impl Compiler {
                         params: Vec::new(),
                         param_defs: Vec::new(),
                         return_type: None,
+                        associativity: None,
                         signature_alternates: Vec::new(),
                         body: body.clone(),
                         multi: false,
@@ -1428,6 +1510,7 @@ impl Compiler {
                     params: params.clone(),
                     param_defs: param_defs.clone(),
                     return_type: return_type.clone(),
+                    associativity: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
@@ -1450,6 +1533,7 @@ impl Compiler {
                     },
                     param_defs: Vec::new(),
                     return_type: None,
+                    associativity: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
@@ -1482,7 +1566,12 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::Str(name));
                     self.code.emit(OpCode::IndexAssignExprNested(name_idx));
                 } else {
-                    self.code.emit(OpCode::IndexAssignInvalid);
+                    // Generic fallback: compile target, then index, then value
+                    // and emit IndexAssignGeneric to do runtime assignment.
+                    self.compile_expr(target);
+                    self.compile_expr(index);
+                    self.compile_expr(value);
+                    self.code.emit(OpCode::IndexAssignGeneric);
                 }
             }
             Expr::IndirectTypeLookup(inner) => {

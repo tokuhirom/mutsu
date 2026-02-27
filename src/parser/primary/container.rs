@@ -87,7 +87,12 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     {
         let (r_full_ws, _) = ws(r_full)?;
         if let Ok((r_after, _)) = parse_char(r_full_ws, ')') {
-            return Ok((r_after, full_expr));
+            return Ok((r_after, normalize_sequence_waypoints(full_expr)));
+        }
+        // When content starts with nested parens, the full parse can already
+        // consume the closing ')' of this paren expression (e.g. `(() ... *)`).
+        if content_start.starts_with('(') && r_full_ws.is_empty() {
+            return Ok((r_full_ws, normalize_sequence_waypoints(full_expr)));
         }
     }
     // Check for inline statement modifier: ($_ with data), (expr if cond), etc.
@@ -139,10 +144,6 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     if let Ok((input, _)) = parse_char(input, ')') {
         return Ok((input, finalize_paren_list(items)));
     }
-    // Check for sequence operator right after first comma
-    if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
-        return seq;
-    }
     let (mut input_rest, second) = expression_no_sequence(input)?;
     items.push(second);
     loop {
@@ -172,10 +173,6 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((input, finalize_paren_list(items)));
         }
-        // Check for sequence operator after comma
-        if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
-            return seq;
-        }
         let (input, next) = expression_no_sequence(input)?;
         items.push(next);
         input_rest = input;
@@ -190,6 +187,43 @@ fn finalize_paren_list(items: Vec<Expr>) -> Expr {
         return lifted.into_iter().next().unwrap();
     }
     Expr::ArrayLiteral(lifted)
+}
+
+fn normalize_sequence_waypoints(expr: Expr) -> Expr {
+    match expr {
+        Expr::Binary { left, op, right }
+            if matches!(
+                op,
+                crate::token_kind::TokenKind::DotDotDot
+                    | crate::token_kind::TokenKind::DotDotDotCaret
+            ) =>
+        {
+            let right = match *right {
+                Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
+                    items
+                        .into_iter()
+                        .map(|item| match item {
+                            Expr::Binary {
+                                left,
+                                op:
+                                    crate::token_kind::TokenKind::DotDotDot
+                                    | crate::token_kind::TokenKind::DotDotDotCaret,
+                                right,
+                            } => Expr::ArrayLiteral(vec![*left, *right]),
+                            other => other,
+                        })
+                        .collect(),
+                ),
+                other => other,
+            };
+            Expr::Binary {
+                left,
+                op,
+                right: Box::new(right),
+            }
+        }
+        other => other,
+    }
 }
 
 fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
@@ -317,6 +351,16 @@ fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PRe
                 break;
             }
             let (r2, item) = super::super::expr::expression(r2)?;
+            let item = match item {
+                Expr::Binary {
+                    left,
+                    op:
+                        crate::token_kind::TokenKind::DotDotDot
+                        | crate::token_kind::TokenKind::DotDotDotCaret,
+                    right,
+                } => Expr::ArrayLiteral(vec![*left, *right]),
+                other => other,
+            };
             extra_items.push(item);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -404,7 +448,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         if let Ok((r, _)) = parse_char(r, ',') {
             let (r, _) = ws(r)?;
             if let Ok((r, _)) = parse_char(r, ']') {
-                return Ok((r, Expr::BracketArray(items)));
+                return Ok((r, Expr::BracketArray(merge_sequence_seeds(items))));
             }
             let (r, next) = expression(r)?;
             items.push(next);
@@ -412,8 +456,32 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         } else {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
-            return Ok((r, Expr::BracketArray(items)));
+            return Ok((r, Expr::BracketArray(merge_sequence_seeds(items))));
         }
+    }
+}
+
+fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::Binary { left, op, right } = last
+        && matches!(
+            op,
+            crate::token_kind::TokenKind::DotDotDot | crate::token_kind::TokenKind::DotDotDotCaret
+        )
+    {
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::Binary {
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            op: op.clone(),
+            right: right.clone(),
+        };
+        vec![merged]
+    } else {
+        items
     }
 }
 
