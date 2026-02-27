@@ -443,6 +443,11 @@ pub(crate) enum Stmt {
     Catch(Vec<Stmt>),
     Control(Vec<Stmt>),
     Take(Expr),
+    Goto(Expr),
+    Label {
+        name: String,
+        stmt: Box<Stmt>,
+    },
     EnumDecl {
         name: String,
         variants: Vec<(String, Option<Expr>)>,
@@ -566,7 +571,12 @@ fn placeholder_sort_key(name: &str) -> &str {
 
 fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     match stmt {
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e)
+        | Stmt::Goto(e) => {
             collect_ph_expr(e, out);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_ph_expr(expr, out),
@@ -669,6 +679,9 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_expr(e, out);
             }
             collect_ph_expr(value, out);
+        }
+        Stmt::Label { stmt, .. } => {
+            collect_ph_stmt(stmt, out);
         }
         Stmt::ProtoDecl { .. } => {}
         Stmt::DoesDecl { .. } => {}

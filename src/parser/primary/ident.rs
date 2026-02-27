@@ -1176,6 +1176,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        let mut args = args;
+        if args.is_empty() {
+            args.push(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(
+                    TEST_CALLSITE_LINE_KEY.to_string(),
+                ))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+            });
+        }
         return Ok((rest, make_call_expr(name, input, args)));
     }
 
@@ -1367,7 +1377,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         || crate::parser::stmt::simple::is_imported_function(&name))
         && is_terminator
     {
-        return Ok((rest, make_call_expr(name, input, vec![])));
+        let args = vec![Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(
+                TEST_CALLSITE_LINE_KEY.to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        }];
+        return Ok((rest, make_call_expr(name, input, args)));
     }
 
     // Functions that can be called with no arguments as bare words

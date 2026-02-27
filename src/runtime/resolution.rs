@@ -404,6 +404,9 @@ impl Interpreter {
             }
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            if let Some(line) = self.test_pending_callsite_line {
+                self.env.insert("?LINE".to_string(), Value::Int(line));
+            }
             self.push_caller_env();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {

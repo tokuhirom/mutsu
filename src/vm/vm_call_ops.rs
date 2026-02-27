@@ -91,6 +91,8 @@ impl VM {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -176,6 +178,8 @@ impl VM {
             }
         }
         let args = self.normalize_call_args_for_target(&name, args);
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -584,6 +588,8 @@ impl VM {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
             None
@@ -687,6 +693,8 @@ impl VM {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        self.interpreter.set_pending_callsite_line(callsite_line);
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());

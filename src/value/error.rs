@@ -41,6 +41,7 @@ pub struct RuntimeError {
     pub is_last: bool,
     pub is_next: bool,
     pub is_redo: bool,
+    pub is_goto: bool,
     pub is_proceed: bool,
     pub is_succeed: bool,
     pub is_fail: bool,
@@ -64,6 +65,7 @@ impl RuntimeError {
             is_last: false,
             is_next: false,
             is_redo: false,
+            is_goto: false,
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
@@ -90,6 +92,7 @@ impl RuntimeError {
             is_last: false,
             is_next: false,
             is_redo: false,
+            is_goto: false,
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
@@ -120,6 +123,15 @@ impl RuntimeError {
         Self {
             message: "X::ControlFlow".to_string(),
             is_redo: true,
+            ..Self::new("")
+        }
+    }
+
+    pub(crate) fn goto_signal(label: String) -> Self {
+        Self {
+            message: "X::ControlFlow".to_string(),
+            is_goto: true,
+            label: Some(label),
             ..Self::new("")
         }
     }

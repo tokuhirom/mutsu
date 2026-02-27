@@ -115,18 +115,27 @@ pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
-/// Parse `for` loop.
-/// Parse a labeled loop: LABEL: for/while/until/loop/repeat ...
+/// Parse labeled statement: `LABEL: <statement>`.
+/// Loop-like statements keep the label on the loop node for last/next/redo.
+/// Other statements are wrapped in `Stmt::Label`.
 pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
-    // Label must be all uppercase or mixed case identifier followed by ':'
     let (rest, label) = ident(input)?;
-    // Labels are typically ALL CAPS like FOO, DONE, OUT, IN
-    // but we need to check it's followed by : and then a loop keyword
     let (rest, _) = ws(rest)?;
     if !rest.starts_with(':') || rest.starts_with("::") {
         return Err(PError::expected("labeled loop"));
     }
     let rest = &rest[1..]; // consume ':'
+    let has_space_after_colon = rest.chars().next().is_some_and(char::is_whitespace);
+    if !has_space_after_colon
+        && !rest.starts_with('{')
+        && !rest.starts_with("for")
+        && !rest.starts_with("while")
+        && !rest.starts_with("until")
+        && !rest.starts_with("loop")
+        && !rest.starts_with("do")
+    {
+        return Err(PError::expected("labeled loop"));
+    }
     let (rest, _) = ws(rest)?;
 
     // Check which loop keyword follows
@@ -234,7 +243,15 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
-    Err(PError::expected("labeled loop"))
+    // Generic labeled statement: LABEL: <statement>
+    let (r, stmt) = statement(rest)?;
+    Ok((
+        r,
+        Stmt::Label {
+            name: label,
+            stmt: Box::new(stmt),
+        },
+    ))
 }
 
 /// Parse for loop parameters: -> $param or -> $a, $b
