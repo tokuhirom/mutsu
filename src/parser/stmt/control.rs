@@ -1,6 +1,6 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 
 use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::token_kind::TokenKind;
@@ -227,12 +227,7 @@ pub(super) fn parse_for_params(
         let (r2, _) = ws(r)?;
         r = r2;
         if let Some(after_arrow) = r.strip_prefix("-->") {
-            let (after_arrow, _) = ws(after_arrow)?;
-            // TODO: Parse full Raku type expressions for pointy return types.
-            // Current implementation accepts only simple identifier-like names.
-            let (after_arrow, _type_name) = take_while1(after_arrow, |c: char| {
-                c.is_alphanumeric() || c == '_' || c == ':'
-            })?;
+            let (after_arrow, _) = super::parse_return_type_annotation_pub(after_arrow)?;
             let (after_arrow, _) = ws(after_arrow)?;
             Ok((after_arrow, ()))
         } else {
