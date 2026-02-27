@@ -405,6 +405,7 @@ roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t
 roast/S32-basics/pairup.t
+roast/S32-basics/xxPOS-native.t
 roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t
 roast/S32-container/zip.t

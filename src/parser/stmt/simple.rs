@@ -1388,18 +1388,28 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: _,
         } = &expr
         {
-            let target_var_name = if let Expr::Var(var_name) = target.as_ref() {
-                Some(var_name.clone())
+            let assigned = if name == "AT-POS" && args.len() == 1 {
+                Expr::IndexAssign {
+                    target: target.clone(),
+                    index: Box::new(args[0].clone()),
+                    value: Box::new(rhs),
+                }
             } else {
-                None
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(var_name) => Some(var_name.clone()),
+                    Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
+                    Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                    _ => None,
+                };
+                method_lvalue_assign_expr(
+                    (**target).clone(),
+                    target_var_name,
+                    name.clone(),
+                    args.clone(),
+                    rhs,
+                )
             };
-            let stmt = Stmt::Expr(method_lvalue_assign_expr(
-                (**target).clone(),
-                target_var_name,
-                name.clone(),
-                args.clone(),
-                rhs,
-            ));
+            let stmt = Stmt::Expr(assigned);
             return parse_statement_modifier(r, stmt);
         }
         if let Expr::Call { name, args } = &expr {
