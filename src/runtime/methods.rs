@@ -598,6 +598,69 @@ impl Interpreter {
                 method
             )));
         }
+        if let Value::Array(items, is_array) = &target {
+            match (method, args.as_slice()) {
+                ("EXISTS-POS", [idx]) => {
+                    let index = match idx {
+                        Value::Int(i) if *i >= 0 => Some(*i as usize),
+                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                        _ => None,
+                    };
+                    return Ok(Value::Bool(index.is_some_and(|i| i < items.len())));
+                }
+                ("ASSIGN-POS", [idx, value]) => {
+                    let index = match idx {
+                        Value::Int(i) if *i >= 0 => Some(*i as usize),
+                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                        _ => None,
+                    };
+                    let Some(index) = index else {
+                        return Ok(Value::Nil);
+                    };
+
+                    if !matches!(value, Value::Nil)
+                        && let Some((var_name, constraint)) =
+                            self.env.iter().find_map(|(name, bound)| {
+                                if let Value::Array(existing, ..) = bound
+                                    && std::sync::Arc::ptr_eq(existing, items)
+                                    && let Some(constraint) = self.var_type_constraint(name)
+                                {
+                                    return Some((name.clone(), constraint));
+                                }
+                                None
+                            })
+                        && !self.type_matches_value(&constraint, value)
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                            var_name,
+                            constraint,
+                            crate::runtime::utils::value_type_name(value)
+                        )));
+                    }
+
+                    let mut updated = items.to_vec();
+                    if index >= updated.len() {
+                        updated.resize(index + 1, Value::Package("Any".to_string()));
+                    }
+                    updated[index] = value.clone();
+                    self.overwrite_array_bindings_by_identity(
+                        items,
+                        Value::Array(std::sync::Arc::new(updated), *is_array),
+                    );
+                    return Ok(value.clone());
+                }
+                ("BIND-POS", [_, _]) => {
+                    return Err(RuntimeError::new("Cannot bind to a natively typed array"));
+                }
+                ("DELETE-POS", [_]) => {
+                    return Err(RuntimeError::new(
+                        "Cannot delete from a natively typed array",
+                    ));
+                }
+                _ => {}
+            }
+        }
 
         if let Value::Mixin(inner, mixins) = &target {
             if args.is_empty() {

@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    fn overwrite_array_bindings_by_identity(
+    pub(super) fn overwrite_array_bindings_by_identity(
         &mut self,
         needle: &std::sync::Arc<Vec<Value>>,
         replacement: Value,
