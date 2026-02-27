@@ -17,6 +17,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         self.push_caller_env();
+        let return_spec = self.routine_return_spec_by_name(&def.name);
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
         {
             Ok(bindings) => bindings,
@@ -30,23 +31,23 @@ impl Interpreter {
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
+        self.prepare_definite_return_slot(return_spec.as_deref());
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
         self.pop_test_assertion_context(pushed_assertion);
-        let implicit_return = self.env.get("_").cloned();
+        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
         self.pop_caller_env();
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
         self.restore_readonly_vars(saved_readonly);
-        match result {
-            Err(e) if e.return_value.is_some() => {
-                self.maybe_fetch_rw_proxy(e.return_value.unwrap(), def.is_rw)
-            }
+        let call_result = match result {
+            Ok(()) => Ok(implicit_return),
             Err(e) => Err(e),
-            Ok(()) => self.maybe_fetch_rw_proxy(implicit_return.unwrap_or(Value::Nil), def.is_rw),
-        }
+        };
+        let finalized = self.finalize_return_with_spec(call_result, return_spec.as_deref());
+        finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, def.is_rw))
     }
 
     pub(crate) fn exec_call(&mut self, name: &str, args: Vec<Value>) -> Result<(), RuntimeError> {
@@ -77,6 +78,7 @@ impl Interpreter {
                     let saved_env = self.env.clone();
                     let saved_readonly = self.save_readonly_vars();
                     self.push_caller_env();
+                    let return_spec = self.routine_return_spec_by_name(&def.name);
                     let rw_bindings =
                         match self.bind_function_args_values(&def.param_defs, &def.params, &args) {
                             Ok(bindings) => bindings,
@@ -90,20 +92,22 @@ impl Interpreter {
                     let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));
+                    self.prepare_definite_return_slot(return_spec.as_deref());
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();
                     self.pop_test_assertion_context(pushed_assertion);
+                    let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
                     self.pop_caller_env();
                     let mut restored_env = saved_env;
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
                     self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
                     self.env = restored_env;
                     self.restore_readonly_vars(saved_readonly);
-                    match result {
-                        Err(e) if e.return_value.is_some() => {}
-                        Err(e) => return Err(e),
-                        Ok(_) => {}
-                    }
+                    let call_result = match result {
+                        Ok(()) => Ok(implicit_return),
+                        Err(e) => Err(e),
+                    };
+                    self.finalize_return_with_spec(call_result, return_spec.as_deref())?;
                 } else if self.has_proto(name) {
                     return Err(RuntimeError::new(format!(
                         "No matching candidates for proto sub: {}",

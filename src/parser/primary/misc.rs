@@ -1,4 +1,4 @@
-use super::super::parse_result::{PError, PResult, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
@@ -18,13 +18,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
     let (r2, _) = ws(r)?;
     r = r2;
     if let Some(after_arrow) = r.strip_prefix("-->") {
-        let (after_arrow, _) = ws(after_arrow)?;
-        // Keep this permissive for now: simple type-like names only.
-        let (after_arrow, type_name) = take_while1(after_arrow, |c: char| {
-            c.is_alphanumeric() || c == '_' || c == ':'
-        })?;
-        let (after_arrow, _) = ws(after_arrow)?;
-        Ok((after_arrow, Some(type_name.to_string())))
+        let (after_arrow, type_name) =
+            crate::parser::stmt::parse_return_type_annotation_pub(after_arrow)?;
+        Ok((after_arrow, Some(type_name)))
     } else {
         Ok((r, None))
     }
@@ -813,6 +809,21 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     if r.starts_with('{') {
         let (r, body) = parse_block_body(r)?;
         return Ok((r, Expr::AnonSub { body, is_rw: false }));
+    }
+    // Zero-param with explicit return spec: -> --> 42 { body }
+    if r.starts_with("-->") {
+        let (r, return_type) = skip_pointy_return_type(r)?;
+        let (r, body) = parse_block_body(r)?;
+        return Ok((
+            r,
+            Expr::AnonSubParams {
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                return_type,
+                body,
+                is_rw: false,
+            },
+        ));
     }
     // Sub-signature destructuring: -> (:key($var), :value($var2)) { body }
     if r.starts_with('(') {

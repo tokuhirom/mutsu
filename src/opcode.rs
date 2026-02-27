@@ -764,6 +764,7 @@ pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) return_type: Option<String>,
     pub(crate) fingerprint: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
