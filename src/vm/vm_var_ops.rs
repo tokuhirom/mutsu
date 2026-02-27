@@ -1578,15 +1578,14 @@ impl VM {
                 if let Some(Value::Int(depth)) = h.get("__callframe_depth") {
                     let depth = *depth as usize;
                     // Strip sigil from key to get bare variable name
-                    let bare_name = if key.starts_with('$')
-                        || key.starts_with('@')
-                        || key.starts_with('%')
-                    {
-                        &key[1..]
-                    } else {
-                        &key
-                    };
-                    self.interpreter.set_caller_var(bare_name, depth, val.clone())?;
+                    let bare_name =
+                        if key.starts_with('$') || key.starts_with('@') || key.starts_with('%') {
+                            &key[1..]
+                        } else {
+                            &key
+                        };
+                    self.interpreter
+                        .set_caller_var(bare_name, depth, val.clone())?;
                     self.stack.push(val);
                     return Ok(());
                 }

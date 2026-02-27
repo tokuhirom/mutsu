@@ -134,10 +134,7 @@ impl Interpreter {
             attrs.insert("my".to_string(), my_hash);
             attrs.insert("inline".to_string(), Value::Bool(false));
             attrs.insert("__depth".to_string(), Value::Int(0));
-            attrs.insert(
-                "annotations".to_string(),
-                self.build_annotations(&attrs),
-            );
+            attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
             return Some(Value::make_instance("CallFrame".to_string(), attrs));
         }
 
@@ -156,10 +153,7 @@ impl Interpreter {
         attrs.insert("my".to_string(), my_hash);
         attrs.insert("inline".to_string(), Value::Bool(false));
         attrs.insert("__depth".to_string(), Value::Int(depth as i64));
-        attrs.insert(
-            "annotations".to_string(),
-            self.build_annotations(&attrs),
-        );
+        attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Some(Value::make_instance("CallFrame".to_string(), attrs))
     }
 
@@ -187,10 +181,7 @@ impl Interpreter {
         let mut hash = HashMap::new();
         for (k, v) in env {
             // Skip internal keys and special variables
-            if k.starts_with("__")
-                || k.starts_with('?')
-                || k.starts_with('*')
-                || k.starts_with('=')
+            if k.starts_with("__") || k.starts_with('?') || k.starts_with('*') || k.starts_with('=')
             {
                 continue;
             }
@@ -210,10 +201,7 @@ impl Interpreter {
         }
         // Store callframe depth so assignments can write back to the caller env
         if let Some(depth) = callframe_depth {
-            hash.insert(
-                "__callframe_depth".to_string(),
-                Value::Int(depth as i64),
-            );
+            hash.insert("__callframe_depth".to_string(), Value::Int(depth as i64));
         }
         Value::hash(hash)
     }
