@@ -22,6 +22,7 @@ roast/S02-lexical-conventions/unicode.t
 roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
 roast/S02-literals/char-by-name.t
+roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/pair-boolean.t

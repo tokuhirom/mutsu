@@ -357,7 +357,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
 
     // Check for qq forms
     let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
-        // Accept any non-alphanumeric, non-whitespace character as qq delimiter
+        // Accept any non-alphanumeric, non-whitespace character as qq delimiter/adverb marker
         let is_qq_delim = after_qq
             .chars()
             .next()
@@ -370,15 +370,38 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     } else {
         (after_q, false)
     };
+
+    let (after_adverb, is_format_quote) = if let Some(rest) = after_prefix.strip_prefix(":o") {
+        (rest, true)
+    } else if let Some(rest) = after_prefix.strip_prefix(":format") {
+        (rest, true)
+    } else {
+        (after_prefix, false)
+    };
+
+    let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq)?;
+    if is_format_quote {
+        return Ok((
+            rest,
+            Expr::Call {
+                name: "__mutsu_make_format".to_string(),
+                args: vec![content_expr],
+            },
+        ));
+    }
+    Ok((rest, content_expr))
+}
+
+fn parse_q_quoted_content(input: &str, is_qq: bool) -> PResult<'_, Expr> {
     // Must be followed by a delimiter
-    let (open, close) = match after_prefix.chars().next() {
+    let (open, close) = match input.chars().next() {
         Some('{') => ('{', '}'),
         Some('[') => ('[', ']'),
         Some('(') => ('(', ')'),
         Some('<') => ('<', '>'),
         Some('/') => {
             // q/.../ — find closing /
-            let rest = &after_prefix[1..];
+            let rest = &input[1..];
             let end = rest
                 .find('/')
                 .ok_or_else(|| PError::expected("closing /"))?;
@@ -392,7 +415,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         }
         Some(c) => {
             if let Some(close_char) = unicode_bracket_close(c) {
-                let rest = &after_prefix[c.len_utf8()..];
+                let rest = &input[c.len_utf8()..];
                 let end = rest
                     .find(close_char)
                     .ok_or_else(|| PError::expected("closing Unicode bracket"))?;
@@ -406,7 +429,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             }
             // Non-bracket, non-/ delimiter (e.g. q|...|, q!...!) — symmetric delimiter
             if !c.is_alphanumeric() && !c.is_whitespace() {
-                let rest = &after_prefix[c.len_utf8()..];
+                let rest = &input[c.len_utf8()..];
                 let end = rest
                     .find(c)
                     .ok_or_else(|| PError::expected(&format!("closing '{c}'")))?;
@@ -422,7 +445,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
-    let (rest, content) = read_bracketed(after_prefix, open, close, true)?;
+    let (rest, content) = read_bracketed(input, open, close, true)?;
     if is_qq {
         return Ok((rest, interpolate_string_content(content)));
     }

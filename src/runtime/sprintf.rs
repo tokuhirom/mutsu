@@ -1,8 +1,16 @@
 use crate::value::Value;
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
+    match arg {
+        Some(value) => format_sprintf_args(fmt, std::slice::from_ref(value)),
+        None => format_sprintf_args(fmt, &[]),
+    }
+}
+
+pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
     let mut chars = fmt.chars().peekable();
     let mut out = String::new();
+    let mut arg_index = 0usize;
     while let Some(c) = chars.next() {
         if c != '%' {
             out.push(c);
@@ -50,6 +58,8 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let left_align = flags.contains('-');
         let plus_sign = flags.contains('+');
         let hash_flag = flags.contains('#');
+        let arg = args.get(arg_index);
+        arg_index += 1;
         let int_val = || match arg {
             Some(Value::Int(i)) => *i,
             Some(Value::Num(f)) => *f as i64,

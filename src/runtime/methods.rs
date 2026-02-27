@@ -590,6 +590,25 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Format"
+        {
+            let fmt = attributes
+                .get("format")
+                .map(Value::to_string_value)
+                .unwrap_or_default();
+            match method {
+                "CALL-ME" => {
+                    return Ok(Value::Str(super::sprintf::format_sprintf_args(&fmt, &args)));
+                }
+                "Str" | "gist" => return Ok(Value::Str(fmt)),
+                _ => {}
+            }
+        }
         if matches!(method, "max" | "min" | "lines")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {
