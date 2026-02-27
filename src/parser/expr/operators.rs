@@ -342,6 +342,14 @@ impl JunctiveOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FeedOp {
+    ToRight,     // ==>
+    ToLeft,      // <==
+    AppendRight, // ==>>
+    AppendLeft,  // <<==
+}
+
 pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     let next_non_ws = |s: &str| s.trim_start().chars().next();
     let starts_hyper_prefix_marker = |s: &str| s.starts_with('\u{00AB}') || s.starts_with("<<");
@@ -398,6 +406,20 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
     {
         Some((PrefixUnaryOp::Stringify, 1))
+    } else {
+        None
+    }
+}
+
+pub(super) fn parse_feed_op(r: &str) -> Option<(FeedOp, usize)> {
+    if r.starts_with("==>>") {
+        Some((FeedOp::AppendRight, 4))
+    } else if r.starts_with("<<==") {
+        Some((FeedOp::AppendLeft, 4))
+    } else if r.starts_with("==>") {
+        Some((FeedOp::ToRight, 3))
+    } else if r.starts_with("<==") {
+        Some((FeedOp::ToLeft, 3))
     } else {
         None
     }

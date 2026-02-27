@@ -327,7 +327,7 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
-    pub(super) fn call_sub_value(
+    pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
         args: Vec<Value>,
@@ -648,6 +648,11 @@ impl Interpreter {
             // Captured lexical vars (in data.env) must keep mutations done inside
             // the mapper block (e.g. `{ $a++ }`).
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
+            for k in data.env.keys() {
+                if !self.env.contains_key(k) {
+                    touched_keys.push(k.clone());
+                }
+            }
             for p in &data.params {
                 if !touched_keys.contains(p) {
                     touched_keys.push(p.clone());
@@ -663,7 +668,9 @@ impl Interpreter {
 
             // Pre-insert closure env
             for (k, v) in &data.env {
-                self.env.insert(k.clone(), v.clone());
+                if !self.env.contains_key(k) {
+                    self.env.insert(k.clone(), v.clone());
+                }
             }
 
             // Create VM once, reuse across iterations
