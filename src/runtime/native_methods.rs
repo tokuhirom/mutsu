@@ -40,6 +40,7 @@ fn supply_channel_map() -> &'static SupplyChannelMap {
 pub(crate) enum SupplyEvent {
     Emit(Value),
     Done,
+    Quit(Value),
 }
 
 /// Take a receiver from the supply channel registry (can only be consumed once)
@@ -1859,9 +1860,48 @@ impl Interpreter {
                     cmd.stdin(Stdio::piped());
                 }
 
-                let mut child = cmd.spawn().map_err(|e| {
-                    RuntimeError::new(format!("Failed to spawn '{}': {}", program, e))
-                })?;
+                let child_result = cmd.spawn();
+
+                // If spawn failed, break all promises with X::OS and return
+                if let Err(e) = child_result {
+                    let os_error_msg = e.to_string();
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("os-error".to_string(), Value::Str(os_error_msg.clone()));
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::Str(format!("Failed to spawn '{}': {}", program, os_error_msg)),
+                    );
+                    let os_error = Value::make_instance("X::OS".to_string(), ex_attrs);
+                    attrs.insert("spawn_error".to_string(), os_error.clone());
+
+                    // Break ready promise if set
+                    if let Some(Value::Promise(ready)) = attrs.get("ready_promise") {
+                        ready.break_with(os_error.clone(), String::new(), String::new());
+                    }
+
+                    // Send Quit to stdout/stderr supply channels so react blocks die
+                    if let Some(sid) = stdout_supply_id {
+                        let (tx, rx) = mpsc::channel();
+                        if let Ok(mut map) = supply_channel_map().lock() {
+                            map.insert(sid, rx);
+                        }
+                        let _ = tx.send(SupplyEvent::Quit(os_error.clone()));
+                    }
+                    if let Some(sid) = stderr_supply_id {
+                        let (tx, rx) = mpsc::channel();
+                        if let Ok(mut map) = supply_channel_map().lock() {
+                            map.insert(sid, rx);
+                        }
+                        let _ = tx.send(SupplyEvent::Quit(os_error.clone()));
+                    }
+
+                    // Return a broken promise
+                    let promise = SharedPromise::new();
+                    promise.break_with(os_error, String::new(), String::new());
+                    return Ok((Value::Promise(promise), attrs));
+                }
+
+                let mut child = child_result.unwrap();
 
                 let pid = child.id();
                 attrs.insert("pid".to_string(), Value::Int(pid as i64));
@@ -2040,6 +2080,13 @@ impl Interpreter {
                 Ok((Value::Nil, attrs))
             }
             "write" => {
+                // If process failed to spawn, die with the spawn error
+                if let Some(err) = attrs.get("spawn_error").cloned() {
+                    let p = SharedPromise::new();
+                    p.break_with(err, String::new(), String::new());
+                    return Ok((Value::Promise(p), attrs));
+                }
+
                 // Write bytes (Buf) to the process's stdin
                 let data = args.first().cloned().unwrap_or(Value::Nil);
                 let bytes: Vec<u8> = match &data {
@@ -2097,9 +2144,15 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok((Value::Nil, attrs))
+                Ok((Value::Bool(true), attrs))
             }
             "ready" => {
+                // If spawn failed, return a broken promise with the error
+                if let Some(err) = attrs.get("spawn_error").cloned() {
+                    let promise = SharedPromise::new();
+                    promise.break_with(err, String::new(), String::new());
+                    return Ok((Value::Promise(promise), attrs));
+                }
                 // Returns a Promise that resolves with the PID when the process
                 // has been started. If already started, resolves immediately.
                 let promise = SharedPromise::new();

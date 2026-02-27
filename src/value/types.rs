@@ -313,7 +313,7 @@ impl Value {
                     false
                 }
             }
-            "X::AdHoc" | "CX::Warn" => {
+            "X::AdHoc" | "CX::Warn" | "X::OS" => {
                 if let Value::Instance { class_name, .. } = self {
                     class_name == type_name
                 } else {
