@@ -81,19 +81,6 @@ impl VM {
     pub(super) fn exec_num_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
-            let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-                if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
-                    Ok(Value::Bool(
-                        runtime::to_float_value(&l) == runtime::to_float_value(&r),
-                    ))
-                } else {
-                    Ok(Value::Bool(l == r))
-                }
-            })?;
-            self.stack.push(Value::Bool(!eq_result.truthy()));
-            return Ok(());
-        }
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                 Ok(Value::Bool(
@@ -190,13 +177,6 @@ impl VM {
     pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
-            let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
-            })?;
-            self.stack.push(Value::Bool(!eq_result.truthy()));
-            return Ok(());
-        }
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
         })?;

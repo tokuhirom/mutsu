@@ -246,9 +246,8 @@ pub(super) fn parse_for_params(
         if r.starts_with('{') {
             return Ok((r, (None, None, Vec::new())));
         }
-        // Parenthesized pointy params: -> ($x, $y) { ... }
-        // Also handles named/mixed forms like -> (:key($k), :value($v)) { ... }.
-        if r.starts_with('(') {
+        // Named/mixed destructuring pointy param: -> (:key($k), :value($v)) { ... }
+        if r.starts_with('(') && r.len() > 1 && r[1..].trim_start().starts_with(':') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
             let (r, sub_params) = super::parse_param_list_pub(r)?;

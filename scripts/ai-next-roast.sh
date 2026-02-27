@@ -3,12 +3,11 @@ set -euo pipefail
 
 DRY_RUN=0
 AGENT="codex"
-FULL_AUTO=0
 WIP_FILE="wip.txt"
 
 usage() {
     cat <<USAGE
-Usage: $0 [--agent codex|claude] [--full-auto] [--dry-run]
+Usage: $0 [--agent codex|claude] [--dry-run]
 
 Continuously picks a random failing roast test and processes it.
 Loops until pick-next-roast.sh returns no candidates.
@@ -16,7 +15,6 @@ Uses wip.txt to coordinate with other instances.
 
 Options:
   --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
-  --full-auto     Use codex in --full-auto mode instead of exec (codex only)
   --dry-run       Print commands without executing ai-sandbox
 USAGE
 }
@@ -28,8 +26,6 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: --agent requires a value" >&2; exit 1
             fi
             AGENT="$2"; shift 2 ;;
-        --full-auto)
-            FULL_AUTO=1; shift ;;
         --dry-run)
             DRY_RUN=1; shift ;;
         -h|--help)
@@ -46,6 +42,15 @@ fi
 # Add entry to wip.txt (create if needed)
 wip_add() {
     echo "$1" >> "$WIP_FILE"
+}
+
+# Remove entry from wip.txt
+wip_remove() {
+    if [[ -f "$WIP_FILE" ]]; then
+        local tmp
+        tmp=$(grep -vxF "$1" "$WIP_FILE" || true)
+        echo "$tmp" > "$WIP_FILE"
+    fi
 }
 
 while true; do
@@ -81,13 +86,12 @@ while true; do
     # Register in wip.txt before processing
     wip_add "$FILE"
 
-    RUN_ARGS=(--agent "$AGENT")
-    if [[ "$FULL_AUTO" -eq 1 ]]; then
-        RUN_ARGS+=(--full-auto)
-    fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        RUN_ARGS+=(--dry-run)
+        ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$FILE"
+    else
+        ./scripts/ai-run-roast.sh --agent "$AGENT" "$FILE" || echo "Failed: $FILE" >&2
     fi
 
-    ./scripts/ai-run-roast.sh "${RUN_ARGS[@]}" "$FILE" || echo "Failed: $FILE" >&2
+    # Remove from wip.txt after processing
+    wip_remove "$FILE"
 done
