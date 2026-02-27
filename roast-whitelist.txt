@@ -70,6 +70,7 @@ roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
+roast/S03-buf/read-write-bits.t
 roast/S03-metaops/not.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t

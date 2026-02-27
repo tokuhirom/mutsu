@@ -267,6 +267,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_q_c_literal() {
+        let (rest, expr) = primary("q:c/%08b/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "%08b"));
+    }
+
+    #[test]
+    fn parse_q_c_closure_interpolation() {
+        let (rest, expr) = primary("q:c/%0{$bits}b/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::StringInterpolation(ref parts) if parts.len() == 3));
+    }
+
+    #[test]
     fn parse_big_q_to_heredoc() {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
