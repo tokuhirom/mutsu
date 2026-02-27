@@ -1141,6 +1141,7 @@ impl Interpreter {
         parents: &[String],
         is_hidden: bool,
         hidden_parents: &[String],
+        does_parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         // Validate that all parent classes exist
@@ -1243,7 +1244,9 @@ impl Interpreter {
             self.hidden_defer_parents
                 .insert(name.to_string(), hidden_parents.iter().cloned().collect());
         }
-        // Compose roles listed in the parents (from "does Role" in class header)
+        // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
+        let mut composed_roles_list = Vec::new();
+        let mut punned_roles = Vec::new();
         for parent in parents {
             // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
             let base_role_name = if let Some(bracket) = parent.find('[') {
@@ -1255,6 +1258,12 @@ impl Interpreter {
                 if role.is_stub_role {
                     return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                 }
+                // Check if this role was specified via `is` (punning) vs `does` (composition)
+                let is_punned = !does_parents.contains(parent);
+                if is_punned {
+                    punned_roles.push(parent.clone());
+                }
+                composed_roles_list.push(parent.clone());
                 // Collect type parameter substitutions if this is a parametric role
                 let type_subs: Vec<(String, String)> =
                     if let Some(role_type_params) = self.role_type_params.get(base_role_name) {
@@ -1291,6 +1300,142 @@ impl Interpreter {
                         .entry(mname.clone())
                         .or_default()
                         .extend(composed);
+                }
+            }
+        }
+        // Handle role punning: `is Role` creates a punned class from the role
+        for punned_role in &punned_roles {
+            let base_role = punned_role
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(punned_role.as_str());
+            // Create a punned class entry if one doesn't already exist
+            if !self.classes.contains_key(punned_role.as_str())
+                && !self.classes.contains_key(base_role)
+            {
+                // Collect class parents and composed roles recursively from role hierarchy
+                let mut punned_class_parents = Vec::new();
+                let mut punned_composed_roles = Vec::new();
+                let mut role_stack = vec![base_role.to_string()];
+                let mut seen_roles = HashSet::new();
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                // It's a role - add as composed role and recurse
+                                if !punned_composed_roles.contains(&rp) {
+                                    punned_composed_roles.push(rp.clone());
+                                }
+                                role_stack.push(rp_base.to_string());
+                            } else if self.classes.contains_key(rp_base)
+                                && !punned_class_parents.contains(&rp)
+                            {
+                                // It's a class - add as parent
+                                punned_class_parents.push(rp);
+                            }
+                        }
+                    }
+                }
+                let punned_class = ClassDef {
+                    parents: punned_class_parents,
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    native_methods: HashSet::new(),
+                    mro: Vec::new(),
+                    wildcard_handles: Vec::new(),
+                };
+                self.classes.insert(base_role.to_string(), punned_class);
+                if !punned_composed_roles.is_empty() {
+                    self.class_composed_roles
+                        .insert(base_role.to_string(), punned_composed_roles);
+                }
+                // Propagate hidden status from role to punned class
+                if let Some(role_def) = self.roles.get(base_role)
+                    && role_def.is_hidden
+                {
+                    self.hidden_classes.insert(base_role.to_string());
+                }
+                // Recompute MRO for the punned class
+                let mro = self.class_mro(base_role);
+                if let Some(cd) = self.classes.get_mut(base_role) {
+                    cd.mro = mro;
+                }
+            }
+        }
+        // Clear stale composed roles from previous registration
+        self.class_composed_roles.remove(name);
+        if !composed_roles_list.is_empty() {
+            // Propagate role parent classes to the class (recursively through sub-roles)
+            // When a role `R is C1` is composed into a class, C1 becomes a parent
+            {
+                let mut role_stack: Vec<String> = composed_roles_list
+                    .iter()
+                    .map(|r| {
+                        r.split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(r.as_str())
+                            .to_string()
+                    })
+                    .collect();
+                let mut seen_roles = HashSet::new();
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                // It's a sub-role, recurse
+                                role_stack.push(rp_base.to_string());
+                            } else if self.classes.contains_key(rp_base)
+                                && !class_def.parents.contains(&rp)
+                            {
+                                class_def.parents.push(rp);
+                            }
+                        }
+                    }
+                }
+            }
+            self.class_composed_roles
+                .insert(name.to_string(), composed_roles_list.clone());
+            // Propagate `hides` from composed roles (and sub-roles) to the class
+            {
+                let mut role_stack: Vec<String> = composed_roles_list
+                    .iter()
+                    .map(|r| {
+                        r.split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(r.as_str())
+                            .to_string()
+                    })
+                    .collect();
+                let mut seen_roles = HashSet::new();
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if let Some(hides_list) = self.role_hides.get(&role_name).cloned() {
+                        for hidden in hides_list {
+                            self.hidden_defer_parents
+                                .entry(name.to_string())
+                                .or_default()
+                                .insert(hidden);
+                        }
+                    }
+                    // Recurse into sub-roles
+                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                role_stack.push(rp_base.to_string());
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1485,6 +1630,11 @@ impl Interpreter {
                             .or_default()
                             .extend(overloads);
                     }
+                    if !class_def.parents.iter().any(|p| p == role_name) {
+                        // Keep role composition visible in MRO introspection.
+                        class_def.parents.insert(0, role_name.clone());
+                        class_def.mro.clear();
+                    }
                 }
                 Stmt::TrustsDecl {
                     name: trusted_class,
@@ -1535,10 +1685,21 @@ impl Interpreter {
         type_params: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // Clean up stale punned class entry from previous registration
+        // (e.g., role R was previously used as `is R` creating a punned class)
+        if self.roles.contains_key(name) {
+            self.classes.remove(name);
+            self.hidden_classes.remove(name);
+            self.class_composed_roles.remove(name);
+        }
+        // Clear stale role parents and hides
+        self.role_parents.remove(name);
+        self.role_hides.remove(name);
         let mut role_def = RoleDef {
             attributes: Vec::new(),
             methods: HashMap::new(),
             is_stub_role: false,
+            is_hidden: false,
         };
         for stmt in body {
             match stmt {
@@ -1582,6 +1743,25 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
+                    if role_name == "__mutsu_role_hidden__" {
+                        role_def.is_hidden = true;
+                        continue;
+                    }
+                    if let Some(hidden_name) = role_name.strip_prefix("__mutsu_role_hides__") {
+                        // Track hidden class relationship for this role
+                        self.role_hides
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(hidden_name.to_string());
+                        continue;
+                    }
+                    if self.classes.contains_key(role_name) {
+                        self.role_parents
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(role_name.clone());
+                        continue;
+                    }
                     let role =
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))

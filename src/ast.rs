@@ -464,6 +464,7 @@ pub(crate) enum Stmt {
         parents: Vec<String>,
         is_hidden: bool,
         hidden_parents: Vec<String>,
+        does_parents: Vec<String>,
         body: Vec<Stmt>,
     },
     HasDecl {

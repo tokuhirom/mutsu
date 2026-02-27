@@ -248,6 +248,7 @@ roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
+roast/S12-class/mro-6e.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
