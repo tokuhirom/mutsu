@@ -26,7 +26,7 @@ mkdir -p "$OUTDIR"
 echo "Building mutsu (release with debug symbols)..."
 cargo build --release 2>&1 | tail -1
 
-# Collect test files (exclude 6.c, 6.d, integration, 3rdparty, APPENDICES)
+# Collect test files (exclude 6.c, 6.d, integration, 3rdparty, APPENDICES, t/ tooling)
 mapfile -t TEST_FILES < <(
   find roast -maxdepth 2 -name '*.t' \
     -not -path '*/6.c/*' \
@@ -37,6 +37,7 @@ mapfile -t TEST_FILES < <(
     -not -path '*/MISC/*' \
     -not -path '*/packages/*' \
     -not -path '*/docs/*' \
+    -not -path 'roast/t/*' \
   | sort
 )
 
