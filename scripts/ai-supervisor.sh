@@ -117,7 +117,11 @@ if [[ "$AGENT" != "codex" && "$AGENT" != "claude" ]]; then
 fi
 
 require_cmd gh
-require_cmd ai-sandbox
+SCRIPT_DIR_CHECK="$(cd "$(dirname "$0")" && pwd)"
+if [[ ! -x "${SCRIPT_DIR_CHECK}/ai-sandbox.sh" ]]; then
+    echo "Error: ${SCRIPT_DIR_CHECK}/ai-sandbox.sh not found or not executable" >&2
+    exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -158,11 +162,11 @@ run_history_update() {
     branch_name="update-history-${timestamp}"
     prompt="$(build_history_prompt "$branch_name")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=(ai-sandbox --recreate "$branch_name" codex-fa "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" codex-fa "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=(ai-sandbox --recreate "$branch_name" codex exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" codex exec "$prompt")
     else
-        cmd=(ai-sandbox --recreate "$branch_name" claude -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" claude -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "No fixable PR found. Running roast history update on: $branch_name"
@@ -239,11 +243,11 @@ run_for_pr() {
 
     prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=(ai-sandbox --recreate "pr-${pr_number}" codex-fa "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" codex-fa "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=(ai-sandbox --recreate "pr-${pr_number}" codex exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" codex exec "$prompt")
     else
-        cmd=(ai-sandbox --recreate "pr-${pr_number}" claude -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" claude -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "Target PR #$pr_number [$reason] $head_ref"
