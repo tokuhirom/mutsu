@@ -1,5 +1,5 @@
 #![allow(clippy::result_large_err)]
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
 use crate::interpreter::Interpreter;
@@ -48,6 +48,22 @@ pub(crate) struct VM {
 }
 
 impl VM {
+    fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
+        let mut seen: HashSet<String> = HashSet::new();
+        for op in &code.ops {
+            if let OpCode::Label(name_idx) = op {
+                let label_name = Self::const_str(code, *name_idx);
+                if !seen.insert(label_name.to_string()) {
+                    return Err(RuntimeError::new(format!(
+                        "X::Redeclaration: Label '{}' already declared",
+                        label_name
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn runtime_error_from_exception_value(
         value: Value,
         default_message: &str,
@@ -99,6 +115,9 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
+        if let Err(e) = Self::validate_labels(code) {
+            return (self.interpreter, Err(e));
+        }
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -145,6 +164,7 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        Self::validate_labels(code)?;
         self.stack.clear();
         // Initialize local variable slots
         self.locals.resize(code.locals.len(), Value::Nil);
@@ -798,20 +818,7 @@ impl VM {
             }
 
             // -- Control flow --
-            OpCode::Label(name_idx) => {
-                let label_name = Self::const_str(code, *name_idx);
-                let is_redeclared = code.ops[..*ip].iter().any(|op| match op {
-                    OpCode::Label(prev_name_idx) => {
-                        Self::const_str(code, *prev_name_idx) == label_name
-                    }
-                    _ => false,
-                });
-                if is_redeclared {
-                    return Err(RuntimeError::new(format!(
-                        "X::Redeclaration: Label '{}' already declared",
-                        label_name
-                    )));
-                }
+            OpCode::Label(_) => {
                 *ip += 1;
             }
             OpCode::Goto => {
