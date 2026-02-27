@@ -1412,8 +1412,20 @@ impl VM {
             }
 
             // -- HyperMethodCall --
-            OpCode::HyperMethodCall { name_idx, arity } => {
-                self.exec_hyper_method_call_op(code, *name_idx, *arity)?;
+            OpCode::HyperMethodCall {
+                name_idx,
+                arity,
+                modifier_idx,
+                quoted,
+            } => {
+                self.exec_hyper_method_call_op(code, *name_idx, *arity, *modifier_idx, *quoted)?;
+                *ip += 1;
+            }
+            OpCode::HyperMethodCallDynamic {
+                arity,
+                modifier_idx,
+            } => {
+                self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx)?;
                 *ip += 1;
             }
 

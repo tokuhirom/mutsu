@@ -291,7 +291,8 @@ impl Compiler {
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_placeholder),
             Expr::MethodCall { target, args, .. }
             | Expr::DynamicMethodCall { target, args, .. }
-            | Expr::HyperMethodCall { target, args, .. } => {
+            | Expr::HyperMethodCall { target, args, .. }
+            | Expr::HyperMethodCallDynamic { target, args, .. } => {
                 Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
             Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
@@ -1040,7 +1041,9 @@ impl Compiler {
             Expr::Try { body, .. } => Self::has_let_deep(body),
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_let_deep),
             Expr::MethodCall { args, target, .. }
-            | Expr::DynamicMethodCall { args, target, .. } => {
+            | Expr::DynamicMethodCall { args, target, .. }
+            | Expr::HyperMethodCall { args, target, .. }
+            | Expr::HyperMethodCallDynamic { args, target, .. } => {
                 Self::expr_has_let_deep(target) || args.iter().any(Self::expr_has_let_deep)
             }
             _ => false,

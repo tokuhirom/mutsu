@@ -136,9 +136,25 @@ impl Interpreter {
                     }
                 }
                 Expr::MethodCall { target, args, .. }
-                | Expr::DynamicMethodCall { target, args, .. }
                 | Expr::HyperMethodCall { target, args, .. } => {
                     scan_expr(target, positional, named);
+                    for a in args {
+                        scan_expr(a, positional, named);
+                    }
+                }
+                Expr::DynamicMethodCall {
+                    target,
+                    name_expr,
+                    args,
+                }
+                | Expr::HyperMethodCallDynamic {
+                    target,
+                    name_expr,
+                    args,
+                    ..
+                } => {
+                    scan_expr(target, positional, named);
+                    scan_expr(name_expr, positional, named);
                     for a in args {
                         scan_expr(a, positional, named);
                     }
@@ -583,6 +599,107 @@ impl Interpreter {
             .map(ToOwned::to_owned)
             .collect::<Vec<_>>();
         Some((base, args))
+    }
+
+    pub(crate) fn call_method_all_with_values(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id: target_id,
+        } = &target
+        {
+            if let Some(private_method_name) = method.strip_prefix('!')
+                && let Some((resolved_owner, method_def)) =
+                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+            {
+                let (result, updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                return Ok(vec![result]);
+            }
+
+            if let Some((owner_class, private_method_name)) = method.split_once("::")
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
+                    class_name,
+                    owner_class,
+                    private_method_name,
+                    &args,
+                )
+            {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
+                let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                    || self
+                        .class_trusts
+                        .get(&resolved_owner)
+                        .is_some_and(|trusted| {
+                            caller_class
+                                .as_ref()
+                                .is_some_and(|caller| trusted.contains(caller))
+                        });
+                if !caller_allowed {
+                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+                }
+                let (result, updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                return Ok(vec![result]);
+            }
+
+            let candidates = self.resolve_all_methods_with_owner(class_name, method, &args);
+            if !candidates.is_empty() {
+                let mut attrs = (**attributes).clone();
+                let mut out = Vec::with_capacity(candidates.len());
+                for (resolved_owner, method_def) in candidates {
+                    let (result, updated) = self.run_instance_method_resolved(
+                        class_name,
+                        &resolved_owner,
+                        method_def,
+                        attrs,
+                        args.clone(),
+                        Some(target.clone()),
+                    )?;
+                    attrs = updated;
+                    out.push(result);
+                }
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, attrs);
+                return Ok(out);
+            }
+        }
+
+        Ok(vec![self.call_method_with_values(target, method, args)?])
+    }
+
+    pub(crate) fn overwrite_array_items_by_identity_for_vm(
+        &mut self,
+        needle: &std::sync::Arc<Vec<Value>>,
+        updated_items: Vec<Value>,
+        is_array: bool,
+    ) {
+        self.overwrite_array_bindings_by_identity(
+            needle,
+            Value::Array(std::sync::Arc::new(updated_items), is_array),
+        );
     }
 
     pub(crate) fn call_method_with_values(
@@ -2509,6 +2626,21 @@ impl Interpreter {
                 Value::ValuePair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 _ => return Ok(Value::array(Vec::new())),
             },
+            "AT-KEY" if args.len() == 1 => match (&target, &args[0]) {
+                (Value::Pair(key, value), idx) => {
+                    if key == &idx.to_string_value() {
+                        return Ok(*value.clone());
+                    }
+                    return Ok(Value::Nil);
+                }
+                (Value::ValuePair(key, value), idx) => {
+                    if key.to_string_value() == idx.to_string_value() {
+                        return Ok(*value.clone());
+                    }
+                    return Ok(Value::Nil);
+                }
+                _ => {}
+            },
             "rotate" => {
                 return self.dispatch_rotate(target, &args);
             }
@@ -2847,7 +2979,11 @@ impl Interpreter {
                     &args,
                 )
             {
-                let caller_class = self.method_class_stack.last().cloned();
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
                 let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                     || self
                         .class_trusts
