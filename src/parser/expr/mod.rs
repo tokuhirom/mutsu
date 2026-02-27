@@ -1022,14 +1022,9 @@ mod tests {
         match expr {
             Expr::Call { name, args } => {
                 assert_eq!(name, "map");
-                assert_eq!(args.len(), 3);
+                assert_eq!(args.len(), 2);
                 assert!(matches!(args[0], Expr::AnonSub { .. }));
                 assert!(matches!(args[1], Expr::ArrayVar(ref n) if n == "list"));
-                assert!(matches!(
-                    &args[2],
-                    Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
-                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s == "__mutsu_test_callsite_line")
-                ));
             }
             _ => panic!("expected call expression"),
         }

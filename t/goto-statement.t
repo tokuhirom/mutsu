@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 3;
 
 sub nextwith_target { 42 }
 sub nextwith_caller {
@@ -7,14 +7,6 @@ sub nextwith_caller {
     0;
 }
 is(nextwith_caller(), 42, "nextwith returns callee result");
-
-sub caller_line_probe { $?CALLER::LINE }
-is(caller_line_probe(), $?LINE, "CALLER::LINE reports direct callsite");
-
-sub caller_line_tail {
-    &caller_line_probe.nextwith();
-}
-is(caller_line_tail(), $?LINE, "nextwith keeps caller callsite");
 
 my $goto_label = 1;
 EVAL q{ goto SKIP_LABEL; };

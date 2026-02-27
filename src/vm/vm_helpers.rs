@@ -781,12 +781,17 @@ impl VM {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
+        let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        if callsite_line.is_some() {
+            self.interpreter.set_pending_callsite_line(callsite_line);
+        }
         let saved_env = self.interpreter.env().clone();
         let saved_readonly = self.interpreter.save_readonly_vars();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
         let return_spec = cf.return_type.clone();
 
+        self.interpreter.inject_pending_callsite_line();
         self.interpreter.push_caller_env();
 
         // Push Sub value to block_stack for callframe().code
@@ -805,11 +810,21 @@ impl VM {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
         }
+        let is_test_assertion = if fn_name.is_empty() {
+            false
+        } else {
+            self.interpreter
+                .routine_is_test_assertion_by_name(fn_name, &args)
+        };
+        let pushed_assertion = self
+            .interpreter
+            .push_test_assertion_context(is_test_assertion);
 
         if cf.empty_sig && !args.is_empty() {
             if !fn_name.is_empty() {
                 self.interpreter.pop_routine();
             }
+            self.interpreter.pop_test_assertion_context(pushed_assertion);
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             self.locals = saved_locals;
@@ -826,6 +841,7 @@ impl VM {
                     if !fn_name.is_empty() {
                         self.interpreter.pop_routine();
                     }
+                    self.interpreter.pop_test_assertion_context(pushed_assertion);
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
                     self.locals = saved_locals;
@@ -917,6 +933,7 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }
+        self.interpreter.pop_test_assertion_context(pushed_assertion);
         self.interpreter.pop_block();
 
         let mut restored_env = saved_env;

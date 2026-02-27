@@ -23,15 +23,16 @@ use super::regex::{parse_call_arg_list, scan_to_delim};
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 
-<<<<<<< HEAD
 fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
-    args.push(Expr::Binary {
-        left: Box::new(Expr::Literal(Value::Str(
-            TEST_CALLSITE_LINE_KEY.to_string(),
-        ))),
-        op: crate::token_kind::TokenKind::FatArrow,
-        right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
-    });
+    if crate::parser::stmt::simple::is_test_assertion_callable(name) {
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(
+                TEST_CALLSITE_LINE_KEY.to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        });
+    }
     if name == "callframe" || name == "caller" {
         args.push(Expr::Binary {
             left: Box::new(Expr::Literal(Value::Str(CALLFRAME_LINE_KEY.to_string()))),
@@ -1160,6 +1161,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        let mut args = args;
+        if args.is_empty() {
+            args.push(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(
+                    TEST_CALLSITE_LINE_KEY.to_string(),
+                ))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+            });
+        }
         return Ok((rest, make_call_expr(name, input, args)));
     }
 
@@ -1351,7 +1362,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         || crate::parser::stmt::simple::is_imported_function(&name))
         && is_terminator
     {
-        return Ok((rest, make_call_expr(name, input, vec![])));
+        let args = vec![Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(
+                TEST_CALLSITE_LINE_KEY.to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        }];
+        return Ok((rest, make_call_expr(name, input, args)));
     }
 
     // Functions that can be called with no arguments as bare words
