@@ -497,7 +497,9 @@ impl Interpreter {
                 let parts: Vec<String> = items.iter().map(Self::junction_sort_key).collect();
                 format!("[{}]", parts.join(","))
             }
-            Value::Junction { .. } => Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::Nil)),
+            Value::Junction { .. } => {
+                Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::Nil))
+            }
             _ => v.to_string_value(),
         }
     }
