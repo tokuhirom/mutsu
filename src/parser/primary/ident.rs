@@ -15,7 +15,7 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, or_expr_pub};
-use super::super::helpers::{normalize_raku_identifier, ws, ws1};
+use super::super::helpers::{is_loop_label_name, normalize_raku_identifier, ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
@@ -1061,7 +1061,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Labeled loop in expression context, e.g. `MEOW: for ^10 { ... }`
-    if name.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
+    if is_loop_label_name(&name) {
         let (r_ws, _) = ws(rest)?;
         if r_ws.starts_with(':')
             && let Ok((r, stmt)) = super::super::stmt::labeled_loop_stmt_pub(input)

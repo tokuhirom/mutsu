@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use regex::Regex;
 
 use super::super::expr::expression;
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{is_loop_label_name, ws, ws1};
 use super::super::parse_result::{
     PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
 };
@@ -1119,9 +1119,9 @@ pub(super) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: last LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
         && let Ok((r, label)) = ident(rest)
-        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        && is_loop_label_name(&label)
     {
         return parse_statement_modifier(r, Stmt::Last(Some(label)));
     }
@@ -1132,9 +1132,9 @@ pub(super) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: next LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
         && let Ok((r, label)) = ident(rest)
-        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        && is_loop_label_name(&label)
     {
         return parse_statement_modifier(r, Stmt::Next(Some(label)));
     }
@@ -1145,9 +1145,9 @@ pub(super) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: redo LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
         && let Ok((r, label)) = ident(rest)
-        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        && is_loop_label_name(&label)
     {
         return parse_statement_modifier(r, Stmt::Redo(Some(label)));
     }
