@@ -117,6 +117,8 @@ impl Interpreter {
         let mut skip_block_pending: Option<String> = None;
         let mut skip_block_depth: usize = 0;
         let mut skip_block_reason: String = String::new();
+        let mut skip_block_declared_tests: Option<usize> = None;
+        let mut skip_block_declared_emitted = false;
         let test_funcs = [
             "is(",
             "is ",
@@ -163,10 +165,30 @@ impl Interpreter {
 
             // Block-level skip: waiting for opening brace
             if let Some(ref reason) = skip_block_pending {
+                if trimmed.starts_with("#?DOES") {
+                    let count = trimmed
+                        .strip_prefix("#?DOES")
+                        .map(str::trim_start)
+                        .and_then(|s| s.split_whitespace().next())
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if count > 0 {
+                        skip_block_declared_tests = Some(count);
+                    }
+                    output.push('\n');
+                    continue;
+                }
                 if trimmed.starts_with('{') {
                     skip_block_reason = reason.clone();
                     skip_block_pending = None;
                     skip_block_depth = 1;
+                    skip_block_declared_emitted = false;
+                    if let Some(count) = skip_block_declared_tests.take() {
+                        for _ in 0..count {
+                            output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
+                        }
+                        skip_block_declared_emitted = true;
+                    }
                     output.push('\n');
                     continue;
                 } else if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -197,6 +219,10 @@ impl Interpreter {
                     }
                 }
                 if skip_block_depth == 0 {
+                    output.push('\n');
+                    continue;
+                }
+                if skip_block_declared_emitted {
                     output.push('\n');
                     continue;
                 }
