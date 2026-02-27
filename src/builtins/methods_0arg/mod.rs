@@ -1131,6 +1131,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
             }
         },
+        "pick" => {
+            let items = runtime::value_to_list(target);
+            if items.is_empty() {
+                Some(Ok(Value::Nil))
+            } else {
+                let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                if idx >= items.len() {
+                    idx = items.len() - 1;
+                }
+                Some(Ok(items[idx].clone()))
+            }
+        }
         "first" => match target {
             Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
             _ => None,

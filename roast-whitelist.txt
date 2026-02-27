@@ -172,6 +172,7 @@ roast/S05-substitution/67222.t
 roast/S05-substitution/match.t
 roast/S05-transliteration/79778.t
 roast/S05-transliteration/trans-TR-operator.t
+roast/S06-advanced/recurse.t
 roast/S06-advanced/stub.t
 roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
@@ -235,6 +236,7 @@ roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
 roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
+roast/S12-construction/named-params-in-BUILD.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/WHAT.t
@@ -357,6 +359,7 @@ roast/S17-supply/do.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t
+roast/S17-supply/lines.t
 roast/S17-supply/list.t
 roast/S17-supply/map.t
 roast/S17-supply/max.t

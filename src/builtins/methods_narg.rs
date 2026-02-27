@@ -221,6 +221,11 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::array(parts)))
         }
         "lines" => {
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Supply"
+            {
+                return None;
+            }
             let s = target.to_string_value();
             if let Value::Pair(key, value) = arg {
                 if key == "chomp" {

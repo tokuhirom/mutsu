@@ -1129,7 +1129,27 @@ impl Interpreter {
             self.supply_emit_buffer.push(Vec::new());
             let _ = self.call_sub_value(after_tap_cb, vec![], false);
             let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
-            tap_values.extend(emitted);
+            let split_emitted = if let Value::Instance {
+                ref class_name,
+                ref attributes,
+                ..
+            } = supply
+            {
+                let is_lines = class_name == "Supply"
+                    && matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                if is_lines {
+                    let chomp = attributes
+                        .get("line_chomp")
+                        .map(Value::truthy)
+                        .unwrap_or(true);
+                    crate::runtime::native_methods::split_supply_chunks_into_lines(&emitted, chomp)
+                } else {
+                    emitted
+                }
+            } else {
+                emitted
+            };
+            tap_values.extend(split_emitted);
         }
 
         // 4. isa-ok on Tap return
