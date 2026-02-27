@@ -1074,6 +1074,11 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
+            Expr::AssignExpr { name, .. } => Some(name.clone()),
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+                _ => None,
+            },
             // (temp %hash){key} = value → treat as %hash{key} = value
             // TODO: implement proper temp save/restore semantics
             Expr::Call { name, args } if name == "temp" => {
@@ -1081,6 +1086,10 @@ impl Compiler {
             }
             _ => None,
         }
+    }
+
+    pub(super) fn index_assign_target_requires_eval(target: &Expr) -> bool {
+        matches!(target, Expr::AssignExpr { .. } | Expr::DoStmt(_))
     }
 
     pub(super) fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr)> {

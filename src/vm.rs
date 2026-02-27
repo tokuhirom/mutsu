@@ -686,11 +686,11 @@ impl VM {
 
             // -- Set operations --
             OpCode::SetElem => {
-                self.exec_set_elem_op();
+                self.exec_set_elem_op()?;
                 *ip += 1;
             }
             OpCode::SetCont => {
-                self.exec_set_cont_op();
+                self.exec_set_cont_op()?;
                 *ip += 1;
             }
             OpCode::SetUnion => {

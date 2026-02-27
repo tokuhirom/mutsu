@@ -1,30 +1,175 @@
 use super::*;
 
 impl VM {
-    pub(super) fn exec_set_elem_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let key = left.to_string_value();
-        let result = match &right {
-            Value::Set(s) => s.contains(&key),
-            Value::Bag(b) => b.contains_key(&key),
-            Value::Mix(m) => m.contains_key(&key),
-            _ => false,
-        };
-        self.stack.push(Value::Bool(result));
+    fn integral_bigint(value: &Value) -> Option<num_bigint::BigInt> {
+        match value {
+            Value::Int(i) => Some(num_bigint::BigInt::from(*i)),
+            Value::BigInt(i) => Some(i.clone()),
+            Value::Num(n)
+                if n.fract() == 0.0
+                    && n.is_finite()
+                    && *n >= i64::MIN as f64
+                    && *n <= i64::MAX as f64 =>
+            {
+                Some(num_bigint::BigInt::from(*n as i64))
+            }
+            Value::Rat(n, d) if *d != 0 && *n % *d == 0 => Some(num_bigint::BigInt::from(*n / *d)),
+            _ => None,
+        }
     }
 
-    pub(super) fn exec_set_cont_op(&mut self) {
+    fn is_failure_value(value: &Value) -> bool {
+        matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
+    }
+
+    fn value_matches_key(value: &Value, key: &str) -> bool {
+        value.to_string_value() == key
+    }
+
+    fn range_contains(range: &Value, needle: &Value) -> bool {
+        match range {
+            Value::Range(start, end) => {
+                if let Some(v) = Self::integral_bigint(needle) {
+                    let min = num_bigint::BigInt::from(*start);
+                    let max = num_bigint::BigInt::from(*end);
+                    v >= min && v <= max
+                } else {
+                    false
+                }
+            }
+            Value::RangeExcl(start, end) => {
+                if let Some(v) = Self::integral_bigint(needle) {
+                    let min = num_bigint::BigInt::from(*start);
+                    let max = num_bigint::BigInt::from(*end);
+                    v >= min && v < max
+                } else {
+                    false
+                }
+            }
+            Value::RangeExclStart(start, end) => {
+                if let Some(v) = Self::integral_bigint(needle) {
+                    let min = num_bigint::BigInt::from(*start);
+                    let max = num_bigint::BigInt::from(*end);
+                    v > min && v <= max
+                } else {
+                    false
+                }
+            }
+            Value::RangeExclBoth(start, end) => {
+                if let Some(v) = Self::integral_bigint(needle) {
+                    let min = num_bigint::BigInt::from(*start);
+                    let max = num_bigint::BigInt::from(*end);
+                    v > min && v < max
+                } else {
+                    false
+                }
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                if matches!(start.as_ref(), Value::Str(_)) || matches!(end.as_ref(), Value::Str(_))
+                {
+                    let v = needle.to_string_value();
+                    let min = start.to_string_value();
+                    let max = end.to_string_value();
+                    let min_ok = if *excl_start { v > min } else { v >= min };
+                    let max_ok = if *excl_end { v < max } else { v <= max };
+                    min_ok && max_ok
+                } else if matches!(
+                    (start.as_ref(), end.as_ref()),
+                    (
+                        Value::Int(_) | Value::BigInt(_),
+                        Value::Int(_) | Value::BigInt(_)
+                    )
+                ) {
+                    let Some(v) = Self::integral_bigint(needle) else {
+                        return false;
+                    };
+                    let min = start.to_bigint();
+                    let max = end.to_bigint();
+                    let min_ok = if *excl_start { v > min } else { v >= min };
+                    let max_ok = if *excl_end { v < max } else { v <= max };
+                    min_ok && max_ok
+                } else {
+                    let v = needle.to_f64();
+                    let min = start.to_f64();
+                    let max = end.to_f64();
+                    let min_ok = if *excl_start { v > min } else { v >= min };
+                    let max_ok = if *excl_end { v < max } else { v <= max };
+                    min_ok && max_ok
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn hash_contains(
+        &mut self,
+        hash: &HashMap<String, Value>,
+        needle: &Value,
+        whole: &Value,
+    ) -> bool {
+        if let Some(info) = self.interpreter.container_type_metadata(whole) {
+            if let Some(key_type) = info.key_type {
+                if (key_type == "Any" || key_type == "Mu")
+                    && matches!(needle, Value::Str(s) if s.parse::<i128>().is_ok())
+                {
+                    // Heuristic for typed hashes: numeric-looking string keys should
+                    // not alias numeric keys.
+                    return false;
+                }
+                if key_type != "Any"
+                    && key_type != "Mu"
+                    && !self.interpreter.type_matches_value(&key_type, needle)
+                {
+                    return false;
+                }
+            }
+        } else if !matches!(needle, Value::Str(_)) {
+            // Plain Hash keys are Str by default.
+            return false;
+        }
+        hash.contains_key(&needle.to_string_value())
+    }
+
+    fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
+        let key = needle.to_string_value();
+        match container {
+            Value::Set(s) => s.contains(&key),
+            Value::Bag(b) => b.get(&key).is_some_and(|count| *count > 0),
+            Value::Mix(m) => m.get(&key).is_some_and(|weight| *weight != 0.0),
+            Value::Hash(h) => self.hash_contains(h, needle, container),
+            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                items.iter().any(|item| Self::value_matches_key(item, &key))
+            }
+            range if range.is_range() => Self::range_contains(range, needle),
+            _ => false,
+        }
+    }
+
+    pub(super) fn exec_set_elem_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let key = right.to_string_value();
-        let result = match &left {
-            Value::Set(s) => s.contains(&key),
-            Value::Bag(b) => b.contains_key(&key),
-            Value::Mix(m) => m.contains_key(&key),
-            _ => false,
-        };
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+        let result = self.set_contains(&right, &left);
         self.stack.push(Value::Bool(result));
+        Ok(())
+    }
+
+    pub(super) fn exec_set_cont_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+        let result = self.set_contains(&left, &right);
+        self.stack.push(Value::Bool(result));
+        Ok(())
     }
 
     pub(super) fn exec_set_union_op(&mut self) {

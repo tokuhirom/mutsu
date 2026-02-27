@@ -135,15 +135,32 @@ impl Compiler {
         param_idx: Option<u32>,
         params: &[String],
     ) -> Vec<Stmt> {
+        let bind_stmt = |name: String, expr: Expr| {
+            if name.starts_with('&') {
+                Stmt::VarDecl {
+                    name,
+                    expr,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                }
+            } else {
+                Stmt::Assign {
+                    name,
+                    expr,
+                    op: AssignOp::Assign,
+                }
+            }
+        };
+
         let mut bind_stmts = Vec::new();
         if let Some(single_param) = param
             && param_idx.is_none()
         {
-            bind_stmts.push(Stmt::Assign {
-                name: single_param.clone(),
-                expr: Expr::Var("_".to_string()),
-                op: AssignOp::Assign,
-            });
+            bind_stmts.push(bind_stmt(single_param.clone(), Expr::Var("_".to_string())));
         }
         if let Some(def) = param_def
             && let Some(sub_params) = &def.sub_signature
@@ -167,42 +184,33 @@ impl Compiler {
                     if let Some(inner_params) = &sub.sub_signature {
                         for inner in inner_params {
                             if !inner.name.is_empty() {
-                                bind_stmts.push(Stmt::Assign {
-                                    name: inner.name.clone(),
-                                    expr: method_result.clone(),
-                                    op: AssignOp::Assign,
-                                });
+                                bind_stmts
+                                    .push(bind_stmt(inner.name.clone(), method_result.clone()));
                             }
                         }
                     } else {
-                        bind_stmts.push(Stmt::Assign {
-                            name: sub.name.clone(),
-                            expr: method_result,
-                            op: AssignOp::Assign,
-                        });
+                        bind_stmts.push(bind_stmt(sub.name.clone(), method_result));
                     }
                 } else {
-                    bind_stmts.push(Stmt::Assign {
-                        name: sub.name.clone(),
-                        expr: Expr::Index {
+                    bind_stmts.push(bind_stmt(
+                        sub.name.clone(),
+                        Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
                             index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
                         },
-                        op: AssignOp::Assign,
-                    });
+                    ));
                     positional_index += 1;
                 }
             }
         }
         for (i, p) in params.iter().enumerate() {
-            bind_stmts.push(Stmt::Assign {
-                name: p.clone(),
-                expr: Expr::Index {
+            bind_stmts.push(bind_stmt(
+                p.clone(),
+                Expr::Index {
                     target: Box::new(Expr::Var("_".to_string())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
                 },
-                op: AssignOp::Assign,
-            });
+            ));
         }
         bind_stmts
     }
