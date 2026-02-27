@@ -151,6 +151,11 @@ impl Compiler {
                     return;
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::SetVarDynamic {
+                    name_idx,
+                    dynamic: is_dynamic,
+                });
                 self.compile_expr(expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -179,11 +184,6 @@ impl Compiler {
                         self.code.emit(OpCode::SetGlobal(idx));
                     }
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::SetVarDynamic {
-                    name_idx,
-                    dynamic: is_dynamic,
-                });
                 if let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });

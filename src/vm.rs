@@ -367,15 +367,34 @@ impl VM {
                 let constraint = Self::const_str(code, *tc_idx).to_string();
                 self.interpreter
                     .set_var_type_constraint(&name, Some(constraint.clone()));
-                // For scalar variables, if the current value is Nil, set it to the type object
+                // For scalar variables, if the current value is Nil, set it to the type object.
                 if !name.starts_with('@') && !name.starts_with('%') {
                     let is_nil =
                         matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
                     if is_nil {
-                        let type_obj = Value::Package(constraint);
+                        let type_obj = Value::Package(
+                            self.interpreter
+                                .var_type_constraint(&name)
+                                .unwrap_or(constraint.clone()),
+                        );
                         self.set_env_with_main_alias(&name, type_obj.clone());
                         self.update_local_if_exists(code, &name, &type_obj);
                     }
+                } else if let Some(value) = self.get_env_with_main_alias(&name) {
+                    let info = crate::runtime::ContainerTypeInfo {
+                        value_type: self
+                            .interpreter
+                            .var_type_constraint(&name)
+                            .unwrap_or(constraint),
+                        key_type: if name.starts_with('%') {
+                            self.interpreter.var_hash_key_constraint(&name)
+                        } else {
+                            None
+                        },
+                        declared_type: None,
+                    };
+                    self.interpreter
+                        .register_container_type_metadata(&value, info);
                 }
                 *ip += 1;
             }

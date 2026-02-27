@@ -314,6 +314,14 @@ pub struct Interpreter {
     var_bindings: HashMap<String, String>,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
+    /// Optional hash key type constraints (e.g. `%h{Str}`).
+    var_hash_key_constraints: HashMap<String, String>,
+    /// Type metadata for Array values keyed by Arc pointer identity.
+    array_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for Hash values keyed by Arc pointer identity.
+    hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for instance values keyed by stable instance id.
+    instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
@@ -358,6 +366,13 @@ pub(crate) struct CustomTypeData {
     /// Whether this type was created with :mixin flag.
     #[allow(dead_code)]
     pub(crate) is_mixin: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ContainerTypeInfo {
+    pub(crate) value_type: String,
+    pub(crate) key_type: Option<String>,
+    pub(crate) declared_type: Option<String>,
 }
 
 /// An entry in the encoding registry.
@@ -1061,6 +1076,10 @@ impl Interpreter {
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
             var_type_constraints: HashMap::new(),
+            var_hash_key_constraints: HashMap::new(),
+            array_type_metadata: HashMap::new(),
+            hash_type_metadata: HashMap::new(),
+            instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
@@ -1407,11 +1426,26 @@ impl Interpreter {
         let key = name.to_string();
         let meta_key = format!("__mutsu_type::{}", key);
         if let Some(constraint) = constraint {
-            self.var_type_constraints.insert(key, constraint.clone());
-            self.env.insert(meta_key, Value::Str(constraint));
+            let info = Self::parse_container_constraint(name, &constraint);
+            self.var_type_constraints
+                .insert(key.clone(), info.value_type.clone());
+            self.env
+                .insert(meta_key, Value::Str(info.value_type.clone()));
+            let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
+            if let Some(key_type) = info.key_type.clone() {
+                self.var_hash_key_constraints
+                    .insert(key.clone(), key_type.clone());
+                self.env.insert(hash_key_meta_key, Value::Str(key_type));
+            } else {
+                self.var_hash_key_constraints.remove(&key);
+                self.env.remove(&hash_key_meta_key);
+            }
+            self.register_var_container_type_metadata(&key, &info);
         } else {
             self.var_type_constraints.remove(&key);
+            self.var_hash_key_constraints.remove(&key);
             self.env.remove(&meta_key);
+            self.env.remove(&format!("__mutsu_hash_key_type::{}", key));
         }
     }
 
@@ -1425,6 +1459,105 @@ impl Interpreter {
             return Some(tc.clone());
         }
         None
+    }
+
+    pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
+        let key = name;
+        let meta_key = format!("__mutsu_hash_key_type::{}", key);
+        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+            return Some(tc.clone());
+        }
+        self.var_hash_key_constraints.get(key).cloned()
+    }
+
+    pub(crate) fn register_container_type_metadata(
+        &mut self,
+        value: &Value,
+        info: ContainerTypeInfo,
+    ) {
+        match value {
+            Value::Array(items, ..) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.array_type_metadata.insert(id, info);
+            }
+            Value::Hash(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.hash_type_metadata.insert(id, info);
+            }
+            Value::Instance { id, .. } => {
+                self.instance_type_metadata.insert(*id, info);
+            }
+            Value::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
+            _ => {}
+        }
+    }
+
+    pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
+        match value {
+            Value::Array(items, ..) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.array_type_metadata.get(&id).cloned()
+            }
+            Value::Hash(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.hash_type_metadata.get(&id).cloned()
+            }
+            Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
+            Value::Mixin(inner, _) => self.container_type_metadata(inner),
+            _ => None,
+        }
+    }
+
+    fn register_var_container_type_metadata(&mut self, name: &str, info: &ContainerTypeInfo) {
+        if let Some(value) = self.env.get(name).cloned() {
+            self.register_container_type_metadata(&value, info.clone());
+        }
+    }
+
+    fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
+        if name.starts_with('%') {
+            if let Some(inner) = raw.strip_prefix("Hash[").and_then(|s| s.strip_suffix(']')) {
+                let parts: Vec<String> = inner
+                    .split(',')
+                    .map(|p| p.trim())
+                    .filter(|p| !p.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect();
+                let value_type = parts.first().cloned().unwrap_or_else(|| "Any".to_string());
+                let key_type = parts.get(1).cloned();
+                return ContainerTypeInfo {
+                    value_type,
+                    key_type,
+                    declared_type: Some(raw.to_string()),
+                };
+            }
+            if let Some((value_type, key_part)) = raw.split_once('{')
+                && let Some(key_type) = key_part.strip_suffix('}')
+            {
+                return ContainerTypeInfo {
+                    value_type: value_type.trim().to_string(),
+                    key_type: Some(key_type.trim().to_string()),
+                    declared_type: Some(format!("Hash[{},{}]", value_type.trim(), key_type.trim())),
+                };
+            }
+        }
+        if name.starts_with('@')
+            && let Some(inner) = raw
+                .strip_prefix("Array[")
+                .or_else(|| raw.strip_prefix("List["))
+                .and_then(|s| s.strip_suffix(']'))
+        {
+            return ContainerTypeInfo {
+                value_type: inner.trim().to_string(),
+                key_type: None,
+                declared_type: Some(format!("Array[{}]", inner.trim())),
+            };
+        }
+        ContainerTypeInfo {
+            value_type: raw.to_string(),
+            key_type: None,
+            declared_type: None,
+        }
     }
 
     pub(crate) fn snapshot_var_type_constraints(&self) -> HashMap<String, String> {
@@ -1635,6 +1768,10 @@ impl Interpreter {
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
             var_type_constraints: self.var_type_constraints.clone(),
+            var_hash_key_constraints: self.var_hash_key_constraints.clone(),
+            array_type_metadata: self.array_type_metadata.clone(),
+            hash_type_metadata: self.hash_type_metadata.clone(),
+            instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),

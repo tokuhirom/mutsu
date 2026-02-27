@@ -403,7 +403,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     }
 
     // Optional type constraint: my Int $x or my Str(Match) $x (coercion type)
-    let (rest, type_constraint) = {
+    let (rest, mut type_constraint) = {
         // Try to parse a type name followed by a sigil or \
         let saved = rest;
         if let Some((r, tc)) = parse_type_constraint_expr(rest) {
@@ -509,18 +509,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
 
-    // Skip hash key-type parameterization: %h{Any}, %{Str}, etc.
-    let rest = if is_hash
+    // Parse hash key-type parameterization: %h{Str}, %h{Int}, ...
+    let (rest, hash_key_constraint) = if is_hash
         && rest.starts_with('{')
         && !rest.starts_with("{{")
         && let Some(end) = rest.find('}')
     {
+        let key_type = rest[1..end].trim().to_string();
         let after = &rest[end + 1..];
         let (after, _) = ws(after)?;
-        after
+        (after, Some(key_type))
     } else {
-        rest
+        (rest, None)
     };
+    let mut hash_key_constraint = hash_key_constraint;
 
     // Optional shaped-array declaration suffix: my @arr[2;2];
     let (rest, shape_dims) = if is_array && rest.starts_with('[') {
@@ -534,7 +536,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // Parse variable traits. Only a small set is currently supported on
     // lexical/package variable declarations; unknown traits are compile-time errors.
     let mut has_dynamic_trait = false;
-    let rest = {
+    let mut rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
@@ -577,6 +579,22 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         r
     };
+
+    // Postfix container typing: my @a of Int; my %h of Int;
+    if let Some(after_of) = keyword("of", rest) {
+        let (r, _) = ws1(after_of)?;
+        let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+        let (r, _) = ws(r)?;
+        type_constraint = Some(tc);
+        rest = r;
+    }
+    if is_hash {
+        type_constraint = match (type_constraint, hash_key_constraint.take()) {
+            (Some(value_tc), Some(key_tc)) => Some(format!("{}{{{}}}", value_tc, key_tc)),
+            (None, Some(key_tc)) => Some(format!("Any{{{}}}", key_tc)),
+            (value_tc, None) => value_tc,
+        };
+    }
 
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
