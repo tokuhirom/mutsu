@@ -406,6 +406,7 @@ impl VM {
             }
         };
         self.stack.push(result);
+        self.sync_locals_from_env(code);
         Ok(())
     }
 }

@@ -450,11 +450,6 @@ pub(super) fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, u
         && !input.starts_with("^^")
         && !input.starts_with("^=")
     {
-        if let Some(&c) = input.as_bytes().get(1)
-            && (c.is_ascii_alphanumeric() || c == b'$' || c == b'@' || c == b'(')
-        {
-            return None;
-        }
         Some((JunctionInfixOp::One, 1))
     } else {
         None

@@ -39,8 +39,31 @@ impl VM {
         right: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
         let args = vec![left.clone(), right.clone()];
+        if let Some(callable) = self
+            .interpreter
+            .env()
+            .get(&format!("&{}", op_name))
+            .cloned()
+            && matches!(callable, Value::Sub(_) | Value::WeakSub(_))
+        {
+            let result = self
+                .interpreter
+                .eval_call_on_value(callable, args.clone())?;
+            return Ok(Some(result));
+        }
         if let Some(def) = self.interpreter.resolve_function_with_types(op_name, &args) {
-            let result = self.interpreter.call_function_def(&def, &args)?;
+            let callable = Value::make_sub(
+                def.package.clone(),
+                def.name.clone(),
+                def.params.clone(),
+                def.param_defs.clone(),
+                def.body.clone(),
+                def.is_rw,
+                self.interpreter.env().clone(),
+            );
+            let result = self
+                .interpreter
+                .eval_call_on_value(callable, args.clone())?;
             return Ok(Some(result));
         }
         Ok(None)
