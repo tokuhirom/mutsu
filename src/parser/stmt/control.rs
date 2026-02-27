@@ -828,6 +828,8 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -864,6 +866,8 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -1008,6 +1012,8 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             is_state: false,
             is_our: false,
             is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
         });
     }
     with_body.extend(body);

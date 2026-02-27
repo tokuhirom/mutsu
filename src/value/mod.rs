@@ -522,9 +522,13 @@ impl PartialEq for Value {
             ) => es1 == es2 && ee1 == ee2 && s1 == s2 && e1 == e2,
             (Value::Array(a, ..), Value::Array(b, ..)) => a == b,
             (Value::Seq(a), Value::Seq(b)) => a == b,
-            (Value::Array(a, ..), Value::Seq(b)) | (Value::Seq(b), Value::Array(a, ..)) => {
-                a.as_ref() == b.as_ref()
-            }
+            (Value::Slip(a), Value::Slip(b)) => a == b,
+            (Value::Array(a, ..), Value::Seq(b))
+            | (Value::Seq(b), Value::Array(a, ..))
+            | (Value::Array(a, ..), Value::Slip(b))
+            | (Value::Slip(b), Value::Array(a, ..))
+            | (Value::Seq(a), Value::Slip(b))
+            | (Value::Slip(b), Value::Seq(a)) => a.as_ref() == b.as_ref(),
             (Value::Hash(a), Value::Hash(b)) => a == b,
             (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
                 if *b1 == 0 && *b2 == 0 && *a1 == 0 && *a2 == 0 {

@@ -422,6 +422,7 @@ pub(super) fn sub_decl_body(
                     multi,
                     is_rw: traits.is_rw,
                     is_export: traits.is_export,
+                    export_tags: traits.export_tags.clone(),
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
                 },
@@ -464,6 +465,7 @@ pub(super) fn sub_decl_body(
             multi,
             is_rw: traits.is_rw,
             is_export: traits.is_export,
+            export_tags: traits.export_tags,
             is_test_assertion: traits.is_test_assertion,
             supersede,
         },
@@ -533,6 +535,7 @@ fn consume_raw_sub_body(input: &str) -> PResult<'_, Vec<Stmt>> {
 /// Result of parsing sub traits.
 pub(crate) struct SubTraits {
     pub is_export: bool,
+    pub export_tags: Vec<String>,
     pub is_test_assertion: bool,
     pub is_rw: bool,
     pub return_type: Option<String>,
@@ -542,6 +545,7 @@ pub(crate) struct SubTraits {
 /// Returns `SubTraits` indicating which traits were found.
 pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_export = false;
+    let mut export_tags: Vec<String> = Vec::new();
     let mut is_test_assertion = false;
     let mut is_rw = false;
     let mut return_type = None;
@@ -553,6 +557,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 r,
                 SubTraits {
                     is_export,
+                    export_tags,
                     is_test_assertion,
                     is_rw,
                     return_type,
@@ -573,6 +578,20 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             seen_traits.push(trait_name.to_string());
             if trait_name == "export" {
                 is_export = true;
+                let (r2, tags) = parse_export_trait_tags(r)?;
+                if tags.is_empty() {
+                    if !export_tags.iter().any(|t| t == "DEFAULT") {
+                        export_tags.push("DEFAULT".to_string());
+                    }
+                } else {
+                    for tag in tags {
+                        if !export_tags.iter().any(|t| t == &tag) {
+                            export_tags.push(tag);
+                        }
+                    }
+                }
+                input = r2;
+                continue;
             } else if trait_name == "test-assertion" {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
@@ -611,12 +630,79 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             r,
             SubTraits {
                 is_export,
+                export_tags,
                 is_test_assertion,
                 is_rw,
                 return_type,
             },
         ));
     }
+}
+
+fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
+    let mut tags = Vec::new();
+    let (mut rest, _) = ws(input)?;
+    if !rest.starts_with('(') {
+        return Ok((rest, tags));
+    }
+
+    let after_open = &rest[1..];
+    let mut depth = 1usize;
+    let mut end: Option<usize> = None;
+    for (i, ch) in after_open.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let end = end.ok_or_else(|| PError::expected("closing ')' in export trait"))?;
+    let inner = &after_open[..end];
+    rest = &after_open[end + 1..];
+
+    let mut i = 0usize;
+    while i < inner.len() {
+        let c = inner[i..].chars().next().unwrap_or('\0');
+        let c_len = c.len_utf8();
+        if c.is_whitespace() || c == ',' {
+            i += c_len;
+            continue;
+        }
+        if c == ':' {
+            i += c_len;
+            if let Some(next) = inner[i..].chars().next()
+                && next == '!'
+            {
+                i += next.len_utf8();
+            }
+            let start = i;
+            while i < inner.len() {
+                let ch = inner[i..].chars().next().unwrap_or('\0');
+                if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                    i += ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if i > start {
+                let tag = inner[start..i].to_string();
+                if !tags.iter().any(|t| t == &tag) {
+                    tags.push(tag);
+                }
+            }
+            continue;
+        }
+        i += c_len;
+    }
+
+    let (rest, _) = ws(rest)?;
+    Ok((rest, tags))
 }
 
 /// Parse parameter list inside parens.

@@ -1537,6 +1537,8 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         is_state: false,
                         is_our: false,
                         is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),

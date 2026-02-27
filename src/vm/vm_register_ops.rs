@@ -155,6 +155,7 @@ impl VM {
             multi,
             is_rw,
             is_export,
+            export_tags,
             is_test_assertion,
             supersede,
         } = stmt
@@ -178,17 +179,11 @@ impl VM {
                 *supersede,
             )?;
             if *is_export && !self.interpreter.suppress_exports {
-                self.interpreter.register_sub_decl_as_global(
-                    &resolved_name,
-                    params,
-                    param_defs,
-                    return_type.as_ref(),
-                    body,
-                    *multi,
-                    *is_rw,
-                    *is_test_assertion,
-                    *supersede,
-                )?;
+                self.interpreter.register_exported_sub(
+                    self.interpreter.current_package().to_string(),
+                    resolved_name.clone(),
+                    export_tags.clone(),
+                );
             }
             for (alt_params, alt_param_defs) in signature_alternates {
                 self.interpreter.register_sub_decl(
@@ -202,19 +197,6 @@ impl VM {
                     *is_test_assertion,
                     *supersede,
                 )?;
-                if *is_export && !self.interpreter.suppress_exports {
-                    self.interpreter.register_sub_decl_as_global(
-                        &resolved_name,
-                        alt_params,
-                        alt_param_defs,
-                        return_type.as_ref(),
-                        body,
-                        *multi,
-                        *is_rw,
-                        *is_test_assertion,
-                        *supersede,
-                    )?;
-                }
             }
             Ok(())
         } else {
@@ -304,6 +286,30 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_import_module_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        tags_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        let module = Self::const_str(code, name_idx);
+        let tags = tags_idx
+            .and_then(|idx| code.constants.get(idx as usize))
+            .and_then(|v| match v {
+                Value::Array(items, ..) => Some(
+                    items
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<String>>(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default();
+        self.interpreter.import_module(module, &tags)?;
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
     pub(super) fn exec_no_module_op(
         &mut self,
         code: &CompiledCode,
@@ -338,6 +344,33 @@ impl VM {
             ));
         }
         self.interpreter.add_lib_path(path);
+        Ok(())
+    }
+
+    pub(super) fn exec_register_var_export_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        tags_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx).to_string();
+        let tags = tags_idx
+            .and_then(|idx| code.constants.get(idx as usize))
+            .and_then(|v| match v {
+                Value::Array(items, ..) => Some(
+                    items
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<String>>(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_else(|| vec!["DEFAULT".to_string()]);
+        self.interpreter.register_exported_var(
+            self.interpreter.current_package().to_string(),
+            name,
+            tags,
+        );
         Ok(())
     }
 

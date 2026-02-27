@@ -132,6 +132,8 @@ impl Compiler {
                 is_state,
                 is_our,
                 is_dynamic,
+                is_export,
+                export_tags,
             } => {
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
@@ -187,6 +189,20 @@ impl Compiler {
                 if let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                }
+                if *is_export {
+                    let tags_idx = if export_tags.is_empty() {
+                        None
+                    } else {
+                        let entries = export_tags
+                            .iter()
+                            .cloned()
+                            .map(Value::Str)
+                            .collect::<Vec<Value>>();
+                        Some(self.code.add_constant(Value::array(entries)))
+                    };
+                    self.code
+                        .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
             }
             Stmt::Assign {
@@ -806,6 +822,7 @@ impl Compiler {
                     multi: *multi,
                     is_rw: *is_rw,
                     is_export: false,
+                    export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
                 };
@@ -869,6 +886,16 @@ impl Compiler {
             Stmt::Use { module, .. } => {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
+            }
+            Stmt::Import { module, tags } => {
+                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                let tags_idx = if tags.is_empty() {
+                    None
+                } else {
+                    let entries = tags.iter().cloned().map(Value::Str).collect::<Vec<Value>>();
+                    Some(self.code.add_constant(Value::array(entries)))
+                };
+                self.code.emit(OpCode::ImportModule { name_idx, tags_idx });
             }
             Stmt::No { module } => {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));

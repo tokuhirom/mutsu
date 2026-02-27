@@ -527,6 +527,8 @@ impl Compiler {
                                     is_state: false,
                                     is_our: false,
                                     is_dynamic: false,
+                                    is_export: false,
+                                    export_tags: Vec::new(),
                                 },
                                 Stmt::If {
                                     cond: Expr::Binary {
@@ -1316,6 +1318,7 @@ impl Compiler {
                         multi: false,
                         is_rw: true,
                         is_export: false,
+                        export_tags: Vec::new(),
                         is_test_assertion: false,
                         supersede: false,
                     });
@@ -1350,6 +1353,7 @@ impl Compiler {
                     multi: false,
                     is_rw: *is_rw,
                     is_export: false,
+                    export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
                 });
@@ -1371,6 +1375,7 @@ impl Compiler {
                     multi: false,
                     is_rw: false,
                     is_export: false,
+                    export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
                 });
