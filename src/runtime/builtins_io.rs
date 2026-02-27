@@ -109,9 +109,18 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
         check_null_in_path(&path)?;
-        let (read, write, append, bin, line_separators) = self.parse_io_flags_values(&args[1..]);
+        let (read, write, append, bin, line_chomp, line_separators) =
+            self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
-        self.open_file_handle(&path_buf, read, write, append, bin, line_separators)
+        self.open_file_handle(
+            &path_buf,
+            read,
+            write,
+            append,
+            bin,
+            line_chomp,
+            line_separators,
+        )
     }
 
     pub(super) fn builtin_close(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -517,12 +526,17 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_prompt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let msg = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        self.write_to_named_handle("$*OUT", &msg, false)?;
-        if let Some(handle) = self.default_input_handle() {
+        if let Some(first) = args.first() {
+            let msg = self
+                .call_method_with_values(first.clone(), "Str", vec![])
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|_| first.to_string_value());
+            self.write_to_named_handle("$*OUT", &msg, false)?;
+        }
+        let handle = self
+            .get_dynamic_handle("$*IN")
+            .or_else(|| self.default_input_handle());
+        if let Some(handle) = handle {
             let line = self
                 .read_line_from_handle_value(&handle)?
                 .unwrap_or_default();

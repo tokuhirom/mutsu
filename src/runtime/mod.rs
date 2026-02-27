@@ -138,6 +138,7 @@ struct IoHandleState {
     mode: IoHandleMode,
     path: Option<String>,
     line_separators: Vec<Vec<u8>>,
+    line_chomp: bool,
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
