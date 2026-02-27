@@ -3,6 +3,7 @@ use super::super::parse_result::{PError, PResult, merge_expected_messages, parse
 
 use crate::ast::Expr;
 use crate::token_kind::TokenKind;
+use crate::value::Value;
 
 use super::operators::*;
 use super::postfix::prefix_expr;
@@ -118,6 +119,34 @@ fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         target,
                         index,
                         value: Box::new(rhs),
+                    },
+                ));
+            }
+            if let Expr::Call { name, args } = expr {
+                let r = &r[1..];
+                let (r, _) = ws(r)?;
+                let (r, rhs) = and_expr_mode(r, mode)?;
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: "__mutsu_assign_named_sub_lvalue".to_string(),
+                        args: vec![
+                            Expr::Literal(Value::Str(name)),
+                            Expr::ArrayLiteral(args),
+                            rhs,
+                        ],
+                    },
+                ));
+            }
+            if let Expr::CallOn { target, args } = expr {
+                let r = &r[1..];
+                let (r, _) = ws(r)?;
+                let (r, rhs) = and_expr_mode(r, mode)?;
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: "__mutsu_assign_callable_lvalue".to_string(),
+                        args: vec![*target, Expr::ArrayLiteral(args), rhs],
                     },
                 ));
             }

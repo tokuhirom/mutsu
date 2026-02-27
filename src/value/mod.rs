@@ -53,6 +53,7 @@ pub struct SubData {
     pub params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
+    pub(crate) is_rw: bool,
     pub env: HashMap<String, Value>,
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: HashMap<String, Value>,
@@ -752,6 +753,7 @@ impl Value {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
+        is_rw: bool,
         env: HashMap<String, Value>,
     ) -> Self {
         Value::Sub(Arc::new(SubData {
@@ -760,6 +762,7 @@ impl Value {
             params,
             param_defs,
             body,
+            is_rw,
             env,
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),
@@ -769,12 +772,14 @@ impl Value {
     }
 
     /// Create a new Sub value with an explicit id.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_sub_with_id(
         package: String,
         name: String,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
+        is_rw: bool,
         env: HashMap<String, Value>,
         id: u64,
     ) -> Self {
@@ -784,6 +789,7 @@ impl Value {
             params,
             param_defs,
             body,
+            is_rw,
             env,
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),

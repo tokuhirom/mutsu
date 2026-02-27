@@ -41,9 +41,11 @@ impl Interpreter {
         self.env = restored_env;
         self.restore_readonly_vars(saved_readonly);
         match result {
-            Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+            Err(e) if e.return_value.is_some() => {
+                self.maybe_fetch_rw_proxy(e.return_value.unwrap(), def.is_rw)
+            }
             Err(e) => Err(e),
-            Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
+            Ok(()) => self.maybe_fetch_rw_proxy(implicit_return.unwrap_or(Value::Nil), def.is_rw),
         }
     }
 

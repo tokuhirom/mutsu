@@ -658,7 +658,7 @@ impl Interpreter {
 
     fn rewrite_proto_dispatch_expr(expr: &Expr) -> Expr {
         match expr {
-            Expr::AnonSub(body)
+            Expr::AnonSub { body, .. }
                 if body.len() == 1 && matches!(body[0], Stmt::Expr(Expr::Whatever)) =>
             {
                 Expr::Call {
@@ -793,17 +793,22 @@ impl Interpreter {
                 param: param.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
             },
-            Expr::AnonSub(body) => Expr::AnonSub(Self::rewrite_proto_dispatch_stmts(body)),
+            Expr::AnonSub { body, is_rw } => Expr::AnonSub {
+                body: Self::rewrite_proto_dispatch_stmts(body),
+                is_rw: *is_rw,
+            },
             Expr::AnonSubParams {
                 params,
                 param_defs,
                 return_type,
                 body,
+                is_rw,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
                 return_type: return_type.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
+                is_rw: *is_rw,
             },
             other => other.clone(),
         }

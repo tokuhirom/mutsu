@@ -301,6 +301,8 @@ pub struct Interpreter {
     exported_vars: HashMap<String, HashMap<String, HashSet<String>>>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
+    /// When true, rw routine calls should not auto-FETCH Proxy return values.
+    in_lvalue_assignment: bool,
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode) before a block with `use`.
@@ -1074,6 +1076,7 @@ impl Interpreter {
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
             suppress_exports: false,
+            in_lvalue_assignment: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             strict_mode: false,
@@ -1899,6 +1902,7 @@ impl Interpreter {
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             suppress_exports: false,
+            in_lvalue_assignment: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             strict_mode: self.strict_mode,

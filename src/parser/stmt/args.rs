@@ -347,7 +347,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         r,
                         CallArg::Named {
                             name,
-                            value: Some(Expr::AnonSub(body)),
+                            value: Some(Expr::AnonSub { body, is_rw: false }),
                         },
                     ));
                 }

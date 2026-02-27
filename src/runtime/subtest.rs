@@ -259,6 +259,7 @@ impl Interpreter {
             param.iter().cloned().collect(),
             Vec::new(),
             body.to_vec(),
+            false,
             self.env.clone(),
         );
 

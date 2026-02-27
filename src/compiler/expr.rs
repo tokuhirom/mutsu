@@ -455,7 +455,7 @@ impl Compiler {
                 // sink: evaluate the expression (including calling blocks), discard result, push Nil
                 else if name == "sink" && args.len() == 1 {
                     match &args[0] {
-                        Expr::AnonSub(body) => {
+                        Expr::AnonSub { body, .. } => {
                             // sink { ... } — execute the block body inline via do block
                             let do_block = Expr::DoBlock {
                                 body: body.clone(),
@@ -1305,15 +1305,35 @@ impl Compiler {
                     });
                 }
             }
-            Expr::AnonSub(body) => {
-                let idx = self.code.add_stmt(Stmt::Block(body.clone()));
-                self.code.emit(OpCode::MakeAnonSub(idx));
+            Expr::AnonSub { body, is_rw } => {
+                if *is_rw {
+                    let idx = self.code.add_stmt(Stmt::SubDecl {
+                        name: String::new(),
+                        name_expr: None,
+                        params: Vec::new(),
+                        param_defs: Vec::new(),
+                        return_type: None,
+                        signature_alternates: Vec::new(),
+                        body: body.clone(),
+                        multi: false,
+                        is_rw: true,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        is_test_assertion: false,
+                        supersede: false,
+                    });
+                    self.code.emit(OpCode::MakeAnonSubParams(idx));
+                } else {
+                    let idx = self.code.add_stmt(Stmt::Block(body.clone()));
+                    self.code.emit(OpCode::MakeAnonSub(idx));
+                }
             }
             Expr::AnonSubParams {
                 params,
                 param_defs,
                 return_type,
                 body,
+                is_rw,
             } => {
                 // Validate for placeholder conflicts
                 if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
@@ -1331,6 +1351,7 @@ impl Compiler {
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
+                    is_rw: *is_rw,
                     is_export: false,
                     export_tags: Vec::new(),
                     is_test_assertion: false,
@@ -1352,6 +1373,7 @@ impl Compiler {
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
+                    is_rw: false,
                     is_export: false,
                     export_tags: Vec::new(),
                     is_test_assertion: false,

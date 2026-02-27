@@ -426,7 +426,7 @@ impl Interpreter {
             Expr::DoBlock { body, .. }
             | Expr::Block(body)
             | Expr::Gather(body)
-            | Expr::AnonSub(body)
+            | Expr::AnonSub { body, .. }
             | Expr::AnonSubParams { body, .. }
             | Expr::Lambda { body, .. } => {
                 self.validate_private_access_in_stmts(caller_class, body)?
@@ -492,6 +492,7 @@ impl Interpreter {
         _return_type: Option<&String>,
         body: &[Stmt],
         multi: bool,
+        is_rw: bool,
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
@@ -556,6 +557,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            is_rw,
             empty_sig,
         };
         let single_key = format!("{}::{}", self.current_package, name);
@@ -670,6 +672,7 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
             is_test_assertion: false,
+            is_rw: false,
             empty_sig: false,
         };
         self.insert_token_def(name, def, multi);
@@ -706,6 +709,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_rw: false,
                 empty_sig: false,
             },
         );
@@ -723,6 +727,7 @@ impl Interpreter {
         _return_type: Option<&String>,
         body: &[Stmt],
         multi: bool,
+        is_rw: bool,
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
@@ -786,6 +791,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            is_rw,
             empty_sig,
         };
         let single_key = format!("GLOBAL::{}", name);
@@ -912,6 +918,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_rw: false,
                 empty_sig: false,
             },
         );
@@ -1292,6 +1299,7 @@ impl Interpreter {
                             param_defs: our_param_defs,
                             body: method_body.clone(),
                             is_test_assertion: false,
+                            is_rw: *is_rw,
                             empty_sig: false,
                         };
                         self.functions.insert(qualified_name, func_def);

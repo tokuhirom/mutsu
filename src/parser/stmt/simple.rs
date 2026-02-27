@@ -1205,7 +1205,7 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     let (r_ws, _) = ws(rest)?;
     if r_ws.starts_with('.') && !r_ws.starts_with("..") {
         // Use AnonSub so the block compiles as a closure value, not inline code
-        let block_expr = Expr::AnonSub(body);
+        let block_expr = Expr::AnonSub { body, is_rw: false };
         let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
@@ -1232,6 +1232,24 @@ fn method_lvalue_assign_expr(
     Expr::Call {
         name: "__mutsu_assign_method_lvalue".to_string(),
         args,
+    }
+}
+
+fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr) -> Expr {
+    Expr::Call {
+        name: "__mutsu_assign_named_sub_lvalue".to_string(),
+        args: vec![
+            Expr::Literal(Value::Str(name)),
+            Expr::ArrayLiteral(call_args),
+            value,
+        ],
+    }
+}
+
+fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
+    Expr::Call {
+        name: "__mutsu_assign_callable_lvalue".to_string(),
+        args: vec![target, Expr::ArrayLiteral(call_args), value],
     }
 }
 
@@ -1379,6 +1397,22 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 (**target).clone(),
                 target_var_name,
                 name.clone(),
+                args.clone(),
+                rhs,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::Call { name, args } = &expr {
+            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
+                name.clone(),
+                args.clone(),
+                rhs,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::CallOn { target, args } = &expr {
+            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
+                (**target).clone(),
                 args.clone(),
                 rhs,
             ));

@@ -71,6 +71,7 @@ impl Interpreter {
             params,
             param_defs,
             Vec::new(),
+            false,
             env,
             id,
         )
@@ -200,6 +201,7 @@ impl Interpreter {
                 def.params,
                 def.param_defs,
                 def.body,
+                def.is_rw,
                 self.env.clone(),
             )
         } else if Self::is_builtin_function(lookup_name) {

@@ -1172,7 +1172,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let (after_colon, _) = ws(after_colon)?;
                 if after_colon.starts_with('{') {
                     let (r_next, body) = parse_block_body(after_colon)?;
-                    if append_call_arg(&mut expr, Expr::AnonSub(body)) {
+                    if append_call_arg(&mut expr, Expr::AnonSub { body, is_rw: false }) {
                         rest = r_next;
                         continue;
                     }
