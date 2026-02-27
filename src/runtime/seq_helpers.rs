@@ -1,5 +1,6 @@
 use super::*;
 use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
+use pcre2::bytes::{Regex as PcreRegex, RegexBuilder as PcreRegexBuilder};
 
 impl Interpreter {
     fn signature_capture_like(value: &Value) -> Option<(Vec<Value>, HashMap<String, Value>)> {
@@ -276,11 +277,13 @@ impl Interpreter {
         out
     }
 
-    fn compile_p5_regex(&self, pattern: &str) -> Option<fancy_regex::Regex> {
+    fn compile_p5_regex(&self, pattern: &str) -> Option<PcreRegex> {
         let interpolated = self.expand_p5_interpolation(pattern);
         let converted = Self::p5_pattern_to_rust_regex(&interpolated);
         let transformed = Self::transform_p5_pattern(&converted);
-        fancy_regex::Regex::new(&transformed).ok()
+        let mut builder = PcreRegexBuilder::new();
+        builder.utf(true).ucp(true);
+        builder.build(&transformed).ok()
     }
 
     /// Transform P5 regex patterns to handle Perl 5 semantics that
@@ -340,6 +343,21 @@ impl Interpreter {
                 out.push(chars[i]);
                 i += 1;
                 continue;
+            }
+            // Handle Perl code assertions (?{...}) as zero-width no-op.
+            if !in_char_class
+                && chars[i] == '('
+                && i + 2 < chars.len()
+                && chars[i + 1] == '?'
+                && chars[i + 2] == '{'
+                && let Some(end) = Self::find_matching_brace(&chars, i + 2)
+            {
+                let after = end + 1;
+                if after < chars.len() && chars[after] == ')' {
+                    out.push_str("(?:)");
+                    i = after + 1;
+                    continue;
+                }
             }
             // Handle P5 conditional patterns: (?(COND)yes|no)
             if !in_char_class && chars[i] == '(' && i + 1 < chars.len() && chars[i + 1] == '?' {
@@ -570,6 +588,30 @@ impl Interpreter {
         None
     }
 
+    fn find_matching_brace(chars: &[char], start: usize) -> Option<usize> {
+        if start >= chars.len() || chars[start] != '{' {
+            return None;
+        }
+        let mut depth = 1;
+        let mut i = start + 1;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                i += 2;
+                continue;
+            }
+            if chars[i] == '{' {
+                depth += 1;
+            } else if chars[i] == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            i += 1;
+        }
+        None
+    }
+
     /// Parse `yes|no)` or `yes)` branches of a conditional pattern.
     /// Returns (yes_branch, no_branch, position_after_closing_paren).
     fn parse_conditional_branches(chars: &[char], start: usize) -> Option<(String, String, usize)> {
@@ -694,32 +736,33 @@ impl Interpreter {
 
     fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
-        let captures = re.captures(text).ok()??;
-        let m0 = captures.get(0)?;
-        let names: Vec<Option<&str>> = re.capture_names().collect();
+        let mut locs = re.capture_locations();
+        let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
+        let names = re.capture_names();
         let mut out = RegexCaptures {
-            matched: m0.as_str().to_string(),
+            matched: text.get(m0.start()..m0.end())?.to_string(),
             from: m0.start(),
             to: m0.end(),
             ..RegexCaptures::default()
         };
-        for idx in 1..captures.len() {
-            if names.get(idx).is_some_and(|n| n.is_none()) {
-                if let Some(m) = captures.get(idx) {
-                    out.positional.push(m.as_str().to_string());
-                    out.positional_offsets.push((m.start(), m.end()));
-                    out.positional_slots
-                        .push(Some((m.as_str().to_string(), m.start(), m.end())));
+        for idx in 1..locs.len() {
+            if names.get(idx).is_some_and(Option::is_none) {
+                if let Some((start, end)) = locs.get(idx) {
+                    let captured = text.get(start..end)?.to_string();
+                    out.positional.push(captured.clone());
+                    out.positional_offsets.push((start, end));
+                    out.positional_slots.push(Some((captured, start, end)));
                 } else {
                     out.positional_slots.push(None);
                 }
                 continue;
             }
-            if let (Some(Some(name)), Some(m)) = (names.get(idx), captures.get(idx)) {
+            if let (Some(Some(name)), Some((start, end))) = (names.get(idx), locs.get(idx)) {
+                let captured = text.get(start..end)?.to_string();
                 out.named
-                    .entry((*name).to_string())
+                    .entry(name.to_string())
                     .or_default()
-                    .push(m.as_str().to_string());
+                    .push(captured);
             }
         }
         Some(out)
@@ -729,42 +772,48 @@ impl Interpreter {
         let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
         };
-        let names: Vec<Option<&str>> = re.capture_names().collect();
+        let names = re.capture_names();
         let mut out = Vec::new();
-        let mut start = 0;
-        while start <= text.len() {
-            let Ok(Some(captures)) = re.captures_from_pos(text, start) else {
+        let mut start = 0usize;
+        let bytes = text.as_bytes();
+        let mut locs = re.capture_locations();
+        while start <= bytes.len() {
+            let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
                 break;
             };
-            let Some(m0) = captures.get(0) else {
+            let Some(matched) = text.get(m0.start()..m0.end()) else {
                 break;
             };
             let mut item = RegexCaptures {
-                matched: m0.as_str().to_string(),
+                matched: matched.to_string(),
                 from: m0.start(),
                 to: m0.end(),
                 ..RegexCaptures::default()
             };
-            for idx in 1..captures.len() {
-                if names.get(idx).is_some_and(|n| n.is_none()) {
-                    if let Some(m) = captures.get(idx) {
-                        item.positional.push(m.as_str().to_string());
-                        item.positional_offsets.push((m.start(), m.end()));
-                        item.positional_slots.push(Some((
-                            m.as_str().to_string(),
-                            m.start(),
-                            m.end(),
-                        )));
+            for idx in 1..locs.len() {
+                if names.get(idx).is_some_and(Option::is_none) {
+                    if let Some((c_start, c_end)) = locs.get(idx) {
+                        let Some(captured) = text.get(c_start..c_end) else {
+                            continue;
+                        };
+                        item.positional.push(captured.to_string());
+                        item.positional_offsets.push((c_start, c_end));
+                        item.positional_slots
+                            .push(Some((captured.to_string(), c_start, c_end)));
                     } else {
                         item.positional_slots.push(None);
                     }
                     continue;
                 }
-                if let (Some(Some(name)), Some(m)) = (names.get(idx), captures.get(idx)) {
+                if let (Some(Some(name)), Some((c_start, c_end))) = (names.get(idx), locs.get(idx))
+                {
+                    let Some(captured) = text.get(c_start..c_end) else {
+                        continue;
+                    };
                     item.named
-                        .entry((*name).to_string())
+                        .entry(name.to_string())
                         .or_default()
-                        .push(m.as_str().to_string());
+                        .push(captured.to_string());
                 }
             }
             // Advance past the match (at least 1 byte to avoid infinite loop)
