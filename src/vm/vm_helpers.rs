@@ -809,6 +809,19 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
+            let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
+            let callable_id = self
+                .interpreter
+                .env()
+                .get(&callable_key)
+                .and_then(|v| match v {
+                    Value::Int(i) => Some(*i),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            self.interpreter
+                .env_mut()
+                .insert("__mutsu_callable_id".to_string(), Value::Int(callable_id));
         }
         let is_test_assertion = if fn_name.is_empty() {
             false

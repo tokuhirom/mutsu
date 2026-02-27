@@ -395,6 +395,175 @@ impl VM {
         Ok(())
     }
 
+    fn flip_flop_scope_key(&self) -> String {
+        if let Some(Value::Int(id)) = self.interpreter.env().get("__mutsu_callable_id") {
+            return format!("callable:{id}");
+        }
+        if let Some((package, name)) = self.interpreter.routine_stack_top() {
+            return format!("routine:{package}::{name}");
+        }
+        "top".to_string()
+    }
+
+    fn flip_flop_operand_truthy(&mut self, value: &Value, is_rhs: bool) -> bool {
+        match value {
+            Value::Whatever => !is_rhs,
+            Value::Regex(_)
+            | Value::RegexWithAdverbs { .. }
+            | Value::Routine { is_regex: true, .. } => {
+                let topic = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                self.interpreter.smart_match_values(&topic, value)
+            }
+            _ => value.truthy(),
+        }
+    }
+
+    fn eval_expr_range(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        let saved_depth = self.stack.len();
+        self.run_range(code, start, end, compiled_fns)?;
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        self.stack.truncate(saved_depth);
+        Ok(value)
+    }
+
+    fn flip_flop_step(
+        &mut self,
+        key: &str,
+        lhs: bool,
+        rhs: bool,
+        exclude_start: bool,
+        exclude_end: bool,
+        is_fff: bool,
+    ) -> Value {
+        let seq = self
+            .interpreter
+            .get_state_var(key)
+            .and_then(|v| match v {
+                Value::Int(i) if *i > 0 => Some(*i),
+                _ => None,
+            })
+            .unwrap_or(0);
+
+        if seq > 0 {
+            let current = seq;
+            if rhs {
+                self.interpreter
+                    .set_state_var(key.to_string(), Value::Int(0));
+                if exclude_end {
+                    Value::Nil
+                } else {
+                    Value::Int(current)
+                }
+            } else {
+                self.interpreter
+                    .set_state_var(key.to_string(), Value::Int(current + 1));
+                Value::Int(current)
+            }
+        } else if lhs {
+            if !is_fff && rhs {
+                self.interpreter
+                    .set_state_var(key.to_string(), Value::Int(0));
+                if exclude_start || exclude_end {
+                    Value::Nil
+                } else {
+                    Value::Int(1)
+                }
+            } else {
+                self.interpreter
+                    .set_state_var(key.to_string(), Value::Int(2));
+                if exclude_start {
+                    Value::Nil
+                } else {
+                    Value::Int(1)
+                }
+            }
+        } else {
+            Value::Nil
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn exec_flip_flop_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        lhs_end: u32,
+        rhs_end: u32,
+        site_id: u64,
+        exclude_start: bool,
+        exclude_end: bool,
+        is_fff: bool,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let lhs_start = *ip + 1;
+        let lhs_end = lhs_end as usize;
+        let rhs_start = lhs_end;
+        let rhs_end = rhs_end as usize;
+
+        if self.in_smartmatch_rhs {
+            let lhs_pattern = self.eval_expr_range(code, lhs_start, lhs_end, compiled_fns)?;
+            let rhs_pattern = self.eval_expr_range(code, rhs_start, rhs_end, compiled_fns)?;
+            let scope = self.flip_flop_scope_key();
+            let matcher_key = format!("__mutsu_ff_state::{scope}::{site_id}");
+            let mut map = std::collections::HashMap::new();
+            map.insert("__mutsu_ff_matcher".to_string(), Value::Bool(true));
+            map.insert("key".to_string(), Value::Str(matcher_key));
+            map.insert("lhs".to_string(), lhs_pattern);
+            map.insert("rhs".to_string(), rhs_pattern);
+            map.insert("exclude_start".to_string(), Value::Bool(exclude_start));
+            map.insert("exclude_end".to_string(), Value::Bool(exclude_end));
+            map.insert("is_fff".to_string(), Value::Bool(is_fff));
+            self.stack.push(Value::hash(map));
+            *ip = rhs_end;
+            return Ok(());
+        }
+
+        let scope = self.flip_flop_scope_key();
+        let state_key = format!("__mutsu_ff_state::{scope}::{site_id}");
+        let seq = self
+            .interpreter
+            .get_state_var(&state_key)
+            .and_then(|v| match v {
+                Value::Int(i) if *i > 0 => Some(*i),
+                _ => None,
+            })
+            .unwrap_or(0);
+
+        let (lhs, rhs) = if seq > 0 {
+            if !is_fff {
+                let _ = self.eval_expr_range(code, lhs_start, lhs_end, compiled_fns)?;
+            }
+            let rhs_value = self.eval_expr_range(code, rhs_start, rhs_end, compiled_fns)?;
+            (false, self.flip_flop_operand_truthy(&rhs_value, true))
+        } else {
+            let lhs_value = self.eval_expr_range(code, lhs_start, lhs_end, compiled_fns)?;
+            if !self.flip_flop_operand_truthy(&lhs_value, false) {
+                (false, false)
+            } else if is_fff {
+                (true, false)
+            } else {
+                let rhs_value = self.eval_expr_range(code, rhs_start, rhs_end, compiled_fns)?;
+                (true, self.flip_flop_operand_truthy(&rhs_value, true))
+            }
+        };
+
+        let value = self.flip_flop_step(&state_key, lhs, rhs, exclude_start, exclude_end, is_fff);
+        self.stack.push(value);
+        *ip = rhs_end;
+        Ok(())
+    }
+
     fn call_infix_fallback(
         &mut self,
         name: &str,

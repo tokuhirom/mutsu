@@ -440,13 +440,20 @@ impl Interpreter {
                 }
             }
             // Bind implicit $_ for bare blocks called with arguments
+            let (uses_positional, _) = Self::auto_signature_uses(&data.body);
             if data.params.is_empty()
+                && !uses_positional
                 && !sanitized_args.is_empty()
                 && let Some(first_positional) = sanitized_args
                     .iter()
                     .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
+            } else if data.params.is_empty()
+                && sanitized_args.is_empty()
+                && let Some(caller_topic) = saved_env.get("_")
+            {
+                new_env.insert("_".to_string(), caller_topic.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -476,6 +483,10 @@ impl Interpreter {
                 new_env.clone(),
             );
             self.env = new_env;
+            self.env.insert(
+                "__mutsu_callable_id".to_string(),
+                Value::Int(data.id as i64),
+            );
             self.routine_stack
                 .push((data.package.clone(), data.name.clone()));
             self.block_stack.push(block_sub);
@@ -507,13 +518,13 @@ impl Interpreter {
             self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    if merged.contains_key(k) {
+                    if k != "_" && k != "@_" && merged.contains_key(k) {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
             } else {
                 for (k, v) in self.env.iter() {
-                    if matches!(v, Value::Array(..)) {
+                    if k != "_" && k != "@_" && matches!(v, Value::Array(..)) {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
