@@ -508,6 +508,9 @@ impl Interpreter {
             let return_spec = self.routine_return_spec_by_name(&def.name);
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            if let Some(line) = self.test_pending_callsite_line {
+                self.env.insert("?LINE".to_string(), Value::Int(line));
+            }
             self.push_caller_env();
             let rw_bindings =
                 match self.bind_function_args_values(&def.param_defs, &def.params, args) {
@@ -537,6 +540,7 @@ impl Interpreter {
             self.routine_stack.pop();
             self.block_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);
+            self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);

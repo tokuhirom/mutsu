@@ -115,13 +115,11 @@ pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
-/// Parse `for` loop.
-/// Parse a labeled loop: LABEL: for/while/until/loop/repeat ...
+/// Parse labeled statement: `LABEL: <statement>`.
+/// Loop-like statements keep the label on the loop node for last/next/redo.
+/// Other statements are wrapped in `Stmt::Label`.
 pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
-    // Label must be all uppercase or mixed case identifier followed by ':'
     let (rest, label) = ident(input)?;
-    // Labels are typically ALL CAPS like FOO, DONE, OUT, IN
-    // but we need to check it's followed by : and then a loop keyword
     let (rest, _) = ws(rest)?;
     if !rest.starts_with(':') || rest.starts_with("::") {
         return Err(PError::expected("labeled loop"));
@@ -234,7 +232,15 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
-    Err(PError::expected("labeled loop"))
+    // Generic labeled statement: LABEL: <statement>
+    let (r, stmt) = statement(rest)?;
+    Ok((
+        r,
+        Stmt::Label {
+            name: label,
+            stmt: Box::new(stmt),
+        },
+    ))
 }
 
 /// Parse for loop parameters: -> $param or -> $a, $b

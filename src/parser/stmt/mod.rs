@@ -547,6 +547,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::when_stmt,
     control::default_stmt,
     simple::return_stmt,
+    simple::goto_stmt,
     simple::last_stmt,
     simple::next_stmt,
     simple::redo_stmt,

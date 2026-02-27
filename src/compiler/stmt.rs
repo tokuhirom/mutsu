@@ -600,6 +600,15 @@ impl Compiler {
                 });
             }
             // Loop control
+            Stmt::Goto(expr) => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::Goto);
+            }
+            Stmt::Label { name, stmt } => {
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::Label(name_idx));
+                self.compile_stmt(stmt);
+            }
             Stmt::Last(label) => {
                 self.code.emit(OpCode::Last(label.clone()));
             }

@@ -321,7 +321,7 @@ mod tests {
         match &stmts[1] {
             Stmt::Expr(Expr::Call { name, args }) => {
                 assert_eq!(name, "f");
-                assert_eq!(args.len(), 3);
+                assert_eq!(args.len(), 4);
                 assert!(
                     matches!(&args[0], Expr::Literal(crate::value::Value::Str(s)) if s == "say 42")
                 );
@@ -329,6 +329,11 @@ mod tests {
                 assert!(
                     matches!(&args[2], Expr::Literal(crate::value::Value::Str(s)) if s == "msg")
                 );
+                assert!(matches!(
+                    &args[3],
+                    Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
+                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s == "__mutsu_test_callsite_line")
+                ));
             }
             other => panic!("expected function call expression, got {other:?}"),
         }

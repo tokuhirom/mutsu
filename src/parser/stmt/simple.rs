@@ -1113,6 +1113,18 @@ pub(super) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     parse_statement_modifier(rest, Stmt::Redo(None))
 }
 
+/// Parse `goto` statement.
+pub(super) fn goto_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("goto", input).ok_or_else(|| PError::expected("goto statement"))?;
+    let (rest, _) = ws1(rest)?;
+    // Bare identifier labels are treated as label names, not variable lookups.
+    if let Ok((r, label)) = ident(rest) {
+        return parse_statement_modifier(r, Stmt::Goto(Expr::Literal(Value::Str(label))));
+    }
+    let (rest, expr) = expression(rest)?;
+    parse_statement_modifier(rest, Stmt::Goto(expr))
+}
+
 /// Parse `die` statement.
 pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, is_fail) = if let Some(r) = keyword("fail", input) {

@@ -23,16 +23,15 @@ use super::regex::{parse_call_arg_list, scan_to_delim};
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 
+<<<<<<< HEAD
 fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
-    if crate::parser::stmt::simple::is_test_assertion_callable(name) {
-        args.push(Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(
-                TEST_CALLSITE_LINE_KEY.to_string(),
-            ))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
-        });
-    }
+    args.push(Expr::Binary {
+        left: Box::new(Expr::Literal(Value::Str(
+            TEST_CALLSITE_LINE_KEY.to_string(),
+        ))),
+        op: crate::token_kind::TokenKind::FatArrow,
+        right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+    });
     if name == "callframe" || name == "caller" {
         args.push(Expr::Binary {
             left: Box::new(Expr::Literal(Value::Str(CALLFRAME_LINE_KEY.to_string()))),
