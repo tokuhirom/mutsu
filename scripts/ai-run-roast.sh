@@ -3,16 +3,14 @@ set -euo pipefail
 
 DRY_RUN=0
 AGENT="codex"
-FULL_AUTO=0
 
 usage() {
     cat <<USAGE
-Usage: $0 [--dry-run] [--agent codex|claude] [--full-auto] <roast-file>
+Usage: $0 [--dry-run] [--agent codex|claude] <roast-file>
 
 Options:
   --dry-run       Print the ai-sandbox command without executing it
   --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
-  --full-auto     Use codex in --full-auto mode instead of exec (codex only)
 USAGE
 }
 
@@ -30,10 +28,6 @@ while [[ $# -gt 0 ]]; do
             fi
             AGENT="$2"
             shift 2
-            ;;
-        --full-auto)
-            FULL_AUTO=1
-            shift
             ;;
         -h|--help)
             usage
@@ -104,9 +98,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MAX_RETRIES=3
 RETRY_DELAY=30
 
-if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-    CMD=(ai-sandbox "$FILE" codex-fa "$PROMPT")
-elif [[ "$AGENT" == "codex" ]]; then
+if [[ "$AGENT" == "codex" ]]; then
     CMD=(ai-sandbox "$FILE" codex exec "$PROMPT")
 else
     CMD=(ai-sandbox "$FILE" claude -p --verbose --output-format stream-json "$PROMPT")

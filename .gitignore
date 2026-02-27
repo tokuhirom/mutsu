@@ -23,6 +23,7 @@ objects
 refs
 temp-test.*
 temp-file-*
+bom-test-*
 tempfile*
 wip.txt
 
