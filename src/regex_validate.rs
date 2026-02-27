@@ -129,7 +129,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     }
                 }
             }
-            // Modifier colon in regex (e.g., :i, :s, :11)
+            // Modifier colon in regex (e.g., :i, :s, :11, :my $var = expr;)
             ':' => {
                 prev_was_quantifier = false;
                 // Check if it's followed by digits only (unrecognized modifier)
@@ -158,18 +158,26 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         return Err(make_unrecognized_modifier_error(&digits));
                     }
                 } else {
-                    // Skip modifier name
+                    // Collect modifier name
+                    let mut name = String::new();
                     while let Some(&ch) = chars.peek() {
                         if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                            name.push(ch);
                             chars.next();
                         } else {
                             break;
                         }
                     }
-                    // Skip optional argument in parens: :name(...)
-                    if chars.peek() == Some(&'(') {
-                        skip_balanced(&mut chars, '(', ')');
-                        // consume the '(' first
+                    // :my, :our, :constant — variable declarations in regex
+                    // Skip everything up to and including the semicolon
+                    if name == "my" || name == "our" || name == "constant" {
+                        for ch in chars.by_ref() {
+                            if ch == ';' {
+                                break;
+                            }
+                        }
+                    } else if chars.peek() == Some(&'(') {
+                        // Skip optional argument in parens: :name(...)
                         chars.next();
                         skip_balanced(&mut chars, '(', ')');
                     }
