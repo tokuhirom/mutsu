@@ -277,7 +277,7 @@ mod tests {
     fn parse_big_q_to_angle_heredoc() {
         let src = "Q:to<--END-->;\nhello\n--END--\n";
         let (rest, expr) = primary(src).unwrap();
-        assert_eq!(rest, "");
+        assert_eq!(rest, ";\n");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
     }
 

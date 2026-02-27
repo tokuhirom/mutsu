@@ -1238,18 +1238,33 @@ impl Interpreter {
             {
                 let captured: String = chars[pos..end].iter().collect();
                 let mut new_caps = current_caps.clone();
-                for (k, v) in inner_caps.named {
+                let mut inner_caps = inner_caps;
+                for (k, v) in inner_caps.named.drain() {
                     new_caps.named.entry(k).or_default().extend(v);
                 }
-                for v in inner_caps.positional {
+                for v in inner_caps.positional.drain(..) {
                     new_caps.positional.push(v);
                 }
+                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 new_caps.positional.push(captured);
                 out.push((end, new_caps));
             }
-            out.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
-            out.dedup_by(|(end_a, _), (end_b, _)| end_a == end_b);
-            return out;
+            out.sort_by_key(|(end, caps)| {
+                (
+                    *end,
+                    caps.code_blocks.len(),
+                    caps.positional.len(),
+                    caps.named.len(),
+                )
+            });
+            let mut deduped: Vec<(usize, RegexCaptures)> = Vec::new();
+            for (end, caps) in out {
+                if deduped.last().is_some_and(|(last_end, _)| *last_end == end) {
+                    deduped.pop();
+                }
+                deduped.push((end, caps));
+            }
+            return deduped;
         }
         if let RegexAtom::Named(name) = atom {
             let spec = Self::parse_named_regex_lookup_spec(name);
@@ -1291,6 +1306,7 @@ impl Interpreter {
                                 subcap.matched = captured.clone();
                                 subcap.from = pos;
                                 subcap.to = end;
+                                new_caps.code_blocks.extend(subcap.code_blocks.clone());
                                 new_caps
                                     .named_subcaps
                                     .entry(capture_name.to_string())
@@ -1303,20 +1319,35 @@ impl Interpreter {
                                     .push(captured);
                             } else {
                                 // No capture name — merge inner captures flat
-                                for (k, v) in inner_caps.named {
+                                let mut inner_caps = inner_caps;
+                                for (k, v) in inner_caps.named.drain() {
                                     new_caps.named.entry(k).or_default().extend(v);
                                 }
-                                for v in inner_caps.positional {
+                                for v in inner_caps.positional.drain(..) {
                                     new_caps.positional.push(v);
                                 }
+                                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                             }
                             out.push((end, new_caps));
                         }
                     }
                 }
-                out.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
-                out.dedup_by(|(end_a, _), (end_b, _)| end_a == end_b);
-                return out;
+                out.sort_by_key(|(end, caps)| {
+                    (
+                        *end,
+                        caps.code_blocks.len(),
+                        caps.positional.len(),
+                        caps.named.len(),
+                    )
+                });
+                let mut deduped: Vec<(usize, RegexCaptures)> = Vec::new();
+                for (end, caps) in out {
+                    if deduped.last().is_some_and(|(last_end, _)| *last_end == end) {
+                        deduped.pop();
+                    }
+                    deduped.push((end, caps));
+                }
+                return deduped;
             }
         }
         self.regex_match_atom_with_capture_in_pkg(atom, chars, pos, current_caps, pkg, ignore_case)
@@ -1661,7 +1692,10 @@ impl Interpreter {
                     });
             }
             RegexAtom::Alternation(alternatives) => {
-                // Use capture-aware matching for alternations too
+                // Explore all alternatives and keep the longest successful one.
+                // This allows parse-time backtracking into a longer branch when
+                // shorter branches cannot satisfy a surrounding full-match check.
+                let mut best: Option<(usize, RegexCaptures)> = None;
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
@@ -1670,11 +1704,18 @@ impl Interpreter {
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
-                        new_caps.positional.extend(inner_caps.positional);
-                        return Some((next, new_caps));
+                        new_caps.positional.append(&mut inner_caps.positional);
+                        new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        let replace = best
+                            .as_ref()
+                            .map(|(best_next, _)| next > *best_next)
+                            .unwrap_or(true);
+                        if replace {
+                            best = Some((next, new_caps));
+                        }
                     }
                 }
-                return None;
+                return best;
             }
             RegexAtom::ZeroWidth | RegexAtom::UnicodePropAssert { .. } => {
                 return self
@@ -1804,6 +1845,7 @@ impl Interpreter {
                         subcap.matched = captured.clone();
                         subcap.from = pos;
                         subcap.to = end;
+                        new_caps.code_blocks.extend(subcap.code_blocks.clone());
                         new_caps
                             .named_subcaps
                             .entry(capture_name.to_string())
@@ -1816,12 +1858,14 @@ impl Interpreter {
                             .push(captured);
                     } else {
                         // No capture name — merge inner captures flat
-                        for (k, v) in inner_caps.named {
+                        let mut inner_caps = inner_caps;
+                        for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
-                        for v in inner_caps.positional {
+                        for v in inner_caps.positional.drain(..) {
                             new_caps.positional.push(v);
                         }
+                        new_caps.code_blocks.extend(inner_caps.code_blocks);
                     }
                     return Some((end, new_caps));
                 }
@@ -1933,11 +1977,37 @@ impl Interpreter {
                 continue;
             };
             // Set up named captures as $<name> variables
+            let ast_hint = self.env.get("made").cloned().unwrap_or(Value::Nil);
             for (k, v) in named_at_point {
+                let to_match_with_ast = |text: &str, ast: &Value| -> Value {
+                    let match_obj = Value::make_match_object_with_captures(
+                        text.to_string(),
+                        0,
+                        text.chars().count() as i64,
+                        &[],
+                        &HashMap::new(),
+                    );
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = match_obj
+                    {
+                        let mut attrs = attributes.as_ref().clone();
+                        attrs.insert("ast".to_string(), ast.clone());
+                        Value::make_instance(class_name, attrs)
+                    } else {
+                        match_obj
+                    }
+                };
                 let value = if v.len() == 1 {
-                    Value::Str(v[0].clone())
+                    to_match_with_ast(&v[0], &ast_hint)
                 } else {
-                    Value::array(v.iter().cloned().map(Value::Str).collect())
+                    Value::array(
+                        v.iter()
+                            .map(|s| to_match_with_ast(s, &ast_hint))
+                            .collect::<Vec<_>>(),
+                    )
                 };
                 self.env.insert(format!("<{}>", k), value);
             }
