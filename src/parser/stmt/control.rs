@@ -1,6 +1,6 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 
 use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::token_kind::TokenKind;
@@ -14,6 +14,9 @@ pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
+    // Optional binding: `if EXPR -> $var { }`
+    let (rest, binding_var) = parse_binding_var(rest)?;
+    let (rest, _) = ws(rest)?;
     let (rest, then_branch) = block(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -26,8 +29,21 @@ pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
             cond,
             then_branch,
             else_branch,
+            binding_var,
         },
     ))
+}
+
+/// Parse optional `-> $var` binding after an if/elsif/with condition.
+fn parse_binding_var(input: &str) -> PResult<'_, Option<String>> {
+    if let Some(rest) = input.strip_prefix("->") {
+        let (rest, _) = ws(rest)?;
+        let (rest, name) = var_name(rest)?;
+        let (rest, _) = ws(rest)?;
+        Ok((rest, Some(name.to_string())))
+    } else {
+        Ok((input, None))
+    }
 }
 
 pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
@@ -44,6 +60,7 @@ pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
                 cond,
                 then_branch,
                 else_branch,
+                binding_var: None,
             }],
         ));
     }
@@ -93,6 +110,7 @@ pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             },
             then_branch: body,
             else_branch: Vec::new(),
+            binding_var: None,
         },
     ))
 }
@@ -227,12 +245,7 @@ pub(super) fn parse_for_params(
         let (r2, _) = ws(r)?;
         r = r2;
         if let Some(after_arrow) = r.strip_prefix("-->") {
-            let (after_arrow, _) = ws(after_arrow)?;
-            // TODO: Parse full Raku type expressions for pointy return types.
-            // Current implementation accepts only simple identifier-like names.
-            let (after_arrow, _type_name) = take_while1(after_arrow, |c: char| {
-                c.is_alphanumeric() || c == '_' || c == ':'
-            })?;
+            let (after_arrow, _) = super::parse_return_type_annotation_pub(after_arrow)?;
             let (after_arrow, _) = ws(after_arrow)?;
             Ok((after_arrow, ()))
         } else {
@@ -1138,6 +1151,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 cond: orwith_cond,
                 then_branch: orwith_with_body,
                 else_branch: orwith_else,
+                binding_var: None,
             }],
         )
     } else if keyword("else", rest).is_some() {
@@ -1155,6 +1169,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             cond,
             then_branch: with_body,
             else_branch,
+            binding_var: None,
         },
     ))
 }

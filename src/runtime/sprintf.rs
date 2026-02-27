@@ -1,4 +1,6 @@
 use crate::value::Value;
+use num_bigint::BigInt;
+use num_traits::Signed;
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     let mut chars = fmt.chars().peekable();
@@ -52,6 +54,7 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let hash_flag = flags.contains('#');
         let int_val = || match arg {
             Some(Value::Int(i)) => *i,
+            Some(Value::BigInt(n)) => n.to_string().parse::<i64>().unwrap_or(0),
             Some(Value::Num(f)) => *f as i64,
             Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
             Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
@@ -63,6 +66,19 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
                 }
             }
             _ => 0,
+        };
+        let big_int_val = || match arg {
+            Some(Value::Int(i)) => BigInt::from(*i),
+            Some(Value::BigInt(n)) => n.clone(),
+            Some(Value::Num(f)) => BigInt::from(*f as i64),
+            Some(Value::Rat(n, d)) if *d != 0 => BigInt::from(*n / *d),
+            Some(Value::Str(s)) => s
+                .trim()
+                .parse::<i64>()
+                .map(BigInt::from)
+                .unwrap_or_else(|_| BigInt::from(0)),
+            Some(Value::Bool(b)) => BigInt::from(i64::from(*b)),
+            _ => BigInt::from(0),
         };
         let float_val = || match arg {
             Some(Value::Int(i)) => *i as f64,
@@ -84,34 +100,39 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
                 _ => String::new(),
             },
             'd' | 'i' => {
-                let i = int_val();
-                if plus_sign && i >= 0 {
+                let i = big_int_val();
+                if plus_sign && !i.is_negative() {
                     format!("+{}", i)
                 } else {
                     format!("{}", i)
                 }
             }
-            'u' => format!("{}", int_val().max(0) as u64),
-            'x' => {
-                if hash_flag {
-                    format!("0x{:x}", int_val())
+            'u' => {
+                let i = big_int_val();
+                if i.is_negative() {
+                    "0".to_string()
                 } else {
-                    format!("{:x}", int_val())
+                    i.to_str_radix(10)
                 }
+            }
+            'x' => {
+                let hex = big_int_val().to_str_radix(16);
+                if hash_flag { format!("0x{}", hex) } else { hex }
             }
             'X' => {
-                if hash_flag {
-                    format!("0X{:X}", int_val())
-                } else {
-                    format!("{:X}", int_val())
-                }
+                let hex = big_int_val().to_str_radix(16).to_uppercase();
+                if hash_flag { format!("0X{}", hex) } else { hex }
             }
             'o' => {
-                if hash_flag {
-                    format!("0o{:o}", int_val())
-                } else {
-                    format!("{:o}", int_val())
+                let oct = big_int_val().to_str_radix(8);
+                if hash_flag { format!("0o{}", oct) } else { oct }
+            }
+            'b' | 'B' => {
+                let mut bin = big_int_val().to_str_radix(2);
+                if spec == 'B' {
+                    bin = bin.to_uppercase();
                 }
+                if hash_flag { format!("0b{}", bin) } else { bin }
             }
             'f' | 'F' => {
                 let f = float_val();
