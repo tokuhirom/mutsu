@@ -383,6 +383,32 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
+    // Hyper prefix metaop: -« expr / -<< expr / +« expr / ?« expr ...
+    if let Some((op, len)) = parse_prefix_unary_op(input) {
+        let after_op = &input[len..];
+        let marker_len = if after_op.starts_with('\u{00AB}') {
+            Some('\u{00AB}'.len_utf8())
+        } else if after_op.starts_with("<<") {
+            Some(2)
+        } else {
+            None
+        };
+        if let Some(marker_len) = marker_len
+            && let Some(symbol) = op.prefix_symbol()
+        {
+            let rest = &after_op[marker_len..];
+            let (rest, _) = ws(rest)?;
+            let (rest, arg) = prefix_expr(rest)?;
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_hyper_prefix".to_string(),
+                    args: vec![Expr::Literal(Value::Str(symbol.to_string())), arg],
+                },
+            ));
+        }
+    }
+
     if let Some((op, len)) = parse_prefix_unary_op(input) {
         let mut rest = &input[len..];
         if op.consumes_ws() {

@@ -366,6 +366,7 @@ impl Interpreter {
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
             "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(&args),
+            "__mutsu_hyper_prefix" => self.builtin_hyper_prefix(&args),
             "signal" => self.builtin_signal(&args),
             // Boolean coercion functions
             "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
@@ -1250,6 +1251,50 @@ impl Interpreter {
 
     fn builtin_atomic_pre_dec_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         self.builtin_atomic_update_unit(args, -1, false)
+    }
+
+    fn builtin_hyper_prefix(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Ok(Value::array(vec![]));
+        }
+        let op = args[0].to_string_value();
+        let routine = format!("prefix:<{}>", op);
+        fn apply_hyper_prefix(
+            interp: &mut Interpreter,
+            routine: &str,
+            value: Value,
+        ) -> Result<Value, RuntimeError> {
+            match value {
+                Value::Array(items, is_array) => {
+                    let mut mapped = Vec::with_capacity(items.len());
+                    for item in items.iter() {
+                        mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
+                    }
+                    Ok(Value::Array(std::sync::Arc::new(mapped), is_array))
+                }
+                Value::Seq(items) => {
+                    let mut mapped = Vec::with_capacity(items.len());
+                    for item in items.iter() {
+                        mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
+                    }
+                    Ok(Value::Seq(std::sync::Arc::new(mapped)))
+                }
+                Value::Slip(items) => {
+                    let mut mapped = Vec::with_capacity(items.len());
+                    for item in items.iter() {
+                        mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
+                    }
+                    Ok(Value::Slip(std::sync::Arc::new(mapped)))
+                }
+                other => interp.call_function(routine, vec![other]),
+            }
+        }
+        let items = crate::runtime::value_to_list(&args[1]);
+        let mut results = Vec::with_capacity(items.len());
+        for item in items {
+            results.push(apply_hyper_prefix(self, &routine, item)?);
+        }
+        Ok(Value::array(results))
     }
 
     fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

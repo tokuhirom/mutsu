@@ -2,6 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
+const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
 impl VM {
     fn self_hash_ref_marker() -> Value {
@@ -18,6 +19,28 @@ impl VM {
             }
             Some(value) => value.clone(),
             None => Value::Nil,
+        }
+    }
+
+    fn self_array_ref_marker() -> Value {
+        Value::Pair(
+            SELF_ARRAY_REF_SENTINEL.to_string(),
+            Box::new(Value::Bool(true)),
+        )
+    }
+
+    fn resolve_array_entry(
+        items: &Arc<Vec<Value>>,
+        is_arr: bool,
+        idx: usize,
+        default: Value,
+    ) -> Value {
+        match items.get(idx) {
+            Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
+                Value::Array(items.clone(), is_arr)
+            }
+            Some(value) => value.clone(),
+            None => default,
         }
     }
 
@@ -495,25 +518,25 @@ impl VM {
                 } else {
                     let default =
                         self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                    items.get(i as usize).cloned().unwrap_or(default)
+                    Self::resolve_array_entry(&items, is_arr, i as usize, default)
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
                 let depth = Self::array_depth(&target);
                 if depth <= 1 && indices.len() > 1 {
                     // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
-                    let Value::Array(items, ..) = &target else {
+                    let Value::Array(items, is_arr) = &target else {
                         unreachable!()
                     };
                     let mut out = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
                         if let Some(i) = Self::index_to_usize(idx) {
-                            out.push(
-                                items
-                                    .get(i)
-                                    .cloned()
-                                    .unwrap_or_else(|| self.typed_container_default(&target)),
-                            );
+                            out.push(Self::resolve_array_entry(
+                                items,
+                                *is_arr,
+                                i,
+                                self.typed_container_default(&target),
+                            ));
                         } else {
                             out.push(self.typed_container_default(&target));
                         }
@@ -1456,11 +1479,19 @@ impl VM {
                                 )?;
                             } else if let Some(i) = Self::index_to_usize(&idx) {
                                 if let Value::Array(items, ..) = container {
+                                    let is_self_array_ref = matches!(
+                                        &val,
+                                        Value::Array(source_items, ..) if Arc::ptr_eq(items, source_items)
+                                    );
                                     let arr = Arc::make_mut(items);
                                     if i >= arr.len() {
                                         arr.resize(i + 1, Value::Package("Any".to_string()));
                                     }
-                                    arr[i] = val.clone();
+                                    arr[i] = if is_self_array_ref {
+                                        Self::self_array_ref_marker()
+                                    } else {
+                                        val.clone()
+                                    };
                                 }
                             } else {
                                 return Err(RuntimeError::new("Index out of bounds"));

@@ -1098,6 +1098,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyper_prefix_metaop_negate() {
+        let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "__mutsu_hyper_prefix");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0], Expr::Literal(Value::Str(ref s)) if s == "-"));
+            }
+            _ => panic!("expected hyper prefix metaop call"),
+        }
+    }
+
+    #[test]
     fn parse_parenthesized_sequence_with_following_smartmatch() {
         let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
         assert_eq!(rest, "");

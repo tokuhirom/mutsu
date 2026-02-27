@@ -256,6 +256,19 @@ impl PrefixUnaryOp {
     pub(super) fn parses_postfix_target(self) -> bool {
         matches!(self, PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec)
     }
+
+    pub(super) fn prefix_symbol(self) -> Option<&'static str> {
+        match self {
+            PrefixUnaryOp::Not => Some("!"),
+            PrefixUnaryOp::Boolify => Some("?"),
+            PrefixUnaryOp::Negate => Some("-"),
+            PrefixUnaryOp::Positive => Some("+"),
+            PrefixUnaryOp::Stringify => Some("~"),
+            PrefixUnaryOp::IntBitNeg => Some("+^"),
+            PrefixUnaryOp::BoolBitNeg => Some("?^"),
+            PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,6 +338,7 @@ impl JunctiveOp {
 
 pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     let next_non_ws = |s: &str| s.trim_start().chars().next();
+    let starts_hyper_prefix_marker = |s: &str| s.starts_with('\u{00AB}') || s.starts_with("<<");
     let unary_term_start = |c: char| {
         c == '$'
             || c == '@'
@@ -358,8 +372,8 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('-')
         && !input.starts_with("--")
         && !input.starts_with("->")
-        && let Some(c) = next_non_ws(&input[1..])
-        && (unary_term_start(c) || c == '.' || c == '\u{221E}')
+        && (starts_hyper_prefix_marker(&input[1..])
+            || (matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}')))
     // topic call / ∞
     {
         Some((PrefixUnaryOp::Negate, 1))
@@ -370,14 +384,14 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         Some((PrefixUnaryOp::IntBitNeg, 2))
     } else if input.starts_with('+')
         && !input.starts_with("++")
-        && let Some(c) = next_non_ws(&input[1..])
-        && unary_term_start(c)
+        && (starts_hyper_prefix_marker(&input[1..])
+            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
     {
         Some((PrefixUnaryOp::Positive, 1))
     } else if input.starts_with('~')
         && !input.starts_with("~~")
-        && let Some(c) = next_non_ws(&input[1..])
-        && unary_term_start(c)
+        && (starts_hyper_prefix_marker(&input[1..])
+            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
     {
         Some((PrefixUnaryOp::Stringify, 1))
     } else {
