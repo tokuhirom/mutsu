@@ -27,6 +27,12 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         } else {
             ternary_mode(input, mode)?
         };
+        if mode == ExprMode::Full
+            && let Expr::BareWord(name) = &then_expr
+            && !name.contains("::")
+        {
+            return Err(PError::expected("expected '!!' in ternary expression"));
+        }
         let (input, _) = ws(input)?;
         let (input, _) = if mode == ExprMode::Full {
             parse_tag(input, "!!").map_err(|err| {
@@ -44,6 +50,37 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         } else {
             ternary_mode(input, mode)?
         };
+        if let Expr::Binary { left, op, right } = cond {
+            if matches!(
+                op,
+                TokenKind::AndAnd
+                    | TokenKind::AndThen
+                    | TokenKind::NotAndThen
+                    | TokenKind::OrWord
+                    | TokenKind::OrElse
+            ) {
+                return Ok((
+                    input,
+                    Expr::Binary {
+                        left,
+                        op,
+                        right: Box::new(Expr::Ternary {
+                            cond: right,
+                            then_expr: Box::new(then_expr),
+                            else_expr: Box::new(else_expr),
+                        }),
+                    },
+                ));
+            }
+            return Ok((
+                input,
+                Expr::Ternary {
+                    cond: Box::new(Expr::Binary { left, op, right }),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
+                },
+            ));
+        }
         return Ok((
             input,
             Expr::Ternary {

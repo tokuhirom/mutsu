@@ -1037,6 +1037,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         _ => {}
     }
 
+    if matches!(name.as_str(), "R" | "S") && rest.starts_with("??") {
+        return Err(PError::expected("expression"));
+    }
+
     // Labeled loop in expression context, e.g. `MEOW: for ^10 { ... }`
     if name.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
         let (r_ws, _) = ws(rest)?;

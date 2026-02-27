@@ -189,7 +189,17 @@ fn var_name(input: &str) -> PResult<'_, String> {
             }
         }
         // Handle bare $ (anonymous variable) — no name after sigil
-        if let Ok((rest, name)) = qualified_ident(r) {
+        if let Ok((mut rest, mut name)) = qualified_ident(r) {
+            while rest.starts_with(':') && !rest.starts_with("::") {
+                let after_colon = &rest[1..];
+                if let Ok((r2, suffix)) = ident(after_colon) {
+                    name.push(':');
+                    name.push_str(&suffix);
+                    rest = r2;
+                } else {
+                    break;
+                }
+            }
             let full = if twigil.is_empty() {
                 name
             } else {
