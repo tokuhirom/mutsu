@@ -1268,6 +1268,19 @@ impl Compiler {
                         label,
                     );
                 }
+                Stmt::While { cond, body, label } => {
+                    self.compile_do_while_expr(cond, body, label);
+                }
+                Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    repeat,
+                    label,
+                } if !*repeat => {
+                    self.compile_do_loop_expr(init, cond, step, body, label);
+                }
                 Stmt::ClassDecl {
                     name, name_expr, ..
                 } => {

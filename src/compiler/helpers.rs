@@ -544,7 +544,8 @@ impl Compiler {
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
         if else_branch.is_empty() {
-            self.emit_nil_value();
+            let empty_idx = self.code.add_constant(Value::slip(vec![]));
+            self.code.emit(OpCode::LoadConst(empty_idx));
         } else {
             self.compile_stmts_value(else_branch);
         }
@@ -797,6 +798,10 @@ impl Compiler {
         self.code.patch_jump(jump_end);
     }
 
+    fn compile_collected_loop_body(&mut self, body: &[Stmt]) {
+        self.compile_stmts_value(body);
+    }
+
     /// Compile `do for` expression: like a for loop but collects each iteration result.
     pub(super) fn compile_do_for_expr(
         &mut self,
@@ -835,16 +840,75 @@ impl Compiler {
             arity,
             collect: true,
         });
-        // Compile body; last Stmt::Expr leaves value on stack (no Pop) for collection
-        for (i, s) in loop_body.iter().enumerate() {
-            let is_last = i == loop_body.len() - 1;
-            if is_last && let Stmt::Expr(expr) = s {
-                self.compile_expr(expr);
-                continue;
-            }
-            self.compile_stmt(s);
+        self.compile_collected_loop_body(&loop_body);
+        self.code.patch_loop_end(loop_idx);
+    }
+
+    /// Compile `do while` / `do until` expression: collect each iteration value.
+    pub(super) fn compile_do_while_expr(
+        &mut self,
+        cond: &Expr,
+        body: &[Stmt],
+        label: &Option<String>,
+    ) {
+        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+        for stmt in &pre_stmts {
+            self.compile_stmt(stmt);
+        }
+        let loop_idx = self.code.emit(OpCode::WhileLoop {
+            cond_end: 0,
+            body_end: 0,
+            label: label.clone(),
+            collect: true,
+        });
+        self.compile_expr(cond);
+        self.code.patch_while_cond_end(loop_idx);
+        self.compile_collected_loop_body(&loop_body);
+        self.code.patch_loop_end(loop_idx);
+        for stmt in &post_stmts {
+            self.compile_stmt(stmt);
+        }
+    }
+
+    /// Compile `do loop (...) { ... }` expression: collect each iteration value.
+    pub(super) fn compile_do_loop_expr(
+        &mut self,
+        init: &Option<Box<Stmt>>,
+        cond: &Option<Expr>,
+        step: &Option<Expr>,
+        body: &[Stmt],
+        label: &Option<String>,
+    ) {
+        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+        if let Some(init_stmt) = init {
+            self.compile_stmt(init_stmt);
+        }
+        for stmt in &pre_stmts {
+            self.compile_stmt(stmt);
+        }
+        let loop_idx = self.code.emit(OpCode::CStyleLoop {
+            cond_end: 0,
+            step_start: 0,
+            body_end: 0,
+            label: label.clone(),
+            collect: true,
+        });
+        if let Some(cond_expr) = cond {
+            self.compile_expr(cond_expr);
+        } else {
+            self.code.emit(OpCode::LoadTrue);
+        }
+        self.code.patch_cstyle_cond_end(loop_idx);
+        self.compile_collected_loop_body(&loop_body);
+        self.code.patch_cstyle_step_start(loop_idx);
+        if let Some(step_expr) = step {
+            self.compile_expr(step_expr);
+            self.code.emit(OpCode::Pop);
         }
         self.code.patch_loop_end(loop_idx);
+        for stmt in &post_stmts {
+            self.compile_stmt(stmt);
+        }
     }
 
     pub(super) fn do_if_branch_supported(stmts: &[Stmt]) -> bool {
@@ -961,6 +1025,8 @@ impl Compiler {
 
         let mut enter_ph = Vec::new();
         let mut leave_ph = Vec::new();
+        let mut keep_ph = Vec::new();
+        let mut undo_ph = Vec::new();
         let mut first_ph = Vec::new();
         let mut next_ph = Vec::new();
         let mut last_ph = Vec::new();
@@ -969,9 +1035,9 @@ impl Compiler {
             if let Stmt::Phaser { kind, body } = stmt {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo => {
-                        leave_ph.push(Stmt::Block(body.clone()))
-                    }
+                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Keep => keep_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Undo => undo_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),
@@ -984,8 +1050,13 @@ impl Compiler {
 
         let first_var = self.next_tmp_name("__mutsu_loop_first_");
         let ran_var = self.next_tmp_name("__mutsu_loop_ran_");
+        let result_var = if keep_ph.is_empty() && undo_ph.is_empty() {
+            None
+        } else {
+            Some(self.next_tmp_name("__mutsu_loop_result_"))
+        };
 
-        let pre = vec![
+        let mut pre = vec![
             Stmt::VarDecl {
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::Bool(true)),
@@ -1007,6 +1078,18 @@ impl Compiler {
                 export_tags: Vec::new(),
             },
         ];
+        if let Some(result_var) = result_var.clone() {
+            pre.push(Stmt::VarDecl {
+                name: result_var,
+                expr: Expr::Literal(Value::Nil),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+            });
+        }
 
         let mut loop_body = Vec::new();
         loop_body.push(Stmt::Assign {
@@ -1028,8 +1111,46 @@ impl Compiler {
                 else_branch: next_ph,
             });
         }
-        loop_body.extend(body_main);
+        if let Some(result_var) = result_var.clone() {
+            if let Some((last, prefix)) = body_main.split_last() {
+                loop_body.extend(prefix.iter().cloned());
+                match last {
+                    Stmt::Expr(expr) => loop_body.push(Stmt::Assign {
+                        name: result_var.clone(),
+                        expr: expr.clone(),
+                        op: AssignOp::Assign,
+                    }),
+                    other => {
+                        loop_body.push(other.clone());
+                        loop_body.push(Stmt::Assign {
+                            name: result_var.clone(),
+                            expr: Expr::Literal(Value::Nil),
+                            op: AssignOp::Assign,
+                        });
+                    }
+                }
+            } else {
+                loop_body.push(Stmt::Assign {
+                    name: result_var.clone(),
+                    expr: Expr::Literal(Value::Nil),
+                    op: AssignOp::Assign,
+                });
+            }
+        } else {
+            loop_body.extend(body_main);
+        }
         loop_body.extend(leave_ph);
+        if let Some(result_var) = result_var.clone() {
+            if !keep_ph.is_empty() || !undo_ph.is_empty() {
+                loop_body.push(Stmt::If {
+                    cond: Expr::Var(result_var.clone()),
+                    then_branch: keep_ph,
+                    else_branch: undo_ph,
+                });
+            }
+            // Preserve loop-body value for expression contexts that collect iteration results.
+            loop_body.push(Stmt::Expr(Expr::Var(result_var)));
+        }
 
         let post = if last_ph.is_empty() {
             Vec::new()

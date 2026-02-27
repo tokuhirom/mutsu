@@ -311,6 +311,7 @@ impl Compiler {
                     cond_end: 0,
                     body_end: 0,
                     label: label.clone(),
+                    collect: false,
                 });
                 self.compile_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
@@ -391,6 +392,7 @@ impl Compiler {
                     step_start: 0,
                     body_end: 0,
                     label: label.clone(),
+                    collect: false,
                 });
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {

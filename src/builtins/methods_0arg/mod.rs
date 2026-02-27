@@ -1036,6 +1036,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             {
                 fn gist_item(v: &Value) -> String {
                     match v {
+                        Value::Nil => "Nil".to_string(),
                         Value::Array(inner, ..) | Value::Seq(inner) | Value::Slip(inner) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                             format!("({})", elems)
