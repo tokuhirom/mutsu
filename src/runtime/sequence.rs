@@ -799,18 +799,15 @@ impl Interpreter {
                                     Ok(v) => v,
                                     Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
                                     Err(e) if e.is_last => {
-                                        self.env =
-                                            restore_env_with_side_effects(saved, &self.env);
+                                        self.env = restore_env_with_side_effects(saved, &self.env);
                                         break;
                                     }
                                     Err(e) if suppress_generator_error => {
-                                        self.env =
-                                            restore_env_with_side_effects(saved, &self.env);
+                                        self.env = restore_env_with_side_effects(saved, &self.env);
                                         break 'seq_gen;
                                     }
                                     Err(e) => {
-                                        self.env =
-                                            restore_env_with_side_effects(saved, &self.env);
+                                        self.env = restore_env_with_side_effects(saved, &self.env);
                                         return Err(e);
                                     }
                                 };
