@@ -187,6 +187,18 @@ impl Compiler {
                 }
             },
             Expr::Binary { left, op, right } => {
+                if matches!(op, TokenKind::Ident(name) if name == "xx")
+                    && let Expr::Literal(Value::Int(n)) = right.as_ref()
+                    && let Expr::Call { name, .. } = left.as_ref()
+                    && name == "start"
+                {
+                    let count = (*n).max(0) as usize;
+                    for _ in 0..count {
+                        self.compile_expr(left);
+                    }
+                    self.code.emit(OpCode::MakeArray(count as u32));
+                    return;
+                }
                 // Detect `funcname |capture` pattern (listop call with capture slip)
                 if *op == TokenKind::Pipe
                     && matches!(right.as_ref(), Expr::BareWord(_))
@@ -404,6 +416,22 @@ impl Compiler {
             }
             // Expression-level function call
             Expr::Call { name, args } => {
+                if name == "atomic-fetch"
+                    && args.len() == 1
+                    && let Expr::Var(var_name) = &args[0]
+                {
+                    let call_name_idx = self
+                        .code
+                        .add_constant(Value::Str("__mutsu_atomic_fetch_var".to_string()));
+                    let arg_idx = self.code.add_constant(Value::Str(var_name.clone()));
+                    self.code.emit(OpCode::LoadConst(arg_idx));
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx: call_name_idx,
+                        arity: 1,
+                        arg_sources_idx: None,
+                    });
+                    return;
+                }
                 // Rewrite undefine($var) → $var = Nil (assign Nil to the variable)
                 if name == "undefine" && args.len() == 1 {
                     let var_name = match &args[0] {
@@ -569,6 +597,24 @@ impl Compiler {
                         _ => None,
                     };
                     if let Some(vname) = var_name {
+                        if let Expr::Lambda { param, body } = &args[1]
+                            && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
+                            && *op == TokenKind::Plus
+                        {
+                            let delta = match (left.as_ref(), right.as_ref()) {
+                                (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                                (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                                _ => None,
+                            };
+                            if let Some(delta) = delta {
+                                let atomic_add = Expr::Call {
+                                    name: "__mutsu_atomic_add_var".to_string(),
+                                    args: vec![Expr::Literal(Value::Str(vname.clone())), delta],
+                                };
+                                self.compile_expr(&atomic_add);
+                                return;
+                            }
+                        }
                         let assign_expr = Expr::AssignExpr {
                             name: vname,
                             expr: Box::new(Expr::CallOn {

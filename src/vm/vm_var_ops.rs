@@ -1618,6 +1618,9 @@ impl VM {
         {
             return Err(RuntimeError::new("X::Assignment::RO"));
         }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key(name);
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(symbol) = Self::term_symbol_from_name(name) {
@@ -1679,6 +1682,9 @@ impl VM {
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name.
         self.interpreter.set_var_type_constraint(name, None);
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key_decl(name);
+        }
     }
 
     pub(super) fn exec_assign_expr_local_op(
@@ -1726,6 +1732,9 @@ impl VM {
         ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
         {
             return Err(RuntimeError::new("X::Assignment::RO"));
+        }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key(name);
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());

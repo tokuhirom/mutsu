@@ -501,8 +501,17 @@ impl Interpreter {
                 "Must specify a Promise or list of Promises to await",
             ));
         }
-        let mut results = Vec::new();
+        let mut await_targets: Vec<Value> = Vec::new();
         for arg in args {
+            match arg {
+                Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                    await_targets.extend(items.iter().cloned());
+                }
+                other => await_targets.push(other.clone()),
+            }
+        }
+        let mut results = Vec::new();
+        for arg in &await_targets {
             match arg {
                 Value::Promise(shared) => {
                     let (result, output, stderr) = shared.wait();

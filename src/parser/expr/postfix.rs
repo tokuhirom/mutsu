@@ -285,7 +285,66 @@ fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
     Some((input[..len].to_string(), len))
 }
 
+fn atomic_var_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Var(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
+    if let Some(rest) = input.strip_prefix("++⚛") {
+        let (rest, expr) = postfix_expr(rest)?;
+        if let Some(name) = atomic_var_name(&expr) {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_atomic_pre_inc_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name))],
+                },
+            ));
+        }
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: TokenKind::PlusPlus,
+                expr: Box::new(expr),
+            },
+        ));
+    }
+    if let Some(rest) = input.strip_prefix("--⚛") {
+        let (rest, expr) = postfix_expr(rest)?;
+        if let Some(name) = atomic_var_name(&expr) {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_atomic_pre_dec_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name))],
+                },
+            ));
+        }
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: TokenKind::MinusMinus,
+                expr: Box::new(expr),
+            },
+        ));
+    }
+    if let Some(rest) = input.strip_prefix('⚛') {
+        let (rest, expr) = postfix_expr(rest)?;
+        if let Some(name) = atomic_var_name(&expr) {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "__mutsu_atomic_fetch_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name))],
+                },
+            ));
+        }
+        return Ok((rest, expr));
+    }
+
     if let Some(after_open) = input.strip_prefix('(')
         && let Some(end) = after_open.find(')')
     {
@@ -1138,6 +1197,38 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+        }
+
+        // Atomic postfix updates: $x⚛++ / $x⚛--
+        if let Some(after_atomic) = rest.strip_prefix("⚛++") {
+            rest = after_atomic;
+            if let Some(name) = atomic_var_name(&expr) {
+                expr = Expr::Call {
+                    name: "__mutsu_atomic_post_inc_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name))],
+                };
+            } else {
+                expr = Expr::PostfixOp {
+                    op: TokenKind::PlusPlus,
+                    expr: Box::new(expr),
+                };
+            }
+            continue;
+        }
+        if let Some(after_atomic) = rest.strip_prefix("⚛--") {
+            rest = after_atomic;
+            if let Some(name) = atomic_var_name(&expr) {
+                expr = Expr::Call {
+                    name: "__mutsu_atomic_post_dec_var".to_string(),
+                    args: vec![Expr::Literal(Value::Str(name))],
+                };
+            } else {
+                expr = Expr::PostfixOp {
+                    op: TokenKind::MinusMinus,
+                    expr: Box::new(expr),
+                };
+            }
+            continue;
         }
 
         // Postfix ++ and --

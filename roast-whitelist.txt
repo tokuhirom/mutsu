@@ -338,6 +338,7 @@ roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
+roast/S17-lowlevel/atomic-ops.t
 roast/S17-lowlevel/cas-int.t
 roast/S17-lowlevel/cas-loop-int.t
 roast/S17-procasync/kill.t
