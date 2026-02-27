@@ -165,6 +165,7 @@ roast/S05-metachars/closure.t
 roast/S05-metachars/newline.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
+roast/S05-metasyntax/interpolating-closure.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/single-quotes.t
