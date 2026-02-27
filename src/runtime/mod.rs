@@ -649,7 +649,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Lock::Async".to_string()],
+                mro: vec!["Lock::Async".to_string(), "Lock".to_string()],
             },
         );
         classes.insert(
@@ -1966,11 +1966,21 @@ impl Interpreter {
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
         let name_key = format!("__mutsu_atomic_name::{name}");
+        let Some(Value::Str(value_key)) = self.env.remove(&name_key) else {
+            return;
+        };
         let mut shared = self.shared_vars.lock().unwrap();
-        if let Some(Value::Str(value_key)) = self.env.remove(&name_key) {
+        shared.remove(&value_key);
+        shared.remove(&name_key);
+    }
+
+    pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
+        let name_key = format!("__mutsu_atomic_name::{name}");
+        self.env.remove(&name_key);
+        let mut shared = self.shared_vars.lock().unwrap();
+        if let Some(Value::Str(value_key)) = shared.remove(&name_key) {
             shared.remove(&value_key);
         }
-        shared.remove(&name_key);
     }
 
     pub(crate) fn merge_sigilless_alias_writes(

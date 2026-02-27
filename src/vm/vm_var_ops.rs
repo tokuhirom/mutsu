@@ -1682,6 +1682,9 @@ impl VM {
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name.
         self.interpreter.set_var_type_constraint(name, None);
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key_decl(name);
+        }
     }
 
     pub(super) fn exec_assign_expr_local_op(
