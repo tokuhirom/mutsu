@@ -175,6 +175,9 @@ pub(crate) struct RegexCaptures {
     /// Code blocks encountered during matching (code + captures at that point).
     /// Executed after match for side effects.
     pub(crate) code_blocks: Vec<(String, HashMap<String, Vec<String>>)>,
+    /// Variables declared via `:my $var = expr;` inside regex.
+    /// These are made available to `<{ code }>` closures.
+    pub(crate) regex_vars: HashMap<String, Value>,
 }
 
 #[derive(Clone)]
@@ -202,6 +205,10 @@ enum RegexAtom {
         negated: bool,
         is_assertion: bool,
     },
+    /// `<{ code }>` — closure interpolation: evaluate code and match result as regex
+    ClosureInterpolation {
+        code: String,
+    },
     UnicodeProp {
         name: String,
         negated: bool,
@@ -213,6 +220,10 @@ enum RegexAtom {
     }, // zero-width assertion
     CaptureStartMarker,
     CaptureEndMarker,
+    /// `:my $var = expr;` — variable declaration inside a regex
+    VarDecl {
+        code: String,
+    },
     /// Combined character class: <+ xdigit - lower>, matches positive AND NOT negative
     CompositeClass {
         positive: Vec<ClassItem>,

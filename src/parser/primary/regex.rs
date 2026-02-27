@@ -389,10 +389,15 @@ fn scan_to_delim_inner(
             // Track angle bracket nesting for non-paired delimiters (like /).
             // This prevents / inside <:name(/:s .../)> from closing the regex.
             let remaining = &input[i + 1..];
-            if remaining.starts_with("?{") || remaining.starts_with("!{") {
-                // Code assertion: <?{...}> or <!{...}>
-                // Skip the '?' or '!' and then the brace-delimited code block
-                chars.next(); // skip ? or !
+            if remaining.starts_with("?{")
+                || remaining.starts_with("!{")
+                || remaining.starts_with('{')
+            {
+                // Code assertion/interpolation: <?{...}>, <!{...}>, or <{...}>
+                // Skip the '?' or '!' prefix if present, then the brace-delimited block
+                if remaining.starts_with("?{") || remaining.starts_with("!{") {
+                    chars.next(); // skip ? or !
+                }
                 chars.next(); // skip {
                 let mut brace_depth = 1u32;
                 loop {
@@ -482,6 +487,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             ('/', '/', false)
         } else if spec.starts_with('{') {
             ('{', '}', true)
+        } else if spec.starts_with('[') {
+            ('[', ']', true)
+        } else if spec.starts_with('(') {
+            ('(', ')', true)
+        } else if spec.starts_with('<') {
+            ('<', '>', true)
         } else {
             return Err(PError::expected("regex delimiter"));
         };
