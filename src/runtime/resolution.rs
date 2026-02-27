@@ -235,6 +235,15 @@ impl Interpreter {
     }
 
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+        if !self.classes.contains_key(class_name)
+            && let Some((base, _)) = class_name.split_once('[')
+            && class_name.ends_with(']')
+            && self.classes.contains_key(base)
+        {
+            let mut mro = vec![class_name.to_string()];
+            mro.extend(self.class_mro(base));
+            return mro;
+        }
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
         {

@@ -567,6 +567,22 @@ impl Interpreter {
         Some(shape)
     }
 
+    fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
+        let base_end = name.find('[')?;
+        if !name.ends_with(']') {
+            return None;
+        }
+        let base = name[..base_end].trim().to_string();
+        let inner = &name[base_end + 1..name.len() - 1];
+        let args = inner
+            .split(',')
+            .map(|part| part.trim())
+            .filter(|part| !part.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        Some((base, args))
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -1393,6 +1409,25 @@ impl Interpreter {
                 }
             }
             "WHAT" if args.is_empty() => {
+                if let Some(info) = self.container_type_metadata(&target) {
+                    if let Some(declared) = info.declared_type {
+                        return Ok(Value::Package(declared));
+                    }
+                    match &target {
+                        Value::Array(_, _) => {
+                            return Ok(Value::Package(format!("Array[{}]", info.value_type)));
+                        }
+                        Value::Hash(_) => {
+                            let name = if let Some(key_type) = info.key_type {
+                                format!("Hash[{},{}]", info.value_type, key_type)
+                            } else {
+                                format!("Hash[{}]", info.value_type)
+                            };
+                            return Ok(Value::Package(name));
+                        }
+                        _ => {}
+                    }
+                }
                 let type_name = match &target {
                     Value::Int(_) => "Int",
                     Value::BigInt(_) => "Int",
@@ -5070,6 +5105,12 @@ impl Interpreter {
         }
 
         if let Value::Package(class_name) = &target {
+            let parametric = Self::parse_parametric_type_name(class_name);
+            let (base_class_name, type_args) = if let Some((base, args)) = &parametric {
+                (base.as_str(), Some(args.clone()))
+            } else {
+                (class_name.as_str(), None)
+            };
             match class_name.as_str() {
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
@@ -5110,7 +5151,12 @@ impl Interpreter {
                             other => items.push(other.clone()),
                         }
                     }
-                    return Ok(Value::array(items));
+                    let result = if matches!(class_name.as_str(), "Array" | "array") {
+                        Value::real_array(items)
+                    } else {
+                        Value::array(items)
+                    };
+                    return Ok(result);
                 }
                 "Hash" | "Map" => {
                     let mut flat = Vec::new();
@@ -5516,6 +5562,119 @@ impl Interpreter {
                 }
                 _ => {}
             }
+            // Parametric package handling (e.g. Array[Int], Hash[Int,Str], A[Int]).
+            if let Some(type_args) = type_args.as_ref() {
+                if matches!(base_class_name, "Array" | "List" | "Positional" | "array") {
+                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
+                        let data = args.iter().find_map(|arg| match arg {
+                            Value::Pair(name, value) if name == "data" => {
+                                Some(value.as_ref().clone())
+                            }
+                            _ => None,
+                        });
+                        let shaped = Self::make_shaped_array(&dims);
+                        let result = if let Some(data_val) = data {
+                            let data_items = match data_val {
+                                Value::Array(items, ..)
+                                | Value::Seq(items)
+                                | Value::Slip(items) => items.to_vec(),
+                                other => vec![other],
+                            };
+                            if let Value::Array(ref items, is_arr) = shaped {
+                                let mut new_items = items.as_ref().clone();
+                                for (i, val) in data_items.into_iter().enumerate() {
+                                    if i < new_items.len() {
+                                        new_items[i] = val;
+                                    }
+                                }
+                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                                crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
+                                result
+                            } else {
+                                shaped
+                            }
+                        } else {
+                            shaped
+                        };
+                        let value_type = type_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Any".to_string());
+                        self.register_container_type_metadata(
+                            &result,
+                            crate::runtime::ContainerTypeInfo {
+                                value_type,
+                                key_type: None,
+                                declared_type: Some(class_name.clone()),
+                            },
+                        );
+                        return Ok(result);
+                    }
+                    let mut items = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Slip(vals) => items.extend(vals.iter().cloned()),
+                            other => items.push(other.clone()),
+                        }
+                    }
+                    let result = if matches!(base_class_name, "Array" | "array") {
+                        Value::real_array(items)
+                    } else {
+                        Value::array(items)
+                    };
+                    let value_type = type_args
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "Any".to_string());
+                    self.register_container_type_metadata(
+                        &result,
+                        crate::runtime::ContainerTypeInfo {
+                            value_type,
+                            key_type: None,
+                            declared_type: Some(class_name.clone()),
+                        },
+                    );
+                    return Ok(result);
+                }
+                if matches!(base_class_name, "Hash" | "Map") {
+                    let mut flat = Vec::new();
+                    for arg in &args {
+                        flat.extend(Self::value_to_list(arg));
+                    }
+                    let mut map = HashMap::new();
+                    let mut iter = flat.into_iter();
+                    while let Some(item) = iter.next() {
+                        match item {
+                            Value::Pair(k, v) => {
+                                map.insert(k, *v);
+                            }
+                            Value::ValuePair(k, v) => {
+                                map.insert(k.to_string_value(), *v);
+                            }
+                            other => {
+                                let key = other.to_string_value();
+                                let value = iter.next().unwrap_or(Value::Nil);
+                                map.insert(key, value);
+                            }
+                        }
+                    }
+                    let result = Value::hash(map);
+                    let value_type = type_args
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "Any".to_string());
+                    let key_type = type_args.get(1).cloned();
+                    self.register_container_type_metadata(
+                        &result,
+                        crate::runtime::ContainerTypeInfo {
+                            value_type,
+                            key_type,
+                            declared_type: Some(class_name.clone()),
+                        },
+                    );
+                    return Ok(result);
+                }
+            }
             if let Some(role) = self.roles.get(class_name).cloned() {
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
@@ -5548,9 +5707,18 @@ impl Interpreter {
                     mixins,
                 ));
             }
-            if self.classes.contains_key(class_name) {
+            if self.classes.contains_key(class_name)
+                || type_args
+                    .as_ref()
+                    .is_some_and(|_| self.classes.contains_key(base_class_name))
+            {
+                let class_key = if self.classes.contains_key(class_name) {
+                    class_name.as_str()
+                } else {
+                    base_class_name
+                };
                 // Check for user-defined .new method first
-                if self.has_user_method(class_name, "new") {
+                if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
                     let (result, _updated) =
                         self.run_instance_method(class_name, empty_attrs, "new", args, None)?;
@@ -5558,7 +5726,7 @@ impl Interpreter {
                 }
                 let mut attrs = HashMap::new();
                 for (attr_name, _is_public, default, _is_rw) in
-                    self.collect_class_attributes(class_name)
+                    self.collect_class_attributes(class_key)
                 {
                     let val = if let Some(expr) = default {
                         self.eval_block_value(&[Stmt::Expr(expr)])?
@@ -5567,7 +5735,7 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
-                let class_mro = self.class_mro(class_name);
+                let class_mro = self.class_mro(class_key);
                 for val in &args {
                     match val {
                         Value::Pair(k, v) => {
@@ -5607,7 +5775,38 @@ impl Interpreter {
                     )?;
                     attrs = updated;
                 }
-                return Ok(Value::make_instance(class_name.clone(), attrs));
+                let instance = Value::make_instance(class_name.clone(), attrs);
+                if let Some(type_args) = type_args.as_ref() {
+                    if self.class_mro(class_key).iter().any(|n| n == "Array") {
+                        let value_type = type_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Any".to_string());
+                        self.register_container_type_metadata(
+                            &instance,
+                            crate::runtime::ContainerTypeInfo {
+                                value_type,
+                                key_type: None,
+                                declared_type: Some(class_name.clone()),
+                            },
+                        );
+                    } else if self.class_mro(class_key).iter().any(|n| n == "Hash") {
+                        let value_type = type_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Any".to_string());
+                        let key_type = type_args.get(1).cloned();
+                        self.register_container_type_metadata(
+                            &instance,
+                            crate::runtime::ContainerTypeInfo {
+                                value_type,
+                                key_type,
+                                declared_type: Some(class_name.clone()),
+                            },
+                        );
+                    }
+                }
+                return Ok(instance);
             }
         }
         // Fallback .new on basic types

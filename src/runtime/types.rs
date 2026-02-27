@@ -755,10 +755,12 @@ impl Interpreter {
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
-            if Self::type_matches(type_name, package_name) {
+            let package_base = package_name.split('[').next().unwrap_or(package_name);
+            let (package_base, _) = strip_type_smiley(package_base);
+            if Self::type_matches(type_name, package_base) {
                 return true;
             }
-            if let Some(class_def) = self.classes.get(package_name) {
+            if let Some(class_def) = self.classes.get(package_base) {
                 return class_def
                     .parents
                     .clone()
@@ -767,6 +769,22 @@ impl Interpreter {
             }
             false
         };
+        if let Value::Package(package_name) = value
+            && let Some((lhs_base, lhs_inner)) = Self::parse_generic_constraint(package_name)
+            && let Some((rhs_base, rhs_inner)) = Self::parse_generic_constraint(constraint)
+            && Self::type_matches(rhs_base, lhs_base)
+        {
+            let (lhs_inner_base, lhs_inner_smiley) = strip_type_smiley(lhs_inner);
+            let (rhs_inner_base, rhs_inner_smiley) = strip_type_smiley(rhs_inner);
+            if !Self::type_matches(rhs_inner_base, lhs_inner_base) {
+                return false;
+            }
+            return match rhs_inner_smiley {
+                Some(":D") => lhs_inner_smiley == Some(":D"),
+                Some(":U") => lhs_inner_smiley != Some(":D"),
+                _ => true,
+            };
+        }
         if let Value::Package(package_name) = value
             && let Some((target, source)) = parse_coercion_type(constraint)
         {

@@ -21,6 +21,14 @@ impl VM {
         }
     }
 
+    fn typed_container_default(&self, target: &Value) -> Value {
+        if let Some(info) = self.interpreter.container_type_metadata(target) {
+            Value::Package(info.value_type)
+        } else {
+            Value::Nil
+        }
+    }
+
     pub(super) fn anon_state_key(name: &str) -> Option<String> {
         if name.starts_with("__ANON_STATE_") {
             Some(format!("__anon_state::{name}"))
@@ -442,7 +450,7 @@ impl VM {
             target = Value::array(self.interpreter.force_lazy_list_bridge(ll)?);
         }
         let result = match (target, index) {
-            (Value::Array(items, ..), Value::Int(i)) => {
+            (Value::Array(items, is_arr), Value::Int(i)) => {
                 if i < 0 {
                     // Return a Failure wrapping X::OutOfRange — `//` treats it as
                     // undefined but any further use (e.g. subscripting) will throw.
@@ -462,7 +470,9 @@ impl VM {
                     failure_attrs.insert("exception".to_string(), ex);
                     Value::make_instance("Failure".to_string(), failure_attrs)
                 } else {
-                    items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    let default =
+                        self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                    items.get(i as usize).cloned().unwrap_or(default)
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
@@ -475,15 +485,26 @@ impl VM {
                     let mut out = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
                         if let Some(i) = Self::index_to_usize(idx) {
-                            out.push(items.get(i).cloned().unwrap_or(Value::Nil));
+                            out.push(
+                                items
+                                    .get(i)
+                                    .cloned()
+                                    .unwrap_or_else(|| self.typed_container_default(&target)),
+                            );
                         } else {
-                            out.push(Value::Nil);
+                            out.push(self.typed_container_default(&target));
                         }
                     }
                     Value::array(out)
                 } else {
                     let strict_oob = indices.len() > 1;
-                    Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                    let indexed =
+                        Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?;
+                    if matches!(indexed, Value::Nil) {
+                        self.typed_container_default(&target)
+                    } else {
+                        indexed
+                    }
                 }
             }
             (Value::Array(items, ..), Value::Range(a, b)) => {
@@ -552,14 +573,30 @@ impl VM {
                 Value::array(items.values().cloned().collect())
             }
             (Value::Hash(items), Value::Nil) => Value::Hash(items),
-            (Value::Hash(items), Value::Array(keys, ..)) => Value::array(
-                keys.iter()
-                    .map(|k| Self::resolve_hash_entry(&items, &k.to_string_value()))
-                    .collect(),
-            ),
-            (Value::Hash(items), Value::Str(key)) => Self::resolve_hash_entry(&items, &key),
+            (Value::Hash(items), Value::Array(keys, ..)) => {
+                let default = self.typed_container_default(&Value::Hash(items.clone()));
+                Value::array(
+                    keys.iter()
+                        .map(|k| {
+                            let v = Self::resolve_hash_entry(&items, &k.to_string_value());
+                            if matches!(v, Value::Nil) {
+                                default.clone()
+                            } else {
+                                v
+                            }
+                        })
+                        .collect(),
+                )
+            }
+            (Value::Hash(items), Value::Str(key)) => {
+                let default = self.typed_container_default(&Value::Hash(items.clone()));
+                let v = Self::resolve_hash_entry(&items, &key);
+                if matches!(v, Value::Nil) { default } else { v }
+            }
             (Value::Hash(items), Value::Int(key)) => {
-                Self::resolve_hash_entry(&items, &key.to_string())
+                let default = self.typed_container_default(&Value::Hash(items.clone()));
+                let v = Self::resolve_hash_entry(&items, &key.to_string());
+                if matches!(v, Value::Nil) { default } else { v }
             }
             (
                 Value::Instance {
@@ -591,13 +628,23 @@ impl VM {
                     Value::Nil
                 }
             }
-            (instance @ Value::Instance { .. }, Value::Str(key)) => self
-                .interpreter
-                .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key)])
-                .unwrap_or(Value::Nil),
+            (instance @ Value::Instance { .. }, Value::Str(key)) => {
+                let default = self.typed_container_default(&instance);
+                let result = self
+                    .interpreter
+                    .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key)])
+                    .unwrap_or(Value::Nil);
+                if matches!(result, Value::Nil) {
+                    default
+                } else {
+                    result
+                }
+            }
             (instance @ Value::Instance { .. }, Value::Int(i)) => {
+                let default = self.typed_container_default(&instance);
                 let fallback = instance.clone();
-                self.interpreter
+                let result = self
+                    .interpreter
                     .call_method_with_values(instance, "AT-POS", vec![Value::Int(i)])
                     .or_else(|_| {
                         self.interpreter.call_method_with_values(
@@ -606,7 +653,12 @@ impl VM {
                             vec![Value::Int(i)],
                         )
                     })
-                    .unwrap_or(Value::Nil)
+                    .unwrap_or(Value::Nil);
+                if matches!(result, Value::Nil) {
+                    default
+                } else {
+                    result
+                }
             }
             (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => Value::array(
                 keys.iter()
@@ -774,8 +826,25 @@ impl VM {
                     type_args,
                 }
             }
-            // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
-            (pkg @ Value::Package(_), _) => pkg,
+            // Type parameterization: e.g. Array[Int] or Hash[Int,Str]
+            (Value::Package(name), idx) => {
+                let type_args = match idx {
+                    Value::Array(items, ..) => items.as_ref().clone(),
+                    other => vec![other],
+                };
+                let args = type_args
+                    .into_iter()
+                    .map(|v| match v {
+                        Value::Package(name) => name,
+                        other => {
+                            let s = other.to_string_value();
+                            s.trim_start_matches('(').trim_end_matches(')').to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                Value::Package(format!("{}[{}]", name, args))
+            }
             // Pair subscript: $pair<key> returns value if key matches, Nil otherwise
             (Value::Pair(key, value), Value::Str(idx)) => {
                 if key == idx {
@@ -1558,6 +1627,21 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+                declared_type: None,
+            };
+            self.interpreter
+                .register_container_type_metadata(&val, info);
+        }
         Ok(())
     }
 
@@ -1569,6 +1653,9 @@ impl VM {
     ) {
         let name = Self::const_str(code, name_idx);
         self.interpreter.set_var_dynamic(name, dynamic);
+        // A fresh declaration without an explicit type must not inherit stale
+        // constraints from an earlier lexical with the same name.
+        self.interpreter.set_var_type_constraint(name, None);
     }
 
     pub(super) fn exec_assign_expr_local_op(
@@ -1637,6 +1724,21 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
+        }
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+                declared_type: None,
+            };
+            self.interpreter
+                .register_container_type_metadata(&val, info);
         }
         self.stack.push(val);
         Ok(())
