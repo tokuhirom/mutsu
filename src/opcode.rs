@@ -528,6 +528,31 @@ pub(crate) enum OpCode {
         dynamic: bool,
     },
 
+    /// Get a variable from the caller's scope ($CALLER::varname).
+    /// name_idx = constant index for the bare variable name (without CALLER:: prefix).
+    /// depth = number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
+    GetCallerVar {
+        name_idx: u32,
+        depth: u32,
+    },
+
+    /// Set a variable in the caller's scope ($CALLER::varname = value).
+    SetCallerVar {
+        name_idx: u32,
+        depth: u32,
+    },
+
+    /// Bind a variable in the caller's scope to a local variable ($CALLER::target := $source).
+    /// This creates an alias so that changes to source are reflected in target.
+    BindCallerVar {
+        target_idx: u32,
+        source_idx: u32,
+        depth: u32,
+    },
+
+    /// Get a variable by searching the dynamic call stack ($DYNAMIC::varname).
+    GetDynamicVar(u32),
+
     /// Indirect type lookup: pop string from stack, resolve to Package value.
     IndirectTypeLookup,
 

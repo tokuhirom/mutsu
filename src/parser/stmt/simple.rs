@@ -1502,6 +1502,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         type_constraint: None,
                         is_state: false,
                         is_our: false,
+                        is_dynamic: false,
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),

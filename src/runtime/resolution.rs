@@ -235,6 +235,15 @@ impl Interpreter {
     }
 
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+        if !self.classes.contains_key(class_name)
+            && let Some((base, _)) = class_name.split_once('[')
+            && class_name.ends_with(']')
+            && self.classes.contains_key(base)
+        {
+            let mut mro = vec![class_name.to_string()];
+            mro.extend(self.class_mro(base));
+            return mro;
+        }
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
         {
@@ -395,6 +404,7 @@ impl Interpreter {
             }
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            self.push_caller_env();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
                 if merge_all {
@@ -412,6 +422,7 @@ impl Interpreter {
                 match self.bind_function_args_values(&data.param_defs, &data.params, &call_args) {
                     Ok(bindings) => bindings,
                     Err(e) => {
+                        self.pop_caller_env();
                         self.env = saved_env;
                         self.restore_readonly_vars(saved_readonly);
                         return Err(e);
@@ -482,6 +493,7 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
+            self.pop_caller_env();
             let mut merged = saved_env;
             if merge_all {
                 for (k, v) in self.env.iter() {

@@ -570,12 +570,14 @@ impl Interpreter {
                 type_constraint,
                 is_state,
                 is_our,
+                is_dynamic,
             } => Stmt::VarDecl {
                 name: name.clone(),
                 expr: Self::rewrite_proto_dispatch_expr(expr),
                 type_constraint: type_constraint.clone(),
                 is_state: *is_state,
                 is_our: *is_our,
+                is_dynamic: *is_dynamic,
             },
             Stmt::Assign { name, expr, op } => Stmt::Assign {
                 name: name.clone(),

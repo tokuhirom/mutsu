@@ -242,17 +242,53 @@ impl Interpreter {
         out
     }
 
-    fn compile_p5_regex(pattern: &str) -> Option<Regex> {
-        let converted = Self::p5_pattern_to_rust_regex(pattern);
+    fn expand_p5_interpolation(&self, pattern: &str) -> String {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut out = String::new();
+        let mut i = 0usize;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                out.push(chars[i]);
+                i += 1;
+                if i < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                continue;
+            }
+            if chars[i] == '$'
+                && i + 1 < chars.len()
+                && (chars[i + 1] == '_' || chars[i + 1].is_ascii_alphabetic())
+            {
+                let mut j = i + 1;
+                while j < chars.len() && (chars[j] == '_' || chars[j].is_ascii_alphanumeric()) {
+                    j += 1;
+                }
+                let name: String = chars[i + 1..j].iter().collect();
+                if let Some(value) = self.env.get(&name) {
+                    out.push_str(&value.to_string_value());
+                }
+                i = j;
+                continue;
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+        out
+    }
+
+    fn compile_p5_regex(&self, pattern: &str) -> Option<Regex> {
+        let interpolated = self.expand_p5_interpolation(pattern);
+        let converted = Self::p5_pattern_to_rust_regex(&interpolated);
         Regex::new(&converted).ok()
     }
 
     fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
-        let make_capture_match = |capture: &str| {
+        let make_capture_match = |capture: &str, from: usize, to: usize| {
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::Str(capture.to_string()));
-            attrs.insert("from".to_string(), Value::Int(0));
-            attrs.insert("to".to_string(), Value::Int(capture.chars().count() as i64));
+            attrs.insert("from".to_string(), Value::Int(from as i64));
+            attrs.insert("to".to_string(), Value::Int(to as i64));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
             Value::make_instance("Match".to_string(), attrs)
@@ -265,12 +301,23 @@ impl Interpreter {
         let positional: Vec<Value> = captures
             .positional
             .iter()
-            .map(|s| make_capture_match(s))
+            .enumerate()
+            .map(|(i, s)| {
+                let (from, to) = captures
+                    .positional_offsets
+                    .get(i)
+                    .copied()
+                    .unwrap_or((0, s.chars().count()));
+                make_capture_match(s, from, to)
+            })
             .collect();
         attrs.insert("list".to_string(), Value::array(positional));
         let mut named = HashMap::new();
         for (k, v) in &captures.named {
-            let vals: Vec<Value> = v.iter().map(|s| make_capture_match(s)).collect();
+            let vals: Vec<Value> = v
+                .iter()
+                .map(|s| make_capture_match(s, 0, s.chars().count()))
+                .collect();
             if vals.len() == 1 {
                 named.insert(k.clone(), vals[0].clone());
             } else {
@@ -280,8 +327,27 @@ impl Interpreter {
         attrs.insert("named".to_string(), Value::hash(named));
         let match_obj = Value::make_instance("Match".to_string(), attrs);
         self.env.insert("/".to_string(), match_obj.clone());
-        for (i, v) in captures.positional.iter().enumerate() {
-            self.env.insert(i.to_string(), make_capture_match(v));
+
+        // Reset stale numeric captures before applying new ones.
+        let numeric_keys: Vec<String> = self
+            .env
+            .keys()
+            .filter(|k| !k.is_empty() && k.chars().all(|ch| ch.is_ascii_digit()))
+            .cloned()
+            .collect();
+        for key in numeric_keys {
+            self.env.insert(key, Value::Nil);
+        }
+
+        for (i, slot) in captures.positional_slots.iter().enumerate() {
+            let value = match slot {
+                Some((capture, from, to)) => make_capture_match(capture, *from, *to),
+                None => Value::Nil,
+            };
+            self.env.insert(i.to_string(), value);
+        }
+        if captures.positional_slots.is_empty() {
+            self.env.insert("0".to_string(), Value::Nil);
         }
         // Set named capture env vars from the match object's named hash
         if let Value::Instance { ref attributes, .. } = match_obj
@@ -304,7 +370,7 @@ impl Interpreter {
     }
 
     fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
-        let re = Self::compile_p5_regex(pattern)?;
+        let re = self.compile_p5_regex(pattern)?;
         let captures = re.captures(text)?;
         let m0 = captures.get(0)?;
         let names: Vec<Option<&str>> = re.capture_names().collect();
@@ -318,6 +384,11 @@ impl Interpreter {
             if names.get(idx).is_some_and(|n| n.is_none()) {
                 if let Some(m) = captures.get(idx) {
                     out.positional.push(m.as_str().to_string());
+                    out.positional_offsets.push((m.start(), m.end()));
+                    out.positional_slots
+                        .push(Some((m.as_str().to_string(), m.start(), m.end())));
+                } else {
+                    out.positional_slots.push(None);
                 }
                 continue;
             }
@@ -332,7 +403,7 @@ impl Interpreter {
     }
 
     fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
-        let Some(re) = Self::compile_p5_regex(pattern) else {
+        let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
         };
         let names: Vec<Option<&str>> = re.capture_names().collect();
@@ -351,6 +422,14 @@ impl Interpreter {
                 if names.get(idx).is_some_and(|n| n.is_none()) {
                     if let Some(m) = captures.get(idx) {
                         item.positional.push(m.as_str().to_string());
+                        item.positional_offsets.push((m.start(), m.end()));
+                        item.positional_slots.push(Some((
+                            m.as_str().to_string(),
+                            m.start(),
+                            m.end(),
+                        )));
+                    } else {
+                        item.positional_slots.push(None);
                     }
                     continue;
                 }

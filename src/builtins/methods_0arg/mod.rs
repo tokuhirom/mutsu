@@ -413,6 +413,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 return Some(Ok(Value::Int(0)));
             }
+            "ast" => {
+                if let Some(last) = arr.last() {
+                    return native_method_0arg(last, "ast");
+                }
+                return Some(Ok(Value::Nil));
+            }
             _ => {}
         }
     }
@@ -447,6 +453,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "raku" | "perl" => {
                 return Some(Ok(Value::Str(match_raku_repr(attributes))));
+            }
+            "ast" => {
+                return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
             }
             _ => {
                 // Delegate unknown methods to string representation

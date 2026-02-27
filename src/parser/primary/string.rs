@@ -240,7 +240,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
             Expr::Literal(Value::Str(content))
         };
         // Return rest_of_line + after_terminator as remaining input.
-        if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
+        if rest_of_line.trim().is_empty() {
             return Ok((after_terminator, expr));
         }
         // We cannot return a disjoint slice pair, so concatenate.
@@ -482,6 +482,7 @@ pub(super) fn process_escape_sequence<'a>(
         'n' => current.push('\n'),
         't' => current.push('\t'),
         'r' => current.push('\r'),
+        'b' => current.push('\u{0008}'),
         '0' => current.push('\0'),
         '\\' => current.push('\\'),
         '$' => current.push('$'),

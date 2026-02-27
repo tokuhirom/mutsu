@@ -1,6 +1,8 @@
 use super::*;
 use crate::ast::CallArg;
-use crate::value::signature::make_params_value_from_param_defs;
+use crate::value::signature::{
+    make_params_value_from_param_defs, make_signature_value, param_defs_to_sig_info,
+};
 
 impl Interpreter {
     pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
@@ -296,99 +298,6 @@ impl Interpreter {
         Some(param_defs)
     }
 
-    fn render_signature_value(expr: &Expr) -> String {
-        match expr {
-            Expr::Literal(v) => match v {
-                Value::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
-                _ => v.to_string_value(),
-            },
-            _ => "...".to_string(),
-        }
-    }
-
-    fn render_where_constraint(where_expr: &Expr) -> String {
-        if let Expr::AnonSub(body) = where_expr
-            && body.len() == 1
-            && let Stmt::Expr(Expr::Literal(Value::Bool(true))) = &body[0]
-        {
-            return "{ True }".to_string();
-        }
-        "{ ... }".to_string()
-    }
-
-    fn render_signature_param(pd: &ParamDef) -> String {
-        let mut out = String::new();
-        if let Some(tc) = &pd.type_constraint {
-            out.push_str(tc);
-            out.push(' ');
-        }
-        if pd.named {
-            out.push(':');
-        }
-        if pd.slurpy {
-            out.push('*');
-        }
-        if !pd.name.starts_with('$')
-            && !pd.name.starts_with('@')
-            && !pd.name.starts_with('%')
-            && !pd.name.starts_with('_')
-            && !pd.slurpy
-        {
-            out.push('$');
-        }
-        out.push_str(&pd.name);
-        if pd.required && pd.default.is_none() {
-            out.push('!');
-        }
-        for trait_name in &pd.traits {
-            out.push_str(" is ");
-            out.push_str(trait_name);
-        }
-        if let Some(where_expr) = &pd.where_constraint {
-            out.push_str(" where ");
-            out.push_str(&Self::render_where_constraint(where_expr));
-        }
-        if let Some(default) = &pd.default {
-            out.push_str(" = ");
-            out.push_str(&Self::render_signature_value(default));
-        }
-        out
-    }
-
-    fn render_sub_signature(
-        &self,
-        data: &crate::value::SubData,
-        assumed_positional: &[Value],
-        assumed_named: &std::collections::HashMap<String, Value>,
-    ) -> String {
-        if let Some(param_defs) =
-            Self::assumed_signature_param_defs(data, assumed_positional, assumed_named)
-        {
-            let rendered: Vec<String> = param_defs
-                .iter()
-                .map(Self::render_signature_param)
-                .collect();
-            return format!(":({})", rendered.join(", "));
-        }
-        if !data.params.is_empty() {
-            let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
-            return format!(":({})", rendered.join(", "));
-        }
-        // Auto-detect @_ / %_ usage for subs without explicit signatures
-        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
-        if use_positional || use_named {
-            let mut parts = Vec::new();
-            if use_positional {
-                parts.push("*@_".to_string());
-            }
-            if use_named {
-                parts.push("*%_".to_string());
-            }
-            return format!(":({})", parts.join(", "));
-        }
-        ":()".to_string()
-    }
-
     fn collect_named_param_keys(
         param_defs: &[ParamDef],
         out: &mut std::collections::HashSet<String>,
@@ -421,6 +330,166 @@ impl Interpreter {
             }
         }
         false
+    }
+
+    fn capture_to_call_args(value: &Value) -> Vec<Value> {
+        match value {
+            Value::Capture { positional, named } => {
+                let mut args = positional.clone();
+                for (k, v) in named {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+                args
+            }
+            other => vec![other.clone()],
+        }
+    }
+
+    fn candidate_matches_call_args(&mut self, candidate: &Value, args: &[Value]) -> bool {
+        match candidate {
+            Value::Sub(data) => {
+                if data.empty_sig && !args.is_empty() {
+                    return false;
+                }
+                if data.param_defs.is_empty() && !data.params.is_empty() {
+                    if args.iter().any(|arg| {
+                        matches!(
+                            arg,
+                            Value::Pair(key, _) if key != "__mutsu_test_callsite_line"
+                        )
+                    }) {
+                        return false;
+                    }
+                    let positional = args
+                        .iter()
+                        .filter(|arg| !matches!(arg, Value::Pair(_, _) | Value::ValuePair(_, _)))
+                        .count();
+                    return positional == data.params.len();
+                }
+                self.method_args_match(args, &data.param_defs)
+            }
+            Value::WeakSub(weak) => weak
+                .upgrade()
+                .is_some_and(|strong| self.method_args_match(args, &strong.param_defs)),
+            Value::Routine { name, .. } => self.resolve_function_with_types(name, args).is_some(),
+            _ => false,
+        }
+    }
+
+    fn routine_candidate_subs(&self, package: &str, name: &str) -> Vec<Value> {
+        let exact_local = format!("{package}::{name}");
+        let exact_global = format!("GLOBAL::{name}");
+        let prefix_local = format!("{package}::{name}/");
+        let prefix_global = format!("GLOBAL::{name}/");
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for (key, def) in &self.functions {
+            if key == &exact_local
+                || key == &exact_global
+                || key.starts_with(&prefix_local)
+                || key.starts_with(&prefix_global)
+            {
+                let fp =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                if seen.insert(fp) {
+                    out.push(Value::make_sub(
+                        def.package.clone(),
+                        def.name.clone(),
+                        def.params.clone(),
+                        def.param_defs.clone(),
+                        def.body.clone(),
+                        self.env.clone(),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    fn sub_signature_value(&self, data: &crate::value::SubData) -> Value {
+        let param_defs =
+            Self::assumed_signature_param_defs(data, &data.assumed_positional, &data.assumed_named)
+                .unwrap_or_else(|| {
+                    if !data.params.is_empty() {
+                        data.params
+                            .iter()
+                            .map(|name| ParamDef {
+                                name: name.clone(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            })
+                            .collect()
+                    } else {
+                        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
+                        let mut defs = Vec::new();
+                        if use_positional {
+                            defs.push(ParamDef {
+                                name: "@_".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: true,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            });
+                        }
+                        if use_named {
+                            defs.push(ParamDef {
+                                name: "%_".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: true,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            });
+                        }
+                        defs
+                    }
+                });
+        let return_type = data.env.get("__mutsu_return_type").and_then(|v| match v {
+            Value::Str(s) => Some(s.clone()),
+            _ => None,
+        });
+        let info = param_defs_to_sig_info(&param_defs, return_type);
+        make_signature_value(info)
     }
 
     fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
@@ -496,6 +565,22 @@ impl Interpreter {
             current = inner.first().cloned();
         }
         Some(shape)
+    }
+
+    fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
+        let base_end = name.find('[')?;
+        if !name.ends_with(']') {
+            return None;
+        }
+        let base = name[..base_end].trim().to_string();
+        let inner = &name[base_end + 1..name.len() - 1];
+        let args = inner
+            .split(',')
+            .map(|part| part.trim())
+            .filter(|part| !part.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        Some((base, args))
     }
 
     pub(crate) fn call_method_with_values(
@@ -705,43 +790,140 @@ impl Interpreter {
             return self.call_method_with_values(seq, method, args);
         }
 
-        // Resolve Value::Routine to Value::Sub for method dispatch
+        // Callable introspection and wrappers for routine handles
         if let Value::Routine {
             ref name,
             ref package,
             ..
         } = target
-            && method == "assuming"
         {
-            // Create a wrapper Sub that delegates to the multi-dispatch routine
-            let mut sub_data = crate::value::SubData {
-                package: package.clone(),
-                name: name.clone(),
-                params: Vec::new(),
-                param_defs: Vec::new(),
-                body: vec![],
-                env: self.env().clone(),
-                assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
-                id: crate::value::next_instance_id(),
-                empty_sig: false,
-            };
-            // Store the routine name so call_sub_value can dispatch
-            sub_data
-                .env
-                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
-            // Apply assumed args
-            for arg in &args {
-                if let Value::Pair(key, boxed) = arg {
-                    if key == "__mutsu_test_callsite_line" {
-                        continue;
+            if method == "assuming" {
+                // Create a wrapper Sub that delegates to the multi-dispatch routine
+                let mut sub_data = crate::value::SubData {
+                    package: package.clone(),
+                    name: name.clone(),
+                    params: Vec::new(),
+                    param_defs: Vec::new(),
+                    body: vec![],
+                    env: self.env().clone(),
+                    assumed_positional: Vec::new(),
+                    assumed_named: std::collections::HashMap::new(),
+                    id: crate::value::next_instance_id(),
+                    empty_sig: false,
+                };
+                // Store the routine name so call_sub_value can dispatch
+                sub_data
+                    .env
+                    .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+                // Apply assumed args
+                for arg in &args {
+                    if let Value::Pair(key, boxed) = arg {
+                        if key == "__mutsu_test_callsite_line" {
+                            continue;
+                        }
+                        sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                    } else {
+                        sub_data.assumed_positional.push(arg.clone());
                     }
-                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
-                } else {
-                    sub_data.assumed_positional.push(arg.clone());
                 }
+                return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
             }
-            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+            if method == "candidates" && args.is_empty() {
+                return Ok(Value::array(self.routine_candidate_subs(package, name)));
+            }
+            if method == "cando" && args.len() == 1 {
+                let call_args = Self::capture_to_call_args(&args[0]);
+                let matching = self
+                    .resolve_all_matching_candidates(name, &call_args)
+                    .into_iter()
+                    .map(|def| {
+                        Value::make_sub(
+                            def.package,
+                            def.name,
+                            def.params,
+                            def.param_defs,
+                            def.body,
+                            self.env.clone(),
+                        )
+                    })
+                    .collect();
+                return Ok(Value::array(matching));
+            }
+            if method == "signature" && args.is_empty() {
+                let candidates = self.routine_candidate_subs(package, name);
+                if candidates.is_empty() {
+                    let (params, param_defs) = self.callable_signature(&target);
+                    let defs = if !param_defs.is_empty() {
+                        param_defs
+                    } else {
+                        params
+                            .into_iter()
+                            .map(|name| ParamDef {
+                                name,
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            })
+                            .collect()
+                    };
+                    let info = param_defs_to_sig_info(&defs, None);
+                    return Ok(make_signature_value(info));
+                }
+                if candidates.len() == 1 {
+                    return self.call_method_with_values(
+                        candidates[0].clone(),
+                        "signature",
+                        Vec::new(),
+                    );
+                }
+                let mut signatures = Vec::new();
+                for candidate in candidates {
+                    signatures.push(self.call_method_with_values(
+                        candidate,
+                        "signature",
+                        Vec::new(),
+                    )?);
+                }
+                return Ok(Value::Junction {
+                    kind: JunctionKind::Any,
+                    values: std::sync::Arc::new(signatures),
+                });
+            }
+            if method == "can" {
+                let method_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let can = matches!(
+                    method_name.as_str(),
+                    "assuming"
+                        | "signature"
+                        | "candidates"
+                        | "cando"
+                        | "of"
+                        | "name"
+                        | "raku"
+                        | "perl"
+                        | "Str"
+                        | "gist"
+                        | "can"
+                );
+                return Ok(Value::Bool(can));
+            }
         }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
@@ -814,99 +996,20 @@ impl Interpreter {
                 }
                 return Ok(Value::Sub(std::sync::Arc::new(next)));
             }
+            if method == "candidates" && args.is_empty() {
+                return Ok(Value::array(vec![target.clone()]));
+            }
+            if method == "cando" && args.len() == 1 {
+                let call_args = Self::capture_to_call_args(&args[0]);
+                let matches = if self.candidate_matches_call_args(&target, &call_args) {
+                    vec![target.clone()]
+                } else {
+                    Vec::new()
+                };
+                return Ok(Value::array(matches));
+            }
             if method == "signature" && args.is_empty() {
-                let sig =
-                    self.render_sub_signature(data, &data.assumed_positional, &data.assumed_named);
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("raku".to_string(), Value::Str(sig.clone()));
-                attrs.insert("perl".to_string(), Value::Str(sig.clone()));
-                attrs.insert("Str".to_string(), Value::Str(sig.clone()));
-                attrs.insert("gist".to_string(), Value::Str(sig));
-                let param_defs = Self::assumed_signature_param_defs(
-                    data,
-                    &data.assumed_positional,
-                    &data.assumed_named,
-                )
-                .unwrap_or_else(|| {
-                    if !data.params.is_empty() {
-                        data.params
-                            .iter()
-                            .map(|name| ParamDef {
-                                name: name.clone(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                slurpy: false,
-                                double_slurpy: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                            })
-                            .collect()
-                    } else {
-                        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
-                        let mut defs = Vec::new();
-                        if use_positional {
-                            defs.push(ParamDef {
-                                name: "@_".to_string(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                slurpy: true,
-                                double_slurpy: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                            });
-                        }
-                        if use_named {
-                            defs.push(ParamDef {
-                                name: "%_".to_string(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                slurpy: true,
-                                double_slurpy: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                            });
-                        }
-                        defs
-                    }
-                });
-                attrs.insert(
-                    "params".to_string(),
-                    make_params_value_from_param_defs(&param_defs),
-                );
-                return Ok(Value::make_instance("Signature".to_string(), attrs));
+                return Ok(self.sub_signature_value(data));
             }
             if method == "of" && args.is_empty() {
                 let type_name = self
@@ -923,6 +1026,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "candidates"
+                        | "cando"
                         | "of"
                         | "name"
                         | "raku"
@@ -969,6 +1074,7 @@ impl Interpreter {
                     | "name"
                     | "ver"
                     | "auth"
+                    | "mro"
                     | "methods"
             )
         {
@@ -1303,6 +1409,25 @@ impl Interpreter {
                 }
             }
             "WHAT" if args.is_empty() => {
+                if let Some(info) = self.container_type_metadata(&target) {
+                    if let Some(declared) = info.declared_type {
+                        return Ok(Value::Package(declared));
+                    }
+                    match &target {
+                        Value::Array(_, _) => {
+                            return Ok(Value::Package(format!("Array[{}]", info.value_type)));
+                        }
+                        Value::Hash(_) => {
+                            let name = if let Some(key_type) = info.key_type {
+                                format!("Hash[{},{}]", info.value_type, key_type)
+                            } else {
+                                format!("Hash[{}]", info.value_type)
+                            };
+                            return Ok(Value::Package(name));
+                        }
+                        _ => {}
+                    }
+                }
                 let type_name = match &target {
                     Value::Int(_) => "Int",
                     Value::BigInt(_) => "Int",
@@ -1480,7 +1605,7 @@ impl Interpreter {
                     return Ok(Value::hash(map));
                 }
             }
-            "subparse" | "parse" => {
+            "subparse" | "parse" | "parsefile" => {
                 if let Value::Package(ref package_name) = target {
                     return self.dispatch_package_parse(package_name, method, &args);
                 }
@@ -3111,7 +3236,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut source: Option<String> = None;
+        let mut source_arg: Option<String> = None;
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();
         for arg in args {
@@ -3137,16 +3262,28 @@ impl Interpreter {
                 }
                 continue;
             }
-            if source.is_none() {
-                source = Some(arg.to_string_value());
+            if source_arg.is_none() {
+                source_arg = Some(arg.to_string_value());
             }
         }
-        let Some(text) = source else {
-            return Ok(Value::Nil);
+        let Some(source_text) = source_arg else {
+            return Err(RuntimeError::new(
+                "Too few positionals passed; expected 2 arguments but got 1",
+            ));
+        };
+        let text = if method == "parsefile" {
+            match std::fs::read_to_string(&source_text) {
+                Ok(contents) => contents,
+                Err(err) => return Err(RuntimeError::new(err.to_string())),
+            }
+        } else {
+            source_text
         };
 
         let saved_package = self.current_package.clone();
         let saved_topic = self.env.get("_").cloned();
+        let saved_made = self.env.get("made").cloned();
+        self.env.remove("made");
         self.current_package = package_name.to_string();
         let has_start_rule =
             self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
@@ -3168,7 +3305,7 @@ impl Interpreter {
                 Ok(Some(pattern)) => pattern,
                 Ok(None) => {
                     self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(Value::Nil);
+                    return Ok(self.parse_failure_for_pattern(&text, None));
                 }
                 Err(err)
                     if err
@@ -3176,7 +3313,7 @@ impl Interpreter {
                         .contains("No matching candidates for proto token") =>
                 {
                     self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(Value::Nil);
+                    return Ok(self.parse_failure_for_pattern(&text, None));
                 }
                 Err(err) => return Err(err),
             };
@@ -3192,15 +3329,16 @@ impl Interpreter {
 
             let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
                 self.env.insert("/".to_string(), Value::Nil);
-                return Ok(Value::Nil);
+                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             };
+            self.execute_regex_code_blocks(&captures.code_blocks);
             if captures.from != 0 {
                 self.env.insert("/".to_string(), Value::Nil);
-                return Ok(Value::Nil);
+                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             }
-            if method == "parse" && captures.to != text.chars().count() {
+            if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
                 self.env.insert("/".to_string(), Value::Nil);
-                return Ok(Value::Nil);
+                return Ok(self.make_parse_failure_value(&text, captures.to));
             }
             for (i, v) in captures.positional.iter().enumerate() {
                 self.env.insert(i.to_string(), Value::Str(v.clone()));
@@ -3214,6 +3352,20 @@ impl Interpreter {
                 &captures.named_subcaps,
                 Some(&text),
             );
+            let match_obj = if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &match_obj
+            {
+                let mut attrs = attributes.as_ref().clone();
+                if let Some(ast) = self.env.get("made").cloned() {
+                    attrs.insert("ast".to_string(), ast);
+                }
+                Value::make_instance(class_name.clone(), attrs)
+            } else {
+                match_obj
+            };
             // Set named capture env vars from match object
             if let Value::Instance { attributes, .. } = &match_obj
                 && let Some(Value::Hash(named_hash)) = attributes.get("named")
@@ -3232,7 +3384,70 @@ impl Interpreter {
         } else {
             self.env.remove("_");
         }
+        if let Some(old_made) = saved_made {
+            self.env.insert("made".to_string(), old_made);
+        } else {
+            self.env.remove("made");
+        }
         result
+    }
+
+    fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {
+        let best_end = pattern
+            .map(|pat| self.longest_complete_prefix_end(pat, text))
+            .unwrap_or(0);
+        self.make_parse_failure_value(text, best_end)
+    }
+
+    fn longest_complete_prefix_end(&mut self, pattern: &str, text: &str) -> usize {
+        let chars: Vec<char> = text.chars().collect();
+        for end in (0..=chars.len()).rev() {
+            let prefix: String = chars[..end].iter().collect();
+            if let Some(captures) = self.regex_match_with_captures(pattern, &prefix)
+                && captures.from == 0
+                && captures.to == end
+            {
+                return end;
+            }
+        }
+        0
+    }
+
+    fn make_parse_failure_value(&self, text: &str, best_end: usize) -> Value {
+        let chars: Vec<char> = text.chars().collect();
+        let pos = best_end.saturating_sub(1).min(chars.len());
+        let line_start = chars[..pos]
+            .iter()
+            .rposition(|ch| *ch == '\n')
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+        let line_end = chars[pos..]
+            .iter()
+            .position(|ch| *ch == '\n')
+            .map(|offset| pos + offset)
+            .unwrap_or(chars.len());
+        let pre: String = chars[line_start..pos].iter().collect();
+        let post = if pos >= chars.len() || chars[pos] == '\n' {
+            "<EOL>".to_string()
+        } else {
+            chars[pos..line_end].iter().collect()
+        };
+        let line = chars[..pos].iter().filter(|ch| **ch == '\n').count() as i64 + 1;
+
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("reason".to_string(), Value::Str("unknown".to_string()));
+        ex_attrs.insert("filename".to_string(), Value::Str("<anon>".to_string()));
+        ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
+        ex_attrs.insert("line".to_string(), Value::Int(line));
+        ex_attrs.insert("pre".to_string(), Value::Str(pre));
+        ex_attrs.insert("post".to_string(), Value::Str(post));
+        ex_attrs.insert("highexpect".to_string(), Value::array(Vec::new()));
+        let exception = Value::make_instance("X::Syntax::Confused".to_string(), ex_attrs);
+
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance("Failure".to_string(), failure_attrs)
     }
 
     fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
@@ -3253,6 +3468,21 @@ impl Interpreter {
     }
 
     fn classhow_find_method(&self, invocant: &Value, method_name: &str) -> Option<Value> {
+        if matches!(
+            method_name,
+            "name"
+                | "ver"
+                | "auth"
+                | "mro"
+                | "isa"
+                | "can"
+                | "lookup"
+                | "find_method"
+                | "add_method"
+                | "methods"
+        ) {
+            return Some(Value::Str(method_name.to_string()));
+        }
         if let Some(value) = self.classhow_lookup(invocant, method_name) {
             return Some(value);
         }
@@ -3295,11 +3525,17 @@ impl Interpreter {
                     }
                 };
                 let Some(meta) = self.type_metadata.get(&invocant_name) else {
+                    if invocant_name == "Grammar" {
+                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
+                    }
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
                     ));
                 };
                 let Some(value) = meta.get("ver").cloned() else {
+                    if invocant_name == "Grammar" {
+                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
+                    }
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
                     ));
@@ -3341,6 +3577,12 @@ impl Interpreter {
                 }
                 let mro = self.class_mro(class_name);
                 Ok(Value::Bool(mro.iter().any(|p| p == other_name)))
+            }
+            "mro" if args.len() == 1 => {
+                let mro = self.classhow_mro_names(&args[0]);
+                Ok(Value::array(
+                    mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+                ))
             }
             "can" if args.len() >= 2 => {
                 let invocant = &args[0];
@@ -3423,6 +3665,39 @@ impl Interpreter {
                 method
             ))),
         }
+    }
+
+    fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+        let mut mro = if self.classes.contains_key(&class_name) {
+            self.class_mro(&class_name)
+        } else {
+            vec![class_name.clone()]
+        };
+        if self.package_looks_like_grammar(&class_name) {
+            for parent in ["Grammar", "Match", "Capture", "Cool", "Any", "Mu"] {
+                if !mro.iter().any(|name| name == parent) {
+                    mro.push(parent.to_string());
+                }
+            }
+            return mro;
+        }
+        if class_name != "Mu" && !mro.iter().any(|name| name == "Any") {
+            mro.push("Any".to_string());
+        }
+        if !mro.iter().any(|name| name == "Mu") {
+            mro.push("Mu".to_string());
+        }
+        mro
+    }
+
+    fn package_looks_like_grammar(&self, package_name: &str) -> bool {
+        let prefix = format!("{package_name}::");
+        self.token_defs.keys().any(|key| key.starts_with(&prefix))
     }
 
     fn dispatch_classhow_methods(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -4830,6 +5105,12 @@ impl Interpreter {
         }
 
         if let Value::Package(class_name) = &target {
+            let parametric = Self::parse_parametric_type_name(class_name);
+            let (base_class_name, type_args) = if let Some((base, args)) = &parametric {
+                (base.as_str(), Some(args.clone()))
+            } else {
+                (class_name.as_str(), None)
+            };
             match class_name.as_str() {
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
@@ -4870,7 +5151,12 @@ impl Interpreter {
                             other => items.push(other.clone()),
                         }
                     }
-                    return Ok(Value::array(items));
+                    let result = if matches!(class_name.as_str(), "Array" | "array") {
+                        Value::real_array(items)
+                    } else {
+                        Value::array(items)
+                    };
+                    return Ok(result);
                 }
                 "Hash" | "Map" => {
                     let mut flat = Vec::new();
@@ -5276,6 +5562,119 @@ impl Interpreter {
                 }
                 _ => {}
             }
+            // Parametric package handling (e.g. Array[Int], Hash[Int,Str], A[Int]).
+            if let Some(type_args) = type_args.as_ref() {
+                if matches!(base_class_name, "Array" | "List" | "Positional" | "array") {
+                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
+                        let data = args.iter().find_map(|arg| match arg {
+                            Value::Pair(name, value) if name == "data" => {
+                                Some(value.as_ref().clone())
+                            }
+                            _ => None,
+                        });
+                        let shaped = Self::make_shaped_array(&dims);
+                        let result = if let Some(data_val) = data {
+                            let data_items = match data_val {
+                                Value::Array(items, ..)
+                                | Value::Seq(items)
+                                | Value::Slip(items) => items.to_vec(),
+                                other => vec![other],
+                            };
+                            if let Value::Array(ref items, is_arr) = shaped {
+                                let mut new_items = items.as_ref().clone();
+                                for (i, val) in data_items.into_iter().enumerate() {
+                                    if i < new_items.len() {
+                                        new_items[i] = val;
+                                    }
+                                }
+                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                                crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
+                                result
+                            } else {
+                                shaped
+                            }
+                        } else {
+                            shaped
+                        };
+                        let value_type = type_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Any".to_string());
+                        self.register_container_type_metadata(
+                            &result,
+                            crate::runtime::ContainerTypeInfo {
+                                value_type,
+                                key_type: None,
+                                declared_type: Some(class_name.clone()),
+                            },
+                        );
+                        return Ok(result);
+                    }
+                    let mut items = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Slip(vals) => items.extend(vals.iter().cloned()),
+                            other => items.push(other.clone()),
+                        }
+                    }
+                    let result = if matches!(base_class_name, "Array" | "array") {
+                        Value::real_array(items)
+                    } else {
+                        Value::array(items)
+                    };
+                    let value_type = type_args
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "Any".to_string());
+                    self.register_container_type_metadata(
+                        &result,
+                        crate::runtime::ContainerTypeInfo {
+                            value_type,
+                            key_type: None,
+                            declared_type: Some(class_name.clone()),
+                        },
+                    );
+                    return Ok(result);
+                }
+                if matches!(base_class_name, "Hash" | "Map") {
+                    let mut flat = Vec::new();
+                    for arg in &args {
+                        flat.extend(Self::value_to_list(arg));
+                    }
+                    let mut map = HashMap::new();
+                    let mut iter = flat.into_iter();
+                    while let Some(item) = iter.next() {
+                        match item {
+                            Value::Pair(k, v) => {
+                                map.insert(k, *v);
+                            }
+                            Value::ValuePair(k, v) => {
+                                map.insert(k.to_string_value(), *v);
+                            }
+                            other => {
+                                let key = other.to_string_value();
+                                let value = iter.next().unwrap_or(Value::Nil);
+                                map.insert(key, value);
+                            }
+                        }
+                    }
+                    let result = Value::hash(map);
+                    let value_type = type_args
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "Any".to_string());
+                    let key_type = type_args.get(1).cloned();
+                    self.register_container_type_metadata(
+                        &result,
+                        crate::runtime::ContainerTypeInfo {
+                            value_type,
+                            key_type,
+                            declared_type: Some(class_name.clone()),
+                        },
+                    );
+                    return Ok(result);
+                }
+            }
             if let Some(role) = self.roles.get(class_name).cloned() {
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
@@ -5308,9 +5707,18 @@ impl Interpreter {
                     mixins,
                 ));
             }
-            if self.classes.contains_key(class_name) {
+            if self.classes.contains_key(class_name)
+                || type_args
+                    .as_ref()
+                    .is_some_and(|_| self.classes.contains_key(base_class_name))
+            {
+                let class_key = if self.classes.contains_key(class_name) {
+                    class_name.as_str()
+                } else {
+                    base_class_name
+                };
                 // Check for user-defined .new method first
-                if self.has_user_method(class_name, "new") {
+                if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
                     let (result, _updated) =
                         self.run_instance_method(class_name, empty_attrs, "new", args, None)?;
@@ -5318,7 +5726,7 @@ impl Interpreter {
                 }
                 let mut attrs = HashMap::new();
                 for (attr_name, _is_public, default, _is_rw) in
-                    self.collect_class_attributes(class_name)
+                    self.collect_class_attributes(class_key)
                 {
                     let val = if let Some(expr) = default {
                         self.eval_block_value(&[Stmt::Expr(expr)])?
@@ -5327,7 +5735,7 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
-                let class_mro = self.class_mro(class_name);
+                let class_mro = self.class_mro(class_key);
                 for val in &args {
                     match val {
                         Value::Pair(k, v) => {
@@ -5367,7 +5775,38 @@ impl Interpreter {
                     )?;
                     attrs = updated;
                 }
-                return Ok(Value::make_instance(class_name.clone(), attrs));
+                let instance = Value::make_instance(class_name.clone(), attrs);
+                if let Some(type_args) = type_args.as_ref() {
+                    if self.class_mro(class_key).iter().any(|n| n == "Array") {
+                        let value_type = type_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Any".to_string());
+                        self.register_container_type_metadata(
+                            &instance,
+                            crate::runtime::ContainerTypeInfo {
+                                value_type,
+                                key_type: None,
+                                declared_type: Some(class_name.clone()),
+                            },
+                        );
+                    } else if self.class_mro(class_key).iter().any(|n| n == "Hash") {
+                        let value_type = type_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "Any".to_string());
+                        let key_type = type_args.get(1).cloned();
+                        self.register_container_type_metadata(
+                            &instance,
+                            crate::runtime::ContainerTypeInfo {
+                                value_type,
+                                key_type,
+                                declared_type: Some(class_name.clone()),
+                            },
+                        );
+                    }
+                }
+                return Ok(instance);
             }
         }
         // Fallback .new on basic types

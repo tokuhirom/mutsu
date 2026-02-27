@@ -40,6 +40,7 @@ roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
+roast/S02-names/caller.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/indirect.t
 roast/S02-names/strict.t
@@ -135,6 +136,7 @@ roast/S05-capture/subrule.t
 roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-grammar/namespace.t
+roast/S05-grammar/parse_and_parsefile-6e.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
@@ -157,6 +159,7 @@ roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
+roast/S05-modifier/Perl_2.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
@@ -180,6 +183,7 @@ roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-operator-overloading/term.t
+roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-signature/closure-over-parameters.t
@@ -229,6 +233,7 @@ roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
+roast/S12-introspection/WHAT.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/methods.t
 roast/S12-meta/grammarhow.t

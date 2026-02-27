@@ -162,6 +162,11 @@ pub(crate) struct RegexCaptures {
     /// value is inner captures from the subrule (parallel to entries in `named`).
     pub(crate) named_subcaps: HashMap<String, Vec<RegexCaptures>>,
     pub(crate) positional: Vec<String>,
+    /// Character offsets (start, end) for each entry in `positional`.
+    pub(crate) positional_offsets: Vec<(usize, usize)>,
+    /// Unnamed capture slots by capture index (for $0, $1, ...), where `None`
+    /// represents an unmatched capture.
+    pub(crate) positional_slots: Vec<Option<(String, usize, usize)>>,
     pub(crate) matched: String,
     pub(crate) from: usize,
     pub(crate) to: usize,
@@ -300,8 +305,23 @@ pub struct Interpreter {
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
+    /// Stack of caller environments for $CALLER:: / $DYNAMIC:: resolution.
+    /// Each entry is a snapshot of the env at the point a sub/function was called.
+    caller_env_stack: Vec<HashMap<String, Value>>,
+    /// Variable binding aliases: maps target name -> source name.
+    /// When target is read, the value of source is returned instead.
+    /// Set up by $CALLER::target := $source binding.
+    var_bindings: HashMap<String, String>,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
+    /// Optional hash key type constraints (e.g. `%h{Str}`).
+    var_hash_key_constraints: HashMap<String, String>,
+    /// Type metadata for Array values keyed by Arc pointer identity.
+    array_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for Hash values keyed by Arc pointer identity.
+    hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for instance values keyed by stable instance id.
+    instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
@@ -346,6 +366,13 @@ pub(crate) struct CustomTypeData {
     /// Whether this type was created with :mixin flag.
     #[allow(dead_code)]
     pub(crate) is_mixin: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ContainerTypeInfo {
+    pub(crate) value_type: String,
+    pub(crate) key_type: Option<String>,
+    pub(crate) declared_type: Option<String>,
 }
 
 /// An entry in the encoding registry.
@@ -1046,7 +1073,13 @@ impl Interpreter {
             strict_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
+            caller_env_stack: Vec::new(),
+            var_bindings: HashMap::new(),
             var_type_constraints: HashMap::new(),
+            var_hash_key_constraints: HashMap::new(),
+            array_type_metadata: HashMap::new(),
+            hash_type_metadata: HashMap::new(),
+            instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
@@ -1393,11 +1426,26 @@ impl Interpreter {
         let key = name.to_string();
         let meta_key = format!("__mutsu_type::{}", key);
         if let Some(constraint) = constraint {
-            self.var_type_constraints.insert(key, constraint.clone());
-            self.env.insert(meta_key, Value::Str(constraint));
+            let info = Self::parse_container_constraint(name, &constraint);
+            self.var_type_constraints
+                .insert(key.clone(), info.value_type.clone());
+            self.env
+                .insert(meta_key, Value::Str(info.value_type.clone()));
+            let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
+            if let Some(key_type) = info.key_type.clone() {
+                self.var_hash_key_constraints
+                    .insert(key.clone(), key_type.clone());
+                self.env.insert(hash_key_meta_key, Value::Str(key_type));
+            } else {
+                self.var_hash_key_constraints.remove(&key);
+                self.env.remove(&hash_key_meta_key);
+            }
+            self.register_var_container_type_metadata(&key, &info);
         } else {
             self.var_type_constraints.remove(&key);
+            self.var_hash_key_constraints.remove(&key);
             self.env.remove(&meta_key);
+            self.env.remove(&format!("__mutsu_hash_key_type::{}", key));
         }
     }
 
@@ -1413,6 +1461,105 @@ impl Interpreter {
         None
     }
 
+    pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
+        let key = name;
+        let meta_key = format!("__mutsu_hash_key_type::{}", key);
+        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+            return Some(tc.clone());
+        }
+        self.var_hash_key_constraints.get(key).cloned()
+    }
+
+    pub(crate) fn register_container_type_metadata(
+        &mut self,
+        value: &Value,
+        info: ContainerTypeInfo,
+    ) {
+        match value {
+            Value::Array(items, ..) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.array_type_metadata.insert(id, info);
+            }
+            Value::Hash(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.hash_type_metadata.insert(id, info);
+            }
+            Value::Instance { id, .. } => {
+                self.instance_type_metadata.insert(*id, info);
+            }
+            Value::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
+            _ => {}
+        }
+    }
+
+    pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
+        match value {
+            Value::Array(items, ..) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.array_type_metadata.get(&id).cloned()
+            }
+            Value::Hash(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.hash_type_metadata.get(&id).cloned()
+            }
+            Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
+            Value::Mixin(inner, _) => self.container_type_metadata(inner),
+            _ => None,
+        }
+    }
+
+    fn register_var_container_type_metadata(&mut self, name: &str, info: &ContainerTypeInfo) {
+        if let Some(value) = self.env.get(name).cloned() {
+            self.register_container_type_metadata(&value, info.clone());
+        }
+    }
+
+    fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
+        if name.starts_with('%') {
+            if let Some(inner) = raw.strip_prefix("Hash[").and_then(|s| s.strip_suffix(']')) {
+                let parts: Vec<String> = inner
+                    .split(',')
+                    .map(|p| p.trim())
+                    .filter(|p| !p.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect();
+                let value_type = parts.first().cloned().unwrap_or_else(|| "Any".to_string());
+                let key_type = parts.get(1).cloned();
+                return ContainerTypeInfo {
+                    value_type,
+                    key_type,
+                    declared_type: Some(raw.to_string()),
+                };
+            }
+            if let Some((value_type, key_part)) = raw.split_once('{')
+                && let Some(key_type) = key_part.strip_suffix('}')
+            {
+                return ContainerTypeInfo {
+                    value_type: value_type.trim().to_string(),
+                    key_type: Some(key_type.trim().to_string()),
+                    declared_type: Some(format!("Hash[{},{}]", value_type.trim(), key_type.trim())),
+                };
+            }
+        }
+        if name.starts_with('@')
+            && let Some(inner) = raw
+                .strip_prefix("Array[")
+                .or_else(|| raw.strip_prefix("List["))
+                .and_then(|s| s.strip_suffix(']'))
+        {
+            return ContainerTypeInfo {
+                value_type: inner.trim().to_string(),
+                key_type: None,
+                declared_type: Some(format!("Array[{}]", inner.trim())),
+            };
+        }
+        ContainerTypeInfo {
+            value_type: raw.to_string(),
+            key_type: None,
+            declared_type: None,
+        }
+    }
+
     pub(crate) fn snapshot_var_type_constraints(&self) -> HashMap<String, String> {
         self.var_type_constraints.clone()
     }
@@ -1426,6 +1573,124 @@ impl Interpreter {
             .get(Self::normalize_var_meta_name(name))
             .copied()
             .unwrap_or(false)
+    }
+
+    pub(crate) fn push_caller_env(&mut self) {
+        self.caller_env_stack.push(self.env.clone());
+    }
+
+    pub(crate) fn pop_caller_env(&mut self) {
+        self.caller_env_stack.pop();
+    }
+
+    /// Look up a variable through the $CALLER:: chain.
+    /// `depth` is the number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
+    /// `name` is the bare variable name without sigil (e.g. "a" for $a).
+    pub(crate) fn get_caller_var(&self, name: &str, depth: usize) -> Result<Value, RuntimeError> {
+        let stack_len = self.caller_env_stack.len();
+        if depth > stack_len {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${name}' — not enough caller frames"
+            )));
+        }
+        let env = &self.caller_env_stack[stack_len - depth];
+        if let Some(val) = env.get(name) {
+            // Check that the variable is declared `is dynamic`
+            if !self.is_var_dynamic(name) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot access '${name}' through CALLER, because it is not declared as dynamic"
+                )));
+            }
+            Ok(val.clone())
+        } else {
+            Err(RuntimeError::new(format!(
+                "Cannot access '${name}' through CALLER"
+            )))
+        }
+    }
+
+    /// Set a variable through the $CALLER:: chain.
+    pub(crate) fn set_caller_var(
+        &mut self,
+        name: &str,
+        depth: usize,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        let stack_len = self.caller_env_stack.len();
+        if depth > stack_len {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${name}' — not enough caller frames"
+            )));
+        }
+        if !self.is_var_dynamic(name) {
+            return Err(RuntimeError::new(format!(
+                "Cannot access '${name}' through CALLER, because it is not declared as dynamic"
+            )));
+        }
+        let idx = stack_len - depth;
+        self.caller_env_stack[idx].insert(name.to_string(), value.clone());
+        // Also update current env if the variable exists there
+        if self.env.contains_key(name) {
+            self.env.insert(name.to_string(), value);
+        }
+        Ok(())
+    }
+
+    /// Look up a variable through $DYNAMIC:: — searches the entire caller stack.
+    pub(crate) fn get_dynamic_var(&self, name: &str) -> Result<Value, RuntimeError> {
+        // Search from the most recent caller to the oldest
+        for env in self.caller_env_stack.iter().rev() {
+            if let Some(val) = env.get(name)
+                && self.is_var_dynamic(name)
+            {
+                return Ok(val.clone());
+            }
+        }
+        // Also check current env
+        if let Some(val) = self.env.get(name)
+            && self.is_var_dynamic(name)
+        {
+            return Ok(val.clone());
+        }
+        Err(RuntimeError::new(format!(
+            "Cannot find dynamic variable '${name}'"
+        )))
+    }
+
+    /// Bind a caller variable to a local variable ($CALLER::target := $source).
+    /// This creates an alias so that future reads/writes of target go through source.
+    pub(crate) fn bind_caller_var(
+        &mut self,
+        target_name: &str,
+        source_name: &str,
+        depth: usize,
+    ) -> Result<(), RuntimeError> {
+        let stack_len = self.caller_env_stack.len();
+        if depth > stack_len {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${target_name}' — not enough caller frames"
+            )));
+        }
+        if !self.is_var_dynamic(target_name) {
+            return Err(RuntimeError::new(format!(
+                "Cannot access '${target_name}' through CALLER, because it is not declared as dynamic"
+            )));
+        }
+        // Copy the current value to the caller env and set up the binding alias
+        let source_val = self.env.get(source_name).cloned().unwrap_or(Value::Nil);
+        let idx = stack_len - depth;
+        self.caller_env_stack[idx].insert(target_name.to_string(), source_val.clone());
+        // Set up binding alias so reads of target_name resolve to source_name
+        self.var_bindings
+            .insert(target_name.to_string(), source_name.to_string());
+        // Also update current env
+        self.env.insert(target_name.to_string(), source_val);
+        Ok(())
+    }
+
+    /// Resolve a variable name through bindings (follow aliases).
+    pub(crate) fn resolve_binding(&self, name: &str) -> Option<&str> {
+        self.var_bindings.get(name).map(|s| s.as_str())
     }
 
     pub(crate) fn has_class(&self, name: &str) -> bool {
@@ -1500,7 +1765,13 @@ impl Interpreter {
             strict_mode: self.strict_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
+            caller_env_stack: Vec::new(),
+            var_bindings: HashMap::new(),
             var_type_constraints: self.var_type_constraints.clone(),
+            var_hash_key_constraints: self.var_hash_key_constraints.clone(),
+            array_type_metadata: self.array_type_metadata.clone(),
+            hash_type_metadata: self.hash_type_metadata.clone(),
+            instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),

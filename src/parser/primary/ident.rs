@@ -434,7 +434,7 @@ pub(super) fn is_listop(name: &str) -> bool {
 pub(super) fn is_expr_listop(name: &str) -> bool {
     matches!(
         name,
-        "EVAL" | "flat" | "slip" | "run" | "shell" | "cross" | "await" | "dir" | "first"
+        "EVAL" | "flat" | "slip" | "run" | "shell" | "cross" | "await" | "dir" | "first" | "make"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
@@ -494,6 +494,14 @@ fn is_stmt_modifier_ahead(input: &str) -> bool {
 /// Parse expression listop arguments: comma-separated full expressions.
 /// Stops at statement modifiers, semicolons, and closing brackets.
 fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
+    if name == "make" {
+        let (r, arg) = or_expr_pub(input).map_err(|err| PError {
+            messages: merge_expected_messages("expected listop argument expression", &err.messages),
+            remaining_len: err.remaining_len.or(Some(input.len())),
+        })?;
+        return Ok((r, make_call_expr(name, input, vec![arg])));
+    }
+
     // Raku listop `slip ...` takes a single expression argument, which may
     // itself be a comma expression (e.g. `slip (2,3), 4`).
     if name == "slip" {

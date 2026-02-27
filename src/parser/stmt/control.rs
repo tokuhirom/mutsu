@@ -402,7 +402,8 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             (r, tc)
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
+        {
             type_constraint = Some(tc);
             r2
         } else {
@@ -456,10 +457,17 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest = r;
     }
 
+    let param_name = match for_original_sigil {
+        b'@' => format!("@{}", name),
+        b'%' => format!("%{}", name),
+        b'&' => format!("&{}", name),
+        _ => name,
+    };
+
     Ok((
         rest,
         ParamDef {
-            name,
+            name: param_name,
             default: None,
             multi_invocant: true,
             required: false,
@@ -819,6 +827,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -854,6 +863,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -997,6 +1007,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             type_constraint: None,
             is_state: false,
             is_our: false,
+            is_dynamic: false,
         });
     }
     with_body.extend(body);

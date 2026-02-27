@@ -16,10 +16,12 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
+        self.push_caller_env();
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
         {
             Ok(bindings) => bindings,
             Err(e) => {
+                self.pop_caller_env();
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
                 return Err(e);
@@ -32,6 +34,7 @@ impl Interpreter {
         self.routine_stack.pop();
         self.pop_test_assertion_context(pushed_assertion);
         let implicit_return = self.env.get("_").cloned();
+        self.pop_caller_env();
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
@@ -71,10 +74,12 @@ impl Interpreter {
                     }
                     let saved_env = self.env.clone();
                     let saved_readonly = self.save_readonly_vars();
+                    self.push_caller_env();
                     let rw_bindings =
                         match self.bind_function_args_values(&def.param_defs, &def.params, &args) {
                             Ok(bindings) => bindings,
                             Err(e) => {
+                                self.pop_caller_env();
                                 self.env = saved_env;
                                 self.restore_readonly_vars(saved_readonly);
                                 return Err(e);
@@ -86,6 +91,7 @@ impl Interpreter {
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();
                     self.pop_test_assertion_context(pushed_assertion);
+                    self.pop_caller_env();
                     let mut restored_env = saved_env;
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
                     self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
