@@ -674,6 +674,23 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         // Do not span statement boundaries across newlines.
         let ws_before = &rest[..rest.len() - r.len()];
         if !ws_before.contains('\n')
+            && let Some((feed_op, len)) = parse_feed_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = (if matches!(feed_op, FeedOp::ToLeft | FeedOp::AppendLeft) {
+                sequence_expr(r)
+            } else {
+                range_expr(r)
+            })
+            .map_err(|err| {
+                enrich_expected_error(err, "expected expression after feed operator", r.len())
+            })?;
+            *left = build_feed_expr(feed_op, left.clone(), right);
+            rest = r;
+            continue;
+        }
+        if !ws_before.contains('\n')
             && let Some((name, len)) = parse_custom_infix_word(r)
         {
             let r = &r[len..];
@@ -693,6 +710,112 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         break;
     }
     Ok(rest)
+}
+
+fn build_feed_expr(op: FeedOp, left: Expr, right: Expr) -> Expr {
+    match op {
+        FeedOp::ToRight => build_pipe_feed_expr(left, right),
+        FeedOp::ToLeft => build_pipe_feed_expr(right, left),
+        FeedOp::AppendRight => build_append_feed_expr(left, right),
+        FeedOp::AppendLeft => build_append_feed_expr(right, left),
+    }
+}
+
+fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
+    match sink {
+        Expr::Var(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(source),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(Expr::Call {
+                name: "__mutsu_feed_array_assign".to_string(),
+                args: vec![source],
+            }),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(source),
+        },
+        Expr::CodeVar(name) => Expr::AssignExpr {
+            name: format!("&{}", name),
+            expr: Box::new(source),
+        },
+        Expr::Index { target, index } => Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(source),
+        },
+        Expr::Call { name, mut args } => {
+            args.push(source);
+            Expr::Call { name, args }
+        }
+        Expr::CallOn { target, mut args } => {
+            args.push(source);
+            Expr::CallOn { target, args }
+        }
+        Expr::BareWord(name) => Expr::Call {
+            name,
+            args: vec![source],
+        },
+        Expr::Whatever => Expr::Call {
+            name: "__mutsu_feed_whatever".to_string(),
+            args: vec![source],
+        },
+        other => Expr::CallOn {
+            target: Box::new(other),
+            args: vec![source],
+        },
+    }
+}
+
+fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
+    match sink {
+        Expr::Var(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(Expr::Call {
+                name: "__mutsu_feed_append".to_string(),
+                args: vec![Expr::Var(name), source],
+            }),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name.clone()),
+            expr: Box::new(Expr::Call {
+                name: "__mutsu_feed_append".to_string(),
+                args: vec![Expr::ArrayVar(name), source],
+            }),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name.clone()),
+            expr: Box::new(Expr::Call {
+                name: "__mutsu_feed_append".to_string(),
+                args: vec![Expr::HashVar(name), source],
+            }),
+        },
+        Expr::Index { target, index } => {
+            let current = Expr::Index {
+                target: target.clone(),
+                index: index.clone(),
+            };
+            Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(Expr::Call {
+                    name: "__mutsu_feed_append".to_string(),
+                    args: vec![current, source],
+                }),
+            }
+        }
+        Expr::Whatever => Expr::Call {
+            name: "__mutsu_feed_append_whatever".to_string(),
+            args: vec![source],
+        },
+        other => Expr::Call {
+            name: "__mutsu_feed_append".to_string(),
+            args: vec![other, source],
+        },
+    }
 }
 
 fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {

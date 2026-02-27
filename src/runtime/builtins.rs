@@ -133,6 +133,10 @@ impl Interpreter {
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
+            "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
+            "__mutsu_feed_append" => self.builtin_feed_append(&args),
+            "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
+            "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(args.first().cloned().unwrap_or(Value::Nil)),
@@ -871,6 +875,72 @@ impl Interpreter {
             method_args,
             value,
         )
+    }
+
+    fn builtin_feed_whatever(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let value = args.first().cloned().unwrap_or(Value::Nil);
+        let list = crate::runtime::value_to_list(&value);
+        let list_value = Value::array(list.clone());
+        let mut hash_items = std::collections::HashMap::new();
+        for chunk in list.chunks(2) {
+            if let [k, v] = chunk {
+                hash_items.insert(k.to_string_value(), v.clone());
+            }
+        }
+        self.env.insert("$(*)".to_string(), value.clone());
+        self.env.insert("@(*)".to_string(), list_value);
+        self.env.insert("%(*)".to_string(), Value::hash(hash_items));
+        Ok(value)
+    }
+
+    fn builtin_feed_append(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_feed_append expects sink and source values",
+            ));
+        }
+        let mut out = crate::runtime::value_to_list(&args[0]);
+        out.extend(crate::runtime::value_to_list(&args[1]));
+        Ok(Value::array(out))
+    }
+
+    fn builtin_feed_append_whatever(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let source = args.first().cloned().unwrap_or(Value::Nil);
+        let current = self
+            .env
+            .get("@(*)")
+            .cloned()
+            .unwrap_or_else(|| Value::array(Vec::new()));
+        let appended = self.builtin_feed_append(&[current, source])?;
+        let list = crate::runtime::value_to_list(&appended);
+        let mut hash_items = std::collections::HashMap::new();
+        for chunk in list.chunks(2) {
+            if let [k, v] = chunk {
+                hash_items.insert(k.to_string_value(), v.clone());
+            }
+        }
+        self.env.insert("$(*)".to_string(), appended.clone());
+        self.env
+            .insert("@(*)".to_string(), Value::array(list.clone()));
+        self.env.insert("%(*)".to_string(), Value::hash(hash_items));
+        Ok(appended)
+    }
+
+    fn builtin_feed_array_assign(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let value = args.first().cloned().unwrap_or(Value::Nil);
+        let int_max = i64::MAX;
+        let infinite = match &value {
+            Value::Range(_, end) | Value::RangeExcl(_, end) => *end == int_max,
+            Value::GenericRange { end, .. } => end.to_f64().is_infinite(),
+            Value::Int(end) => *end == int_max,
+            _ => false,
+        };
+        if infinite {
+            return Err(RuntimeError::new(
+                "Cannot eagerly assign an infinite feed source to an array",
+            ));
+        }
+        Ok(crate::runtime::coerce_to_array(value))
     }
 
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {

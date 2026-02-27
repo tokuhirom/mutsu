@@ -725,6 +725,40 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         };
     }
 
+    // Feed initialization: my @a <== expr / my @a <<== expr
+    if let Some(rest) = rest
+        .strip_prefix("<==")
+        .or_else(|| rest.strip_prefix("<<=="))
+    {
+        let (rest, _) = ws(rest)?;
+        let (rest, mut expr) = parse_assign_expr_or_comma(rest)?;
+        if is_array {
+            expr = Expr::Call {
+                name: "__mutsu_feed_array_assign".to_string(),
+                args: vec![expr],
+            };
+        }
+        let expr = if let Some(dims) = shape_dims {
+            shaped_array_new_with_data_expr(dims, expr)
+        } else {
+            expr
+        };
+        let stmt = Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint,
+            is_state,
+            is_our,
+            is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
+        };
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
+
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
         let rest = &rest[1..];
