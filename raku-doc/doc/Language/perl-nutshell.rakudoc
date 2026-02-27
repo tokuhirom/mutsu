@@ -1,0 +1,1888 @@
+=begin pod :kind("Language") :subkind("Language") :category("migration")
+
+=TITLE Perl to Raku guide - in a nutshell
+
+=SUBTITLE How do I do what I used to do? (Raku in a nutshell)
+
+This page attempts to provide a fast-path to the changes in syntax and
+semantics from Perl to Raku. Whatever worked in Perl and must be
+written differently in Raku, should be listed here (whereas many
+I<new> Raku features and idioms need not).
+
+Hence this should not be mistaken for a beginner tutorial or a
+promotional overview of Raku; it is intended as a technical reference
+for Raku learners with a strong Perl background and for anyone
+porting Perl code to Raku (though note that L<automated translation|#Automated
+translation> might be more convenient).
+
+A note on semantics; when we say "now" in this document, we mostly just
+mean "now that you are trying out Raku."  We don't mean to imply that
+Perl is now suddenly obsolete.  Quite the contrary, most of us love
+Perl, and we expect Perl to continue in use for a good many years.
+Indeed, one of our more important goals has been to make interaction
+between Perl and Raku run smoothly.  However, we do also like the
+design decisions in Raku, which are certainly newer and arguably
+better integrated than many of the historical design decisions in Perl.
+So many of us do hope that over the next decade or two, Raku will
+become the more dominant language.  If you want to take "now" in that
+future sense, that's okay too.  But we're not at all interested in the
+either/or thinking that leads to fights.
+
+I<Please note that some historic documents may refer to Raku by its
+original name, Perl 6, or to Perl as specifically Perl 5.>
+
+=head1 CPAN
+
+See L<https://raku.land/>.
+
+If the module that you were using has not been converted to Raku, and
+no alternative is listed in this document, then its use under Raku may
+not have been addressed yet.
+
+The L<C<Inline::Perl5>|https://raku.land/cpan:NINE/Inline::Perl5> project makes
+it possible to C<use> Perl modules directly from Raku code by using
+an embedded instance of the C<perl> interpreter to run Perl code.
+
+This is as simple as:
+
+=for code :skip-test<needs ecosystem>
+# the :from<Perl5> makes Raku load Inline::Perl5 first (if installed)
+# and then load the Scalar::Util module from Perl
+use Scalar::Util:from<Perl5> <looks_like_number>;
+say looks_like_number "foo";   # OUTPUT: «0␤»
+say looks_like_number "42";    # OUTPUT: «1␤»
+
+A number of Perl modules have been ported to Raku, trying to maintain
+the API of these modules as much as possible, as part of the CPAN Butterfly
+Plan.  These can be found at L<https://raku.land/?q=CPAN5>.
+
+Many Perl built-in functions (about a 100 so far) have been ported to
+Raku with the same semantics.  Think about the C<shift> function in Perl
+having magic shifting from C<@_> or C<@ARGV> by default, depending on context.
+These can be found at L<https://raku.land/zef:lizmat/P5built-ins> and
+its dependencies.
+
+=head1 Syntax
+
+There are a few differences in syntax between the two languages, starting with
+how identifiers are defined.
+
+=head2 Identifiers
+
+Raku allows the use of dashes (C<->), underscores (C<_>),
+apostrophes (C<'>), and alphanumerics in identifiers:
+
+    sub test-doesn't-hang { ... }
+    my $ความสงบ = 42;
+    my \Δ = 72; say 72 - Δ;
+
+=head2 C«->» Method calls
+
+If you've read any Raku code at all, it's immediately obvious that
+method call syntax now uses a dot instead of an arrow:
+
+=for code :lang<perl>
+$person->name  # Perl
+=for code :preamble<no strict;>
+$person.name   # Raku
+
+The dot notation is both easier to type and more of an industry standard.
+But we also wanted to steal the arrow for something else.  (Concatenation
+is now done with the C<~> operator, if you were wondering.)
+
+To call a method whose name is not known until runtime:
+
+=for code :lang<perl>
+$object->$methodname(@args);  # Perl
+=for code :preamble<no strict;>
+$object."$methodname"(@args); # Raku
+
+If you leave out the quotes, then Raku expects C<$methodname> to contain
+a L<C<Method>|/type/Method> object rather than the simple string name of the method.  Yes,
+B<everything> in Raku can be considered an object.
+
+=head2 Whitespace
+
+Perl allows a surprising amount of flexibility in the use of whitespace,
+even with strict mode and warnings turned on:
+
+=for code :lang<perl>
+# unidiomatic but valid Perl
+say"Hello ".ucfirst  ($people
+    [$ i]
+    ->
+    name)."!"if$greeted[$i]<1;
+
+Raku also endorses programmer freedom and creativity, but balanced
+syntactic flexibility against its design goal of having a consistent,
+deterministic, extensible grammar that supports single-pass parsing and
+helpful error messages, integrates features like custom operators cleanly,
+and doesn't lead programmers to accidentally misstate their intent.
+Also, the practice of "code golf" is slightly de-emphasized; Raku is
+designed to be more concise in concepts than in keystrokes.
+
+As a result, there are various places in the syntax where whitespace is
+optional in Perl, but is either mandatory or forbidden in Raku. Many of
+those restrictions are unlikely to concern much real-life Perl code (e.g.,
+whitespace being disallowed between the sigil and name of a variable), but
+there are a few that will unfortunately conflict with some Perl hackers'
+habitual coding styles:
+
+=begin item
+I<No space allowed before the opening parenthesis of an argument list.>
+
+=for code :lang<perl>
+substr ($s, 4, 1); # Perl (in Raku this would try to pass a single
+                       #         argument of type List to substr)
+=for code :preamble<no strict;>
+substr($s, 4, 1);  # Raku
+substr $s, 4, 1;   # Raku - alternative parentheses-less style
+
+Should this really be a problem for you, then you might want to have a look
+at the L<C<Slang::Tuxic>|https://raku.land/zef:raku-community-modules/Slang::Tuxic> module in the Raku ecosystem: it changes the grammar
+of Raku in such a way that you B<can> have a space before the opening
+parenthesis of an argument list.
+
+=end item
+
+=begin item
+I<Space is B<required> immediately after keywords>
+
+=for code :lang<perl>
+my($alpha, $beta);          # Perl, tries to call my() sub in Raku
+=for code :preamble<no strict;>
+my ($alpha, $beta);         # Raku
+
+=for code :lang<perl>
+if($a < 0) { ... }          # Perl, dies in Raku
+=for code :preamble<no strict;>
+if ($a < 0) { ... }         # Raku
+if $a < 0 { ... }           # Raku, more idiomatic
+
+=for code :lang<perl>
+while($x-- > 5) { ... }     # Perl, dies in Raku
+=for code :preamble<no strict;>
+while ($x-- > 5) { ... }    # Raku
+while $x-- > 5 { ... }      # Raku, more idiomatic
+
+=end item
+
+=begin item
+I<No space allowed after a prefix operator, or before a
+postfix/postcircumfix operator (including array/hash subscripts).>
+
+=for code :lang<perl>
+$seen {$_} ++; # Perl
+=for code :preamble<no strict;>
+%seen{$_}++;   # Raku
+=end item
+
+=begin item
+I<Space required before an infix operator if it would
+conflict with an existing postfix/postcircumfix operator.>
+
+=for code :lang<perl>
+$n<1;   # Perl (in Raku this would conflict with postcircumfix < >)
+=for code :preamble<no strict;>
+$n < 1; # Raku
+
+=end item
+
+=begin item
+I<However, whitespace B<is allowed> before the period of a method call!>
+
+=for code :lang<perl>
+# Perl
+my @books = $xml
+  ->parse_file($file)          # some comment
+  ->findnodes("/library/book");
+
+=for code :preamble<no strict;>
+# Raku
+my @books = $xml
+  .parse-file($file)           # some comment
+  .findnodes("/library/book");
+
+=end item
+
+However, note that you can use L<unspace|/language/syntax#Unspace>
+to add whitespace in Raku code in places where it is otherwise not
+allowed.
+
+See also
+L<other lexical conventions in the syntax page|/language/syntax#Lexical_conventions>.
+
+=head2 Sigils
+
+In Perl, arrays and hashes use changing sigils depending on how they are
+being accessed. In Raku the sigils are invariant, no matter how the
+variable is being used - you can think of them as part of the variable's
+name.
+
+=head3 C<$> Scalar
+
+The C<$> sigil is now always used with "scalar" variables (e.g. C<$name>),
+and no longer for L<array indexing|#[]_Array_indexing/slicing> and L<Hash
+indexing|#{}_Hash_indexing/slicing>.  That is, you can still use C<$x[1]>
+and C<$x{"foo"}>, but it will act on C<$x>, with no effect on a similarly
+named C<@x> or C<%x>. Those would now be accessed with C<@x[1]> and C<%x{"foo"}>.
+
+=head3 C<@> Array
+
+The C<@> sigil is now always used with "array" variables (e.g. C<@months>,
+C<@months[2]>, C<@months[2, 4]>), and no longer for L<value-slicing
+hashes|#{}_Hash_indexing/slicing>.
+
+=head3 C<%> Hash
+
+The C<%> sigil is now always used with "hash" variables (e.g. C<%calories>,
+C<%calories<apple>>, C<%calories<pear plum>>), and no longer for
+L<key/value-slicing arrays|#[]_Array_indexing/slicing>.
+
+=head3 C<&> Sub
+
+The C<&> sigil is now used consistently (and without the help of a
+backslash) to refer to the function object of a named subroutine/operator
+without invoking it, i.e. to use the name as a "noun" instead of a "verb":
+
+=for code :lang<perl>
+my $sub = \&foo; # Perl
+=for code :preamble<sub foo {};>
+my $sub = &foo;  # Raku
+
+=for code :lang<perl>
+callback => sub { say @_ }  # Perl - can't pass built-in sub directly
+=for code
+callback => &say            # Raku - & gives "noun" form of any sub
+
+Since Raku does not allow adding/removing symbols in a lexical scope once
+it has finished compiling, there is no equivalent to Perl's
+C<undef &foo;>, and the closest equivalent to Perl's C<defined &foo>
+would be C<defined ::('&foo')> (which uses the "dynamic symbol lookup"
+syntax). However, you can declare a mutable named subroutine with
+C<my &foo;> and then change its meaning at runtime by assigning to C<&foo>.
+
+In Perl, the ampersand sigil can additionally be used to call subroutines
+in special ways with subtly different behavior compared to normal sub
+calls. In Raku those special forms are no longer available:
+
+=begin item
+C<&foo(...)> I<for circumventing a function prototype>
+
+In Raku there are no prototypes, and it no longer
+makes a difference whether you, say, pass a literal code block or a
+variable holding a code object as an argument:
+
+=for code :lang<perl>
+# Perl:
+first_index { $_ > 5 } @values;
+&first_index($coderef, @values); # (disabling the prototype that parses a
+                                     # literal block as the first argument)
+=for code :preamble<my @values; my $coderef>
+# Raku:
+first { $_ > 5 }, @values, :k;   # the :k makes first return an index
+first $coderef, @values, :k;
+=end item
+
+=begin item
+C<&foo;> I<and> C<goto &foo;> I<for re-using the caller's argument
+list / replacing the caller in the call stack>. Raku can use either
+L<C<callsame>|/language/functions#sub_callsame> for
+re-dispatching or
+L<C<nextsame>|/language/functions#sub_nextsame> and
+L<C<nextwith>|/language/functions#sub_nextwith>, which have no
+exact equivalent in Perl.
+
+=for code :lang<perl>
+sub foo { say "before"; &bar;     say "after" } # Perl
+
+=for code :preamble<sub bar() {...}>
+sub foo { say "before"; bar(|@_); say "after" } # Raku - have to be explicit
+
+
+=for code :lang<perl>
+sub foo { say "before"; goto &bar } # Perl
+=begin code
+proto foo (|) {*};
+multi foo ( Any $n ) {
+    say "Any"; say $n;
+};
+multi foo ( Int $n ) {
+    say "Int"; callsame;
+};
+foo(3); # /language/functions#sub_callsame
+=end code
+
+=end item
+
+=head3 C<*> Glob
+
+In Perl, the C<*> sigil referred to the GLOB structure that Perl uses to
+store non-lexical variables, filehandles, subs, and formats.
+
+N<This should not be confused with the Perl built-in C<glob()> function,
+which reads filenames from a directory.>
+
+You are most likely to encounter a GLOB in code written on an early Perl
+version that does not support lexical filehandles, when a filehandle needed
+to be passed into a sub.
+
+=for code :lang<perl>
+# Perl - ancient method
+sub read_2 {
+    local (*H) = @_;
+    return scalar(<H>), scalar(<H>);
+}
+open FILE, '<', $path or die;
+my ($line1, $line2) = read_2(*FILE);
+
+You should refactor your Perl code to remove the need for the GLOB,
+before translating into Raku.
+
+=for code :lang<perl>
+# Perl - modern use of lexical filehandles
+sub read_2 {
+    my ($fh) = @_;
+    return scalar(<$fh>), scalar(<$fh>);
+}
+open my $in_file, '<', $path or die;
+my ($line1, $line2) = read_2($in_file);
+
+And here's just one possible Raku translation:
+
+=for code :preamble<no strict;>
+# Raku
+sub read-n($fh, $n) {
+    return $fh.get xx $n;
+}
+my $in-file = open $path or die;
+my ($line1, $line2) = read-n($in-file, 2);
+
+=head2 [] Array indexing/slicing
+
+Index and slice operations on arrays no longer inflect the variable's
+L<sigil|#@_Array>, and adverbs can be used to control the type of slice:
+
+=begin item
+I<Indexing>
+
+=for code :lang<perl>
+say $months[2]; # Perl
+=for code :preamble<no strict;>
+say @months[2]; # Raku - @ instead of $
+=end item
+
+=begin item
+I<Value-slicing>
+
+=for code :preamble<no strict;>
+say join ',', @months[6, 8..11]; # Perl and Raku
+=end item
+
+=begin item
+I<Key/value-slicing>
+
+=for code :lang<perl>
+say join ',', %months[6, 8..11];    # Perl
+=for code :preamble<no strict;>
+say join ',', @months[6, 8..11]:kv; # Raku - @ instead of %; use :kv adverb
+=end item
+
+Also note that the subscripting square brackets are now a normal postcircumfix
+operator rather than a special syntactic form, and thus L<checking for
+existence of elements|#exists> and L<unsetting elements|#delete> is done
+with adverbs.
+
+An array's biggest index is now available with the C<.end> method:
+
+=for code :lang<perl>
+say $#item;    # Perl
+=for code :preamble<no strict;>
+say @item.end; # Raku
+
+=head2 {} Hash indexing/slicing
+
+Index and slice operations on hashes no longer inflect the variable's
+L<sigil|#%_Hash>, and adverbs can be used to control the type of slice.
+Also, single-word subscripts are no longer magically autoquoted inside the
+curly braces; instead, the new angle brackets version is available which
+always autoquotes its contents (using the same rules as the C<qw//> quoting
+construct):
+
+=begin item
+I<Indexing>
+
+=for code :lang<perl>
+say $calories{"apple"}; # Perl
+=for code :preamble<no strict;>
+say %calories{"apple"}; # Raku - % instead of $
+
+=for code :lang<perl>
+say $calories{apple};   # Perl
+=for code :preamble<no strict;>
+say %calories<apple>;   # Raku - angle brackets; % instead of $
+say %calories«"$key"»;  # Raku - double angles interpolate as a list of Str
+=end item
+
+=begin item
+I<Value-slicing>
+
+=for code :lang<perl>
+say join ',', @calories{'pear', 'plum'}; # Perl
+=for code :preamble<no strict;>
+say join ',', %calories{'pear', 'plum'}; # Raku - % instead of @
+say join ',', %calories<pear plum>;      # Raku (prettier version)
+my $keys = 'pear plum';
+say join ',', %calories«$keys»;          # Raku the split is done after interpolation
+=end item
+
+=begin item
+I<Key/value-slicing>
+
+=for code :lang<perl>
+say join ',', %calories{'pear', 'plum'};    # Perl
+=for code :preamble<no strict;>
+say join ',', %calories{'pear', 'plum'}:kv; # Raku - use :kv adverb
+say join ',', %calories<pear plum>:kv;      # Raku (prettier version)
+=end item
+
+Also note that the subscripting curly braces are now a normal postcircumfix
+operator rather than a special syntactic form, and thus L<checking for
+existence of keys|#exists> and L<removing keys|#delete> is done with
+adverbs.
+
+=head2 Creating references and using them
+
+In Perl, references to anonymous arrays and hashes and subs are returned
+during their creation. References to existing named variables and subs were
+generated with the C<\> operator. the "referencing/dereferencing"
+metaphor does not map cleanly to the actual Raku container system,
+so we will have to focus on the intent of the reference operators
+instead of the actual syntax.
+
+=for code :lang<perl>
+my $aref = \@aaa  ; # Perl
+
+This might be used for passing a reference to a routine, for instance. But in
+Raku, the (single) underlying object is passed (which you could consider
+to be a sort of pass by reference).
+
+=begin code
+my @array = 4,8,15;
+{ $_[0] = 66 }(@array);   # run the block with @array aliased to $_
+say @array; #  OUTPUT: «[66 8 15]␤»
+=end code
+
+The underlying L<C<Array>|/type/Array> object of C<@array> is passed, and its first value
+modified inside the declared routine.
+
+In Perl, the syntax for dereferencing an entire reference is the type-sigil
+and curly braces, with the reference inside the curly braces. In Raku, this
+concept simply does not apply, since the I<reference> metaphor does not really
+apply.
+
+In Perl, the arrow operator, C«->» , is used for single access to a
+composite's reference or to call a sub through its reference. In Raku, the dot
+operator C<.> is always used for object methods, but the rest does not really
+apply.
+
+=for code :lang<perl>
+# Perl
+    say $arrayref->[7];
+    say $hashref->{'fire bad'};
+    say $subref->($foo, $bar);
+
+In relatively recent versions of Perl (5.20 and later), a new feature allows
+the use of the arrow operator for dereferencing:  see L<Postfix Dereferencing|https://metacpan.org/pod/release/SHAY/perl-5.20.1/pod/perl5200delta.pod#Experimental_Postfix_Dereferencing>.
+This can be used to create an array from a scalar. This operation is usually
+called I<decont>, as in decontainerization, and in Raku methods such as
+C<.list> and C<.hash> are used:
+
+=for code :lang<perl>
+# Perl 5.20
+    use experimental qw< postderef >;
+    my @a = $arrayref->@*;
+    my %h = $hashref->%*;
+    my @slice = $arrayref->@[3..7];
+
+=for code :preamble<no strict;>
+# Raku
+    my @a = $contains-an-array.list;        # or @($arrayref)
+    my %h = $contains-a-hash.hash;          # or %($hashref)
+
+The "Zen" slice does the same thing:
+
+=for code :preamble<no strict;>
+# Raku
+    my @a = $contains-an-array[];
+    my %h = $contains-a-hash{};
+
+See L<the "Containers" section of the documentation|/language/containers> for
+more information.
+
+=head1 Operators
+
+See L<the documentation for operators|/language/operators>
+for full details on all operators.
+
+Unchanged:
+
+=item C<+> Numeric Addition
+=item C<-> Numeric Subtraction
+=item C<*> Numeric Multiplication
+=item C</> Numeric Division
+=item C<%> Numeric Modulus
+=item C<**> Numeric Exponentiation
+=item C<++> Numeric Increment
+=item C<--> Numeric Decrement
+=item C<! && || ^> Booleans, high-precedence
+=item C<not and or xor> Booleans, low-precedence
+=item C«== != < > <= >=»   Numeric comparisons
+=item C<eq ne lt gt le ge>  String comparisons
+
+=head2 C<,> (Comma) List separator
+
+Unchanged, but note that in order to flatten an array variable to a list (in
+order to append or prefix more items) one should use the C<|> operator
+(see also L<C<Slip>|/type/Slip>). For instance:
+
+=for code
+my @numbers = 100, 200, 300;
+my @more_numbers = 500, 600, 700;
+my @all_numbers = |@numbers, 400, |@more_numbers;
+
+That way one can concatenate arrays.
+
+Note that one does not need to have any parentheses on the right-hand side:
+the list separator takes care of creating the list, B<not> the parentheses!
+
+=head2 C«<=> cmp» Three-way comparisons
+
+In Perl, these operators returned -1, 0, or 1.
+In Raku, they return C<Order::Less>, C<Order::Same>, or C<Order::More>.
+
+C«cmp» is now named C«leg»; it forces string context for the comparison.
+
+C«<=>» still forces numeric context.
+
+C«cmp» in Raku does either C«<=>» or C<leg>, depending on the existing
+type of its arguments.
+
+=head2 C<~~> Smartmatch operator
+
+While the operator has not changed, the rules for what exactly is matched
+depend on the types of both arguments, and those rules are far from
+identical in Perl and Raku. See L<~~|/routine/~~> and
+L<the smartmatch operator|/language/operators#index-entry-smartmatch_operator>
+
+=head2 C<& | ^> String bitwise ops
+=head2 C<& | ^> Numeric bitwise ops
+=head2 C<& | ^> Boolean ops
+
+In Perl, C<& | ^> were invoked according to the contents of their
+arguments. For example, C<31 | 33> returns a different result than C<"31" |
+"33">.
+
+In Raku, those single-character ops have been removed, and replaced by
+two-character ops which coerce their arguments to the needed context.
+
+=begin code :lang<text>
+# Infix ops (two arguments; one on each side of the op)
++&  +|  +^  And Or Xor: Numeric
+~&  ~|  ~^  And Or Xor: String
+?&  ?|  ?^  And Or Xor: Boolean
+
+# Prefix ops (one argument, after the op)
++^  Not: Numeric
+~^  Not: String
+?^  Not: Boolean (same as the ! op)
+=end code
+
+=head2 C«<< >>» Numeric shift left|right ops
+
+Replaced by C«+<» and C«+>» .
+
+=for code :lang<perl>
+say 42 << 3; # Perl
+=for code
+say 42 +< 3; # Raku
+
+=head2 C«=>» Fat comma
+
+In Perl, C«=>» acted just like a comma, but also quoted its left-hand
+side.
+
+In Raku, C«=>» is the L<C<Pair>|/type/Pair> operator, which is quite different in
+principle, but works the same in many situations.
+
+If you were using C«=>» in hash initialization, or in passing arguments to
+a sub that expects a hashref, then the usage is likely identical.
+
+    sub get_the_loot { ... }; # Raku stub
+    # Works in Perl and Raku
+    my %hash = ( AAA => 1, BBB => 2 );
+    get_the_loot( 'diamonds', { quiet_level => 'very', quantity => 9 }); # Note the curly braces
+
+If you were using C«=>» as a convenient shortcut to not have to quote part
+of a list, or in passing arguments to a sub that expects a flat list of
+C<KEY, VALUE, KEY, VALUE>, then continuing to use C«=>» may break your code.
+The easiest workaround is to change that I<fat arrow> to a regular comma, and
+manually add quotes to its left-hand side. Or, you can change the sub's API
+to L<slurp a hash|/language/signatures#Slurpy_parameters>.
+A better long-term solution is to change the sub's API to
+expect L<C<Pair>|/type/Pair>s; however, this requires you to change
+all sub calls at once.
+
+=begin code :lang<perl>
+# Perl
+sub get_the_loot {
+    my $loot = shift;
+    my %options = @_;
+    # ...
+}
+# Note: no curly braces in this sub call
+get_the_loot( 'diamonds', quiet_level => 'very', quantity => 9 );
+=end code
+
+=begin code
+# Raku, original API
+sub get_the_loot( $loot, *%options ) { # The * means to slurp everything
+    ...
+}
+get_the_loot( 'diamonds', quiet_level => 'very', quantity => 9 ); # Note: no curly braces in this API
+
+# Raku, API changed to specify valid options
+# The colon before the sigils means to expect a named variable,
+# with the key having the same name as the variable.
+sub get_the_loot( $loot, :$quiet_level?, :$quantity = 1 ) {
+    # This version will check for unexpected arguments!
+    ...
+}
+get_the_loot( 'diamonds', quietlevel => 'very' ); # Throws error for misspelled parameter name
+=end code
+
+=head2 C<? :> Ternary operator
+
+The conditional operator C<? :> has been replaced
+by C<?? !!>:
+
+=for code :lang<perl>
+my $result = $score > 60 ?  'Pass' :  'Fail'; # Perl
+
+=for code :preamble<my $score>
+my $result = $score > 60 ?? 'Pass' !! 'Fail'; # Raku
+
+=head2 C<.> (Dot) String concatenation
+
+Replaced by the tilde.
+
+Mnemonic: think of "stitching" together the two strings with needle and thread.
+
+=for code :lang<perl>
+$food = 'grape' . 'fruit'; # Perl
+=for code :preamble<no strict;>
+$food = 'grape' ~ 'fruit'; # Raku
+
+=head2 C<x> List repetition or string repetition operator
+
+In Perl, C<x> is the repetition operator, which behaves differently in
+scalar or list contexts:
+=item in scalar context C<x> repeats a string;
+=item in list context C<x> repeats a list, but only if the left argument
+is parenthesized!
+
+Raku uses two different repetition operators to achieve the above:
+=item C<x> for string repetitions (in any context);
+=item C<xx> for list repetitions (in any context).
+
+Mnemonic: C<x> is short and C<xx> is long, so C<xx> is the one used for lists.
+
+=for code :lang<perl>
+# Perl
+    print '-' x 80;             # Print row of dashes
+    @ones = (1) x 80;           # A list of 80 1's
+    @ones = (5) x @ones;        # Set all elements to 5
+=for code :preamble<no strict;>
+# Raku
+    print '-' x 80;             # Unchanged
+    @ones = 1 xx 80;            # Parentheses no longer needed
+    @ones = 5 xx @ones;         # Parentheses no longer needed
+
+
+=head2 C<..> C<...> Two dots or three dots, range op or flipflop op
+
+In Perl, C<..> was one of two completely different operators, depending
+on context.
+
+In list context, C<..> is the familiar range operator. Ranges from Perl
+code should B<not> require translation.
+
+In scalar context, C<..> and C<...> were the little-known Flipflop
+operators. They have been replaced by C<ff> and C<fff>.
+
+=head2 String interpolation
+
+In Perl, C<"${foo}s"> deliminates a variable name from regular text next to
+it. In Raku, simply extend the curly braces to include the sigil too:
+C<"{$foo}s">. This is in fact a very simple case of interpolating an expression.
+
+=head1 Compound statements
+
+These statements include conditionals and loops.
+
+=head2 Conditionals
+
+=head3 C<if> C<elsif> C<else> C<unless>
+
+Mostly unchanged; parentheses around the conditions are now optional, but if
+used, must not immediately follow the keyword, or it will be taken as a function
+call instead.  Binding the conditional expression to a variable is also a little
+different:
+
+=for code :lang<perl>
+if (my $x = dostuff()) {...}  # Perl
+=for code :preamble<sub dostuff {};>
+if dostuff() -> $x {...}      # Raku
+
+(You can still use the C<my> form in Raku, but it will scope to the
+outer block, not the inner.)
+
+The C<unless> conditional only allows for a single block in Raku;
+it does not allow for an C<elsif> or C<else> clause.
+
+=head3 C<given>-C<when>
+
+The C<given>-C<when> construct is like a chain of C<if>-C<elsif>-C<else>
+statements or like the C<switch>-C<case> construct C, for example.  It has the
+general structure:
+
+=for code :lang<pseudo>
+given EXPR {
+    when EXPR { ... }
+    when EXPR { ... }
+    default { ... }
+}
+
+In its simplest form, the construct is as follows:
+
+=for code :preamble<no strict;>
+given $value {                   # assigns $_
+    when "a match" {             # if $_ ~~ "a match"
+        # do-something();
+    }
+    when "another match" {       # elsif $_ ~~ "another match"
+        # do-something-else();
+    }
+    default {                    # else
+        # do-default-thing();
+    }
+}
+
+This is simple in the sense that a scalar value is matched in the C<when>
+statements against C<$_>, which was set by the C<given>.  More generally,
+the matches are actually smartmatches on C<$_> such that lookups using more
+complex entities such as regexps can be used instead of scalar values.
+
+See also the warnings on the smartmatch op above.
+
+=head2 Loops
+
+=head3 C<while> C<until>
+
+Mostly unchanged; parentheses around the conditions are now optional, but if
+used, must not immediately follow the keyword, or it will be taken as a function
+call instead.  Binding the conditional expression to a variable is also a little
+different:
+
+=for code :lang<perl>
+while (my $x = dostuff()) {...}  # Perl
+=for code :preamble<sub dostuff {};>
+while dostuff() -> $x {...}      # Raku
+
+(You can still use the C<my> form in Raku, but it will scope to the
+outer block, not the inner.)
+
+Note that reading line-by-line from a filehandle has changed.
+
+In Perl, it was done in a C<while> loop using the diamond operator. Using
+C<for> instead of C<while> was a common bug, because the C<for> causes the
+whole file to be sucked in at once, swamping the program's memory usage.
+
+In Raku, C<for> statement is B<lazy>, so we read line-by-line in a C<for>
+loop using the C<.lines> method.
+
+=for code :lang<perl>
+while (<IN_FH>)  { } # Perl
+=for code :preamble<no strict;>
+for $IN_FH.lines { } # Raku
+
+Also note that in Raku, lines are C<chomp>ed by default.
+
+=head3 C<do> C<while>/C<until>
+
+=begin code :lang<perl>
+# Perl
+do {
+    ...
+} while $x < 10;
+
+do {
+    ...
+} until $x >= 10;
+=end code
+
+The construct is still present, but C<do> was renamed to C<repeat>, to better
+represent what the construct does:
+
+=begin code :preamble<no strict;>
+# Raku
+repeat {
+    ...
+} while $x < 10;
+
+repeat {
+    ...
+} until $x >= 10;
+=end code
+
+Note that Perl's unadorned C<do> block ('C<do {...}>') behaves the same
+when used in Raku.
+
+=head3 C<for> C<foreach>
+
+Note first this common misunderstanding about the C<for> and C<foreach>
+keywords: Many programmers think that they distinguish between the C-style
+three-expression form and the list-iterator form; they do not! In fact,
+the keywords are interchangeable; the Perl compiler looks for the
+semicolons within the parentheses to determine which type of loop to parse.
+
+The C-style three-factor form now uses the C<loop> keyword, and is
+otherwise unchanged. The parentheses B<are> still required.
+
+=for code :lang<perl>
+for  ( my $i = 1; $i <= 10; $i++ ) { ... } # Perl
+=for code
+loop ( my $i = 1; $i <= 10; $i++ ) { ... } # Raku
+
+
+The loop-iterator form is named C<for> in Raku and C<foreach> is no longer a keyword.
+The C<for> loop has the following rules:
+=item parentheses are optional;
+=item the iteration variable, if any, has been moved from appearing before the list, to
+appearing after the list and an added arrow operator;
+=item the iteration variable is now always lexical: C<my> is neither needed nor
+allowed;
+=item the iteration variable is a I<read-only> alias to the current list element (in Perl
+it is a I<read-write> alias!). If a read-write alias is required, change the C«->»  before the iteration
+variable to a C«<->». When translating from Perl, inspect the use of the loop variable to decide if
+read-write is needed.
+
+=for code :lang<perl>
+for my $car (@cars)  {...} # Perl; read-write
+=for code :preamble<no strict;>
+for @cars  -> $car   {...} # Raku; read-only
+for @cars <-> $car   {...} # Raku; read-write
+
+In Raku and unlike Perl, the default topic C<$_> will behave in the same way,
+becoming read-only when used as a topic variable.
+
+=for code :lang<perl>
+for (@cars)      {...} # Perl; $_ is read-write
+=for code :preamble<no strict;>
+for @cars        {...} # Raku; $_ is read-only
+for @cars <-> $_ {...} # Raku; $_ is also read-write
+
+It is possible to consume more than one element of the list in each iteration
+simply specifying more than one variable after the arrow operator:
+
+=begin code
+my @array = 1..10;
+for @array -> $first, $second {
+    say "First is $first, second is $second";
+}
+=end code
+
+For cases in which the number of elements iterated over isn't a multiple
+of the number of variables after the arrow operator, you can provide variables
+with default values:
+
+=begin code
+my @array = 1..9;
+for @array -> $first, $second = 0 {
+    say "First is $first, second is $second";
+}
+=end code
+
+=head3 C<each>
+
+Here is the equivalent to Perl’s C<while…each(%hash)> or C<while…each(@array)>
+(i.e., iterating over both the keys/indices and values of a data structure) in
+Raku:
+
+=for code :lang<perl>
+while (my ($i, $v) = each(@array)) { ... } # Perl
+=for code :preamble<no strict;>
+for @array.kv -> $i, $v { ... } # Raku
+
+=for code :lang<perl>
+while (my ($k, $v) = each(%hash)) { ... } # Perl
+=for code :preamble<no strict;>
+for %hash.kv -> $k, $v { ... } # Raku
+
+=head2 Flow control statements
+
+Unchanged:
+
+=item C<next>
+=item C<last>
+=item C<redo>
+
+=head3 C<continue>
+
+There is no longer a C<continue> block.
+Instead, use a C<NEXT> block (phaser) within the body of the loop.
+
+=for code :lang<perl>
+# Perl
+    my $str = '';
+    for (1..5) {
+        next if $_ % 2 == 1;
+        $str .= $_;
+    }
+    continue {
+        $str .= ':'
+    }
+
+=for code
+# Raku
+    my $str = '';
+    for 1..5 {
+        next if $_ % 2 == 1;
+        $str ~= $_;
+        NEXT {
+            $str ~= ':'
+        }
+    }
+
+Please note that phasers don't really need a block.  This can be very handy
+when you don't want another scope:
+
+=for code
+# Raku
+    my $str = '';
+    for 1..5 {
+        next if $_ % 2 == 1;
+        $str ~= $_;
+        NEXT $str ~= ':';
+    }
+
+
+=head1 Functions
+
+=comment NOTE FOR EDITORS: When adding functions, please place them in
+                           alphabetical order.
+
+=head2 Built-ins with bare blocks
+
+Builtins that previously accepted a bare block followed, without
+a comma, by the remainder of the arguments will now
+require a comma between the block and the arguments e.g. C<map>, C<grep>,
+etc.
+
+=for code :lang<perl>
+my @results = grep { $_ eq "bars" } @foo; # Perl
+=for code :preamble<no strict;>
+my @results = grep { $_ eq "bars" }, @foo; # Raku
+
+
+=head2 C<delete>
+
+Turned into an adverb of the
+L<C<{}> hash subscripting|#{}_Hash_indexing/slicing>
+and L<C<[]> array subscripting|#[]_Array_indexing/slicing> operators.
+
+=for code :lang<perl>
+my $deleted_value = delete $hash{$key};  # Perl
+=for code :preamble<no strict;>
+my $deleted_value = %hash{$key}:delete;  # Raku - use :delete adverb
+
+=for code :lang<perl>
+my $deleted_value = delete $array[$i];  # Perl
+=for code :preamble<no strict;>
+my $deleted_value = @array[$i]:delete;  # Raku - use :delete adverb
+
+=head2 C<exists>
+
+Turned into an adverb of the
+L<C<{}> hash subscripting|#{}_Hash_indexing/slicing>
+and L<C<[]> array subscripting|#[]_Array_indexing/slicing> operators.
+
+=for code :lang<perl>
+say "element exists" if exists $hash{$key};  # Perl
+=for code :preamble<no strict;>
+say "element exists" if %hash{$key}:exists;  # Raku - use :exists adverb
+
+=for code :lang<perl>
+say "element exists" if exists $array[$i];  # Perl
+=for code :preamble<no strict;>
+say "element exists" if @array[$i]:exists;  # Raku - use :exists adverb
+
+=head1 Regular expressions ( regex / regexp )
+
+=head2 Change C<=~> and C<!~> to C<~~> and C<!~~> .
+
+In Perl, matches and substitutions are done against a variable using the
+C<=~> regexp-binding op.
+
+In Raku, the C<~~> smartmatch op is used instead.
+
+=for code :lang<perl>
+next if $line  =~ /static/  ; # Perl
+=for code :preamble<no strict;>
+next if $line  ~~ /static/  ; # Raku
+
+=for code :lang<perl>
+next if $line  !~ /dynamic/ ; # Perl
+=for code :preamble<no strict;>
+next if $line !~~ /dynamic/ ; # Raku
+
+=for code :lang<perl>
+$line =~ s/abc/123/;          # Perl
+=for code :preamble<no strict;>
+$line ~~ s/abc/123/;          # Raku
+
+Alternately, the new C<.match> and C<.subst> methods can be used. Note that
+L<C<.subst> is non-mutating|/routine/subst>.
+
+=head2 Captures start with 0, not 1
+
+=for code :lang<perl>
+/(.+)/ and print $1; # Perl
+=for code
+/(.+)/ and print $0; # Raku
+
+=head2 Move modifiers
+
+Move any modifiers from the end of the regex to the beginning. This may
+require you to add the optional C<m> on a plain match like C«/abc/».
+
+=for code :lang<perl>
+next if $line =~    /static/i ; # Perl
+=for code :preamble<no strict;>
+next if $line ~~ m:i/static/  ; # Raku
+
+=head2 Add :P5 or :Perl5 adverb
+
+If the actual regex is complex, you may want to use it as-is (with some exceptions),
+by adding the C<P5> modifier.
+
+=for code :lang<perl>
+next if $line =~    m/[aeiou]/   ; # Perl
+=for code :preamble<no strict;>
+next if $line ~~ m:P5/[aeiou]/   ; # Raku, using P5 modifier
+next if $line ~~ m/  <[aeiou]> / ; # Raku, native new syntax
+
+If the Perl regex has any modifiers, move them from the end and place them
+after the C<P5> modifier. Each modifier will have to be separated from any
+others by a colon. For example:
+
+=for code :lang<perl>
+my $a = "abcabc";
+my $b = $a;
+$a =~ s/abcaBc//gi;  # Perl 5
+$a ~~ s:P5:g:i/ab//; # Raku, using P5 modifier
+$b ~~ s:gi/ab//;     # Raku, native new syntax
+say $a;
+say $b;
+
+Another accommodation required with the P5 syntax is to replace curly braces
+with square brackets when specifying Unicode in the expression:
+
+=for code :lang<perl>
+next if $line =~ m/\x{2043};
+next if $line ~~ m:P5/\x[2043]/;
+next if $line ~~ /\x[2043]/;
+
+Please note that the Perl regular expression syntax dates from many years
+ago and may lack features that have been added since the beginning of the
+Raku project. Two such features not implemented in Raku for the P5
+syntax are the Perl Unicode property matchers C<\p{}> and C<\P{}>.
+
+=head2 Special matchers generally fall under the C«<>» syntax
+
+There are many cases of special matching syntax that Perl regexes
+support. They won't all be listed here but often, instead of being
+surrounded by C<()>, the assertions will be surrounded by C«<>».
+
+For character classes, this means that:
+
+=item C<[abc]> becomes C«<[abc]>»
+
+=item C<[^abc]> becomes C«<-[abc]>»
+
+=item C<[a-zA-Z]> becomes C«<[a..zA..Z]>»
+
+=item C<[[:upper:]]> becomes C«<:Upper>»
+
+=item C<[abc[:upper:]]> becomes C«<[abc]+:Upper>»
+
+For lookaround assertions:
+
+=item C<(?=[abc])> becomes C«<?[abc]>»
+
+=item C<(?=ar?bitrary* pattern)> becomes C«<before ar?bitrary* pattern>»
+
+=item C<(?!=[abc])> becomes C«<![abc]>»
+
+=item C<(?!=ar?bitrary* pattern)> becomes C«<!before ar?bitrary* pattern>»
+
+=item C«(?<=ar?bitrary* pattern)» becomes C«<after ar?bitrary* pattern>»
+
+=item C«(?<!ar?bitrary* pattern)» becomes C«<!after ar?bitrary* pattern>»
+
+For more info see L«lookahead assertions|/language/regexes#Lookahead_assertions».
+
+(Unrelated to C«<>» syntax, the "lookaround" C</foo\Kbar/> becomes C«/foo <( bar )> /»
+
+=item C<(?(?{condition))yes-pattern|no-pattern)> becomes C«[ <?{condition}>
+      yes-pattern | no-pattern ]»
+
+=head2 Longest token matching (LTM) displaces alternation
+
+In Raku regexes, C<|> does LTM, which decides which alternation wins
+an ambiguous match based off of a set of rules, rather than about which
+was written first.
+
+The simplest way to deal with this is just to change any C<|> in your
+Perl regex to a C<||>.
+
+However, if a regex written with C<||> is inherited or composed into a grammar
+that uses C<|> either by design or typo, the result may not work as expected.
+So when the matching process becomes complex, you finally need to have some
+understanding of both, especially how LTM strategy works. Besides, C<|> may be
+a better choice for grammar reuse.
+
+=head2 Named captures
+
+These work in a slightly different way; also they only work in the latest
+versions of Perl.
+
+=for code :lang<perl>
+use v5.22;
+"þor is mighty" =~ /is (?<iswhat>\w+)/n;
+say $+{iswhat};
+
+The C<iswhat> within a non-capturing group is used to actually capture what is
+behind, and up to the end of the group (the C<)>). The capture goes to the C<%+>
+hash under the key with the name of the capture. In Raku
+L<named captures work this way|/language/regexes#Capturing_groups>
+
+=for code
+"þor is mighty" ~~ /is \s+ $<iswhat>=(\w+)/;
+say $<iswhat>;
+
+An actual assignment is made within the regular expression; that's the same
+syntax used for the variable outside it.
+
+=begin comment
+TODO more rules. Use L<< C<translate_regex.pl> from Blue Tiger|https://github.com/Util/Blue_Tiger/>> in the meantime.
+=end comment
+
+=head3 Comments
+
+As with Perl, comments work as usual in regexes.
+
+    / word #`(match lexical "word") /
+
+=head1 BEGIN, UNITCHECK, CHECK, INIT and END
+
+Except for C<UNITCHECK>, all of these special blocks exist in Raku as well.
+In Raku, these are called L<Phasers|/language/phasers>.   But there are some
+differences!
+
+=head2 UNITCHECK becomes CHECK
+
+There is currently B<no> direct equivalent of C<CHECK> blocks in Raku. The
+C<CHECK> phaser in Raku has the same semantics as the C<UNITCHECK> block in
+Perl: it gets run whenever the compilation unit in which it occurs has
+finished parsing.  This is considered a much saner semantic than the current
+semantics of C<CHECK> blocks in Perl.  But for compatibility reasons, it was
+impossible to change the semantics of C<CHECK> blocks in Perl, so a
+C<UNITCHECK> block was introduced in 5.10.  Consequently, it was decided that
+the Raku C<CHECK> phaser would follow the saner Perl C<UNITCHECK> semantics.
+
+=head2 No block necessary
+
+In Perl, these special blocks B<must> have curly braces, which implies a
+separate scope.  In Raku this is not necessary, allowing these special
+blocks to share their scope with the surrounding lexical scope.
+
+=for code :lang<perl>
+my $foo;             # Perl
+BEGIN { $foo = 42 }
+=for code
+BEGIN my $foo = 42;  # Raku
+
+=head2 Changed semantics with regards to precompilation
+
+If you put C<BEGIN> and C<CHECK> phasers in a module that is being precompiled,
+then these phasers will B<only> be executed during precompilation and B<not>
+when a precompiled module is being loaded.  So when porting module code from
+Perl, you may need to change C<BEGIN> and C<CHECK> blocks to C<INIT> blocks to
+ensure that they're run when loading that module.
+
+=head1 Pragmas
+
+=head3 C<strict>
+
+Strict mode is now on by default.
+
+=head3 C<warnings>
+
+Warnings are now on by default.
+
+C<no warnings> can be achieved by wrapping code in a C<quietly> {} block.
+
+=head3 C<autodie>
+
+The functions which were altered by C<autodie> to throw exceptions on
+error, now generally return L<C<Failure>|/type/Failure>s by default.  You can test a L<C<Failure>|/type/Failure>
+for definedness / truthiness without any problem.  If you use the L<C<Failure>|/type/Failure>
+in any other way, then the L<C<Exception>|/type/Exception> that was encapsulated by the L<C<Failure>|/type/Failure>
+will be thrown.
+
+=for code :lang<perl>
+# Perl
+open my $i_fh, '<', $input_path;  # Fails silently on error
+use autodie;
+open my $o_fh, '>', $output_path; # Throws exception on error
+
+=for code :preamble<no strict;>
+# Raku
+my $i_fh = open $input_path,  :r; # Returns Failure on error
+my $o_fh = open $output_path, :w; # Returns Failure on error
+
+Because you can check for truthiness without any problem, you can use the
+result of an C<open> in an C<if> statement:
+
+=for code :preamble<no strict;>
+# Raku
+if open($input_path,:r) -> $handle {
+    .say for $handle.lines;
+}
+else {
+    # gracefully handle the fact that the open() failed
+}
+
+=head3 C<base>, C<parent>
+
+Both C<use base> and C<use parent> have been replaced in Raku by the
+C<is> keyword, in the class declaration.
+
+=for code :lang<perl>
+# Perl
+package Cat;
+use base qw(Animal);
+
+=for code :preamble<class Animal {}>
+# Raku
+class Cat is Animal {}
+
+Note that the C<Animal> class must be B<known> at compilation time prior to
+be able to inherit from it.
+
+=head3 C<bigint> C<bignum> C<bigrat>
+
+No longer relevant.
+
+L<C<Int>|/type/Int> is now arbitrary precision, as is the numerator of L<C<Rat>|/type/Rat> (the
+denominator is limited to C<2**64>, after which it will automatically
+upgrade to L<C<Num>|/type/Num> to preserve performance).  If you want a L<C<Rat>|/type/Rat> with
+an arbitrary-precision denominator, L<C<FatRat>|/type/FatRat> is available.
+
+=head3 C<constant>
+
+In Raku, C<constant> is a declarator for variables, just like C<my>, except
+the variable is permanently locked to the result of its initialization
+expression (evaluated at compile time).
+
+So, change the C«=>» to C<=>.
+
+=for code :lang<perl>
+use constant DEBUG => 0; # Perl
+=for code :preamble<no strict;>
+constant DEBUG = 0;      # Raku
+
+=for code :lang<perl>
+use constant pi => 4 * atan2(1, 1); # Perl
+=for code
+tau, pi, e, i; # built-in constants in Raku
+τ, π, 𝑒        # and their unicode equivalents
+
+=head3 C<encoding>
+
+Allows you to write your script in non-ascii or non-utf8. Raku uses, for the
+time being, only utf8 for its scripts.
+
+=head3 C<use integer>
+
+Perl pragma to use integer arithmetic instead of floating point.  There is
+no such thing in Raku.  If you use native integers in your calculations,
+then this will be the closest thing.
+
+=for code
+#Raku
+my int $foo = 42;
+my int $bar = 666;
+say $foo * $bar;    # uses native integer multiplication
+
+=head3 C<use lib>
+
+Manipulate where modules are looked up at compile time.  The underlying logic is
+B<very> different from Perl, but in the case you are using an equivalent
+syntax, C<use lib> in Raku works the same as in Perl.
+
+=head3 C<use mro>
+
+No longer relevant.
+
+In Raku, method calls now always use the C3 method resolution order.
+If you need to find out parent classes of a given class, you can invoke the
+C<mro> metamethod thusly:
+
+=for code :preamble<class Animal {}>
+say Animal.^mro;    # .^ indicates calling a metamethod on the object
+
+=head3 C<use utf8>
+
+No longer relevant: in Raku, source code is expected to be in utf8 encoding.
+
+=head3 C<use vars>
+
+Discouraged in Perl. See L<https://perldoc.perl.org/vars.html>.
+
+You should refactor your Perl code to remove the need for C<use vars>,
+before translating into Raku.
+
+
+
+=head1 Command-line flags
+
+Unchanged:
+
+-c -e -h -I -n -p -v -V
+
+=head3 C<-a>
+
+Change your code to use C<.split> manually.
+
+=head3 C<-F>
+
+Change your code to use C<.split> manually.
+
+=head3 C<-l>
+
+This is now the default behavior.
+
+=head3 C<-M> C<-m>
+
+Only C<-M> remains. And, as you can no longer use the "no Module" syntax, the
+use of C<-> with C<-M> to "no" a module is no longer available.
+
+=head3 C<-E>
+
+Since all features are already enabled, just use lowercase C<-e> .
+
+=head3 C<-d>, C<-dt>, C<-d:foo>, C<-D>, etc.
+
+Replaced with the C<++BUG> metasyntactic option.
+
+=head3 -s
+
+Switch parsing is now done by the parameter list of the C<MAIN> subroutine.
+
+=for code :lang<perl>
+# Perl
+    #!/usr/bin/perl -s
+    if ($xyz) { print "$xyz\n" }
+./example.pl -xyz=5
+5
+
+=for code
+# Raku
+    sub MAIN( Int :$xyz ) {
+        say $xyz if $xyz.defined;
+    }
+
+=for code :lang<shell>
+raku example.raku --xyz=5
+5
+raku example.raku -xyz=5
+5
+
+=item C<-t>
+
+Removed.
+
+=item C<-P> C<-u> C<-U> C<-W> C<-X>
+
+Removed. See
+L<Removed Syntactic Features|https://github.com/Raku/old-design-docs/blob/master/S19-commandline.pod#Removed_Syntactic_Features>.
+
+=item C<-w>
+
+This is now the default behavior.
+
+=item C<-S>, C<-T>.
+
+This has been eliminated. Several ways to
+L<replicate "taint" mode are discussed in Reddit|https://www.reddit.com/r/perl6/comments/718z4o/taint_mode_for_perl_6/>.
+
+=head1 File-related operations
+
+=head2 Reading the lines of a text file into an array
+
+In Perl, a common idiom for reading the lines of a text file goes
+something like this:
+
+=for code :lang<perl>
+open my $fh, "<", "file" or die "$!";
+my @lines = <$fh>;                # lines are NOT chomped
+close $fh;
+
+In Raku, this has been simplified to
+
+    my @lines = "file".IO.lines;  # auto-chomped
+
+Do I<not> be tempted to try slurping in a file and splitting the resulting
+string on newlines as this will give an array with a trailing empty element,
+which is one more than you probably expect (it's also more complicated),
+e.g.:
+
+    # initialize the file to read
+    spurt "test-file", q:to/END/;
+    first line
+    second line
+    third line
+    END
+    # read the file
+    my @lines = "test-file".IO.slurp.split(/\n/);
+    say @lines.elems;    #-> 4
+
+If for some reason you do want to slurp the file first, then you can call
+the C<lines> method on the result of C<slurp> instead:
+
+    my @lines = "test-file".IO.slurp.lines;  # also auto-chomps
+
+Also, be aware that C<$!> is not really relevant for file IO operation failures
+in Raku. An IO operation that fails will return a L<C<Failure>|/type/Failure> instead of
+throwing an exception. If you want to return the failure message, it is in the
+failure itself, not in C<$!>. To do similar IO error checking and reporting as
+in Perl:
+
+    my $fh = open('./bad/path/to/file', :w) or die $fh;
+
+I<Note>: C<$fh> instead of C<$!>. Or, you can set C<$_> to the failure and die
+with $_:
+
+    my $fh = open('./bad/path/to/file', :w) orelse .die; # Raku
+
+Any operation that tries to use the failure will cause the program to fault and
+terminate. Even just a call to the C<.self> method is sufficient.
+
+    my $fh = open('./bad/path/to/file', :w).self;
+
+=head2 Capturing the standard output of executables.
+
+Whereas in Perl you would do:
+
+=for code :lang<perl>
+my $arg = 'Hello';
+my $captured = `echo \Q$arg\E`;
+my $captured = qx(echo \Q$arg\E);
+
+Or using C<String::ShellQuote> (because C<\Q…\E> is not completely right):
+
+=for code :lang<perl>
+my $arg = shell_quote 'Hello';
+my $captured = `echo $arg`;
+my $captured = qx(echo $arg);
+
+In Raku, you will probably want to run commands without using the shell:
+
+    my $arg = 'Hello';
+    my $captured = run('echo', $arg, :out).out.slurp;
+    my $captured = run(«echo "$arg"», :out).out.slurp;
+
+You can also use the shell if you really want to:
+
+    my $arg = 'Hello';
+    my $captured = shell("echo $arg", :out).out.slurp;
+    my $captured = qqx{echo $arg};
+
+But beware that in this case there is B<no protection at all>! C<run> does
+not use the shell, so there is no need to escape the arguments (arguments
+are passed directly). If you are using C<shell> or C<qqx>, then everything
+ends up being one long string which is then passed to the shell. Unless you
+validate your arguments very carefully, there is a high chance of introducing
+shell injection vulnerabilities with such code.
+
+=head1 Environment variables
+
+=head2 Perl module library path
+
+Perl use C<PERLLIB> and C<PERL5LIB> to specify extra search paths for modules
+and Both of them are ignored by Raku. Instead, you need to use X<C<RAKULIB>|Reference,RAKULIB>.
+The directory separator also changed from ':' to ','.
+
+=for code :lang<shell>
+$ export PERL5LIB=/module/dir1:/module/dir2;
+
+is
+
+=for code :lang<shell>
+$ export RAKULIB=/module/dir1,/module/dir2;
+
+As with Perl, if you don't specify C<RAKULIB>, you need to specify the
+library path within the program via the C<use lib> pragma:
+
+=for code :lang<perl>
+use lib '/some/module/lib'
+
+Note that C<RAKULIB> is more of a developer convenience in Raku (as
+opposed to the equivalent usage of C<PERL5LIB> in Perl) and shouldn't be
+used by module consumers as it could be removed in the future.  This is
+because Raku's module loading isn't directly compatible with operating
+system paths.
+
+=head1 Misc.
+
+=head2 C<'0'> is True
+
+Unlike Perl, a string containing nothing but zero ('0') is C<True>. As Raku
+has types in core, that makes more sense. This also means the common pattern:
+
+=for code :lang<perl>
+... if defined $x and length $x; # or just length() in modern perls
+
+In Raku becomes a simple
+
+=for code :preamble<no strict;>
+... if $x;
+
+=head2 C<dump>
+
+Gone.
+
+The Raku design allows for automatic and transparent saving-and-loading of
+compiled bytecode.
+
+Rakudo supports this only for modules so far.
+
+=head2 AUTOLOAD
+
+The L«C<FALLBACK> method|/language/typesystem#index-entry-FALLBACK_(method)»
+provides similar functionality.
+
+=head2 Importing specific functions from a module
+
+In Perl it is possible to selectively import functions from a given
+module like so:
+
+=for code :lang<perl>
+use ModuleName qw{foo bar baz};
+
+In Raku one specifies the functions which are to be exported by using
+the C<is export> role on the relevant subs; I<all> subs with this role
+are then exported.  Hence, the following module C<Bar> exports the subs
+C<foo> and C<bar> but not C<baz>:
+
+=begin code :solo
+unit module Bar;
+
+sub foo($a) is export { say "foo $a" }
+sub bar($b) is export { say "bar $b" }
+sub baz($z) { say "baz $z" }
+=end code
+
+To use this module, simply C<use Bar> and the functions C<foo> and
+C<bar> will be available
+
+=for code :skip-test<needs dummy module>
+use Bar;
+foo(1);    #=> "foo 1"
+bar(2);    #=> "bar 2"
+
+If one tries to use C<baz> an "Undeclared routine" error is raised at
+compile time.
+
+So, how does one recreate the Perl behavior of being able to
+selectively import functions? By defining an C<EXPORT> sub inside the
+module which specifies the functions to be exported and removing the
+C<module Bar> statement.
+
+The former module C<Bar> now is merely a file called C<Bar.rakumod> with the
+following contents:
+
+=begin code :preamble<no strict;>
+sub EXPORT(*@import-list) {
+    my %exportable-subs =
+        '&foo' => &foo,
+        '&bar' => &bar,
+        ;
+    my %subs-to-export;
+    for @import-list -> $import {
+        if grep $sub-name, %exportable-subs.keys {
+            %subs-to-export{$sub-name} = %exportable-subs{$sub-name};
+        }
+    }
+    return %subs-to-export;
+}
+
+sub foo($a, $b, $c) { say "foo, $a, $b, $c" }
+sub bar($a) { say "bar, $a" }
+sub baz($z) { say "baz, $z" }
+=end code
+
+Note that the subs are no longer explicitly exported via the C<is
+export> role, but by an C<EXPORT> sub which specifies the subs
+in the module we want to make available for export and then we are
+populating a hash containing the subs which will actually be exported.
+The C<@import-list> is set by the C<use> statement in the calling code
+thus allowing us to selectively import the subs made available by the
+module.
+
+So, to import only the C<foo> routine, we do the following in the
+calling code:
+
+=for code :skip-test<needs dummy module>
+use Bar <foo>;
+foo(1);       #=> "foo 1"
+
+Here we see that even though C<bar> is exportable, if we don't
+explicitly import it, it's not available for use.  Hence this causes an
+"Undeclared routine" error at compile time:
+
+=for code :skip-test<needs dummy module>
+use Bar <foo>;
+foo(1);
+bar(5);       #!> "Undeclared routine: bar used at line 3"
+
+However, this will work
+
+=for code :skip-test<needs dummy module>
+use Bar <foo bar>;
+foo(1);       #=> "foo 1"
+bar(5);       #=> "bar 5"
+
+Note also that C<baz> remains unimportable even if specified in the
+C<use> statement:
+
+=for code :skip-test<needs dummy module>
+use Bar <foo bar baz>;
+baz(3);       #!> "Undeclared routine: baz used at line 2"
+
+In order to get this to work, one obviously has to jump through many
+hoops. In the standard use-case where one specifies the functions to be
+exported via the C<is export> role, Raku automatically creates the
+C<EXPORT> sub in the correct manner for you, so one should consider very
+carefully whether or not writing one's own C<EXPORT> routine is
+worthwhile.
+
+=head2 Importing groups of specific functions from a module
+
+If you would like to export groups of functions from a module, you just
+need to assign names to the groups, and the rest will work
+automagically. When you specify C<is export> in a sub declaration, you
+are in fact adding this subroutine to the C<:DEFAULT> export group.  But
+you can add a subroutine to another group, or to multiple groups:
+
+=for code :solo
+unit module Bar;
+sub foo() is export { }                   # added by default to :DEFAULT
+sub bar() is export(:FNORBL) { }          # added to the FNORBL export group
+sub baz() is export(:DEFAULT:FNORBL) { }  # added to both
+
+So now you can use the C<Bar> module like this:
+
+=for code :skip-test<needs dummy module>
+use Bar;                     # imports foo / baz
+use Bar :FNORBL;             # imports bar / baz
+use Bar :ALL;                # imports foo / bar / baz
+
+Note that C<:ALL> is an auto-generated group that encompasses B<all>
+subroutines that have an C<is export> trait.
+
+=head1 Core modules
+
+=head3 C<Data::Dumper>
+
+In Perl, the L<Data::Dumper|https://metacpan.org/pod/Data::Dumper>
+module was used for serialization, and for
+debugging views of program data structures by the programmer.
+
+In Raku, these tasks are accomplished with the C<.raku> method, which
+every object has.
+
+=begin code :lang<perl>
+# Given:
+    my @array_of_hashes = (
+        { NAME => 'apple',   type => 'fruit' },
+        { NAME => 'cabbage', type => 'no, please no' },
+    );
+# Perl
+    use Data::Dumper;
+    $Data::Dumper::Useqq = 1;
+    print Dumper \@array_of_hashes; # Note the backslash.
+=end code
+
+=for code :preamble<no strict;>
+# Raku
+say @array_of_hashes.raku; # .raku on the array, not on its reference.
+
+
+In Perl, Data::Dumper has a more complex optional calling convention,
+which allows for naming the VARs.
+
+In Raku, placing a colon in front of the variable's sigil turns it into a
+Pair, with a key of the var name, and a value of the var value.
+
+=begin code :lang<perl>
+# Given:
+    my ( $foo, $bar ) = ( 42, 44 );
+    my @baz = ( 16, 32, 64, 'Hike!' );
+# Perl
+    use Data::Dumper;
+    print Data::Dumper->Dump(
+        [     $foo, $bar, \@baz   ],
+        [ qw(  foo   bar   *baz ) ],
+    );
+# Output
+#    $foo = 42;
+#    $bar = 44;
+#    @baz = (
+#             16,
+#             32,
+#             64,
+#             'Hike!'
+#           );
+=end code
+
+=begin code :preamble<no strict;>
+# Raku
+say [ :$foo, :$bar, :@baz ].raku;
+# OUTPUT: «["foo" => 42, "bar" => 44, "baz" => [16, 32, 64, "Hike!"]]␤»
+=end code
+
+There is also a Rakudo-specific debugging aid for developers called C<dd> (Tiny
+Data Dumper, so tiny it lost the "t").  This will print the C<.raku>
+representation plus some extra information that could be introspected, of the
+given variables on STDERR:
+
+=begin code :preamble<no strict;> :ok-test<dd>
+# Raku
+dd $foo, $bar, @baz;
+# OUTPUT: «Int $foo = 42␤Int $bar = 44␤Array @baz = [16, 32, 64, "Hike!"]␤»
+=end code
+
+=head3 C<Getopt::Long>
+
+Switch parsing is now done by the parameter list of the C<MAIN> subroutine.
+
+=begin code :lang<perl>
+# Perl
+    use 5.010;
+    use Getopt::Long;
+    GetOptions(
+        'length=i' => \( my $length = 24       ), # numeric
+        'file=s'   => \( my $data = 'file.dat' ), # string
+        'verbose'  => \( my $verbose           ), # flag
+    ) or die;
+    say $length;
+    say $data;
+    say 'Verbosity ', ($verbose ? 'on' : 'off') if defined $verbose;
+perl example.pl
+    24
+    file.dat
+perl example.pl --file=foo --length=42 --verbose
+    42
+    foo
+    Verbosity on
+
+perl example.pl --length=abc
+    Value "abc" invalid for option length (number expected)
+    Died at c.pl line 3.
+=end code
+
+=begin code
+# Raku
+    sub MAIN( Int :$length = 24, :file($data) = 'file.dat', Bool :$verbose ) {
+        say $length if $length.defined;
+        say $data   if $data.defined;
+        say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+    }
+=end code
+
+=begin code :lang<shell>
+raku example.raku
+    24
+    file.dat
+    Verbosity off
+raku example.raku --file=foo --length=42 --verbose
+    42
+    foo
+    Verbosity on
+raku example.raku --length=abc
+    Usage:
+      c.raku [--length=<Int>] [--file=<Any>] [--verbose]
+=end code
+
+Note that Raku auto-generates a full usage message on error in
+command-line parsing.
+
+
+=head1 Automated translation
+
+A quick way to find the Raku version of a Perl construct, is to run it
+through an automated translator.
+
+B<NOTE:> None of these translators are yet complete.
+
+=head2 Blue Tiger
+
+This project is dedicated to automated modernization of Perl code. It does
+not (yet) have a web front-end, and so must be locally installed to be
+useful. It also contains a separate program to translate Perl regexes
+into Raku.
+
+L<https://github.com/Util/Blue_Tiger/>
+
+=head2 Perlito
+
+Online translator!
+
+This project is a suite of Perl cross-compilers, including Perl to Raku
+translation. It has a web front-end, and so can be used without
+installation. It only supports a subset of Perl syntax so far.
+
+L<https://fglock.github.io/Perlito/perlito/perlito5.html>
+
+=head2 Perl-ToPerl6
+
+The late Jeff Goff's
+L<Perl::ToPerl6|https://metacpan.org/release/JGOFF/Perl-ToPerl6-0.03> module for
+Perl is designed around Perl::Critic's framework. It aims to convert Perl to
+compilable (if not necessarily running) Raku code with the bare minimum of
+changes. Code transformers are configurable and pluggable, so you can create and
+contribute your own transformers, and customize existing transformers to your
+own needs. You can install the latest release from CPAN, or follow the project
+live on GitHub. An online converter may become available at some point.
+
+=head1 Other sources of translation knowledge
+
+=item L<https://perlgeek.de/en/article/5-to-6>
+=item L<https://github.com/Util/Blue_Tiger/>
+=item L<https://perl6advent.wordpress.com/2011/12/23/day-23-idiomatic-perl-6/>
+=item L</language/perl-overview|/language/perl-overview>
+
+=end pod

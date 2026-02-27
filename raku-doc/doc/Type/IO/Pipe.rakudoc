@@ -1,0 +1,42 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class IO::Pipe
+
+=SUBTITLE Buffered inter-process string or binary stream
+
+    class IO::Pipe is IO::Handle {}
+
+An C<IO::Pipe> object closely corresponds to a UNIX pipe. It has one end where
+it consumes string or binary data, and another where it reproduces the same
+data. It is buffered, so that a write without a read doesn't immediately
+block.
+
+Pipes can be easily constructed with L<sub run and Proc::Async.new|/type/Proc::Async>.
+
+=head1 Methods
+
+=head2 method close
+
+    method close(IO::Pipe: --> Proc:D)
+
+Closes the pipe and returns L<C<Proc>|/type/Proc> object from which the pipe originates.
+
+=head2 method IO
+
+    method IO(IO::Pipe: --> IO::Path:U)
+
+Returns an L<C<IO::Path>|/type/IO::Path> type object.
+
+=head2 method path
+
+    method path(IO::Pipe: --> IO::Path:U)
+
+Returns an L<C<IO::Path>|/type/IO::Path> type object.
+
+=head2 method proc
+
+    method proc(IO::Pipe: --> Proc:D)
+
+Returns the L<C<Proc>|/type/Proc> object from which the pipe originates.
+
+=end pod

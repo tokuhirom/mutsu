@@ -1,0 +1,58 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Inheritance::NotComposed
+
+=SUBTITLE Error due to inheriting from a type that's not composed yet
+
+    class X::Inheritance::NotComposed is Exception {}
+
+When you try to inherit from a class that hasn't been
+L<composed|/language/mop#Composition_time_and_static_reasoning>, an
+exception of type X::Inheritance::NotComposed is thrown.
+
+Usually this happens because it's not yet fully parsed, or that is stubbed:
+
+For example
+
+=for code :skip-test<compile time error>
+class A { ... };    # literal ... for stubbing
+class B is A { };
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+'B' cannot inherit from 'A' because 'A' isn't composed yet (maybe it is stubbed)
+
+The second common way to trigger this error is by trying to inherit from a
+class from within the class body.
+
+For example
+
+=for code :skip-test<compile time error>
+class Outer {
+    class Inner is Outer {
+    }
+}
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+'Outer::Inner' cannot inherit from 'Outer' because 'Outer' isn't composed yet (maybe it is stubbed)
+
+=head1 Methods
+
+=head2 method child-name
+
+    method child-name(X::Inheritance::NotComposed:D: --> Str:D)
+
+Returns the name of the type that tries to inherit.
+
+=head2 method parent-name
+
+    method parent-name(X::Inheritance::NotComposed:D: --> Str:D)
+
+Returns the name of the parent type that the type tries to inherit from
+
+=end pod

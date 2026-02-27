@@ -1,0 +1,20 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE role CX::Emit
+
+=SUBTITLE Emit control exception
+
+    class CX::Emit does X::Control { }
+
+A L<control exception|/language/exceptions#Control_exceptions> to be used when
+emit is used inside a L<C<Supply>|/type/Supply> block.
+
+=head1 Methods
+
+=head2 method message
+
+    method message()
+
+Returns C<'<emit control exception>'>.
+
+=end pod

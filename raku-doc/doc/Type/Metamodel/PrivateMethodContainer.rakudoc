@@ -1,0 +1,69 @@
+=begin pod :kind("Type") :subkind("role") :category("metamodel")
+
+=TITLE role Metamodel::PrivateMethodContainer
+
+=SUBTITLE Metaobject that supports private methods
+
+    role Metamodel::PrivateMethodContainer { ... }
+
+I<Warning>: this role is part of the Rakudo implementation, and is not
+a part of the Raku language specification.
+
+In Raku, classes, roles and grammars can have private methods, that is,
+methods that are only callable from within it, and are not inherited by
+types derived by inheritance.
+
+    class A {
+        # the ! declares a private method
+        method !double($x) {
+            say 2 * $x;
+        }
+        method call-double($y) {
+            # call with ! instead of .
+            self!double($y);
+        }
+    }
+
+For the purposes of dispatching and scoping, private methods are closer
+to subroutines than to methods. However they share access to C<self> and
+attributes with methods.
+
+=head1 Methods
+
+=head2 method add_private_method
+
+=for code
+method add_private_method($obj, $name, $code)
+
+Adds a private method C<$code> with name C<$name>.
+
+=head2 method private_method_table
+
+=for code
+method private_method_table($obj)
+
+Returns a hash of C«name => &method_object»
+
+=head2 method private_methods
+
+=for code
+method private_methods($obj)
+
+Returns a list of private method names.
+
+=head2 method private_method_names
+
+=for code
+method private_method_names($obj)
+
+Alias to C<private_methods>.
+
+=head2 method find_private_method
+
+=for code
+method find_private_method($obj, $name)
+
+Locates a private method. Otherwise, returns L<C<Mu>|/type/Mu> if it doesn't
+exist.
+
+=end pod

@@ -1,0 +1,20 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE role CX::Return
+
+=SUBTITLE Return control exception
+
+    class CX::Next does X::Control { }
+
+A L<control exception|/language/exceptions#Control_exceptions> to be used when
+return is called from within a sub.
+
+=head1 Methods
+
+=head2 method message
+
+    method message()
+
+Returns C<'<return control exception>'>.
+
+=end pod

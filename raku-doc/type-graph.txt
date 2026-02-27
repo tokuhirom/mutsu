@@ -1,0 +1,535 @@
+[Metamodel]
+# Metamodel
+class Metamodel::Archetypes
+role  Metamodel::AttributeContainer
+role  Metamodel::BUILDPLAN
+role  Metamodel::BaseType
+role  Metamodel::BoolificationProtocol
+role  Metamodel::C3MRO
+class Metamodel::ClassHOW         does Metamodel::Naming does Metamodel::Documenting does Metamodel::Versioning does Metamodel::Stashing does Metamodel::AttributeContainer does Metamodel::Finalization does Metamodel::MethodContainer does Metamodel::PrivateMethodContainer does Metamodel::MultiMethodContainer does Metamodel::RoleContainer does Metamodel::MultipleInheritance does Metamodel::DefaultParent does Metamodel::C3MRO does Metamodel::MROBasedMethodDispatch does Metamodel::MROBasedTypeChecking does Metamodel::Trusting does Metamodel::BUILDPLAN does Metamodel::Mixins does Metamodel::BoolificationProtocol
+class Metamodel::ConcreteRoleHOW  does Metamodel::Naming does Metamodel::Versioning does Metamodel::PrivateMethodContainer does Metamodel::MethodContainer does Metamodel::MultiMethodContainer does Metamodel::AttributeContainer does Metamodel::RoleContainer does Metamodel::MultipleInheritance
+class Metamodel::ContainerDescriptor
+class Metamodel::CurriedRoleHOW   does Metamodel::RolePunning does Metamodel::TypePretense
+role  Metamodel::DefaultParent
+class Metamodel::DefiniteHOW      does Metamodel::Documenting
+class Metamodel::BaseDispatcher
+class Metamodel::MethodDispatcher is Metamodel::BaseDispatcher
+class Metamodel::MultiDispatcher  is Metamodel::BaseDispatcher
+class Metamodel::WrapDispatcher   is Metamodel::BaseDispatcher
+role  Metamodel::Documenting
+class Metamodel::EnumHOW          does Metamodel::Naming does Metamodel::Stashing does Metamodel::AttributeContainer does Metamodel::MethodContainer does Metamodel::MultiMethodContainer does Metamodel::RoleContainer does Metamodel::BaseType does Metamodel::MROBasedMethodDispatch does Metamodel::MROBasedTypeChecking does Metamodel::BUILDPLAN does Metamodel::BoolificationProtocol does Metamodel::Mixins
+role  Metamodel::Finalization
+class Metamodel::GenericHOW       does Metamodel::Naming
+class Metamodel::GrammarHOW       is Metamodel::ClassHOW does Metamodel::DefaultParent
+role  Metamodel::MROBasedMethodDispatch
+role  Metamodel::MROBasedTypeChecking
+role  Metamodel::MethodContainer
+role  Metamodel::MethodDelegation
+role  Metamodel::Mixins
+class Metamodel::ModuleHOW        does Metamodel::Naming does Metamodel::Documenting does Metamodel::Versioning does Metamodel::Stashing does Metamodel::TypePretense does Metamodel::MethodDelegation
+role  Metamodel::MultiMethodContainer
+role  Metamodel::MultipleInheritance
+role  Metamodel::Naming
+class Metamodel::NativeHOW        does Metamodel::Naming does Metamodel::Documenting does Metamodel::Versioning does Metamodel::Stashing does Metamodel::MultipleInheritance does Metamodel::C3MRO does Metamodel::MROBasedMethodDispatch does Metamodel::MROBasedTypeChecking
+class Metamodel::PackageHOW       does Metamodel::Naming does Metamodel::Documenting does Metamodel::Stashing does Metamodel::TypePretense does Metamodel::MethodDelegation
+class Metamodel::ParametricRoleGroupHOW does Metamodel::Naming does Metamodel::Stashing does Metamodel::TypePretense does Metamodel::RolePunning does Metamodel::BoolificationProtocol
+class Metamodel::ParametricRoleHOW does Metamodel::Naming does Metamodel::Documenting does Metamodel::Versioning does Metamodel::MethodContainer does Metamodel::PrivateMethodContainer does Metamodel::MultiMethodContainer does Metamodel::AttributeContainer does Metamodel::RoleContainer does Metamodel::MultipleInheritance does Metamodel::Stashing does Metamodel::TypePretense does Metamodel::RolePunning
+class Metamodel::Primitives         is Any
+role  Metamodel::PrivateMethodContainer
+role  Metamodel::RoleContainer
+role  Metamodel::RolePunning
+role  Metamodel::Stashing
+class Metamodel::StaticLexPad
+class Metamodel::SubsetHOW        does Metamodel::Naming does Metamodel::Documenting
+role  Metamodel::Trusting
+role  Metamodel::TypePretense
+role  Metamodel::Versioning
+
+[Domain-specific]
+# Attributes
+class Attribute
+
+[Domain-specific]
+class Telemetry
+class Telemetry::Period is Telemetry does Associative
+class Telemetry::Sampler
+class Telemetry::Instrument::ThreadPool
+class Telemetry::Instrument::Thread
+class Telemetry::Instrument::Usage
+class Collation
+class Encoding
+class Encoding::Registry
+
+
+[Domain-specific]
+# VM
+role  Systemic
+class Raku does Systemic
+class Compiler does Systemic
+class Distro
+role Distribution
+role Distribution::Locally does Distribution
+class Distribution::Hash does Distribution::Locally
+class Distribution::Path does Distribution::Locally
+class Distribution::Resource
+class Kernel
+class VM                            does Systemic
+class Perl is Raku
+
+[Basic]
+# Base types
+class Mu
+class Junction                      is Mu
+class Any                           is Mu
+class Scalar                        is Any
+class Variable                      is Any
+class Proxy                         is Any
+class Cool                          is Any
+enum  Bool                          is Int
+class Nil                           is Cool
+
+[Basic]
+# Callables
+role  Callable[::T = Mu]
+class Code                                         does Callable
+class Block                         is Code
+class Routine                       is Block
+class Routine::WrapHandle
+class Sub                           is Routine
+class Method                        is Routine
+class Submethod                     is Routine
+class Macro                         is Routine
+class ForeignCode                   does Callable
+
+[Basic]
+class HyperWhatever
+class Whatever
+class WhateverCode                  is Code
+enum Endian                         is Int
+
+[Basic]
+class CallFrame
+class Parameter
+class Signature
+class AST
+class ObjAt
+class ValueObjAt                    is  ObjAt
+class Version
+class Label
+
+[Domain-specific]
+# Regex and Grammars
+class Match                         is Capture is Cool
+class Grammar                       is Match
+class Regex                         is Method
+
+[Basic]
+# Strings
+role  Stringy
+class Str                           is Cool        does Stringy
+
+[Basic]
+# Numbers
+role  Numeric
+role  Real                                         does Numeric
+class Int                           is Cool        does Real
+class Num                           is Cool        does Real
+class Complex                       is Cool        does Numeric
+class int                           is Int
+class UInt
+class atomicint                     is Int
+
+[Basic]
+role  Rational[::NuT, ::DeT]                       does Real
+class Rat                           is Cool        does Rational[Int, Int]
+class FatRat                        is Cool        does Rational[Int, Int]
+
+[Basic]
+# Allomorphs
+class Allomorph                     is Str
+class IntStr                        is Allomorph is Int
+class NumStr                        is Allomorph is Num
+class RatStr                        is Allomorph is Rat
+class ComplexStr                    is Allomorph is Complex
+
+[Basic]
+# Temporal
+role  Dateish
+class DateTime                                     does Dateish
+class Date                                         does Dateish
+class Duration                      is Cool        does Real
+class Instant                       is Cool        does Real
+
+[Domain-specific]
+# IO
+role  IO
+class IO::Special                                  does IO
+class IO::Handle
+class IO::CatHandle                 is IO::Handle
+class IO::ArgFiles                  is IO::CatHandle
+class IO::Pipe                      is IO::Handle
+class IO::Path                      is Cool        does IO
+class IO::Path::Unix                is IO::Path
+class IO::Path::Win32               is IO::Path
+class IO::Path::Cygwin              is IO::Path
+class IO::Path::QNX                 is IO::Path
+class IO::Path::Parts               does Positional does Associative does Iterable
+role  IO::Socket
+class IO::Socket::INET                             does IO::Socket
+class IO::Socket::Async
+class IO::Socket::Async::ListenSocket              is Tap
+class IO::Spec
+class IO::Spec::Unix                is IO::Spec
+class IO::Spec::Win32               is IO::Spec::Unix
+class IO::Spec::Cygwin              is IO::Spec::Unix
+class IO::Spec::QNX                 is IO::Spec::Unix
+class IO::Notification
+class IO::Notification::Change
+class Proc
+
+[Domain-Specific]
+# Pod
+class Pod::Config
+class Pod::Block
+class Pod::Block::Code              is Pod::Block
+class Pod::Block::Comment           is Pod::Block
+class Pod::Block::Declarator        is Pod::Block
+class Pod::Block::Named             is Pod::Block
+class Pod::Block::Para              is Pod::Block
+class Pod::Block::Table             is Pod::Block
+class Pod::FormattingCode           is Pod::Block
+class Pod::Heading                  is Pod::Block
+class Pod::Item                     is Pod::Block
+class Pod::Defn                     is Pod::Block
+
+[Domain-specific]
+# CompUnit
+class CompUnit
+class CompUnit::Repository
+role  CompUnit::Repository::Locally
+role  CompUnit::Repository
+role  CompUnit::Repository::Installable
+class CompUnit::Repository::FileSystem does CompUnit::Repository::Locally does CompUnit::Repository
+class CompUnit::Repository::Installation does CompUnit::Repository::Locally does CompUnit::Repository::Installable
+role  CompUnit::PrecompilationRepository
+
+[Domain-specific]
+# S17 / Concurrency
+role Scheduler
+class CurrentThreadScheduler    does Scheduler
+class ThreadPoolScheduler       does Scheduler
+class Cancellation
+class Promise
+enum PromiseStatus              is Int
+class Channel
+class Tap
+class Supply
+class Supplier
+class Supplier::Preserving      is Supplier
+enum Signal                     is Int
+enum Order                      is Int
+class Semaphore
+class Lock
+class Lock::Async
+class Lock::ConditionVariable
+class Proc::Async
+class Thread
+
+### COLLECTIONS
+
+[Composite]
+# Collections: Iteration
+role  Iterable
+role  Iterator
+role  PredictiveIterator does Iterator
+role  PositionalBindFailover
+role  Sequence does PositionalBindFailover
+class Seq                           is Cool        does Iterable does Sequence
+class RaceSeq                                      does Iterable does Sequence
+class HyperSeq                                     does Iterable does Sequence
+
+[Composite]
+# Collections: Positional
+role  Positional[::T = Mu]
+class Capture
+class Range                         is Cool        does Positional does Iterable
+class List                          is Cool        does Positional does Iterable
+class Array                         is List
+class Slip                          is List
+
+[Composite]
+# Collections: Stringy
+role  Blob[::T = uint8]             does Positional[T] does Stringy
+role  Buf[::T = uint8]  does Blob[T]
+class Uni                           does Positional[uint32] does Stringy
+class utf8                          does Blob[uint8]
+class NFD               is Uni
+class NFC               is Uni
+class NFKD              is Uni
+class NFKC              is Uni
+
+[Composite]
+# Collections: Associative
+role  Associative[::T = Mu]
+role  Enumeration
+role  NumericEnumeration
+role  StringyEnumeration
+class StrDistance is Cool
+class Pair                                         does Associative
+class Map                           does Iterable is Cool does Associative
+class Stash                         is Hash
+class PseudoStash                   is Map
+class Hash                          is Map
+role  QuantHash                     does Associative
+role  Setty                         does QuantHash
+role  Baggy                         does QuantHash
+role  Mixy                          does Baggy
+class Set                           does Setty
+class SetHash                       does Setty
+class Bag                           does Baggy
+class BagHash                       does Baggy
+class Mix                           does Mixy
+class MixHash                       does Mixy
+
+
+### EXCEPTIONS
+[Exceptions]
+# Exceptions: Base
+class Failure                       is Nil
+class Exception
+class Backtrace
+class Backtrace::Frame
+class Deprecation
+
+[Exceptions]
+# Exceptions: Misc
+class X::AdHoc                      is Exception
+class X::Cannot::Empty              is Exception
+class X::Cannot::Lazy               is Exception
+class X::Method::NotFound           is Exception
+class X::Method::InvalidQualifier   is Exception
+class X::OutOfRange                 is Exception
+class X::Routine::Unwrap            is Exception
+class X::Constructor::Positional    is Exception
+class X::Hash::Store::OddNumber     is Exception
+class X::Phaser::PrePost            is Exception
+class X::Sequence::Deduction        is Exception
+class X::Assignment::RO             is Exception
+class X::NoDispatcher               is Exception
+class X::Localizer::NoContainer     is Exception
+class X::Inheritance::NotComposed   is Exception
+class X::Inheritance::Unsupported   is Exception
+class X::HyperOp::NonDWIM           is Exception
+class X::Set::Coerce                is Exception
+class X::StubCode                   is Exception
+class X::Eval::NoSuchLang           is Exception
+class X::Seq::Consumed              is Exception
+class X::Symbol::Kind               is Exception
+class X::Caller::NotDynamic         is X::Symbol::Kind
+class X::Proc::Unsuccessful         is Exception
+
+[Exceptions]
+# Exceptions: Numbers
+class X::Numeric::CannotConvert     is Exception
+class X::Numeric::Real              is X::Numeric::CannotConvert
+
+[Exceptions]
+# Exceptions: Strings
+class X::Str::Numeric               is Exception
+class X::Str::Match::x              is Exception
+class X::Str::Trans::IllegalKey     is Exception
+class X::Str::Trans::InvalidArg     is Exception
+
+[Exceptions]
+# Exceptions: Buffers
+class X::Buf::AsStr                 is Exception
+class X::Buf::Pack                  is Exception
+class X::Buf::Pack::NonASCII        is Exception
+
+[Exceptions]
+# Exceptions: Proc::Async
+role X::Proc::Async                     is Exception
+class X::Proc::Async::AlreadyStarted    does X::Proc::Async
+class X::Proc::Async::CharsOrBytes      does X::Proc::Async
+class X::Proc::Async::MustBeStarted     does X::Proc::Async
+class X::Proc::Async::OpenForWriting    does X::Proc::Async
+class X::Proc::Async::TapBeforeSpawn    does X::Proc::Async
+class X::Proc::Async::BindOrUse         does X::Proc::Async
+[Exceptions]
+# Exceptions: Concurrency
+class X::Promise::CauseOnlyValidOnBroken is Exception
+class X::Promise::Vowed                  is Exception
+class X::Channel::SendOnClosed           is Exception
+class X::Channel::ReceiveOnClosed        is Exception
+
+[Exceptions]
+# Exceptions: Time
+role  X::Temporal                   is Exception
+class X::Temporal::InvalidFormat    does X::Temporal
+class X::DateTime::InvalidDeltaUnit does X::Temporal
+class X::DateTime::TimezoneClash    does X::Temporal
+class X::Scheduler::CueInNaNSeconds is Exception
+
+[Exceptions]
+# Exceptions: Composition
+class X::Export::NameClash          is Exception
+class X::Import::MissingSymbols     is Exception
+class X::Composition::NotComposable is Exception
+class X::Mixin::NotComposable       is Exception
+
+[Exceptions]
+# Exceptions: Type Checks
+class X::TypeCheck                  is Exception
+class X::TypeCheck::Binding         is X::TypeCheck
+class X::TypeCheck::Return          is X::TypeCheck
+class X::TypeCheck::Assignment      is X::TypeCheck
+class X::TypeCheck::Splice          is X::TypeCheck
+
+[Exceptions]
+# Exceptions: Control Flow
+class X::ControlFlow                is Exception
+class X::ControlFlow::Return        is X::ControlFlow
+
+[Exceptions]
+# Exceptions: IO
+role  X::OS                         is Exception
+role  X::IO                                        does X::OS
+class X::IO::Rename                 is Exception   does X::IO
+class X::IO::Move                   is Exception   does X::IO
+class X::IO::Copy                   is Exception   does X::IO
+class X::IO::Mkdir                  is Exception   does X::IO
+class X::IO::Chdir                  is Exception   does X::IO
+class X::IO::Dir                    is Exception   does X::IO
+class X::IO::Cwd                    is Exception   does X::IO
+class X::IO::Rmdir                  is Exception   does X::IO
+class X::IO::Link                   is Exception   does X::IO
+class X::IO::Unlink                 is Exception   does X::IO
+class X::IO::Symlink                is Exception   does X::IO
+class X::IO::Chmod                  is Exception   does X::IO
+class X::IO::DoesNotExist           is Exception   does X::IO
+
+[Exceptions]
+# Exceptions: Compile-Time
+role  X::Comp                       is Exception
+class X::Comp::Group                is Exception
+class X::Anon::Augment                             does X::Comp
+class X::Anon::Multi                               does X::Comp
+class X::Attribute::NoPackage                      does X::Comp
+class X::Attribute::Package                        does X::Comp
+class X::Attribute::Undeclared      is X::Undeclared
+class X::Attribute::Required                  is Exception does MOP
+class X::Augment::NoSuchType                       does X::Comp
+class X::Bind                       is Exception
+class X::Bind::NativeType                          does X::Comp
+class X::Bind::Slice                is Exception
+class X::Bind::ZenSlice             is X::Bind::Slice
+class X::Comp::AdHoc                is X::AdHoc    does X::Comp
+class X::Comp::NYI                  is X::NYI      does X::Comp
+class X::Trait::NotOnNative         is Exception
+class X::Comp::Trait::NotOnNative   is X::Trait::NotOnNative does X::Comp
+class X::Trait::Scope               is Exception
+class X::Comp::Trait::Scope         is X::Trait::Scope does X::Comp
+class X::Trait::Unknown             is Exception
+class X::Comp::Trait::Unknown       is X::Trait::Unknown does X::Comp
+class X::Declaration::Scope                        does X::Comp
+class X::Declaration::Scope::Multi  is X::Declaration::Scope
+class X::Does::TypeObject           is Exception
+class X::EXPORTHOW::Conflict                       does X::Comp
+class X::EXPORTHOW::InvalidDirective               does X::Comp
+class X::EXPORTHOW::NothingToSupersede             does X::Comp
+class X::Import::OnlystarProto                     does X::Comp
+class X::Import::Redeclaration                     does X::Comp
+class X::Method::Private::Permission               does X::Comp
+class X::Method::Private::Unqualified              does X::Comp
+class X::NYI                        is Exception
+class X::Obsolete                                  does X::Comp
+class X::Package::Stubbed                          does X::Comp
+class X::Parameter::Default                        does X::Comp
+class X::Parameter::InvalidType                    does X::Comp
+class X::Parameter::MultipleTypeConstraints        does X::Comp
+class X::Parameter::Placeholder                    does X::Comp
+class X::Parameter::Twigil                         does X::Comp
+class X::Parameter::WrongOrder                     does X::Comp
+class X::Phaser::Multiple                          does X::Comp
+class X::Placeholder::Block                        does X::Comp
+class X::Placeholder::Mainline      is X::Placeholder::Block
+class X::Placeholder::NonPlaceholder               does X::Comp
+class X::PoisonedAlias                             does X::Comp
+class X::PseudoPackage::InDeclaration              does X::Comp
+class X::Redeclaration                             does X::Comp
+class X::Redeclaration::Outer                      does X::Comp
+class X::Role::Initialization       is Exception
+class X::Signature::NameClash                      does X::Comp
+class X::Signature::Placeholder                    does X::Comp
+class X::Undeclared                                does X::Comp
+class X::Undeclared::Symbols                       does X::Comp
+class X::Value::Dynamic                            does X::Comp
+class X::Dynamic::NotFound                         is Exception
+
+[Exceptions]
+# Exceptions: Syntax
+role  X::Pod
+role  X::Syntax                                    does X::Comp
+class X::Backslash::NonVariableDollar              does X::Syntax
+class X::Backslash::UnrecognizedSequence           does X::Syntax
+class X::Syntax::Argument::MOPMacro                does X::Syntax
+class X::Syntax::Augment::Illegal                  does X::Syntax
+class X::Syntax::BlockGobbled                      does X::Syntax
+class X::Syntax::CannotMeta                        does X::Syntax
+class X::Syntax::Extension::Null                   does X::Syntax
+class X::Syntax::KeywordAsFunction                 does X::Syntax
+class X::Syntax::Malformed::Elsif                  does X::Syntax
+class X::Syntax::NonAssociative                    does X::Syntax
+class X::Syntax::Perl5Var                          does X::Syntax
+class X::Syntax::Regex::MalformedRange             does X::Syntax
+class X::Syntax::Regex::NullRegex                  does X::Syntax
+class X::Syntax::Regex::SpacesInBareRange          does X::Syntax
+class X::Syntax::Regex::UnrecognizedMetachar       does X::Syntax
+class X::Syntax::Regex::Unspace                    does X::Syntax
+class X::Syntax::Regex::Unterminated               does X::Syntax
+class X::Syntax::AddCategorical::TooFewParts       does X::Syntax
+class X::Syntax::AddCategorical::TooManyParts      does X::Syntax
+class X::Syntax::Augment::WithoutMonkeyTyping      does X::Syntax
+class X::Syntax::Comment::Embedded                 does X::Syntax
+class X::Syntax::Confused                          does X::Syntax
+class X::Syntax::Extension::Category               does X::Syntax
+class X::Syntax::InfixInTermPosition               does X::Syntax
+class X::Syntax::Malformed                         does X::Syntax
+class X::Syntax::Missing                           does X::Syntax
+class X::Syntax::Name::Null                        does X::Syntax
+class X::Syntax::NegatedPair                       does X::Syntax
+class X::Syntax::NoSelf                            does X::Syntax
+class X::Syntax::Number::RadixOutOfRange           does X::Syntax
+class X::Syntax::P5                                does X::Syntax
+class X::Syntax::Pod::BeginWithoutEnd              does X::Syntax does X::Pod
+class X::Syntax::Pod::BeginWithoutIdentifier       does X::Syntax does X::Pod
+class X::Syntax::Regex::Adverb                     does X::Syntax
+class X::Syntax::Regex::SolitaryQuantifier         does X::Syntax
+class X::Syntax::Reserved                          does X::Syntax
+class X::Syntax::Self::WithoutObject               does X::Syntax
+class X::Syntax::Signature::InvocantMarker         does X::Syntax
+class X::Syntax::Term::MissingInitializer          does X::Syntax
+class X::Syntax::UnlessElse                        does X::Syntax
+class X::Syntax::Variable::IndirectDeclaration     does X::Syntax
+class X::Syntax::Variable::Match                   does X::Syntax
+class X::Syntax::Variable::Numeric                 does X::Syntax
+class X::Syntax::Variable::Twigil                  does X::Syntax
+class X::Syntax::VirtualCall                       does X::Syntax
+
+[Exceptions]
+# Exceptions: Control Exceptions
+role  X::Control                    is Exception
+class CX::Next                                     does X::Control
+class CX::Redo                                     does X::Control
+class CX::Redo                                     does X::Control
+class CX::Done                                     does X::Control
+class CX::Last                                     does X::Control
+class CX::Return                                   does X::Control
+class CX::Emit                                     does X::Control
+class CX::Take                                     does X::Control
+class CX::Warn                                     does X::Control
+class CX::Succeed                                  does X::Control
+class CX::Proceed                                  does X::Control
+
+[Core]
+module Test

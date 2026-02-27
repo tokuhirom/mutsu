@@ -1,0 +1,273 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Match
+
+=SUBTITLE Result of a successful regex match
+
+    class Match is Capture is Cool does NQPMatchRole {}
+
+C<Match> objects are the result of a successful regex match, including
+any zero-width match. They store a reference to the original string (C<.orig>),
+positional and named captures, the positions of the start and end of the match
+in the original string, and a payload referred to as I<AST> (abstract syntax
+tree), which can be used to build data structures from complex regexes and
+grammars.
+
+The last match is also stored in the X<C<$¢>|Variables,$¢> C<Match> object, which is
+lexically scoped to the regex, that is, only available from within the regular
+expression, as shown here:
+
+    my $c;
+    'abc' ~~ /.$${ $c = $¢ }/;
+    say $c; # OUTPUT: «｢c｣␤»
+
+In this example we are running the code among curly braces when the match
+occurs,
+in this case the last letter in the string (actually, the last, indicated by the
+double C<$>, character); C<$c> gets the value of the cursor C<$¢>, which
+contains the C<Match>; when used with C<say>, the C<Match> is stringified by
+calling C<.Str> on it. This C<$¢> offers a way of capturing the Match inside a
+regular expression; outside, you need to use L<C<$/>|/syntax/$$SOLIDUS>
+
+    my $c; 'camelia' ~~ /<[ l m ]> {$c = $¢}/;
+    say $c; # OUTPUT: «｢m｣␤»
+    say $/; # OUTPUT: «｢m｣␤»
+
+B<Note>: This feature works only from Raku release 2018.02. It would have
+returned L<C<Nil>|/type/Nil> with any previous version. Alternatively and prior to that
+version, you could use C<$/> which, inside the regex, has the same value:
+
+    '123' ~~ / (\d) { say $0; say $/; } \d+ /; # OUTPUT: «｢1｣␤｢1｣␤ 0 => ｢1｣␤»
+
+The main difference between C<$/> and C<$¢> is scope: the latter only has a
+value inside the regex:
+
+=begin code
+'123' ~~ / (\d) { say $/; say $¢; } \d+ /; # OUTPUT: «｢1｣␤ 0 => ｢1｣␤｢1｣␤ 0 => ｢1｣␤»
+say "¢ → ", $¢, "/ is $/"; ; # OUTPUT: «¢ → Nil/ is 123␤»
+=end code
+
+Submatches are also C<Match> objects (or lists of C<Match> objects,
+if the corresponding regex was quantified), so each match object
+can be seen as the root of a tree of match objects.
+
+A C<Match> object can also hold the result of a match in progress
+(while the grammar engine is running), in which case the C<pos> method
+returns the current position. This view on C<Match> objects is only visible
+if you call code from within a regex.
+
+B<Note (deprecated)>: There is a synonym for this class, X<C<Cursor>|Reference,Cursor>,
+ defined as:
+
+        my constant Cursor = Match
+
+Initially, it was used to keep track of initial position in regex matches. In
+current versions, it's an alias for C<Match>.
+
+=head1 Methods
+
+=head2 method pos
+
+Returns the current position as a string index into C<Match.target> for a regex match
+I<in progress>:
+
+    my $a = 'abcdef';
+    $a ~~ /b. {say $/.pos }../;     # OUTPUT: «3␤»
+
+You should not use this method on a finished C<Match>, as the output can be
+implementation specific or is, in any case, unspecified.
+
+=head2 method target
+
+    method target()
+
+Returns a string representation of the object against which the regex matches. This is the value that the regex engine works with internally.
+
+    my $a = "þor" ~~ /o/;
+    say $a.target # OUTPUT: «þor␤»
+
+=head2 method chars
+
+    method chars()
+
+Returns the numbers of characters in the matched string or 0 if there's been
+no match.
+
+Returns the same as C<.Str.chars>.
+
+=head2 method clone
+
+    method clone()
+
+Clones the C<Match> object.
+
+=head2 method orig
+
+    method orig()
+
+Returns the original input to the regex engine, which is usually a string,
+but doesn't need to be (could be anything that can be coerced to a string):
+
+    42 ~~ /.+/;
+    say $/.orig;            # OUTPUT: «42␤»
+    say $/.orig.^name;      # OUTPUT: «Int␤»
+
+See L<method target|#method target> for a close equivalent that always returns a string.
+
+=head2 method from
+
+    method from()
+
+Returns the index of the starting position of the match.
+
+=head2 method to
+
+    method to()
+
+Returns the index of the position next to the end of the match. It will
+return the match position if the end of the match is negative, and L<C<Nil>|/type/Nil> if
+there has been no match.
+
+=head2 method made
+
+    method made()
+
+Returns the payload that was set with L<C<make>|/routine/make>.
+
+=head2 routine make
+
+    method make(Match:D: Mu $payload)
+    sub make(Mu $payload)
+
+Sets the C<.ast> attribute, which will be retrieved using C<.made>.
+
+    $/.make("your payload here");
+
+That is, it stores an arbitrary payload into the C<Match> object that can later
+be retrieved via L«C<.made>|/routine/made» method. Since the sub form
+operates, by default, on C<$/>, that example is equivalent to:
+
+    make("your payload here");
+
+This is typically used in a L<grammar|/language/grammars>'s actions class
+methods, where a piece of data is stored by one method and then later retrieved
+by another. It's up to you what data you store. It could be a tree node, L<result
+of a calculation|/language/grammars#Proto_regexes>, a type object, or a list of
+values.
+
+The sub form operates on the current Match C<$/>, which can be a convenient shortcut:
+
+    method my-action ($/) {
+        make "foo: $/";
+    }
+
+=head2 method actions
+
+    method actions(Match:D: --> Mu)
+
+Returns the actions object (if any was set; else L<C<Mu>|/type/Mu>) that the
+grammar used from which this Match object was created.
+
+=head2 method ast
+
+Alias for L<method made|#method made>.
+
+=head2 method Bool
+
+    method Bool(Capture:D: --> Bool:D)
+
+Returns C<True> on successful and C<False> on unsuccessful matches. Please note
+that any zero-width match can also be successful.
+
+    say 'abc' ~~ /^/;                   # OUTPUT: «｢｣␤»
+    say $/.from, ' ',  $/.to, ' ', ?$/; # OUTPUT: «0 0 True␤»
+
+=head2 method Str
+
+    method Str(Match:D: --> Str:D)
+
+Returns the matched text.
+
+    "abc123def" ~~ /\d+/;
+    say $/.Str;               # OUTPUT: «123␤»
+
+=head2 method Int
+
+    method Int(Match:D: --> Int:D)
+
+Tries to convert stringified result of the matched text into Int.
+
+    say ('12345' ~~ /234/).Int;       # OUTPUT: «234␤»
+    say ('12345' ~~ /234/).Int.^name; # OUTPUT: «Int␤»
+    # the next line produces a warning about using Nil (result of a no match) in numeric context
+    say ('one-two' ~~ /234/).Int;     # OUTPUT: «0␤» # because Nil.Int returns 0
+
+=head2 method caps
+
+Returns a list of pairs, with the index or submatch name as key and
+the submatches as values. The list is ordered by starting position
+of the submatches.
+
+=head2 method chunks
+
+Returns a list of pairs, with the index or submatch name as key and
+the submatches as values. The list is ordered by starting position
+of the submatches.
+
+Those parts of the string that were not matched by submatches are
+interleaved with the other pairs, with the string C<~> as key.
+
+=head2 method list
+
+Returns a list of positional submatches.
+
+=head2 method hash
+
+Returns a hash of named submatches.
+
+=head2 method prematch
+
+    method prematch(Match:D: --> Str:D)
+
+Returns the part of the original string leading up to the match.
+
+    'abcdefg' ~~ /cd/;
+    say $/.prematch;          # OUTPUT: «ab␤»
+
+    # will return a list of three match objects
+    "abc123def" ~~ m:g/\d/;
+    say $/.[1].prematch;      # OUTPUT: «abc1␤»
+
+=head2 method postmatch
+
+    method postmatch(Match:D: --> Str:D)
+
+Returns the part of the original string following the match.
+
+    'abcdefg' ~~ /cd/;
+    say $/.postmatch;         # OUTPUT: «efg␤»
+
+    # will return a list of three match objects
+    "abc123def" ~~ m:g/\d/;
+    say $/.[1].postmatch;     # OUTPUT: «3def␤»
+
+=head2 method replace-with
+
+    multi method replace-with(Match:D: Str() $replacement --> Str:D)
+
+Returns the invocant string where the C«Match» object is replaced by
+C«$replacement».
+
+    my Str $some-string = "Some foo";
+    my Match $match = $some-string.match(/foo/);
+    my $another-string = $match.replace-with("string"); # «Some string»
+
+=head2 infix eqv
+
+    multi infix:<eqv>(Match:D \a, Match:D \b)
+
+Returns C<True> if the attributes C<pos>, C<from> and C<orig> for C<a> and C<b>
+are equal, and if C<made>, C<Capture::list> and C<Capture::hash> are either the
+same or both undefined.
+
+=end pod

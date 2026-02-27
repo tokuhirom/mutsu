@@ -1,0 +1,11 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Pod::Block::Code
+
+=SUBTITLE Verbatim code block in a Pod document
+
+    class Pod::Block::Code is Pod::Block { }
+
+Class for a code (verbatim) Pod block.
+
+=end pod

@@ -1,0 +1,253 @@
+=begin pod :kind("Type") :subkind("class") :category("composite")
+
+=TITLE class Seq
+
+=SUBTITLE An iterable, potentially lazy sequence of values
+
+    class Seq is Cool does Iterable does Sequence { }
+
+A C<Seq> represents anything that can produce a sequence of values. A
+C<Seq> is born in a state where iterating it will consume the values.
+Calling C<.cache> on a C<Seq> will make it store the generated values
+for later access.
+
+A high-level construct to generate a C<Seq> is L«C<gather/take>|/syntax/gather%20take»,
+as well as many built-in methods like L«C<map>|/routine/map» and
+L«C<grep>|/routine/grep», low-level constructors to create a
+C<Seq> from an iterator or from looping constructs are available too.
+
+A C<Seq> can also be constructed with the
+L«sequence operator C<...>|/language/operators#infix_...» or one of its
+variants.
+
+    my $s = (1...5);
+    say $s;              # OUTPUT: «(1 2 3 4 5)␤»
+    say $s.^name;        # OUTPUT: «Seq␤»
+
+Assigning the values of a C<Seq> to an array consumes a C<Seq> that is
+not lazy. Use the C<lazy> statement prefix to avoid a C<Seq> from being
+iterated during the assignment:
+
+=begin code
+# The Seq created by gather ... take is consumed on the spot here.
+my @a = gather do { say 'consuming...'; take 'one' };  # OUTPUT: «consuming...␤»
+
+# The Seq here is only consumed as we iterate over @a later.
+my @a = lazy gather do { say 'consuming...'; take 'one' };  # outputs nothing.
+.say for @a;  # OUTPUT: «consuming...␤one␤»
+=end code
+
+A typical use case is L<method C<lines> in C<IO::Handle>|/type/IO::Handle#routine_lines>,
+which could use a lot of memory if it stored all the lines read from the
+file. So
+
+=begin code
+for open('README.md').lines -> $line {
+    say $line;
+}
+=end code
+
+won't keep all lines from the file in memory.
+
+This implies that you cannot iterate the same C<Seq> object twice (otherwise
+it couldn't throw away old values), so this dies:
+
+    my @a = 1, 2, 3;
+    my @b = <a b c>;
+    my \c = @a Z=> @b;
+    .say for c;
+    .say for c; # fails
+    CATCH { default { put .^name, ': ', .Str } };
+    # OUTPUT: «X::Seq::Consumed: This Seq has already been iterated, and its values consumed
+    # (you might solve this by adding .cache on usages of the Seq, or
+    # by assigning the Seq into an array)»
+
+
+B<Caution:> No program should ever assume a C<Seq> may only be iterated once
+even if not cached by the program. Caching is a volatile state exposed to the
+developer as an optimization. The C<Seq> may become cached by many operations,
+including calling C<.raku> (C<.perl> before release 2019.11) on the C<Seq> (if
+called prior to a non-cached iteration). From version 6.d, C<.raku> (again,
+C<.perl> before release 2019.11) can be called on consumed C<Seq>. If a program
+assumes a C<Seq> can only iterate once, but then is later changed to call one of
+these operations during the loop, that assumption will fail.
+
+On a cached C<Seq>, the cached list is used when C<&infix:<eqv>>, C<.Slip>,
+C<.join>, C<.List>, C<.list>, C<.eager>, C<.Array> and C<.is-lazy> are called.
+
+You can smartmatch a regex with C<Seq>, even if it's infinite
+
+    my @fib = 1,1, *+* ... *;
+    say @fib[^1000] ~~ /^9999/; # OUTPUT: «Nil␤»
+
+However, infinite or lazy C<Seq> will be vivified when doing the match,
+leading to possibly infinite loops, so be sure to limit search somehow.
+
+=head1 Methods
+
+=head2 method new
+
+=for code
+proto method new(Seq: |) {*}
+multi method new(Seq: Iterator:D $iter)
+multi method new(Seq:)
+
+Creates a new C<Seq> object from the supplied iterator passed as the single
+argument. Creates an empty C<Seq> if called with no argument.
+
+=head2 method iterator
+
+    method iterator(Seq:D:)
+
+If the C<Seq> is not cached, returns the underlying iterator and marks
+the invocant as consumed. If called on an already consumed sequence,
+throws an error of type L<C<X::Seq::Consumed>|/type/X::Seq::Consumed>.
+
+Otherwise returns an iterator over the cached list.
+
+=head2 method is-lazy
+
+    method is-lazy(Seq:D:)
+
+Returns C<True> if and only if the underlying iterator or cached list
+considers itself lazy. If called on an already consumed sequence, throws
+an error of type L<C<X::Seq::Consumed>|/type/X::Seq::Consumed>.
+
+=head2 method Seq
+
+     multi method Seq(Seq:D:)
+
+Clones the object.
+
+
+=head2 method Capture
+
+     method Capture()
+
+Coerces the object to a L<C<List>|/type/List>, which is in turn coerced into a L<C<Capture>|/type/Capture>.
+
+=head2 method elems
+
+    method elems(Seq:D:)
+
+Returns the number of values in the sequence. If this number cannot be
+predicted, the C<Seq> is cached and evaluated till the end.
+
+Because an infinite sequence cannot be evaluated till the end, such a
+sequence I<should> be declared lazy. Calling C<.elems> on a lazy C<Seq>
+L<fail|/routine/fail>s with L<C<X::Cannot::Lazy>|/type/X::Cannot::Lazy>.
+
+=head2 method from-loop
+
+    multi method from-loop(&body, :$label)
+    multi method from-loop(&body, &cond, :$repeat!, :$label)
+    multi method from-loop(&body, &cond, :$label)
+    multi method from-loop(&body, &cond, &afterwards, :$label)
+
+These methods create new C<Seq>-based callbacks.
+
+In general, it produces an infinite C<Seq> by calling C<&body> each time a new
+element is requested, using the return value from C<&body> as the item. This
+emulates (or implements) a C<loop { body }> construct.
+
+When the multi includes C<&cond>, it's invoked before each call to
+C<&body>, and terminates
+the sequence if C<&cond> returns a false value. If C<$repeat> is set to a true
+value, the first call to C<&cond> is omitted, and C<&body> called right away.
+This emulates (or implements) C<while cond { body }> and
+C<repeat { body } while cond> loops.
+
+If present, C<&afterward> will be called after each call to C<&body>.
+
+=head2 method sink
+
+    method sink(--> Nil)
+
+Calls L<C<sink-all>|/routine/sink-all> if it is an L<C<Iterator>|/type/Iterator>, C<sink> if the Sequence is a list.
+
+    say (1 ... 1000).sink; # OUTPUT: «Nil␤»
+
+This is something you might want to do for the side effects of producing those values.
+
+=head2 method skip
+
+    multi method skip(Seq:D:)
+    multi method skip(Seq:D: Whatever)
+    multi method skip(Seq:D: Callable:D $w)
+    multi method skip(Seq:D: Int() $n)
+    multi method skip(Seq:D: $skip, $produce)
+
+Returns a Seq containing whatever is left of the invocant after
+throwing away C<$n> of the next available values. Negative values of
+C<$n> count as 0.  Also can take a L<C<WhateverCode>|/type/WhateverCode> to indicate how many values
+to skip from the end.  Will block on lazy Seqs until the requested
+number of values have been discarded.
+
+    say (1..5).Seq.skip;      # OUTPUT: «(2 3 4 5)␤»
+    say (1..5).Seq.skip(3);   # OUTPUT: «(4 5)␤»
+    say (1..5).Seq.skip(5);   # OUTPUT: «()␤»
+    say (1..5).Seq.skip(-1);  # OUTPUT: «(1 2 3 4 5)␤»
+
+Calling it with L<C<Whatever>|/type/Whatever> will return an empty C<Seq>:
+
+    say <1 2 3>.Seq.skip(*);  # OUTPUT: «()␤»
+
+The multi that uses a Callable is intended mainly to be used this way:
+
+    say (1..5).Seq.skip(*-3); # OUTPUT: «(3 4 5)␤»
+
+Instead of throwing away the first C<$n> elements, it throws away everything
+I<but> the elements indicated by the WhateverCode, in this case all but the
+last three elements.
+
+As of language version C<6.e> (early implementation exists in Rakudo
+compiler 2022.12+), it is also possible to specify multiple argument values.
+These are then interpreted as number of values to produce, then skip, then
+produce, etc.
+
+    say (1..12).Seq.skip(2,3,4); # OUTPUT: «(3 4 5 10 11 12)␤»
+
+This first skipped 2 values, then produced 3 values (3, 4, 5), skipped 4 values
+and then produced the rest (10, 11, 12).
+
+If the final value specified is in a "produce" position, then the rest of the
+C<Seq> will be skipped.  If the final value is in a "skip" position, then the
+rest of the C<Seq> will be produced.
+
+    say (1..10).Seq.skip(2,3,1,2); # OUTPUT: «(3 4 5 7 8)␤»
+    say (1..10).Seq.skip(2,3,1);   # OUTPUT: «(3 4 5 7 8 9 10)␤»
+
+If a L<C<Whatever>|/type/Whatever> is specified in a "produce" position, it will cause the rest
+of the C<Seq> to be produced.  Otherwise, it will cause the rest if the C<Seq>
+to be skipped.
+
+    say (1..10).Seq.skip(2,*);   # OUTPUT: «(3 4 5 6 7 8 9 10)␤»
+    say (1..10).Seq.skip(2,3,*); # OUTPUT: «(3 4 5)␤»
+
+If you want to start with producing values instead of skipping, specify B<0>
+as the first value.
+
+    say (1..10).Seq.skip(0,3,4); # OUTPUT: «(1 2 3 8 9 10)␤»
+
+If you want an unending repeating pattern of skips and produces, you can
+specify the arguments as an unending C<Seq> themselves.
+
+    say (^20).Seq.skip(|(2,3) xx *); # OUTPUT: «(0 1 5 6 10 11 15 16)␤»
+
+=head2 multi method slice
+
+    method slice(Seq:D: *@indices --> Seq:D)
+
+Available as of the 2021.02 release of the Rakudo compiler.
+
+The C<slice> method takes a number of monotonically increasing indices for
+which to produce the value from the invocant in a new C<Seq>.  Indices can
+be single numbers or ranges, as long they are increasing in value.
+
+This provides a more efficient way of getting specific values out of a
+C<Seq> than either caching the C<Seq> or converting it to a L<C<List>|/type/List> or
+L<C<Array>|/type/Array>.
+
+    say (1..10).Seq.slice(0, 3..6, 8);  # OUTPUT: «(1 4 5 6 7 9)␤»
+
+=end pod

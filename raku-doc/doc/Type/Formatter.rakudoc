@@ -1,0 +1,55 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Formatter
+
+=SUBTITLE Produce Callable for given format specification
+
+    class Formatter { }
+
+The C<Formatter> class does not produce any instances of itself,
+but instead serves as an access point to the "change a 'sprintf'
+compatible format specification into Callable" functionality.
+
+Available as of the 2023.06 release of the Rakudo compiler.
+Requires language level C<6.e>.
+
+=begin code :solo
+use v6.e.PREVIEW;
+my &handle = Formatter.new("'%5s'");
+say handle("foo");              # OUTPUT: «'  foo'␤»
+=end code
+
+=head1 Methods
+
+=head2 method new
+
+    method new($format --> Callable:D)
+
+Returns a cached L<C<Callable>|/type/Callable> object from a C<sprintf> compatible
+format string.  Will create a new L<C<Callable>|/type/Callable> object if the
+given format string had not been seen before.
+
+=begin code :solo
+use v6.e.PREVIEW;
+my &zero5 = Formatter.new("%05d");
+say zero5(42);                  # OUTPUT: «00042␤»
+=end code
+
+=head2 method CODE
+
+    method CODE(--> Callable:D)
+
+Returns an uncached L<C<Callable>|/type/Callable> object from a C<sprintf>
+compatible format string.  Intended to be used in compile-time
+situations where caching is neither important nor wanted.
+
+=head2 method AST
+
+=for code :preamble<use experimental :rakuast>
+method AST(--> RakuAST::Node:D)
+
+Returns a L<C<RakuAST>|/type/RakuAST> representation of the L<C<Callable>|/type/Callable> for
+the given C<sprintf> compatible format string.  Intended to
+be used for debugging.
+
+=end pod

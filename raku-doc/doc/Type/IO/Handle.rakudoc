@@ -1,0 +1,1077 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class IO::Handle
+
+=SUBTITLE Opened file or stream
+
+   class IO::Handle { }
+
+
+Instances of C<IO::Handle> encapsulate a I<handle> to manipulate input/output
+resources. Usually there is no need to create directly an C<IO::Handle>
+instance, since it will be done by other roles and methods. For instance, an
+L<C<IO::Path>|/type/IO::Path> object provides an L<open|/routine/open> method that
+returns an C<IO::Handle>:
+
+    my $fh = '/tmp/log.txt'.IO.open;
+    say $fh.^name; # OUTPUT: IO::Handle
+
+The first line is pretty much equivalent to the following piece of code:
+
+    my $fh = IO::Handle.new( :path( '/tmp/log.txt'.IO.path ) ).open;
+
+
+=head1 Methods
+
+=head2 method open
+
+=for code :method :preamble<has $!chomp; has $nl-in; has $nl-out;>
+method open(IO::Handle:D:
+      :$r, :$w, :$x, :$a, :$update,
+      :$rw, :$rx, :$ra,
+      :$mode is copy,
+      :$create is copy,
+      :$append is copy,
+      :$truncate is copy,
+      :$exclusive is copy,
+      :$bin,
+      :$enc is copy,
+      :$chomp = $!chomp,
+      :$nl-in is copy = $!nl-in,
+      Str:D :$nl-out is copy = $!nl-out,
+      :$out-buffer is copy,
+    )
+
+Opens the handle in one of the modes. L<Fails|/routine/fail> with appropriate
+exception if the open fails.
+
+See description of individual methods for the accepted values and behavior of
+L«C<:$chomp>|/type/IO::Handle#method_chomp»,
+L«C<:$nl-in>|/type/IO::Handle#method_nl-in»,
+L«C<:$nl-out>|/type/IO::Handle#method_nl-out», and
+L«C<:$enc>|/type/IO::Handle#method_encoding». The values for parameters default
+to the invocant's attributes and if any of them are provided, the attributes
+will be updated to the new values. Specify C<:$bin> set to C<True> instead of
+C<:$enc> to indicate the handle should be opened in binary mode. Specifying
+undefined value as C<:$enc> is equivalent to not specifying C<:$enc> at all.
+Specifying both a defined encoding as C<:$enc> and C<:$bin> set to true will
+cause C<X::IO::BinaryAndEncoding> exception to be thrown.
+
+The open mode defaults to non-exclusive, read only (same as specifying
+C<:r>) and can be controlled by a mix of the following arguments:
+
+=begin code :lang<text>
+:r      same as specifying   :mode<ro>  same as specifying nothing
+
+:w      same as specifying   :mode<wo>, :create, :truncate
+:a      same as specifying   :mode<wo>, :create, :append
+:x      same as specifying   :mode<wo>, :create, :exclusive
+
+:update same as specifying   :mode<rw>
+:rw     same as specifying   :mode<rw>, :create
+:ra     same as specifying   :mode<rw>, :create, :append
+:rx     same as specifying   :mode<rw>, :create, :exclusive
+=end code
+
+Argument C<:r> along with C<:w>, C<:a>, C<:x> are exactly the same as the
+combination of both letters, shown in the three last rows in the table above.
+Support for combinations of modes I<other> than what is listed above
+is implementation-dependent and should be assumed unsupported. That is,
+specifying, for example, C<.open(:r :create)> or
+C<.open(:mode<wo> :append :truncate)> might work or might cause the Universe
+to implode, depending on a particular implementation. This applies to reads/writes
+to a handle opened in such unsupported modes as well.
+
+The mode details are:
+
+=begin code :lang<text>
+:mode<ro>  means "read only"
+:mode<wo>  means "write only"
+:mode<rw>  means "read and write"
+
+:create    means the file will be created, if it does not exist
+:truncate  means the file will be emptied, if it exists
+:exclusive means .open will fail if the file already exists
+:append    means writes will be done at the end of file's current contents
+=end code
+
+Attempts to open a directory, write to a handle opened in read-only mode
+or read from a handle opened in write-only mode,
+or using text-reading methods on a handle opened in binary mode will
+fail or throw.
+
+In B<6.c> language, it's possible to open path C<'-'>, which will cause
+C<open> to open (if C<closed>) the C<$*IN> handle if opening in read-only
+mode or to open the C<$*OUT> handle if opening in write-only mode. All other
+modes in this case will result in exception being thrown.
+
+As of B<6.d> language version, the use of path C<'-'> is deprecated and it will
+be removed in future language versions entirely.
+
+The C<:out-buffer> controls output buffering and by default behaves as if
+it were L<C<Nil>|/type/Nil>. See method L<out-buffer|/routine/out-buffer> for details.
+
+B<Note (Rakudo versions before 2017.09): Filehandles are NOT flushed or closed
+when they go out of scope>. While they I<will> get closed when garbage
+collected, garbage collection isn't guaranteed to get run. This means I<you
+should> use an explicit C<close> on handles opened for writing, to avoid data
+loss, and an explicit C<close> is I<recommended> on handles opened for reading
+as well, so that your program does not open too many files at the same time,
+triggering exceptions on further C<open> calls.
+
+B<Note (Rakudo versions 2017.09 and after):> Open filehandles are automatically
+closed on program exit, but it is still highly recommended that you C<close>
+opened handles explicitly.
+
+=head2 method comb
+
+    method comb(IO::Handle:D: Bool :$close, |args --> Seq:D)
+
+Read the handle and processes its contents the same way
+L«C<Str.comb>|/type/Str#routine_comb» does, taking the same arguments, closing
+the handle when done if C<$close> is set to a true value. Implementations may
+slurp the file in its entirety when this method is called.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my $fh = 'path/to/file'.IO.open;
+say "The file has {+$fh.comb: '♥', :close} ♥s in it";
+
+=head2 method chomp
+
+    has $.chomp is rw = True
+
+One of the attributes that can be set via C<.new> or L<open|/routine/open>. Defaults to
+C<True>. Takes a L<C<Bool>|/type/Bool> specifying whether the line separators (as defined by
+L«C<.nl-in>|/type/IO::Handle#method_nl-in») should be removed from content when
+using L«C<.get>|/type/IO::Handle#routine_get» or
+L«C<.lines>|/type/IO::Handle#routine_lines» methods.
+
+=head2 routine get
+
+    method get(IO::Handle:D: --> Str:D)
+    multi  get (IO::Handle $fh = $*ARGFILES --> Str:D)
+
+Reads a single line of input from the handle, removing the trailing newline
+characters (as set by L«C<.nl-in>|/routine/nl-in») if the handle's C<.chomp>
+attribute is set to C<True>. Returns L<C<Nil>|/type/Nil>, if no more input is available. The
+subroutine form defaults to
+L«C<$*ARGFILES>|/language/variables#index-entry-%24%2AARGFILES» if no handle is
+given.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=begin code
+$*IN.get.say;              # Read one line from the standard input
+
+my $fh = open 'filename';
+$fh.get.say;               # Read one line from a file
+$fh.close;
+
+say get;                   # Read one line from $*ARGFILES
+=end code
+
+=head2 routine getc
+
+    method getc(IO::Handle:D: --> Str:D)
+    multi  getc (IO::Handle $fh = $*ARGFILES --> Str:D)
+
+Reads a single character from the input stream. Attempting to call this method
+when the handle is L<in binary mode|/type/IO::Handle#method_encoding> will
+result in L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown. The subroutine form
+defaults to L«C<$*ARGFILES>|/language/variables#index-entry-%24%2AARGFILES» if
+no handle is given. Returns L<C<Nil>|/type/Nil>, if no more input is available, otherwise
+operation will block, waiting for at least one character to be available; these
+caveats apply:
+
+=head3 Buffering terminals
+
+Using getc to get a single keypress from a terminal will only work properly if
+you've set the terminal to "unbuffered". Otherwise the terminal will wait for
+the return key to be struck or the buffer to be filled up before the compiler gets
+even a single byte of data.
+
+=head3 Waiting for potential combiners
+
+If your handle's encoding allows combining characters to be read, raku will
+wait for more data to be available before it provides a character. This means
+that inputting an "e" followed by a combining acute will give you an e with an
+acute rather than giving an "e" and letting the next reading function give you
+a dangling combiner. However, it also means that when the user inputs just an
+"e" and has no intention to also input a combining acute, your program will be
+waiting for another keypress before the initial "e" is returned.
+
+=head2 submethod DESTROY
+
+    submethod DESTROY(IO::Handle:D:)
+
+Closes the filehandle, unless its L<native-descriptor|/routine/native-descriptor> is C<2> or lower. This
+ensures the standard filehandles do not get inadvertently closed.
+
+Note that garbage collection is not guaranteed to happen, so you must NOT rely
+on C<DESTROY> for closing the handles you I<write to> and instead close them
+yourself. Programs that open a lot of files should close the handles explicitly
+as well, regardless of whether they were open for writing, since too many files
+might get opened before garbage collection happens and the no longer used
+handles get closed.
+
+=head2 method gist
+
+    method gist(IO::Handle:D: --> Str:D)
+
+Returns a string containing information which
+L«C<.path>|/type/IO::Handle#method_path», if any, the handle is created for
+and whether it is L«C<.opened>|/type/IO::Handle#method_opened».
+
+=begin code
+say IO::Handle.new; # IO::Handle<(Any)>(closed)
+say "foo".IO.open;  # IO::Handle<"foo".IO>(opened)
+=end code
+
+=head2 method eof
+
+    method eof(IO::Handle:D: --> Bool:D)
+
+Non-blocking. Returns C<True> if the read operations have exhausted the
+contents of the handle. For L<seekable|/routine/seek> handles, this means
+current position is at or beyond the end of file and L<seeking|/routine/seek>
+an exhausted handle back into the file's contents will result in
+L<eof|/routine/eof> returning C<False> again.
+
+On L<non-seekable|/routine/seek> handles and handles opened to zero-size
+files (including special files in C</proc/>), EOF won't be set
+until a read operation fails to read any bytes. For example, in this code,
+the first C<read> consumes all of the data, but it's only until the second
+C<read> that reads nothing would the EOF on a TTY handle be set:
+
+    =begin code :lang<shell>
+    $ echo "x" | raku -e 'with $*IN { .read: 10000; .eof.say; .read: 10; .eof.say }'
+    False
+    True
+    =end code
+
+=head2 method encoding
+
+    multi method encoding(IO::Handle:D: --> Str:D)
+    multi method encoding(IO::Handle:D: $enc --> Str:D)
+
+Returns a L<C<Str>|/type/Str> representing the encoding currently used by
+the handle, defaulting to C<"utf8">. L<C<Nil>|/type/Nil> indicates the filehandle is
+currently in binary mode. Specifying an optional positional C<$enc> argument
+switches the encoding used by the handle; specify L<C<Nil>|/type/Nil> as encoding to put the
+handle into binary mode.
+
+The accepted values for encoding are case-insensitive. The available encodings
+vary by implementation and backend. On Rakudo MoarVM the following are
+supported:
+
+X<|Reference,windows-1252>X<|Reference,windows-1251>X<|Reference,windows-932>X<|Reference,iso-8859-1>X<|Reference,ascii>
+
+=for code :lang<text>
+utf8
+utf16
+utf16le
+utf16be
+utf8-c8
+iso-8859-1
+windows-1251
+windows-1252
+windows-932
+ascii
+
+The default encoding is utf8, which undergoes normalization into Unicode L<C<NFC>|/type/NFC>
+(normalization form canonical). In some cases you may want to ensure no
+normalization is done; for this you can use C<utf8-c8>. Before using C<utf8-c8>
+please read L<Unicode: Filehandles and I/O|/language/unicode#Filehandles_and_I/O>
+for more information on C<utf8-c8> and L<C<NFC>|/type/NFC>.
+
+As of Rakudo 2018.04 L<windows-932|https://en.wikipedia.org/wiki/Code_page_932_(Microsoft_Windows)>
+is also supported which is a variant of X<ShiftJIS|Reference,ShiftJIS>.
+
+Implementation may choose to also provide support for aliases, e.g. Rakudo
+allows aliases C<latin-1> for C<iso-8859-1> encoding and dashed utf versions:
+C<utf-8> and C<utf-16>.
+
+=head3 utf16, utf16le and utf16be
+
+X<|Reference,utf16-le>X<|Reference,utf16-be>X<|Reference,utf16>X<|Reference,utf-16>
+
+Unlike utf8, utf16 has an
+endianness — either big endian or little endian. This relates to the ordering of
+bytes. Computer CPUs also have an endianness. Raku's C<utf16> format specifier
+will use the endianness of host system when encoding. When decoding it will look
+for a byte order mark and if it is there use that to set the endianness. If there
+is no byte order mark it will assume the file uses the same endianness as the host
+system. A byte order mark is the codepoint U+FEFF which is ZERO WIDTH NO-BREAK
+SPACE. On C<utf16> encoded files the standard states if it exists at the start
+of a file it shall be interpreted as a byte order mark, not a U+FEFF codepoint.
+
+While writing will cause a different file to be written on different endian
+systems, at the release of 2018.10 the byte order mark will be written out when
+writing a file and files created with the utf16 encoding will be able to be
+read on either big or little endian systems.
+
+When using utf16be or utf16le encodings a byte order mark is B<not> used. The
+endianness used is not affected by the host cpu type and is either big endian for
+utf16be or little endian for utf16le.
+
+In keeping with the standard, a 0xFEFF byte at the start of a file is interpreted
+as a ZERO WIDTH NO-BREAK SPACE and not as a byte order mark. No byte order mark
+is written to files that use the utf16be or utf16le encodings.
+
+As of Rakudo 2018.09 on MoarVM, utf16,
+X<utf16le|Reference,utf16le> and X<utf16be|Reference,utf16be> are supported. In 2018.10, writing to a file with utf16 will
+properly add a byte order mark (BOM).
+
+=head3 Examples
+
+=begin code
+with 'foo'.IO {
+    .spurt: "First line is text, then:\nBinary";
+    my $fh will leave {.close} = .open;
+    $fh.get.say;         # OUTPUT: «First line is text, then:␤»
+    $fh.encoding: Nil;
+    $fh.slurp.say;       # OUTPUT: «Buf[uint8]:0x<42 69 6e 61 72 79>␤»
+}
+=end code
+
+=head2 routine lines
+
+    sub          lines( $what = $*ARGFILES, |c)
+    multi method lines( IO::Handle:D: $limit, :$close )
+    multi method lines( IO::Handle:D:         :$close )
+
+The sub form, which takes C<$*ARGFILES> by default, will apply the C<lines>
+method to the object that's the first argument, and pass it the rest of the
+arguments.
+
+The method will return a L<C<Seq>|/type/Seq> each element of which is a line from
+the handle (that is
+chunks delineated by L«C<.nl-in>|/type/IO::Handle#method_nl-in»). If the
+handle's L«C<.chomp>|/type/IO::Handle#method_chomp» attribute is set to C<True>,
+then characters specified by L«C<.nl-in>|/type/IO::Handle#method_nl-in» will be
+stripped from each line.
+
+Reads up to C<$limit> lines, where C<$limit> can be a non-negative L<C<Int>|/type/Int>,
+C<Inf>, or L<C<Whatever>|/type/Whatever> (which is interpreted to mean C<Inf>). If C<:$close> is
+set to C<True>, will close the handle when the file ends or C<$limit> is
+reached. Subroutine form defaults to
+L«C<$*ARGFILES>|/language/variables#index-entry-%24%2AARGFILES», if no
+handle is provided.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+B<NOTE:> the lines are read lazily, so ensure the returned L<C<Seq>|/type/Seq> is either
+L<fully reified|/language/glossary#Reify> or is no longer needed
+when you close the handle or attempt to use any other method that changes the
+file position.
+
+=begin code
+say "The file contains ",
+  '50GB-file'.IO.open.lines.grep(*.contains: 'Raku').elems,
+  " lines that mention Raku";
+# OUTPUT: «The file contains 72 lines that mention Raku␤»
+=end code
+
+You can use C<lines> in C</proc/*> files (from the 6.d version):
+
+=for code
+say lines( "/proc/$*PID/statm".IO ); # OUTPUT: «(58455 31863 8304 2 0 29705 0)␤»
+
+X<|Reference,File locking>
+=head2 method lock
+
+=for code :method
+method lock(IO::Handle:D:
+            Bool:D :$non-blocking = False, Bool:D :$shared = False
+            --> True)
+
+Places an advisory lock on the file the filehandle if open for. If
+C<:$non-blocking> is C<True> will L«C<fail>|/routine/fail» with L<C<X::IO::Lock>|/type/X::IO::Lock>
+if lock could not be obtained, otherwise will block until the lock can be
+placed. If C<:$shared> is C<True> will place a shared (read) lock, otherwise
+will place an exclusive (write) lock. On success, returns C<True>;
+L«fails|/routine/fail» with L<C<X::IO::Lock>|/type/X::IO::Lock> if lock cannot be placed (e.g. when
+trying to place a shared lock on a filehandle opened in write mode or trying to
+place an exclusive lock on a filehandle opened in read mode).
+
+You can use C<.lock> again to replace an existing lock with another one.
+To remove a lock, L«C<close>|/routine/close» the filehandle or use
+L«C<unlock>|/routine/unlock».
+
+=begin code
+# One program writes, the other reads, and thanks to locks either
+# will wait for the other to finish before proceeding to read/write
+
+# Writer
+given "foo".IO.open(:w) {
+    .lock;
+    .spurt: "I ♥ Raku!";
+    .close; # closing the handle unlocks it; we could also use `unlock` for that
+}
+
+# Reader
+given "foo".IO.open {
+    .lock: :shared;
+    .slurp.say; # OUTPUT: «I ♥ Raku!␤»
+    .close;
+}
+=end code
+
+=head2 method unlock
+
+    method unlock(IO::Handle:D: --> True)
+
+Removes a L«C<lock>|/routine/lock» from the filehandle. It will return
+C<True> or fail with an exception if it's not possible.
+
+=head2 routine words
+
+    multi        words(IO::Handle:D $fh = $*ARGFILES, $limit = Inf, :$close --> Seq:D)
+    multi method words(IO::Handle:D: $limit = Inf, :$close --> Seq:D)
+
+Similar to L«C<Str.words>|/type/Str#routine_words», separates the handle's
+stream on contiguous chunks of whitespace (as defined
+by Unicode) and returns a L<C<Seq>|/type/Seq> of the resultant "words." Takes an optional
+C<$limit> argument that can be a non-negative L<C<Int>|/type/Int>, C<Inf>, or L<C<Whatever>|/type/Whatever>
+(which is interpreted to mean C<Inf>), to indicate only up-to C<$limit> words
+must be returned. If L<C<Bool>|/type/Bool> C<:$close> named argument is set to C<True>,
+will automatically close the handle when the returned L<C<Seq>|/type/Seq> is exhausted.
+Subroutine form defaults to
+L«C<$*ARGFILES>|/language/variables#index-entry-%24%2AARGFILES», if no handle
+is provided.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my %dict := bag $*IN.words;
+say "Most common words: ", %dict.sort(-*.value).head: 5;
+
+B<NOTE:> implementations may read I<more> data than necessary when a call
+to C<.words> is made. That is, C<$handle.words(2)> may read more data than two
+"words" worth of data and subsequent calls to read methods might not read from
+the place right after the two fetched words. After a call to C<.words>, the
+file position should be treated as undefined.
+
+=head2 method split
+
+    method split(IO::Handle:D: :$close, |c)
+
+L<Slurps|/routine/slurp> the handle's content and calls
+L«C<Str.split>|/type/Str#routine_split» on it, forwarding any of the given
+arguments. If C<:$close> named parameter is set to C<True>, will
+L<close|/routine/close> the invocant after slurping.
+
+Attempting to call this method when the handle is L<in binary
+mode|/type/IO::Handle#method_encoding> will result in L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode>
+exception being thrown.
+
+=for code
+my $fh = 'path/to/file'.IO.open;
+$fh.split: '♥', :close; # Returns file content split on ♥
+
+=head2 method spurt
+
+    multi method spurt(IO::Handle:D: Blob $data, :$close = False)
+    multi method spurt(IO::Handle:D: Cool $data, :$close = False)
+
+Writes all of the C<$data> into the filehandle, closing it when finished,
+if C<$close> is C<True>. For L«C<Cool>|/type/Cool» C<$data>, will use the
+encoding the handle is set to use (L«C<IO::Handle.open>|/routine/open»
+or L«C<IO::Handle.encoding>|/routine/encoding»).
+
+Behavior for spurting a L«C<Cool>|/type/Cool» when the handle is in binary
+mode or spurting a L«C<Blob>|/type/Blob» when the handle is NOT in binary
+mode is undefined.
+
+=head2 method print
+
+    multi method print(**@text --> True)
+    multi method print(Junction:D --> True)
+
+Writes the given C<@text> to the handle, coercing any non-L<C<Str>|/type/Str>
+objects to L<C<Str>|/type/Str> by calling L«C<.Str>|/routine/Str» method on them.
+L<C<Junction>|/type/Junction> arguments
+L<autothread|/language/glossary#Autothreading> and the order of
+printed strings is not guaranteed. See L<write|/routine/write> to write bytes.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my $fh = 'path/to/file'.IO.open: :w;
+$fh.print: 'some text';
+$fh.close;
+
+=head2 method print-nl
+
+    method print-nl(IO::Handle:D: --> True)
+
+Writes the value of C<$.nl-out> attribute into the handle. This attribute, by
+default, is C<␤>, but see the L<page on newline|/language/newline> for the rules
+it follows in different platforms and environments.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my $fh = 'path/to/file'.IO.open: :w, :nl-out("\r\n");
+$fh.print: "some text";
+$fh.print-nl; # prints \r\n
+$fh.close;
+
+=head2 method printf
+
+    multi method printf(IO::Handle:D: Cool $format, *@args)
+
+Formats a string based on the given format and arguments and C<.print>s the
+result into the filehandle. See
+L<sprintf|/routine/sprintf> for details on
+acceptable format directives.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my $fh = open 'path/to/file', :w;
+$fh.printf: "The value is %d\n", 32;
+$fh.close;
+
+=head2 method out-buffer
+
+    method out-buffer(--> Int:D) is rw
+
+Controls output buffering and can be set via an argument to L<open|/routine/open>. Takes
+an C<int> as the size of the buffer to use (zero is acceptable). Can take
+a L<C<Bool>|/type/Bool>: C<True> means to use default, implementation-defined buffer size;
+C<False> means to disable buffering (equivalent to using C<0> as buffer size).
+
+Lastly, can take a L<C<Nil>|/type/Nil> to enable TTY-based buffering control: if
+the handle L<is a TTY|/routine/t>, the buffering is disabled, otherwise,
+default, implementation-defined buffer size is used.
+
+See L<flush|/routine/flush> to write out data currently in the buffer. Changing buffer
+size flushes the filehandle.
+
+=for code
+given 'foo'.IO.open: :w, :1000out-buffer {
+    .say: 'Hello world!'; # buffered
+    .out-buffer = 42;       # buffer resized; previous print flushed
+    .say: 'And goodbye';
+    .close; # closing the handle flushes the buffer
+}
+
+
+=head2 method put
+
+    multi method put(**@text --> True)
+    multi method put(Junction:D --> True)
+
+Writes the given C<@text> to the handle, coercing any non-L<C<Str>|/type/Str> objects to
+L<C<Str>|/type/Str> by calling L«C<.Str>|/routine/Str» method on them, and appending the
+value of L«C<.nl-out>|/type/IO::Handle#method_nl-out» at the end. L<C<Junction>|/type/Junction>
+arguments L<autothread|/language/glossary#Autothreading> and the
+order of printed strings is not guaranteed.
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my $fh = 'path/to/file'.IO.open: :w;
+$fh.put: 'some text';
+$fh.close;
+
+=head2 method say
+
+    multi method say(IO::Handle:D: **@text --> True)
+
+This method is identical to L<put|/type/IO::Handle#method_put> except
+that it stringifies its arguments by calling L«C<.gist>|/routine/gist» instead
+of L«C<.Str>|/routine/Str».
+
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=for code
+my $fh = open 'path/to/file', :w;
+$fh.say(Complex.new(3, 4));        # OUTPUT: «3+4i␤»
+$fh.close;
+
+=head2 method read
+
+    method read(IO::Handle:D: Int(Cool:D) $bytes = 65536 --> Buf:D)
+
+Binary reading; reads and returns up to C<$bytes> bytes from the filehandle.
+C<$bytes> defaults to an implementation-specific value (in Rakudo,
+the value of C<$*DEFAULT-READ-ELEMS>, which by default is set to C<65536>).
+This method can be called even when the handle is not
+L<in binary mode|/type/IO::Handle#method_encoding>.
+
+=begin code
+(my $file = 'foo'.IO).spurt: 'I ♥ Raku';
+given $file.open {
+    say .read: 6; # OUTPUT: «Buf[uint8]:0x<49 20 e2 99 a5 20>␤»
+    .close;
+}
+=end code
+
+=head2 method readchars
+
+    method readchars(IO::Handle:D: Int(Cool:D) $chars = 65536 --> Str:D)
+
+Reading chars; reads and returns up to C<$chars> chars (graphemes) from the
+filehandle. C<$chars> defaults to an implementation-specific value (in Rakudo,
+the value of C<$*DEFAULT-READ-ELEMS>, which by default is set to C<65536>).
+Attempting to call this method when the handle is
+L<in binary mode|/type/IO::Handle#method_encoding> will result in
+L<C<X::IO::BinaryMode>|/type/X::IO::BinaryMode> exception being thrown.
+
+=begin code
+(my $file = 'foo'.IO).spurt: 'I ♥ Raku';
+given $file.open {
+    say .readchars: 5; # OUTPUT: «I ♥ R␤»
+    .close;
+}
+=end code
+
+B<Note>: Calling C<.tell> after using C<.readchars>
+L<might be off by up to 3 bytes|https://github.com/rakudo/rakudo/issues/3646>
+as a result of L<unicode processing|https://www.nntp.perl.org/group/perl.perl6.users/2020/04/msg8385.html>.
+
+=head2 method write
+
+    method write(IO::Handle:D: Blob:D $buf --> True)
+
+Writes C<$buf> to the filehandle. This method can be called even when the
+handle is not L<in binary mode|/type/IO::Handle#method_encoding>.
+
+X<|Reference,SeekFromBeginning>
+X<|Reference,SeekFromCurrent>
+X<|Reference,SeekFromEnd>
+=head2 method seek
+
+     method seek(IO::Handle:D: Int:D $offset, SeekType:D $whence --> True)
+
+Move the file pointer (that is, the position at which any subsequent read
+or write operations will begin) to the byte position specified by
+C<$offset> relative to the location specified by C<$whence> which may be
+one of:
+
+=item C<SeekFromBeginning>: The beginning of the file.
+
+=item C<SeekFromCurrent>: The current position in the file.
+
+=item C<SeekFromEnd>: The end of the file.  Please note that you need to specify
+a negative offset if you want to position before the end of the file.
+
+=head2 method tell
+
+    method tell(IO::Handle:D: --> Int:D)
+
+Return the current position of the file pointer in bytes.
+
+=head2 method slurp-rest
+
+    multi method slurp-rest(IO::Handle:D: :$bin! --> Buf)
+    multi method slurp-rest(IO::Handle:D: :$enc --> Str)
+
+B<DEPRECATION NOTICE:> this method is deprecated in the C<6.d> version. Do
+not use it for new code, use L«C<.slurp> method|/routine/slurp» instead.
+
+Returns the remaining content of the file from the current file position (which
+may have been set by previous reads or by C<seek>.)  If the adverb C<:bin> is
+provided a L<C<Buf>|/type/Buf> will be returned; otherwise the return will be a L<C<Str>|/type/Str> with
+the optional encoding C<:enc>.
+
+=head2 method slurp
+
+    method slurp(IO::Handle:D: :$close, :$bin)
+
+Returns all the content from the current file pointer to the end. If the
+invocant is in binary mode or if C<$bin> is set to C<True>, will return a
+L<C<Buf>|/type/Buf>, otherwise will decode the content using invocant's current
+L«C<.encoding>|/routine/encoding» and return a L<C<Str>|/type/Str>.
+
+If C<:$close> is set to C<True>, will close the handle when finished reading.
+
+B<Note:> On L<Rakudo|/language/glossary#Rakudo> this method was introduced
+with release 2017.04; C<$bin> arg was added in 2017.10.
+
+=head2 method Supply
+
+    multi method Supply(IO::Handle:D: :$size = 65536)
+
+Returns a L«C<Supply>|/type/Supply» that will emit the contents of the handle in chunks.
+The chunks will be L«C<Buf>|/type/Buf» if the handle is in binary mode
+or, if it isn't, L«C<Str>|/type/Str» decoded using same encoding as
+L«C<IO::Handle.encoding>|/routine/encoding».
+
+The size of the chunks is determined by the optional C<:size> named
+parameter and C<65536> bytes in binary mode or C<65536> characters in non-binary
+mode.
+
+=begin code
+"foo".IO.open(:bin).Supply(:size<10>).tap: *.raku.say;
+# OUTPUT:
+# Buf[uint8].new(73,32,226,153,165,32,80,101,114,108)
+# Buf[uint8].new(32,54,33,10)
+
+"foo".IO.open.Supply(:size<10>).tap: *.raku.say;
+# OUTPUT:
+# "I ♥ Perl"
+# " 6!\n"
+=end code
+
+=head2 method path
+
+    method path(IO::Handle:D:)
+
+For a handle opened on a file this returns the L<C<IO::Path>|/type/IO::Path> that
+represents the file. For the standard I/O handles
+L«C<$*IN>|/language/variables#index-entry-%24%2AIN»,
+L«C<$*OUT>|/language/variables#index-entry-%24%2AOUT», and
+L«C<$*ERR>|/language/variables#index-entry-%24%2AERR» it returns an
+L<C<IO::Special>|/type/IO::Special> object.
+
+=head2 method IO
+
+    method IO(IO::Handle:D:)
+
+Alias for L«C<.path>|/type/IO::Handle#method_path»
+
+=head2 method Str
+
+Returns the value of L«C<.path>|/type/IO::Handle#method_path», coerced
+to L<C<Str>|/type/Str>.
+
+=for code
+say "foo".IO.open.Str; # OUTPUT: «foo␤»
+
+=head2 routine close
+
+    method close(IO::Handle:D: --> Bool:D)
+    multi  close(IO::Handle $fh)
+
+Closes an open filehandle, returning C<True> on success. No error is thrown if the
+filehandle is already closed, although if you close one of the standard
+filehandles (by default: C<$*IN>, C<$*OUT>, or C<$*ERR>: any handle
+with L<native-descriptor|/routine/native-descriptor> C<2> or lower), you won't be
+able to re-open them.
+
+=for code
+given "foo/bar".IO.open(:w) {
+    .spurt: "I ♥ Raku!";
+    .close;
+}
+
+It's a common idiom to use L«C<LEAVE> phaser|/language/phasers#LEAVE» for
+closing the handles, which ensures the handle is closed regardless of how the
+block is left.
+
+=begin code
+do {
+    my $fh = open "path-to-file";
+    LEAVE close $fh;
+    # ... do stuff with the file
+}
+
+sub do-stuff-with-the-file (IO $path-to-file) {
+  my $fh = $path-to-file.open;
+
+  # stick a `try` on it, since this will get run even when the sub is
+  # called with wrong arguments, in which case the `$fh` will be an `Any`
+  LEAVE try close $fh;
+
+  # ... do stuff with the file
+}
+=end code
+
+B<Note:> unlike some other languages, Raku does not use reference counting,
+and so B<the filehandles are NOT closed when they go out of scope>. While
+they I<will> get closed when garbage collected, garbage collection isn't
+guaranteed to get run. This means B<you must> use an explicit C<close> on
+handles opened for writing, to avoid data loss, and an explicit C<close>
+is I<recommended> on handles opened for reading as well, so that your program
+does not open too many files at the same time, triggering exceptions on further
+C<open> calls.
+
+Note several methods allow for providing C<:close> argument, to close the handle
+after the operation invoked by the method completes. As a simpler alternative,
+the L<C<IO::Path>|/type/IO::Path> type provides many reading and writing methods that let you work
+with files without dealing with filehandles directly.
+
+=head2 method flush
+
+    method flush(IO::Handle:D: --> True)
+
+Will flush the handle, writing any of the buffered data. Returns C<True>
+on success; otherwise, L<fails|/routine/fail> with L<C<X::IO::Flush>|/type/X::IO::Flush>.
+
+=begin code
+given "foo".IO.open: :w {
+    LEAVE .close;
+    .print: 'something';
+    'foo'.IO.slurp.say; # (if the data got buffered) OUTPUT: «␤»
+    .flush;             # flush the handle
+    'foo'.IO.slurp.say; # OUTPUT: «something␤»
+}
+=end code
+
+=head2 method native-descriptor
+
+    method native-descriptor(IO::Handle:D:)
+
+This returns a value that the operating system would understand as a "file
+descriptor" and is suitable for passing to a native function that requires a
+file descriptor as an argument such as C<fcntl> or C<ioctl>.
+
+=head2 method nl-in
+
+    method nl-in(--> Str:D) is rw
+
+One of the attributes that can be set via C<.new> or L<open|/routine/open>.
+Defaults to C<["\x0A", "\r\n"]>. Takes either a L<C<Str>|/type/Str> or
+L<C<Array>|/type/Array> of L<C<Str>|/type/Str> specifying input line ending(s) for this handle.
+If C<.chomp> attribute is set to C<True>, will strip these endings in routines
+that C<chomp>, such as L«C<get>|/routine/get» and L«C<lines>|/routine/lines».
+
+=begin code
+with 'test'.IO {
+    .spurt: '1foo2bar3foo'; # write some data into our test file
+    my $fh will leave {.close} = .open; # can also set .nl-in via .open arg
+    $fh.nl-in = [<foo bar>]; # set two possible line endings to use;
+    $fh.lines.say; # OUTPUT: ("1", "2", "3").Seq
+}
+=end code
+
+=head2 method nl-out
+
+    has Str:D $.nl-out is rw = "\n";
+
+One of the attributes that can be set via C<.new> or L<open|/routine/open>.
+Defaults to C<"\n">. Takes a L<C<Str>|/type/Str> specifying output line ending for this
+handle, to be used by methods L«C<.put>|/type/IO::Handle#method_put»
+and L«C<.say>|/type/IO::Handle#method_say».
+
+=begin code
+with 'test'.IO {
+    given .open: :w {
+        .put: 42;
+        .nl-out = 'foo';
+        .put: 42;
+        .close;
+    }
+    .slurp.raku.say; # OUTPUT: «"42\n42foo"␤»
+}
+=end code
+
+=head2 method opened
+
+    method opened(IO::Handle:D: --> Bool:D)
+
+Returns C<True> if the handle is open, C<False> otherwise.
+
+X<|Reference,tty>
+=head2 method t
+
+    method t(IO::Handle:D: --> Bool:D)
+
+Returns C<True> if the handle is opened to a
+L<TTY|https://en.wikipedia.org/wiki/Terminal_emulator>, C<False> otherwise.
+
+=head1 Creating Custom Handles
+
+As of 6.d language (early implementation available in Rakudo compiler
+release 2018.08), a few helper methods are available to simplify creation of
+custom C<IO::Handle> objects. In your subclass you simply need to implement
+those methods to affect all of the related features. If your handle wants
+to work with textual read/write methods and doesn't use the standard C<.open>
+method, be sure to call C<.encoding> method in your custom handle to get
+decoder/encoder properly set up:
+
+=begin code :skip-test<needs ecosystem>
+class IO::URL is IO::Handle {
+    has $.URL is required;
+    has Buf $!content;
+    submethod TWEAK {
+        use WWW; # ecosystem module that will let us `get` a web page
+        use DOM::Tiny; # ecosystem module that will parse out all text from HTML
+        $!content := Buf.new: DOM::Tiny.parse(get $!URL).all-text(:trim).encode;
+        self.encoding: 'utf8'; # set up encoder/decoder
+    }
+
+    method open(|)  { self }       # block out some IO::Handle methods
+    method close(|) { self }       # that work with normal low-level file
+    method opened   { ! self.EOF } # handles, since we don't. This isn't
+    method lock(| --> True) { }    # necessary, but will make our handle
+    method unlock( --> True) { }   # be more well-behaved if someone
+    # actually calls one of these methods. There are more of these you
+    # can handle, such as .tell, .seek, .flush, .native-descriptor, etc.
+
+    method WRITE(|) {
+        # For this handle we'll just die on write. If yours can handle writes.
+        # The data to write will be given as a Blob positional argument.
+        die "Cannot write into IO::URL";
+    }
+    method READ(\bytes) {
+        # We splice off the requested number of bytes from the head of
+        # our content Buf. The handle's decoder will handle decoding them
+        # automatically, if textual read methods were called on the handle.
+        $!content.splice: 0, bytes
+    }
+    method EOF {
+        # For "end of file", we'll simply report whether we still have
+        # any bytes of the website we fetched on creation.
+        not $!content
+    }
+}
+
+my $fh := IO::URL.new: :URL<raku.org>;
+
+# .slurp and print all the content from the website. We can use all other
+# read methods, such as .lines, or .get, or .readchars. All of them work
+# correctly, even though we only defined .READ and .EOF
+$fh.slurp.say;
+=end code
+
+=head2 method WRITE
+
+    method WRITE(IO::Handle:D: Blob:D \data --> Bool:D)
+
+Called whenever a write operation is performed on the handle. Always receives
+the data as a L<C<Blob>|/type/Blob>, even if a textual writing method has been
+called.
+
+=begin code
+class IO::Store is IO::Handle {
+    has @.lines = [];
+
+    submethod TWEAK {
+        self.encoding: 'utf8'; # set up encoder/decoder
+    }
+
+    method WRITE(IO::Handle:D: Blob:D \data --> Bool:D) {
+        @!lines.push: data.decode();
+        True;
+    }
+
+    method gist() {
+        return @!lines.join("\n" );
+    }
+}
+my $store = IO::Store.new();
+my $output = $PROCESS::OUT;
+$PROCESS::OUT = $store;
+.say for <one two three>;
+$PROCESS::OUT = $output;
+say $store.lines(); # OUTPUT: «[one␤ two␤ three␤]»
+=end code
+
+In this example we are creating a simple C<WRITE> redirection which stores
+anything written to the filehandle to an array. We need to save the standard
+output first, which we do in C<$output>, and then everything that is C<print>ed
+or said (through C<say>) gets stored in the defined C<IO::Store> class. Two
+things should be taken into account in this class. By default, C<IO::Handle>s
+are in binary mode, so we need to C<TWEAK> the objects if we want them to work
+with text. Second, a C<WRITE> operation should return C<True> if successful. It
+will fail if it does not.
+
+=head2 method READ
+
+    method READ(IO::Handle:D: Int:D \bytes --> Buf:D)
+
+Called whenever a read operation is performed on the handle. Receives the number
+of bytes requested to read. Returns a L<C<Buf>|/type/Buf> with those bytes which
+can be used to either fill the decoder buffer or returned from reading methods
+directly. The result is allowed to have fewer than the requested number of
+bytes, including no bytes at all.
+
+If you provide your own C<.READ>, you very likely need to provide your own
+L<C«.EOF»|/routine/EOF> as well, for all the features to behave correctly.
+
+The compiler may call L<C«.EOF»|/routine/EOF> method any number of times during
+a read operation to ascertain whether a call to C<.READ> should be made. More
+bytes than necessary to satisfy a read operation may be requested from C<.READ>,
+in which case the extra data may be buffered by the C<IO::Handle> or the decoder
+it's using, to fulfill any subsequent reading operations, without necessarily
+having to make another C<.READ> call.
+
+=begin code
+class IO::Store is IO::Handle {
+    has @.lines = [];
+
+    submethod TWEAK {
+      self.encoding: 'utf8'; # set up encoder/decoder
+    }
+
+    method WRITE(IO::Handle:D: Blob:D \data --> Bool:D) {
+      @!lines.push: data;
+      True;
+    }
+
+    method whole() {
+      my Buf $everything = Buf.new();
+      for @!lines -> $b {
+        $everything ~= $b;
+      }
+      return $everything;
+    }
+
+    method READ(IO::Handle:D: Int:D \bytes --> Buf:D) {
+      my Buf $everything := self.whole();
+      return $everything;
+    }
+
+    method EOF {
+      my $everything = self.whole();
+      !$everything;
+    }
+}
+
+my $store := IO::Store.new();
+
+$store.print( $_ ) for <one two three>;
+say $store.read(3).decode; # OUTPUT: «one␤»
+say $store.read(3).decode; # OUTPUT: «two␤»
+=end code
+
+In this case, we have programmed the two C<READ> and C<EOF> methods, as well as
+C<WRITE>, which stores every line in an element in an array. The C<read> method
+actually calls C<READ>, returning 3 bytes, which correspond to the three
+characters in the first two elements. Please note that it's the C<IO::Handle>
+base class the one that is taking care of cursor, since C<READ> just provides a
+handle into the whole content of the object; the base class will C<READ> 1024 *
+1024 bytes at a time. If your object is planned to hold an amount of bytes
+bigger than that, you will have to handle an internal cursor yourself. That is
+why in this example we don't actually use the C<bytes> argument.
+
+=head2 method EOF
+
+    method EOF(IO::Handle:D: --> Bool:D)
+
+Indicates whether "end of file" has been reached for the B<data source> of the
+handle; i.e. no more data can be obtained by calling L<C«.READ»|/routine/READ>
+method. Note that this is B<not> the same as L<eof|/routine/eof> method, which
+will return C<True> only if C<.EOF> returns C<True> B<and all the decoder
+buffers>, if any were used by the handle, are also empty. See
+L<C«.READ»|/routine/READ> for an example implementation.
+
+=head1 Related roles and classes
+
+See also the related role L<C<IO>|/type/IO> and the related class L<C<IO::Path>|/type/IO::Path>.
+
+=end pod

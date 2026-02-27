@@ -1,0 +1,14 @@
+{
+    "perl" : "6.*",
+    "name" : "Test::Helpers",
+    "description" : "Helper and utility modules used in the roast",
+    "provides" : {
+        "Test::Assuming" : "lib/Test/Assuming.rakumod",
+        "Test::Compile" : "lib/Test/Compile.rakumod",
+        "Test::Idempotence" : "lib/Test/Idempotence.rakumod",
+        "Test::Iterator" : "lib/Test/Iterator.rakumod",
+        "Test::Misc" : "lib/Test/Misc.rakumod",
+        "Test::Tap" : "lib/Test/Tap.rakumod",
+        "Test::Util" : "lib/Test/Util.rakumod"
+    }
+}

@@ -1,0 +1,13 @@
+=begin pod :kind("Language") :subkind("Language") :category("tutorial")
+
+=TITLE Module packages
+
+=SUBTITLE Creating module packages for code reuse
+
+See:
+
+=item L<Modules: An Introduction|/language/using-modules/introduction>
+=item L<Making Modules: The Code|/language/making-modules/code>
+
+
+=end pod

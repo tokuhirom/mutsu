@@ -1,0 +1,347 @@
+=begin pod :kind("Language") :subkind("Language") :category("reference")
+
+=TITLE Terms
+
+=SUBTITLE Raku terms
+
+Most syntactic constructs in Raku can be categorized in I<terms> and
+L<operators|/language/operators>.
+
+Here you can find an overview of different kinds of terms.
+
+=head1 Literals
+
+=head2 Int
+
+=begin code :skip-test<literals only>
+42
+12_300_00
+:16<DEAD_BEEF>
+=end code
+
+L<C<Int>|/type/Int> literals consist of digits and can contain underscores
+between any two digits.
+
+To specify a base other than ten, use the colonpair form C«:radix<number>».
+
+=head2 Rat
+
+    =begin code :skip-test<literals only>
+    12.34
+    1_200.345_678
+    =end code
+
+L<C<Rat>|/type/Rat> literals (rational numbers) contain two integer parts joined by
+a dot.
+
+Note that trailing dots are not allowed, so you have to write C<1.0> instead
+of C<1.> (this rule is important because there are infix operators starting
+with a dot, for example the C<..> L<C<Range>|/type/Range> operator).
+
+=head2 Num
+
+=begin code :skip-test<literals only>
+12.3e-32
+3e8
+=end code
+
+L<C<Num>|/type/Num> literals (floating point numbers) consist of L<C<Rat>|/type/Rat>
+or L<C<Int>|/type/Int> literals followed by an C<e> and a (possibly negative)
+exponent. C<3e8> constructs a L<C<Num>|/type/Num> with value C<3 * 10**8>.
+
+=head2 Str
+
+=begin code :skip-test<literals only>
+'a string'
+'I\'m escaped!'
+"I don't need to be"
+"\"But I still can be,\" he said."
+q|Other delimiters can be used too!|
+=end code
+
+String literals are most often created with C<'> or C<">, however strings are
+actually a powerful sub-language of Raku. See
+L<Quoting Constructs|/language/quoting>.
+
+=head2 Regex
+
+=begin code :skip-test<literals only>
+/ match some text /
+rx/slurp \s rest (.*) $/
+=end code
+
+These forms produce regex literals. See L<quoting constructs|/language/quoting>.
+
+=head2 Pair
+
+    =begin code :skip-test<literals only>
+    a => 1
+    'a' => 'b'
+    :identifier
+    :!identifier
+    :identifier<value>
+    :identifier<value1 value2>
+    :identifier($value)
+    :identifier['val1', 'val2']
+    :identifier{key1 => 'val1', key2 => 'value2'}
+    :valueidentifier
+    :$item
+    :@array
+    :%hash
+    :&callable
+    =end code
+
+L<C<Pair>|/type/Pair> objects can be created either with the
+L«C<<=>>> infix operator|/language/operators#infix_=>» (which
+auto-quotes the left-hand side if it is an identifier), or with the various
+colon-pair forms. Those almost always start with a colon and then are followed
+either by an identifier or the name of an already existing variable (whose
+name without the sigil is used as the key and value of the variable is used
+as the value of the pair). There is a special form where an integer value
+is immediately after the colon and the key is immediately after the value.
+
+In the identifier form of a colon-pair, the optional value can be any
+circumfix.  If it is left blank, the value is C<Bool::True>. The value of
+the C<:!identifier> form is C<Bool::False>.
+
+If used in an argument list, all of these forms count as named arguments,
+with the exception of C«'quoted string' => $value».
+
+=head2 List
+
+    =begin code :skip-test<literals only>
+    ()
+    1, 2, 3
+    <a b c>
+    «a b c»
+    qw/a b c/
+    =end code
+
+L<C<List>|/type/List> literals are: the empty pair of parentheses C<()>, a
+comma-separated list, or several quoting constructs.
+
+=head2 C<*>
+
+The C<*> literal creates an object of type L<C<Whatever>|/type/Whatever>. See
+L<C<Whatever>|/type/Whatever> documentation for more details; when used as a
+term, the expression it's included will become a
+L<C<WhateverCode>|/type/WhateverCode>
+
+=for code
+say .^name with *;    # OUTPUT: «Whatever␤»
+say .^name with *+3;  # OUTPUT: «WhateverCode␤»
+
+=head1 Identifier terms
+
+There are built-in identifier terms in Raku, which are listed below.  In
+addition one can add new identifier terms with the syntax:
+
+    sub term:<forty-two> { 42 };
+    say forty-two
+
+or as constants:
+
+    constant forty-two = 42;
+    say forty-two;
+
+=head2 term self
+
+Inside a method, C<self> refers to the invocant (i.e. the object the method
+was called on). If used in a context where it doesn't make sense, a
+compile-time exception of type L<C<X::Syntax::NoSelf>|/type/X::Syntax::NoSelf> is thrown.
+
+=head2 term now
+
+Returns an L<C<Instant>|/type/Instant> object representing the current time. It
+includes L<leap seconds|https://en.wikipedia.org/wiki/Leap_second> and as such is a
+few dozen seconds larger than L<time|/language/terms#term_time>:
+
+    say (now - time).Int; # OUTPUT: «37␤»
+
+=head2 term time
+
+Returns the current POSIX time in B<seconds> as an L<C<Int>|/type/Int>; see
+L<nano|/language/terms#term_nano> for more precision. See
+L<now|/language/terms#term_now> for high-resolution timestamp that includes
+L<leap seconds|https://en.wikipedia.org/wiki/Leap_second>.
+
+=head2 term nano
+
+Returns the current POSIX time in B<nano seconds> as an L<C<Int>|/type/Int>.
+See L<now|/language/terms#term_now> for high-resolution timestamp that
+includes L<leap seconds|https://en.wikipedia.org/wiki/Leap_second>.
+
+Available as of 6.e language version (early implementation exists in Rakudo
+compiler 2022.12+).  For Rakudo releases from 2021.04, the
+L<nano|https://raku.land/zef:lizmat/nano> module can be used to obtain the
+same functionality.
+
+=head2 term rand
+
+Returns a pseudo-random L<C<Num>|/type/Num> in the range C<0..^1>.
+
+=head2 term π
+
+Returns the number C<π> at codepoint U+03C0 (GREEK SMALL LETTER PI), i.e.
+the ratio between circumference and diameter of a circle. The ASCII equivalent
+of C<π> is C<pi>.
+
+=head2 term pi
+
+Returns the number C<π>, i.e., the ratio between circumference and diameter
+of a circle. C<pi> is the ASCII equivalent of C<π>.
+
+=head2 term τ
+
+Returns the number C<τ> at codepoint U+03C4 (GREEK SMALL LETTER TAU), i.e.
+the ratio between circumference and radius of a circle. The ASCII equivalent
+of C<τ> is C<tau>.
+
+=head2 term tau
+
+Returns the number C<τ>, i.e.  the ratio between circumference and radius of
+a circle. C<tau> is the ASCII equivalent of C<τ>.
+
+=head2 term 𝑒
+
+Returns Euler's number at codepoint U+1D452 (MATHEMATICAL ITALIC SMALL E).
+The ASCII equivalent of C<𝑒> is C<e>.
+
+=head2 term e
+
+Returns Euler's number.  C<e> is the ASCII equivalent of C<𝑒>.
+
+=head2 term i
+
+Returns the imaginary unit (for L<C<Complex>|/type/Complex> numbers).
+
+=head2 term ∅
+
+X<|Terms,∅>
+
+Returns C<set()>, aka the X<empty set|Terms,empty set>, at codepoint U+2205 (EMPTY SET).
+
+=head1 Variables
+
+Variables are discussed in the L<variable language docs|/language/variables>.
+
+X<|Syntax,constant (Terms)>
+=head1 Constants
+
+Constants are similar to L<variables|/language/variables> without a
+L<container|/language/containers>, and thus cannot be rebound. However,
+their initializers are evaluated at L<BEGIN|/syntax/BEGIN> time:
+
+    constant speed-of-light = 299792458; # m/s
+    constant @foo  = 1, 2, 3;
+    constant &talk = &say;
+    talk speed-of-light²; # OUTPUT: «89875517873681764␤»
+    talk @foo;            # OUTPUT: «(1 2 3)␤»
+
+Compile-time evaluation means
+L<you should be careful|/language/traps#Constants_are_computed_at_compile_time>
+with using constants
+inside modules, which get automatically precompiled, and so the value
+of the constant would not change even between multiple executions of the
+program:
+
+=begin code :solo
+# Foo.rakumod
+unit module Foo;
+constant comp-time = DateTime.now;
+=end code
+
+=begin code :lang<shell>
+# The value of the constant remains the same even though our script
+# is executed multiple times:
+$ raku -I. -MFoo -e 'say Foo::comp-time'
+2018-06-17T18:18:50.021484-04:00
+$ raku -I. -MFoo -e 'say Foo::comp-time'
+2018-06-17T18:18:50.021484-04:00
+=end code
+
+Constants are declared with keyword C<constant> followed by
+an L<identifier|/language/syntax#Identifiers> with an I<optional> sigil.
+Constants are L«C<our> scoped|/language/variables#The_our_declarator»
+by default.
+
+=begin code
+    constant foo  = 42;
+my  constant $baz = rand;
+our constant @foo = 1, 2, 3;
+    constant %bar = %(:42foo, :100bar);
+=end code
+
+I<NOTE: if you're using the Rakudo compiler, you need release 2018.08 or
+newer for type constraints and auto-coercion on constants to be
+available. Auto-coercion on %-sigiled constants requires 6.d>.
+
+An optional type constraint can be used, in which case the use of scope
+declarator is required:
+
+=begin code :skip-test<illustrates error>
+# !!WRONG!! missing scope declarator before type:
+Int constant bar = 42;
+
+# RIGHT:
+our Int constant bar = 42;
+=end code
+
+Unlike L<variables|/language/variables>, you cannot parameterize C<@>-,
+C<%>-, and C<&>-sigiled constants by specifying the parameterization
+type in the declarator itself:
+
+=begin code :skip-test<illustrates error>
+# !!WRONG!! cannot parameterize @-sigiled constant with Int
+# This will throw X::ParametricConstant
+our Int constant @foo = 42;
+
+# OK: parameterized types as values are fine
+constant @foo = Array[Int].new: 42;
+=end code
+
+The reason for the restriction is that constants with C<@> and C<%>
+sigils default to L<C<List>|/type/List> and L<C<Map>|/type/Map> types, which cannot be
+parameterized. To keep things simple and consistent, parameterization
+was simply disallowed in these constructs.
+
+The C<@>-, C<%>-, and C<&>-sigiled constants specify implied typecheck of the
+given value for L<C<Positional>|/type/Positional>,
+L<C<Associative>|/type/Associative>, and L<C<Callable>|/type/Callable> roles
+respectively. The C<@>-sigiled constants—and as of C<6.d> language version, the
+C<%>-sigiled constants as well—perform auto-coercion of the value if it does not
+pass the implied typecheck. The C<@>-sigiled constants will coerce using method
+L<cache|/routine/cache> and C<%>-sigiled constants coerce using method
+L<C<Map>|/type/Map>.
+
+=begin code
+constant @foo = 42;
+@foo.raku.say; # OUTPUT: «(42,)␤»
+
+constant @bar = [<a b c>];
+@bar.raku.say; # OUTPUT: «["a", "b", "c"]␤»
+
+constant %foo = <foo bar>;
+%foo.raku.say; # OUTPUT: «Map.new((:foo("bar")))␤»
+
+constant %bar = {:10foo, :72bar};
+%bar.raku.say; # OUTPUT: «{:bar(72), :foo(10)}␤»
+
+# Pair is already Associative, so it remains a Pair
+constant %baz = :72baz;
+%baz.raku.say; # OUTPUT: «:baz(72)␤»
+=end code
+
+For convenience and consistency reasons, you can use the
+L«binding operator (C<:=>)|/routine/:=» instead of the assignment operator,
+use backslash before sigilless name of the constant variable (same as with
+L<sigilless variables|/language/variables#Sigilless_variables>), and even
+omit the name of the constant entirely to have an anonymous constant. Since
+you can't refer to anonymous entities, you may be better off using
+a L«C<BEGIN> phaser|/language/phasers#BEGIN» instead, for clarity.
+
+    constant %foo := :{:42foo};
+    constant \foo = 42;
+    constant = 'anon';
+
+=end pod

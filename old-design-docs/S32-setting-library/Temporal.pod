@@ -1,0 +1,295 @@
+=encoding utf8
+
+=head1 TITLE
+
+Synopsis 32: Setting Library - Temporal
+
+=head1 VERSION
+
+    Created: 19 Mar 2009
+
+    Last Modified: 10 May 2014
+    Version: 23
+
+=head1 Time and time again
+
+Two chief aspects of a Perl 6 synopsis seem to contribute to it having
+some extra volatility: how far it sits from the rest of the data model
+of the language, and how everyday the topic in question is. C<S32> has
+always been volatile for these reasons; C<S32::Temporal> doubly so.
+
+The truth is that while there are many interests to satisfy in the case
+of a C<Temporal> module, and many details to take into account, there's
+also the danger of putting too much in. Therefore, Perl 6's C<Temporal>
+module takes the C<DateTime> module on CPAN as a starting point, adapts
+it to the Perl 6 OO system, and boils it down to bare essentials.
+
+One of the unfortunate traditions that Perl 6 aims to break is that of
+having a set of "core" modules which could better serve the community on
+CPAN than in the Perl core. For this reason, this module doesn't handle
+all the world's time zones, locales, date formatters or calendars.
+Instead, it handles a number of "natural" operations well enough for
+most people to be happy, and shows how those who want more than that can
+load a module, or roll their own variants.  Put differently, the below
+are the aspects of time that are felt to be stable enough to belong in
+the core.
+
+Note that in this document, the term "POSIX time" means the number of
+seconds since midnight UTC of 1 January 1970, not counting leap seconds.
+This is the same as the output of the ISO C C<time> function.
+Unlike in Perl 5, C<time> does not return fractional seconds, since C<POSIX>
+does not define the concept during leap seconds.  You want
+to use C<now> for that instead.
+
+=head1 C<time>
+
+Returns the current POSIX time as an C<Int>. Use C<now> for an
+epoch-agnostic measure of atomic seconds (i.e., an C<Instant>).
+Note that both C<time> and C<now> are not functions, but terms
+of the pseudo-constant variety; as such they never take an argument.
+Saying C<time()> doesn't work unless you happen to have a function
+of that name defined.
+
+=head1 C<DateTime>
+
+A C<DateTime> object, which is immutable, describes a moment in time as it
+would appear on someone's calendar and someone's clock. You can create a
+C<DateTime> object from an C<Instant> or from an C<Int>; in the latter
+case, the argument is interpreted as POSIX time.
+
+    my $now = DateTime.new(now);
+    my $now = DateTime.new(time);
+
+These two statements are equivalent except that C<time> doesn't know about
+leap seconds or fractions of seconds. Ambiguous POSIX times (such as
+915148800, which could refer to 1998-12-31T23:59:60Z or
+1999-01-01T00:00:00Z) are interpreted as non-leap seconds (so in this case,
+the result would be 1999-01-01T00:00:00Z).
+
+Or you can use named arguments:
+
+    my $moonlanding = DateTime.new( :year(1969), :month(7), :day(16),
+                                    :hour(20), :minute(17) ); # UTC time
+
+This form allows the following arguments:
+
+    :year       required
+    :month      defaults to 1   range 1..12
+    :day        defaults to 1   range 1..31
+    :hour       defaults to 0   range 0..23
+    :minute     defaults to 0   range 0..59
+    :second     defaults to 0   range 0.0..^62.0
+
+Another multi exists with C<Date :date> instead of C<:year>, C<:month> and
+C<:day> (and the same defaults as listed above).
+
+All of the aforementioned forms of C<new> accept two additional named
+arguments. C<:formatter> is a callable object that takes a C<DateTime> and
+returns a string. The default formatter creates an ISO 8601 timestamp (see
+below). C<:timezone> must be an Int or an object that supports an .Int method.
+The Int value of C<:timezone> must reflect the timezone offset, in seconds
+from UTC. The default time zone is C<0> (i.e., UTC).
+The system's local time zone is available as C<$*TZ>.
+
+A shorter way to send in date and time information is to provide a
+single string with a full L<RFC 3339|http://tools.ietf.org/html/rfc3339>
+date and time (a subset of ISO 8601). The example from above
+would then be
+
+    my $moonlanding = DateTime.new( '1969-07-16T20:17:00Z' ); # UTC time
+
+The general form is C<[date]T[time][offset]>, with C<[date]> given as
+C<YYYY-MM-DD> and C<[time]> given as C<hh:mm:ss>. The final C<Z> is a short
+form for C<+0000>, meaning UTC. (Note that while this form of C<new>
+accepts all of C<+0000>, C<-0000>, and C<Z>, the default formatter for
+C<DateTime> always expresses UTC as C<Z>.) The general notation for the
+C<[offset]> is C<+hhmm> or C<-hhmm>. The time zone of the new object is
+assumed to be a static offset equal to the C<[offset]>. The C<[offset]> is
+optional; if omitted, a C<:timezone> argument is permitted; if this too is
+omitted, UTC is assumed. If the year is less than zero or greater than 9999,
+the default formatter will always print the sign.
+Finally, the constructor also accepts a C<:formatter> argument.
+
+With all the above constructors, if you attempt to pass in values that
+are outside of the ranges specified in the list above, you'll get an
+exception. An exception will also be thrown if the given day (like 31 April
+2000 or 29 February 2006) or second (like 23:59:60 on 1 January 2000)
+doesn't exist. The same checks are run when you produce an object with
+C<clone>:
+
+    my $dt = DateTime.new(:year(1999), :month(1), :day(29));
+    say $dt.clone(:year(2000), :month(2)); # 2000-02-29T00:00:00Z
+    say $dt.clone(:year(1999), :month(2)); # WRONG; 1999 was a common year
+
+To convert an object from one time zone to another, use the C<in-timezone>
+method:
+
+    my $dt = DateTime.new('2005-02-01T15:00:00+0900');
+    say $dt.hour;                       # 15
+    $dt = $dt.in-timezone(6 * 60 * 60); # 6 hours ahead of UTC
+    say $dt.hour;                       # 12
+
+Date calculations are done on the proleptic Gregorian calendar, which means
+that we ignore any diurnal upheaval that may have taken place in 1582 and
+calculate all dates the same way.  The year 1 BCE is represented as 0000
+(a leap year), which adjusts all other BCE dates by one. For example, 5000 BCE
+is represented as -4999.
+
+The C<utc> method is shorthand for C<in-timezone(0)>, and the C<local>
+method is short for C<in-timezone($*TZ)>.
+
+The C<truncated-to> constructor allows you to "clear" a number of time values
+below a given resolution:
+
+    my $dt = DateTime.new('2005-02-01T15:20:35Z');
+    say $dt.truncated-to('hour'); # 2005-02-01T15:00:00Z
+
+Arguments to C<truncated-to> is one of the following string values:
+
+    second  seconds
+    minute  minutes
+    hour    hours
+    day     days
+    week    weeks
+    month   months
+    year    years
+
+An argument of C<'week'> to C<truncated-to> yields an object with the date of the last Monday
+(or the same date, if it already is a Monday) and with hours, minutes, and
+seconds all set to zero:
+
+    say $dt.truncated-to('week'); # 2005-01-31T00:00:00Z
+
+The C<later> and C<earlier> constructors allows you to move a number of time
+units forward or backward in time.
+
+    $dt.later(minutes => 44);
+    $dt.earlier(week => 1);
+
+(Both C<later> and C<earlier> accept zero or negative integers, with the obvious
+extended semantics.)
+
+There's one additional constructor: C<now>. It works just like
+C<DateTime.new(now)> except that there is no positional parameter and the
+C<:timezone> argument defaults to C<$*TZ>.
+
+=head2 Accessors
+
+There are methods C<year>, C<month>, C<day>, C<hour>, C<minute>, C<second>,
+C<timezone>, and C<formatter>, giving you the corresponding values of the
+C<DateTime> object. The C<day> method also has the synonym C<day-of-month>.
+
+The method C<Instant> returns an C<Instant>, and the method C<posix>
+returns a POSIX time.
+
+The method C<week> returns two values, the I<week year> and I<week number>.
+(These are also available through the methods C<week-year> and C<week-number>,
+respectively.) The first week of the year is defined by ISO as the one which
+contains the fourth day of January. Thus, dates early in January often end
+up in the last week of the prior year, and similarly, the final few days of
+December may be placed in the first week of the next year.
+
+There's a C<day-of-week> method, which returns the day of the week as a
+number 1..7, with 1 being Monday and 7 being Sunday.
+
+The C<day-of-week-in-month> method returns a number 1..5 indicating the
+number of times a particular day-of-week has occurred so far during that
+month, the day itself included. For example, June 9, 2003 is the second
+Monday of the month, and so this method returns 2 for that day.
+
+The C<days-in-month> method returns the number of days in the current
+month of the current year. So in the case of January, C<days-in-month>
+always returns 31, whereas in the case of February, C<days-in-month>
+returns 28 or 29 depending on the year.
+
+The C<day-of-year> method returns the day of the year, a value between 1
+and 366.
+
+The method C<is-leap-year> returns a C<Bool>, which is true if and only
+if the current year is a leap year in the Gregorian calendar.
+
+The method C<whole-second> returns the second truncated to an integer.
+
+The C<Date> method returns a C<Date> object, and is the same as
+C<Date.new($dt.year, $dt.month, $dt.day)>.
+
+The method C<offset> returns the object's current offset from UTC in seconds.
+This returns the Int value of C<:timezone>.
+
+=head1 C<Date>
+
+C<Date> objects represent a day without a time component. Like C<DateTime>
+objects, they are immutable. They allow easier manipulation by assuming
+that integers always mean days.
+
+Days, Months and days of week are 1-based.
+
+=head2 Constructors
+
+    Date.today();               # today's date
+    Date.new(DateTime.now);     # same
+    Date.new('2010-12-20');     # YYYY-MM-DD format
+    Date.new(:year(2010), :month(12), :day(20));
+    Date.new(2010, 12, 20);
+    Date.new(2010, 1, 20).clone(month => 12);
+    Date.new(2010, 12, 24).truncated-to('week');
+    Date.new(2010, 12, 24).later(weeks => 10);
+
+The constructors die with a helpful error message if month or day are out of
+range.
+
+=head2 Instance methods
+
+C<Date> objects support all of the following accessors, which work just
+like their C<DateTime> equivalents:
+
+    year
+    month
+    day
+    day-of-month
+    day-of-week
+    week
+    week-year
+    week-number
+    day-of-week
+    day-of-week-in-month
+    days-in-month
+    day-of-year
+    is-leap-year
+
+The C<Str> method returns a string of the form 'yyyy-mm-dd'.
+
+=head2 Arithmetics
+
+    $d.succ                     # Date.new('2010-12-25')
+    $d.pred                     # Date.new('2010-12-23')
+    $d - Date.new('1984-03-02') # 9793      # (difference in days)
+    $d - 42                     # Date.new('2010-11-12')
+    $d + 3                      # Date.new('2010-12-27')
+    3  + $d                     # Date.new('2010-12-27')
+
+=head1 AUTHORS
+
+    Carl Mäsak <cmasak@gmail.com>
+    Martin Berends <mberends@autoexec.demon.nl>
+    Moritz Lenz <moritz@faui2k3.org>
+    Olivier Mengué <dolmen@cpan.org>
+    Kodi Arfer
+    (and others named in FOOTNOTE at bottom)
+
+=head1 FOOTNOTE
+
+The authors of the current rewrite want to mention, with thanks, the
+indirect contribution made by the previous authors:
+
+    The authors of the related Perl 5 docs
+    Rod Adams <rod@rodadams.net>
+    Larry Wall
+    Aaron Sherman <ajs@ajs.com>
+    Mark Stosberg <mark@summersault.com>
+    Carl Mäsak <cmasak@gmail.com>
+    Moritz Lenz <moritz@faui2k3.org>
+    Tim Nelson <wayland@wayland.id.au>
+    Daniel Ruoso <daniel@ruoso.com>
+    Dave Rolsky <autarch@urth.org>
+    Matthew (lue) <rnddim@gmail.com>

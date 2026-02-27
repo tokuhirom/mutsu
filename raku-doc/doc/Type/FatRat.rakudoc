@@ -1,0 +1,34 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class FatRat
+
+=SUBTITLE Rational number (arbitrary-precision)
+
+    class FatRat is Cool does Rational[Int, Int] {}
+
+A C<FatRat> is a rational number stored with arbitrary size numerator and
+denominator. Arithmetic operations involving a C<FatRat> and optionally L<C<Int>|/type/Int>
+or L<C<Rat>|/type/Rat> objects return a C<FatRat>, avoiding loss of precision.
+
+Since, unlike L<C<Rat>|/type/Rat>, FatRat arithmetics do not fall back L<C<Num>|/type/Num> at some
+point, there is a risk that repeated arithmetic operations generate
+pathologically large numerators and denominators.
+
+There are two common ways to generate C<FatRat> objects: through the
+C<FatRat.new(Int, Int)> constructor, which generates them from numerator and
+denominator, or by calling the C<.FatRat> method on an L<C<Int>|/type/Int> or L<C<Rat>|/type/Rat>
+object.
+
+=head1 Methods
+
+=head2 method raku
+
+    multi method raku(FatRat:D: --> Str:D)
+
+Returns an implementation-specific string that produces an L<equivalent|/routine/eqv> object
+when given to L<EVAL|/routine/EVAL>.
+
+=for code
+say FatRat.new(1, 2).raku; # OUTPUT: «FatRat.new(1, 2)␤»
+
+=end pod

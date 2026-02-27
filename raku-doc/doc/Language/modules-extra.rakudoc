@@ -1,0 +1,9 @@
+=begin pod :kind("Language") :subkind("Language") :category("tutorial")
+
+=TITLE Module development utilities
+
+=SUBTITLE What can help you write/test/improve your module(s)
+
+See L<Making Modules: The Tools|/language/distributions/tools>
+
+=end pod

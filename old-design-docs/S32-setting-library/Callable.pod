@@ -1,0 +1,135 @@
+
+=encoding utf8
+
+=head1 TITLE
+
+DRAFT: Synopsis 32: Setting Library - Callable
+
+=head1 VERSION
+
+    Created: 26 Feb 2009
+
+    Last Modified: 5 Nov 2013
+    Version: 3
+
+The document is a draft.
+
+This document documents Code, Block, Signature, Capture, Routine, Sub, Method, Submethod,
+and Macro.
+
+=head1 Callable
+
+    role Callable {...}
+
+The C<Callable> role implies the ability
+to support C<< postcircumfix:<( )> >>.
+
+=head1 Code
+
+    class Code does Callable {...}
+
+Base class for all executable objects.
+
+=over
+
+=item signature
+
+ method signature( --> Signature )
+
+=item assuming
+
+ method assuming( Code $executable: *@curried_positionals, *%curried_named --> Code)
+
+C<assuming> primes C<$executable>, returning a C<Code> object that,
+when executed, will use curried arguments as well as any additionally
+supplied arguments. See L<S06/Priming>.
+
+=item defined
+
+ method defined( --> Bool )
+
+For C<Code>, the C<.defined> method returns whether a body has
+been defined.  A body consisting only of C<...>, C<!!!>, or C<???>
+(with optional message arguments) does not count as defined.
+
+To test if a name has been declared, look up the symbol in the
+appropriate symbol table.
+
+=back
+
+=head1 Block
+
+    # Executable objects that have lexical scopes
+    class Block is Code does Callable {
+        method next()   {...}
+        method last()   {...}
+        method redo()   {...}
+        method leave()  {...}
+        method labels() {...}
+        method as()     {...} # See L<S12/Introspection> and L<S02/Value types>
+    }
+
+=head1 Signature
+
+ class Signature {...}
+
+The C<Signature> class is used for function parameters, as the left-hand
+side of a binding, and for the argument to declarators like C<my>.
+See L<S02/Signature objects>, L<S06/Signatures>, and L<S06/Signature Introspection>
+
+=head1 Capture
+
+ class Capture does Positional does Associative {...}
+
+The C<Capture> class is used for the arguments of function calls
+and the right-hand side of a binding.
+See L<S02/Lists, parameters, and Captures>
+
+=head1 WrapHandle
+
+ class WrapHandle {...}
+
+=head1 Routine
+
+ class Routine is Block {
+      method wrap(Code $code --> WrapHandle ) {...}
+      method unwrap(Wraphandle $original --> Routine ) {...}
+      method name( --> Str ) {...}
+      method multi( --> Bool ) {...}
+ }
+
+=over
+
+=item unwrap
+
+See L<S06/Wrapping>.
+
+=item wrap
+
+ method wrap(Code $code) {...}
+
+See L<S06/Wrapping>.
+
+=back
+
+=head1 Sub
+
+    class Sub is Routine {...}
+
+=head1 Method
+
+    class Method is Routine {...}
+
+=head1 Submethod
+
+    class Submethod is Routine {...}
+
+=head1 Macro
+
+    class Macro is Routine {...}
+
+=head1 AUTHORS
+
+    Tim Nelson <wayland@wayland.id.au>
+    Larry Wall
+

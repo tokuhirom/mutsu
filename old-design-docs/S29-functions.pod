@@ -1,0 +1,1019 @@
+=encoding utf8
+
+=head1 TITLE
+
+Synopsis 29: Builtin Functions
+
+=head1 VERSION
+
+    Created: 12 Mar 2005
+
+    Last Modified: 24 April 2015
+    Version: 63
+
+The document is a draft.
+
+=head1 Notes
+
+In Perl 6, all builtin functions belong to a named package (generally a
+class or role). Not all
+functions are guaranteed to be imported into the CORE scope.
+In addition, the list of functions imported into C<CORE> will be
+subject to change with each release of Perl. Authors wishing to
+"Future Proof" their code should either specifically import the
+functions they will be using, or always refer to the functions by their
+full name.
+
+After 6.0.0 comes out, global aliases will not be removed lightly,
+and will never be removed at all without having gone through a
+deprecation cycle of at least a year.  In any event, you can specify
+that you want the interface for a particular version of Perl, and
+that can be emulated by later versions of Perl to the extent that
+security updates allow.
+
+Where code is given here, it is intended to define semantics, not to
+dictate implementation.
+
+=head2 Operators vs. Functions
+
+There is no particular difference between an operator and a function,
+but for the sake of documentation, only functions declared without
+specifying a grammatical category or with a category of C<term:>
+(see L<S02/"Bits and Pieces">) will be described as "functions",
+and everything else as "operators" which are outside of the scope
+of this document.  (See S03 for operators.)
+
+=head2 Multis vs. Functions
+
+In actual fact, most of the "functions" defined here are multi
+subs, or are multi methods that are also exported as multi subs.
+The Setting is responsible for importing all the standard multi subs
+from their various packages into the CORE lexical scope.  See S02.
+
+=head1 Type Declarations
+
+The following type declarations are assumed:
+
+=over
+
+=item Matcher
+
+ subset Matcher of Mu where * !=== any(Bool,Match,Nil)
+
+Used to supply a test to match against. Assume C<~~> will be used against it.
+Booleans are forbidden because they almost always indicate a programming
+error where the argument has been evaluated too soon against the wrong C<$_>.
+For instance:
+
+    grep $_ == 1, 1,2,3;        # evaluating wrong $_, so forbidden
+    grep { $_ == 1 }, 1,2,3;    # okay
+    grep * == 1, 1,2,3;         # okay
+
+
+=item Ordering
+
+ subset KeyExtractor of Code where { .signature === :(Any --> Any) };
+ subset Comparator   of Code where { .signature === :(Any, Any --> Int ) };
+ subset OrderingPair of Pair where { .left ~~ KeyExtractor && .right ~~ Comparator };
+
+ subset Ordering where Signature | KeyExtractor | Comparator | OrderingPair | Whatever;
+
+Used to handle comparisons between things.  Generally this
+ends up in functions like C<sort()>,
+C<min()>, C<max()>, etc., as a $by parameter which provides
+the information on how two things compare relative to each other.
+
+=over
+
+=item Comparator
+
+A closure with arity of 2, which for ordering returns
+negative/zero/positive, signaling the first argument should
+be before/tied with/after the second. aka "The Perl 5 way".
+
+For equivalence the closure returns either not 0 or 0 indicating
+if the first argument is equivalent or not to the second.
+
+=item KeyExtractor
+
+A closure with arity of 1, which returns the "key" by which
+to compare.  Values are compared using C<cmp> for orderings
+and C<eqv> for equivalences, which in Perl 6 do different
+comparisons depending on the types.  (To get a Perl 5 string
+ordering you must compare with C<leg> instead.)
+
+Internally the result of the KeyExtractor on a value should
+be cached.
+
+Note that it is very easy to generate a simple C<KeyExtractor>
+using C<~*> for strings and C<+*> for numbers, since with most
+simple operators C<*> returns a closure of one argument.
+
+    @sorted = sort +*, @unsorted;  #ascending numeric
+    @sorted = sort -*, @unsorted;  #descending numeric
+
+=item OrderingPair
+
+A combination of the two methods above, for when one wishes
+to take advantage of the internal caching of keys that is
+expected to happen, but wishes to compare them with something
+other than C<eqv> or C<cmp>, such as C<E<lt>=E<gt>> or C<leg>.
+
+=item Signature
+
+If a signature is specified as a criterion, the signature is
+bound to each value and then each parameter does comparisons
+in positional order according to its type, as modified by
+its traits.  Basically, the system will write the body of
+the key extraction and comparison subroutine for you based on
+the signature.
+
+For ordering the list of positional parameter comparisons is
+reduced as if using [||] but all comparisons do not need to be
+performed if an early one determines an increasing or decreasing
+order.  For equivalence the list is reduced as if using [&&].
+
+=item Whatever
+
+An ordering of C<*> does the default comparison for the operator:
+
+    @sorted = sort *, @unsorted;
+
+=back
+
+=back
+
+=head1 Function Packages
+
+=head2 Context
+
+=over
+
+=item caller
+
+See L<S06/"The C<callframe> and C<caller> functions">.
+
+=item callframe
+
+See L<S06/"The C<callframe> and C<caller> functions">.
+
+=item EVAL
+
+ macro EVAL ( Str|Buf $code, Grammar :$lang = CALLER::<$?PARSER>)
+
+Execute C<$code> as if it were code written in C<$lang>. If C<$code>
+is of type C<Buf>, the same decoding techniques are applied as a compiler
+for C<$lang> would usually do to input files.
+
+The default for C<$lang> is the language in effect at the exact
+location of the C<EVAL> call.
+
+Returns whatever C<$code> returns, or fails when the compilation fails.
+
+Note that unlike in Perl 5's C<eval>, C<EVAL> does not catch any exceptions or control
+exceptions.
+
+=item EVALFILE
+
+ multi EVALFILE (Str $filename ; Grammar :$lang = Perl6)
+
+Behaves like, and replaces Perl 5 C<do EXPR>, with optional C<$lang>
+support.
+
+=item exit
+
+ multi exit (Int $status = 0)
+
+Stops all program execution, and returns C<$status> to the calling environment.
+
+An exit runs all appropriate scope-leaving blocks such as C<LEAVE>, C<KEEP>,
+and C<UNDO>, followed by all C<END> blocks, followed by all C<DESTROY>s that
+do more than just reclaim memory, and so cannot be skipped because
+they may have side effects visible outside the process.  If run from
+an embedded interpreter, all memory must also be reclaimed.
+
+Exit can also be called from an C<END> block: in that case only the C<$status>
+to be returned to the calling environment, is changed.  This does end the
+execution of the END block in question, but will still execute any remaining
+C<END> blocks.
+
+Any threads started with the C<:app_lifetime> parameter (which is basically
+any asynchronous action started with primitives other than C<Thread.new>),
+will be terminated on exit.
+
+=item sleep
+
+ multi sleep ( Real $for --> Nil )
+ multi sleep ( Whatever --> Nil )
+
+Attempt to sleep for up to C<$for> seconds, or forever when the argument is C<*>.
+Implementations are obligated
+to support sub-second resolutions if that is at all possible.  You may pass
+any of C<Int>, C<Num>, C<Rat>, or C<Duration> types as an argument, since those
+all do C<Real>, but regardless of which type you use, they are always scaled to
+seconds.  (An implementation is allowed to provide access to a platform-specific
+function based on, say, nanoseconds, but Perl 6 does not presume to know
+how much resolution clocks will have in the future, so requires everything to
+be specified in fractional seconds.)
+
+This function returns nothing; use C<sleep-timer> if you wish it to
+return how much time is remaining on the specified sleep.  However,
+if you really just want to keep rolling over in bed until your alarm
+goes off at a particular time, use C<sleep-till> instead, since it
+is not subject to relative clock drift.
+
+All of these sleep functions work only on the current thread.
+
+=item sleep-timer
+
+ multi sleep-timer ( Real $for --> Duration )
+
+Just like C<sleep>, but returns the amount of time remaining to sleep
+as a C<Duration> (which will be 0 if the call was not interrupted).
+Depending on the platform and the system call involved, this may or
+may not require emulation by interrogating the clock before and after.
+For those systems whose system call returns the remaining time, this
+can be more efficient than interrogating the clock twice yourself,
+However, the optimizer is encouraged to change this to a bare C<sleep>
+in sink context.  (But then, you might as well just write that in
+the first place.)
+
+=item sleep-till
+
+ multi sleep-till ( Instant $till --> Bool )
+
+Just like C<sleep>, but checks the current time and goes back to
+sleep if accidentally woken up early, to guarantee waiting until the
+specified time.  Returns True if the function actually waited, or if
+the specified time happens to be the present moment.  Returns False
+if you asked to sleep until a time in the past.
+
+=item die
+
+ multi die (@LIST)
+
+Throws a fatal Exception. The default exception handler prints each element of
+the list to $*ERR (STDERR).
+
+=item fail
+
+ multi fail (Str $message)
+
+Can only be called inside a routine and causes the routine to C<return> an
+unthrown exception; a C<Failure> object which stringifies to C<$message>.
+If C<use fatal> is in effect where the routine was called from, it throws
+the exception.
+
+=back
+
+
+=head2 Conversions
+
+=over
+
+=item bless
+
+ method bless(*@protos, *%init_args )
+
+Calling C<bless> on any invocant (but typically a type object) to create a new
+object with the same class as the invocant.
+
+The C<.bless> method takes the first positional argument indicating a
+candidate to bless.  If absent, the object builder implicitly asks the
+representation what its preferred, er, representation is.
+
+C<bless> automatically creates an object appropriate to the
+representation of the class, then calls all appropriate C<BUILD>
+routines for the current class, which initializes the object in
+least-derived to most-derived order. See L<S12/Objects> for more
+detailed information on object creation.
+
+=item chrs
+
+=item ords
+
+=item chr
+
+=item ord
+
+ multi sub chrs( Int *@grid  --> Str )
+ multi method ords( Str $string: --> List of Int ) is export
+ multi method chr( Int $grid: --> Str ) is export
+ multi method ord( Str $string: --> Int ) is export
+
+C<chrs> takes zero or more integer grapheme ids and returns the
+corresponding characters as a string.  If any grapheme id is used
+that represents a higher abstraction level than the current
+lexical scope supports, that grapheme is converted to the
+corresponding lower-level string of codepoints/bytes that would
+be appropriate to the current pragmatic context, just as any other Str
+would be downgraded in context.
+
+C<ords> goes the other direction; it takes a string value and returns
+character values as integers.  The definition of character is pragma dependent.
+Normally it's a grapheme id, but under codepoints or bytes scopes,
+the string is coerced to the appropriate low-level view and interpreted
+as codepoints or bytes.  Hence, under "use bytes" you will never see a
+value larger than 256, and under "use codepoints" you will probably never see a
+value larger than 0x10ffff.  The only guarantee under "use graphemes"
+(the default) is that the number returned will correspond to the
+codepoint of the precomposed codepoint representing the grapheme, if
+there is such a codepoint.  Otherwise, the implementation is free to
+return any negative unique 32-bit id.  (The C<chr> function
+will know how to backtranslate such ids properly to codepoints or
+bytes in any context.  Note that we are assuming that every codepoint's
+context knows its normalization preferences, and every byte's context
+also knows its encoding preferences. (These are knowable in the
+lexical scope via the $?NF and $?ENC compile-time constants).)
+
+The C<chr> and C<ord> variants are restricted to processing a single
+character.  As is customary, you may pass a longer string to C<ord>,
+but only the first character will be translated.
+
+=item item
+
+ multi item ( $item --> Item )
+
+Forces generic Item context on its argument, and returns it.
+
+=item list
+
+ multi list ( Iterable $item --> List ) { $item.iterator.list }
+ multi list ( List \iter --> List ) { iter }
+
+Almost a no-op; just makes sure that $item can be iterated.
+
+=item flat
+
+ multi flat ( *@list --> List )
+
+Forces flat context on its arguments, and returns them.
+The heavy work is done by the C<*@> binding.
+
+=item lol
+
+ multi lol ( **@list --> List )
+
+Forces the argument list to be evaluated in lol ("list of lists") context.
+(Subscripts treat such a list of lists as a multidimensional slice.)
+Any sublist within the top level of the outer list will be transformed into an item (Scalar).
+The work is actually done by the binding to the C<**@> parameter.
+See also the more general C<.tree> method, which defaults to itemizing every level.
+
+=item hash
+
+The C<hash> contextualizer
+
+ multi hash ( *@list --> Hash )
+
+Forces the argument list to be evaluated in hash context.
+The expression is evaluated in list context (flattening any C<Capture>s),
+then a hash will be created from the list, taken as a list of C<Pair>s.
+(Any element in the list that is not a C<Pair> will pretend to be a key
+and grab the next value in the list as its value.)  Equivalent to
+C<%()> (except that empty C<%()> means C<%($/)>, while
+empty C<hash()> means an empty hash).
+
+=item gist
+
+ multi gist( |item --> Str )
+ multi method gist( Mu $item: --> Str )
+
+Produces an informal string coercion, something a human might want
+to see if debugging, for instance.  Each type may decide its own
+gist representation.  C<Mu.gist> just calls C<.perl>, but any type's
+C<gist> method may override this to remove metainfo that a human
+would find to be cluttery or redundant, or to format a composite value
+with suitable whitespace to tell the bits apart, or to trim down an
+infinite list to something slightly shorter.
+
+C<gist> is used as a last-ditch string coercion on each individual
+argument of various human-facing output routines, specifically
+C<say>, C<note>, C<warn>, and any non-exceptional arguments to C<die>.
+The C<print> function is specifically excluded, since it's outputting
+to a printer. C<:-)>
+
+=item :16, :8, :2, :10
+
+ multi prefix:<:16> ( Str $hexstr --> Num )
+ multi prefix:<:8> ( Str $octstr --> Num )
+ multi prefix:<:2> ( Str $binstr --> Num )
+ multi prefix:<:10> ( Str $decstr --> Num )
+ etc.
+
+Interprets string as a number, with a default
+hexadecimal/octal/binary/decimal radix. Any radix prefix (0b, 0d, 0x, 0o)
+mentioned inside the string will override this operator (this statement is true:
+10 == :8("0d10")), except 0b and 0d will be interpreted as hex digits by :16
+(C<hex("0d10") == :16 "0d10">).  C<fail>s on failure.
+
+These aren't really functions, syntactically, but adverbial forms that
+just happen to allow a parenthesize argument.  But more typically you'll
+see
+
+    :4<222>
+    :16<deadbeef>
+
+and such.
+
+Replaces Perl 5 C<hex> and C<oct>.
+
+
+=back
+
+
+=head2 OS
+
+=over
+
+=item gethost
+
+ multi gethost( --> OS::Name )
+ multi gethost( Str $name, OS::Addfamily :$type --> OS::Name )
+ multi method gethost( OS::Addr $addr: --> OS::Name ) is export
+ multi method gethost( URI $uri: --> OS::Name ) is export
+
+The C<gethost> function operates on host naming or address information
+and returns an C<OS::Name>. An C<OS::Name> is, minimally:
+
+ class OS::Name {
+   has Str $.name;
+   has OS::Addr $.addr;
+   has Array of Str @.aliases;
+   has Array of OS::Addr @.addrs;
+ }
+
+Such names can apply to anything which has a name that maps
+to an address, however, in this case the name is a hostname
+and the address is some sort of network identifier (e.g.
+an IPV4 address when resolving hosts that have IPV4 addresses).
+
+When stringified, an C<OS::Name> yields its name. When
+stringified, an C<OS::Addr> yields its address in an
+appropriate text format (e.g. "10.1.2.3" for an IPV4 address).
+
+The optional C<type> adverb can be passed when resolving a hostname,
+and will filter the result to only those addresses that are of
+the appropriate address family. This feature may be supported by
+the underlying operating system, or Perl may emulate it.
+
+Examples:
+
+  say "Connection from {$socket.peer.gethost}";
+  my $address = gethost("foo.example.com").addr;
+  my $hostname = gethost(:addr<"10.1.2.3">);
+
+=item chroot
+
+ multi chroot ( Str $path = CALLER::<$_> --> Bool )
+
+On POSIX systems, changes the process context of the current process such
+that the "root" directory becomes C<$path> and all rooted paths
+(those that begin with a leading path separator) are relative to
+that path. For security reasons, many operating systems limit
+this functionality to the superuser. The return value will be
+true on success.
+
+=item getlogin
+
+ multi getlogin ( --> Str )
+
+Returns the username of the account running the program. This may
+not be as secure as using C<getpwuid> on some platforms.
+
+=item kill
+
+ multi kill ( OS::Signal $signal, Bool :$group, *@pids --> Bool )
+ multi method kill ( Proc::PID $pid: OS::Signal $signal?, Bool :$group --> Bool )
+
+Sends the given C<$signal> to the process(es) given and returns a boolean
+value indicating success (true) if all of the processes existed and were
+sent the signal and failure (false) if any of the processes did not exist
+or the signal could not be delivered to them.
+
+The C<$signal> can be initialized from an integer signal number or a
+string. Common signals are:
+
+ KILL - stop the process, do not allow it to exit gracefully
+ TERM - stop the process, allow it to exit gracefully
+ HUP  - Hangup, often used as a request to re-run from scratch
+ STOP - Pause execution
+ CONT - Continue after a STOP
+
+Consult your operating system documentation for the full list
+of signal names and numbers. For compatibility, a signal name
+may be prefixed with "SIG".
+
+The method form may omit the signal. In this case, the default signal is
+C<'TERM'>.
+
+If the C<:group> named parameter is passed, C<kill> will attempt to
+send the signal to a process I<group> rather than a single process.
+This functionality is platform-specific.
+
+The special signal C<0> can be sent which does not actually deliver a
+signal at all, and is used to determine if processes are still running:
+
+  say "Still running" if $proc.kill(0);
+
+=item run
+
+=item shell
+
+
+ multi shell ( $expression,   :$cwd = $CWD, :%env = %*ENV --> Proc )
+ multi run   ( *$cmd, *@args, :$cwd = $CWD, :%env = %*ENV --> Proc )
+
+C<shell> and C<run> execute an external program, and return control to
+the caller once the program has exited.
+
+C<shell> goes through the system shell (C<cmd> on windows, C</bin/sh>
+on Unixish systems), thus interpreting all the usual shell meta characters.
+
+C<run> treats the first argument as an executable name, and the rest of the
+positional arguments as command line arguments that are passed to the
+executable without any processing (except that it encodes Strings to buffers
+first, as does C<shell>).
+
+Both return a C<Proc> object, which boolifies to C<True> if the program had
+a successful exit and C<False> otherwise. The C<status> method on a C<Proc>
+provides the exit code. If a C<False> C<Proc> is sunk, an exception will be
+thrown of type C<X::Proc::Unsuccessful>.
+
+If you want to execute an external program asynchronously (as in, not waiting
+for it to be finished), you will need C<Proc::Async>, as specced in
+L<S17-concurrency>.
+
+=item runinstead
+
+ multi runinstead ( ; Str $path, *@args )
+ multi runinstead ( ; Str $command )
+
+Identical to C<run> except that it never returns. The executed program
+replaces the currently running program in memory.
+
+=item syscall
+
+=back
+
+=head2 Concurrency
+
+There are higher-level models of concurrency management in Perl (see
+L<S17/Concurrency>). These functions are simply the lowest level
+tools
+
+=over
+
+=item fork
+
+ sub Processes::fork( --> Proc )
+
+Creates a copy of the current process. Both processes return from
+C<fork>. The original process returns
+the I<child> process as a C<Proc> object. The newly created process
+returns the I<parent> process as a C<Proc> object. As with
+any Proc object, the child process object numifies to the
+process ID (OS dependent integer). However, the parent process object
+numifies to C<0> so that the child and parent can distinguish each other.
+
+Typical usage would be:
+
+ if !defined(my $pid = fork) {
+   die "Error calling fork: $!";
+ } elsif $pid == 0 {
+   say "I am the new child!";
+   exit 0;
+ } else {
+   say "I am the parent of {+$pid}";
+   wait();
+ }
+
+=item wait
+
+ multi method wait( Proc $process: *%options --> Proc::Status )
+
+ multi wait ( Proc $process = -1, *%options --> Proc::Status )
+
+Waits for a child process to terminate and returns the status
+object for the child.  This status object will numify to the process
+ID of the child that exited.
+
+Important Proc::Status methods:
+
+ .exit - Numeric exit value
+ .pid - Process ID
+ .signal - Signal number if any, otherwise 0
+
+For historical reasons there is a C<.status> method which is equal to:
+
+ ($status.exit +< 8) +| $status.signal
+
+If C<$process> is supplied, then wait will only return when the given process
+has exited. Either a full C<Proc> object can be passed, or just a
+numeric process ID. A C<-1> explicitly indicates that wait should return
+immediately if any child process exits.
+
+When called in this way, the returned C<Proc::Status> object
+will have a C<.pid> of C<-1> (which is also what it numifies to) if
+there was no such process to wait for.
+
+The named options include:
+
+=over
+
+=item blocking
+
+Defaults to true. If set to false, this forces wait to return immediately.
+
+=item WNOHANG
+
+Exists for historical compatibility. C<WNOHANG => 1> is identical to
+C<blocking => False>.
+
+=back
+
+=back
+
+=head2 Pending Apocalypse
+
+The following functions are classified by Apocalypse/Synopsis numbers.
+
+=over 4
+
+=item A/S??: OS Interaction
+
+chroot crypt getlogin /[get|set][pw|gr].*/ kill setpgrp setpriority
+times
+
+... These are probably going to be part of POSIX, automatically imported to GLOBAL B<if> the platform is the right one
+
+=back
+
+=head2 Default Functions
+
+These functions are exported into the default namespace
+
+=over
+
+=item all -- see S32-setting-library/Containers.pod
+
+=item any -- see S32-setting-library/Containers.pod
+
+=item cat -- see S32-setting-library/Containers.pod
+
+=item categorize -- see S32-setting-library/Containers.pod
+
+=item classify -- see S32-setting-library/Containers.pod
+
+=item defined -- see S32-setting-library/Basics.pod
+
+=item grep -- see S32-setting-library/Containers.pod
+
+=item first -- see S32-setting-library/Containers.pod
+
+=item join -- see S32-setting-library/Containers.pod
+
+=item keys -- see S32-setting-library/Containers.pod
+
+=item kv -- see S32-setting-library/Containers.pod
+
+=item map -- see S32-setting-library/Containers.pod
+
+=item max -- see S32-setting-library/Containers.pod
+
+=item min -- see S32-setting-library/Containers.pod
+
+=item none -- see S32-setting-library/Containers.pod
+
+=item one -- see S32-setting-library/Containers.pod
+
+=item pairs -- see S32-setting-library/Containers.pod
+
+=item pick -- see S32-setting-library/Containers.pod
+
+=item print -- see S32-setting-library/IO.pod
+
+=item printf -- see S32-setting-library/IO.pod
+
+=item reduce -- see S32-setting-library/Containers.pod
+
+=item reverse -- see S32-setting-library/Containers.pod
+
+=item roundrobin -- see S32-setting-library/Containers.pod
+
+=item say -- see S32-setting-library/IO.pod
+
+=item shape -- see S32-setting-library/Containers.pod
+
+=item sort -- see S32-setting-library/Containers.pod
+
+=item srand -- see S32-setting-library/Numeric.pod
+
+=item undefine -- see S32-setting-library/Basics.pod
+
+=item uri -- see S32-setting-library/IO.pod
+
+=item values -- see S32-setting-library/Containers.pod
+
+=item warn -- see S32-setting-library/Any.pod
+
+=item zip -- see S32-setting-library/Containers.pod
+
+=back
+
+=head2 Non-default Functions
+
+These functions which existed in Perl 5 still exist but are not part of the default
+namespace any more.
+
+=head3 Container
+
+The following functions can now be found in or replaced by something in the Container
+modules.
+
+delete, exists, pop, push, shift, splice, unshift
+
+=head3 Numeric
+
+See L<S32/Numeric>.
+
+=head3 IO
+
+The following functions can now be found in or replaced by something in the IO
+modules.
+
+accept, bind, binmode, chdir, chmod, chown, close, closedir, connect
+eof, fcntl, fileno, flock, getc, getsockname, getsockopt, glob, ioctl, link, listen
+lstat, mkdir, open, opendir, pipe, print, printf, read, readdir, readline, readlink
+readpipe, recv, rename, rewinddir, rmdir, say, seek, seekdir, select, send, setsockopt
+shutdown, socket, socketpair, stat, symlink, sysopen, sysread, sysseek
+syswrite, tell, telldir, truncate, umask, unlink
+
+=head3 Temporal
+
+The following functions can now be found in or replaced by something in the Temporal
+modules.
+
+gmtime, localtime, time
+
+=head3 String
+
+The following functions can now be found in or replaced by something in the String
+module.
+
+chop, chomp, index, lc, pack, rindex, split, sprintf, substr, uc,
+ucfirst, unpack
+
+=head2 Obsolete Functions
+
+Some of these are obsoleted only as general functions, and are still available by using
+the right packages.  Others are obsoleted in that they're keywords, rather than functions
+(these are in their own section, below).
+
+=over 4
+
+=item %
+
+ $num1 % $num2
+
+Does a floating point modulo operation, i.e. 5.5 % 1 == 0.5 and 5 % 2.5 == 0.
+
+=item dbmopen, dbmclose
+
+ use DB_File;
+
+=item dump
+
+Dumped.  Restoring from core dumps is in any event not very useful on modern
+virtual-memory operating systems.  Startup acceleration should be accomplished
+using a precompiler of some kind (details will be very implementation specific),
+or a pre-forking daemon such as Perl 5's App::Persistent (which will be an
+external module when it is ported).
+
+=item each
+
+See .pairs() method, above.
+
+=item endpwent, endgrent, endservent, endprotoent, endnetent, endhostent
+
+The NameServices role in S16 covers most of these.
+
+=item format, formline
+
+See Exegesis 7.
+
+=item getgrgid, getgrnam, getpwnam, getpwuid
+
+The User and Group roles in S16 cover most of these.
+
+=item getpwent, getgrent, getservent, getnetent, gethostent
+
+The NameServices role in S16 covers most of these.
+
+=item length()
+
+This word is banned in Perl 6.  You must specify units.  In practice, this probably means
+you want Str.chars(), although it could be Str.bytes(), or even something else.  See
+S32-setting-library/String for details.
+
+=item lcfirst
+
+Retired due to lack of use case
+
+=item msgctl, msgget, msgrcv, msgsnd
+
+See IPC::SysV
+
+=item local
+
+Replaced by C<temp> which, unlike C<local>, defaults to not changing the value.
+
+=item lock
+
+See L<S17/Concurrency>. C<lock> has been replaced by C<Lock.new> and methods
+on the C<Lock> object.
+
+=item quotemeta
+
+Because regex escaping metacharacters can easily be solved by quotes
+(L<S05/Simplified lexical parsing of patterns>), and variables are not
+automatically interpolated (L<S05/Variable (non-)interpolation>), C<quotemeta>
+is no longer needed.
+
+Shell escaping should be handled by passing arguments to L<run>, or with code
+that speaks the language of a specific shell.
+
+=item pos
+
+There is no C<pos> function in Perl 6 because that would not allow a string
+to be shared among threads.  Generally you want to use C<$/.to> for that now,
+or keep your own position variable as a lexical.
+
+=item prototype
+
+ &func.meta.signature;
+ &func.^signature;
+
+=item ref
+
+There is no ref() any more, since it was almost always used to get
+the type name in Perl 5.  If you really want the type name, you can
+use C<$var.WHAT.perl>.  If you really want P5 ref
+semantics, use C<Perl5::p5ref>.
+
+But if you're just wanting to test against a type, you're likely better off
+performing an C<isa> or C<does> or C<can>, or just C<$var ~~ TYPE>.
+
+=item reset
+
+Was there a I<good> use for this?
+
+=item semctl, semget, semop
+
+See IPC::SysV;
+
+=item setpwent, setgrent, setservent, setprotoent, setnetent, sethostent
+
+The NameServices role in S16 covers most of these.
+
+=item shmctl, shmget, shmread, shmwrite
+
+See IPC::SysV;
+
+=item study
+
+Algorithm was too Anglo-centric.  Could be brought back if generalized somehow.
+
+=item tie, tied
+
+These are replaced by container types.  The compiler is free to assume
+that any lexical variable is never going to change its container type
+unless some representation is made to that effect in the declaration.
+Note: P5's tied() is roughly replaced by P6's variable().
+
+XXX Examples?
+
+my $foo is ....? is tie
+the meta operation on the container type for 'rebless' -
+macro tie ( $var, $class, *@args ) { CODE { variable($var).meta.rebless( $class, *@args ) } } )
+
+endXXX
+
+=item untie
+
+See notes on "tie", above, but basically these are replaced with container classes.
+
+=item vec
+
+Should replace C<vec> with declared buffer/array of C<bit>, C<uint2>,
+C<uint4>, etc.
+
+=item waitpid
+
+C<wait> can now be called with or without an optional process/pid.
+
+=item write
+
+See Exegesis 7.
+
+=back
+
+=head3 Keywords
+
+The following were listed in Perl 5's perlfunc, but should now be considered keywords
+rather than functions.
+
+last, my, next, no, our, package, return, sub, use
+
+=head1 Default Export Questions
+
+Not sure whether these are exported by default or not.  Also, many may no longer exist; if
+so, they should be entered in the "Obsolete" section.
+
+=over
+
+=item Signal-related
+
+alarm
+kill
+
+=item OS or library related
+
+ chroot
+ crypt
+ getlogin
+ getpeername -- should this go on Pipe?
+
+OS objects:
+
+ --Process
+ getpgrp
+ getppid
+ getpriority
+ setpgrp
+ setpriority
+
+ --Service
+ getservbyname
+ getservbyport
+
+ --Protocol
+ getprotobyname
+ getprotobynumber
+
+ --Network
+ getnetbyaddr
+ getnetbyname
+
+ --Host
+ gethostbyaddr
+ gethostbyname
+
+=item Flow control
+
+succeed
+proceed
+redo
+
+=item Other
+
+caller
+chr
+die
+do
+EVAL
+exec
+exit
+fork
+goto
+hex
+import
+int
+oct
+ord
+require
+scalar
+sleep
+state
+syscall
+system
+times
+utime
+wait
+
+=back
+
+=head1 AUTHORS
+
+    Rod Adams <rod@rodadams.net>
+    Larry Wall
+    Aaron Sherman <ajs@ajs.com>
+    Mark Stosberg <mark@summersault.com>
+    Carl Mäsak <cmasak@gmail.com>
+    Moritz Lenz <moritz@faui2k3.org>
+    Tim Nelson <wayland@wayland.id.au>
+    Carlin Bingham <carlin@theintersect.org>
+    Elizabeth Mattijsen <liz@wenzperl.nl>
+    Brent Laabs <bslaabs@gmail.com>
+
+=for vim:set expandtab sw=4:

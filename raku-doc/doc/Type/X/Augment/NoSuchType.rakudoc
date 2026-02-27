@@ -1,0 +1,34 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Augment::NoSuchType
+
+=SUBTITLE Compilation error due to augmenting a non-existing type
+
+    class X::Augment::NoSuchType does X::Comp { }
+
+Thrown when trying to augment a type which doesn't exist.
+
+For example
+
+=for code :skip-test<compile time error>
+use MONKEY-TYPING;
+augment class NoSuch { }
+
+dies with
+
+=for code :lang<text>
+You tried to augment class NoSuch, but it does not exist
+
+=head1 Methods
+
+=head2 method package-kind
+
+    method package-kind(--> Str:D)
+
+Returns the kind of package (class, grammar) that is being tried to augment
+
+=head2 method package
+
+Returns the name that was tried to augment, but which doesn't exist.
+
+=end pod

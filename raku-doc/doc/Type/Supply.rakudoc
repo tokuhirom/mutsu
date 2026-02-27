@@ -1,0 +1,969 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Supply
+
+=SUBTITLE Asynchronous data stream with multiple subscribers
+
+=for code :skip-test<Mandatory function to implement>
+    class Supply does Awaitable {}
+
+A supply is a thread-safe, asynchronous data stream like a
+L<C<Channel>|/type/Channel>, but it can have multiple subscribers
+(I<taps>) that all get the same values flowing through the supply.
+
+It is a thread-safe implementation of the
+L<Observer Pattern|https://en.wikipedia.org/wiki/Observer_pattern>,
+and central to supporting reactive programming in Raku.
+
+There are two types of Supplies: C<live> and C<on demand>. A C<live>
+supply is like a TV broadcast: those who tune in don't get previously emitted
+values. An C<on-demand> broadcast is like a video streaming service:
+everyone who starts streaming a movie (taps a C<Supply>),
+always starts it from the beginning (gets all the values),
+regardless of how many people are watching it right now.
+
+Thus, when tapping into a
+C<live> supply, the tap will only see values that are flowing through the
+supply B<after> the tap has been created. Such supplies are normally infinite
+in nature, such as mouse movements. Closing such a tap does not stop mouse
+events from occurring, it just means that the values will go by unseen. All
+tappers see the same flow of values.
+
+A tap on an C<on demand> supply will initiate the production of values, and
+tapping the supply again may result in a new set of values. For example,
+C<Supply.interval> produces a fresh timer with the appropriate interval each
+time it is tapped. If the tap is closed, the timer simply stops emitting values
+to that tap. Note that no history is kept for C<on-demand> supplies, instead,
+the C<supply> block is run for each tap of the supply.
+
+A C<live> C<Supply> is obtained from the L<C<Supplier>|/type/Supplier>
+factory method C<Supply>. New values are emitted by calling C<emit> on
+the L<C<Supplier>|/type/Supplier> object.
+
+    my $supplier = Supplier.new;
+    my $supply = $supplier.Supply;
+    $supply.tap(-> $v { say "$v" });
+    $supplier.emit(42); # Will cause the tap to output "42"
+
+The L<live method|#method live> returns C<True> on live supplies. Factory
+methods such as L<interval|#method interval>, L<from-list|#method from-list>
+will return I<on demand> supplies.
+
+A live C<Supply> that keeps values until tapped the first time can be created
+with L<C<Supplier::Preserving>|/type/Supplier::Preserving>.
+
+Further examples can be found in the L<concurrency page|/language/concurrency#Supplies>.
+
+=head1 Methods that return Taps
+
+=head2 method tap
+
+=for code
+method tap(Supply:D: &emit = -> $ { },
+        :&done = -> {},
+        :&quit = -> $ex { $ex.throw },
+        :&tap = -> $ {} )
+
+Creates a new tap (a kind of subscription if you will), in addition to all
+existing taps. The first positional argument is a piece of code that will be
+called when a new value becomes available through the C<emit> call.
+
+The C<&done> callback can be called in a number of cases: if a supply block is being tapped, when a C<done> routine is reached;
+if a supply block is being tapped, it will be automatically triggered if the supply block reaches the end;
+if the C<done> method is called on the parent L<C<Supplier>|/type/Supplier>
+(in the case of a supply block, if there are multiple Suppliers referenced by C<whenever>, they must
+all have their C<done> method invoked for this to trigger the C<&done> callback of the tap as the
+block will then reach its end).
+
+The C<&quit> callback is called if the tap is on a supply block which exits with an error. It is also
+called if the C<quit> method is invoked on the parent L<C<Supplier>|/type/Supplier> (in the case of a supply block any
+one L<C<Supplier>|/type/Supplier> quitting with an uncaught exception will call the C<&quit> callback as the block will
+exit with an error). The error is passed as a parameter to the callback.
+
+The C<&tap> callback is called once the L<C<Tap>|/type/Tap> object is created,
+which is passed as a parameter to the callback. The callback is called ahead of
+C<emit>/C<done>/C<quit>, providing a reliable way to get the L<C<Tap>|/type/Tap> object. One
+case where this is useful is when the C<Supply> begins emitting values
+synchronously, since the call to C<.tap> won't return the L<C<Tap>|/type/Tap> object until
+it is done emitting, preventing it from being stopped if needed.
+
+Method C<tap> returns an object of type L<C<Tap>|/type/Tap>, on which you can
+call the C<close> method to cancel the subscription.
+
+    my $s = Supply.from-list(0 .. 5);
+    my $t = $s.tap(-> $v { say $v }, done => { say "no more ticks" });
+
+Produces:
+
+=for code :lang<text>
+0
+1
+2
+3
+4
+5
+no more ticks
+
+=head2 method act
+
+    method act(Supply:D: &actor, *%others)
+
+Creates a tap on the given supply with the given code.  Differently from
+C<tap>, the given code is guaranteed to be executed by only one thread at
+a time.
+
+=head1 Utility methods
+
+=head2 method Capture
+
+    method Capture(Supply:D: --> Capture:D)
+
+Equivalent to calling L«C<.List.Capture>|/type/List#method_Capture»
+on the invocant.
+
+=head2 method Channel
+
+    method Channel(Supply:D: --> Channel:D)
+
+Returns a L<C<Channel>|/type/Channel> object that will receive all future values
+from the supply, and will be C<close>d when the Supply is done, and quit (shut
+down with error) when the supply is quit.
+
+=head2 method Promise
+
+    method Promise(Supply:D: --> Promise:D)
+
+Returns a L<C<Promise>|/type/Promise> that will be kept when the C<Supply> is
+C<done>. If the C<Supply> also emits any values, then the L<C<Promise>|/type/Promise> will be
+kept with the final value. Otherwise, it will be kept with L<C<Nil>|/type/Nil>. If the
+C<Supply> ends with a C<quit> instead of a C<done>, then the L<C<Promise>|/type/Promise> will
+be broken with that exception.
+
+    my $supplier = Supplier.new;
+    my $s = $supplier.Supply;
+    my $p = $s.Promise;
+    $p.then(-> $v { say "got $v.result()" });
+    $supplier.emit('cha');         # not output yet
+    $supplier.done();              # got cha
+
+The L<C<Promise>|/type/Promise> method is most useful when dealing with supplies that will tend
+to produce just one value, when only the final value is of interest, or when
+only completion (successful or not) is relevant.
+
+=head2 method live
+
+    method live(Supply:D: --> Bool:D)
+
+Returns C<True> if the supply is "live", that is, values are emitted to taps
+as soon as they arrive. Always returns C<True> in the default C<Supply> (but
+for example on the supply returned from C<Supply.from-list> it's C<False>).
+
+    say Supplier.new.Supply.live;    # OUTPUT: «True␤»
+
+=head2 method schedule-on
+
+    method schedule-on(Supply:D: Scheduler $scheduler)
+
+Runs the emit, done and quit callbacks on the specified scheduler.
+
+This is useful for GUI toolkits that require certain actions to be run from
+the GUI thread.
+
+=head1 Methods that wait until the supply is done
+
+=head2 method wait
+
+    method wait(Supply:D:)
+
+Taps the C<Supply> it is called on, and blocks execution until the either the supply
+is C<done> (in which case it evaluates to the final value that was emitted on the
+C<Supply>, or L<C<Nil>|/type/Nil> if not value was emitted) or C<quit> (in which case it will throw
+the exception that was passed to C<quit>).
+
+   my $s = Supplier.new;
+   start {
+     sleep 1;
+     say "One second: running.";
+     sleep 1;
+     $s.emit(42);
+     $s.done;
+   }
+   $s.Supply.wait;
+   say "Two seconds: done";
+
+=head2 method list
+
+    multi method list(Supply:D:)
+
+Taps the C<Supply> it is called on, and returns a lazy list that will be reified
+as the C<Supply> emits values. The list will be terminated once the C<Supply> is
+C<done>. If the C<Supply> C<quit>s, then an exception will be thrown once that
+point in the lazy list is reached.
+
+=head2 method Seq
+
+    method Seq(Supply:D:)
+
+Returns a L<C<Seq>|/type/Seq> with an iterator containing the values that the C<Supply>
+contains.
+
+=head2 method grab
+
+    method grab(Supply:D: &when-done --> Supply:D)
+
+Taps the C<Supply> it is called on. When it is C<done>, calls C<&when-done> and
+then emits the list of values that it returns on the result C<Supply>. If the
+original C<Supply> C<quit>s, then the exception is immediately conveyed on the
+return C<Supply>.
+
+    my $s = Supply.from-list(4, 10, 3, 2);
+    my $t = $s.grab(&sum);
+    $t.tap(&say);           # OUTPUT: «19␤»
+
+=head2 method reverse
+
+    method reverse(Supply:D: --> Supply:D)
+
+Taps the C<Supply> it is called on. Once that C<Supply> emits C<done>, all of the
+values it emitted will be emitted on the returned C<Supply> in reverse order. If
+the original C<Supply> C<quit>s, then the exception is immediately conveyed on the
+return C<Supply>.
+
+    my $s = Supply.from-list(1, 2, 3);
+    my $t = $s.reverse;
+    $t.tap(&say);           # OUTPUT: «3␤2␤1␤»
+
+=head2 method sort
+
+    method sort(Supply:D: &custom-routine-to-use? --> Supply:D)
+
+Taps the C<Supply> it is called on. Once that C<Supply> emits C<done>, all of the
+values that it emitted will be sorted, and the results emitted on the returned
+C<Supply> in the sorted order. Optionally accepts a comparator L<C<Block>|/type/Block>.
+If the original C<Supply> C<quit>s, then the exception is immediately conveyed on the
+return C<Supply>.
+
+    my $s = Supply.from-list(4, 10, 3, 2);
+    my $t = $s.sort();
+    $t.tap(&say);           # OUTPUT: «2␤3␤4␤10␤»
+
+=head2 method collate
+
+    method collate(Supply:D:)
+
+Taps the C<Supply> it is called on. Once that C<Supply> emits C<done>,
+all of the values that it emitted will be sorted taking into account
+Unicode grapheme characteristics. A new C<Supply> is returned with
+the sorted values emitted. See L<Any.collate|/type/Any#method_collate>
+for more details on the collated sort.
+
+    my $s = Supply.from-list(<ä a o ö>);
+    my $t = $s.collate();
+    $t.tap(&say);           # OUTPUT: «a␤ä␤o␤ö␤»
+
+=head2 method reduce
+
+    method reduce(Supply:D: &with --> Supply:D)
+
+Creates a "reducing" supply, which will emit a single value with the same
+semantics as L<List.reduce|/type/List#routine_reduce>.
+
+    my $supply = Supply.from-list(1..5).reduce({$^a + $^b});
+    $supply.tap(-> $v { say "$v" }); # OUTPUT: «15␤»
+
+=head1 Methods that return another Supply
+
+=head2 method from-list
+
+    method from-list(Supply:U: +@values --> Supply:D)
+
+Creates an on-demand supply from the values passed to this method.
+
+    my $s = Supply.from-list(1, 2, 3);
+    $s.tap(&say);           # OUTPUT: «1␤2␤3␤»
+
+=head2 method share
+
+    method share(Supply:D: --> Supply:D)
+
+Creates a live supply from an on-demand supply, thus making it possible to
+share the values of the on-demand supply on multiple taps, instead of each
+tap seeing its own copy of all values from the on-demand supply.
+
+    # this says in turn: "first 1" "first 2" "second 2" "first 3" "second 3"
+    my $s = Supply.interval(1).share;
+    $s.tap: { "first $_".say };
+    sleep 1.1;
+    $s.tap: { "second $_".say };
+    sleep 2
+
+=head2 method flat
+
+    method flat(Supply:D: --> Supply:D)
+
+Creates a supply on which all of the values seen in the given supply are
+flattened before being emitted again.
+
+=head2 method do
+
+    method do(Supply:D: &do --> Supply:D)
+
+Creates a supply to which all values seen in the given supply, are emitted
+again.  The given code, executed for its side-effects only, is guaranteed
+to be only executed by one thread at a time.
+
+=head2 method on-close
+
+    method on-close(Supply:D: &on-close --> Supply:D)
+
+Returns a new C<Supply> which will run C<&on-close> whenever a L<C<Tap>|/type/Tap>
+of that C<Supply> is closed. This includes if further operations are chained
+on to the C<Supply>. (for example, C<$supply.on-close(&on-close).map(*.uc)>).
+When using a C<react> or C<supply> block, using the L<CLOSE|/language/phasers#CLOSE>
+phaser is usually a better choice.
+
+    my $s = Supplier.new;
+    my $tap = $s.Supply.on-close({ say "Tap closed" }).tap(
+        -> $v { say "the value is $v" },
+        done    => { say "Supply is done" },
+        quit    => -> $ex { say "Supply finished with error $ex" },
+    );
+
+    $s.emit('Raku');
+    $tap.close;        # OUTPUT: «Tap closed␤»
+
+=head2 method interval
+
+    method interval(Supply:U: $interval, $delay = 0, :$scheduler = $*SCHEDULER --> Supply:D)
+
+Creates a supply that emits a value every C<$interval> seconds, starting
+C<$delay> seconds from the call. The emitted value is an integer, starting from
+0, and is incremented by one for each value emitted.
+
+Implementations may treat too-small and negative values as lowest resolution they support,
+possibly warning in such situations; e.g. treating C<0.0001> as C<0.001>.
+For 6.d language version, the minimal value specified is C<0.001>.
+
+=head2 method grep
+
+    method grep(Supply:D: Mu $test --> Supply:D)
+
+Creates a new supply that only emits those values from the original supply
+that smartmatch against C<$test>.
+
+    my $supplier = Supplier.new;
+    my $all      = $supplier.Supply;
+    my $ints     = $all.grep(Int);
+    $ints.tap(&say);
+    $supplier.emit($_) for 1, 'a string', 3.14159;   # prints only 1
+
+=head2 method map
+
+    method map(Supply:D: &mapper --> Supply:D)
+
+Returns a new supply that maps each value of the given supply through
+C<&mapper> and emits it to the new supply.
+
+    my $supplier = Supplier.new;
+    my $all      = $supplier.Supply;
+    my $double   = $all.map(-> $value { $value * 2 });
+    $double.tap(&say);
+    $supplier.emit(4);           # OUTPUT: «8»
+
+=head2 method batch
+
+    method batch(Supply:D: :$elems, :$seconds, :$emit-timed --> Supply:D)
+
+Creates a new supply that batches the values of the given supply by either
+the number of elements in the batch (using C<:elems>) or a duration
+(using C<:seconds>) or both.  Any remaining values are emitted in
+a final batch when the supply is done.
+
+When C<:emit-timed> is specified, a timer will run, emitting
+whatever is in the batch every given number of C<:seconds>, if the
+batch contains any values.
+
+B<Note>: Since Rakudo release 2020.12, the C<:seconds> parameter has
+a millisecond granularity: for example a 1 millisecond duration could
+be specified as C<:seconds(0.001)>. Before Rakudo release 2020.12,
+the C<:seconds> parameter had a second granularity.
+
+=head2 method elems
+
+    method elems(Supply:D: $seconds? --> Supply:D)
+
+Creates a new supply in which changes to the number of values seen are
+emitted.  It optionally also takes an interval (in seconds) if you only want
+to be updated every so many seconds.
+
+=head2 method head
+
+    multi method head(Supply:D:)
+    multi method head(Supply:D: Callable:D $limit)
+    multi method head(Supply:D: \limit)
+
+Creates a "head" supply with the same semantics as L<List.head|/type/List#method_head>.
+
+    my $s = Supply.from-list(4, 10, 3, 2);
+    my $hs = $s.head(2);
+    $hs.tap(&say);           # OUTPUT: «4␤10␤»
+
+Since release 2020.07, A L<C<WhateverCode>|/type/WhateverCode> can be used also, again with the same
+semantics as C<List.head>
+
+    my $s = Supply.from-list(4, 10, 3, 2, 1);
+    my $hs = $s.head( * - 2);
+    $hs.tap(&say);           # OUTPUT: «4␤10␤3␤»
+
+=head2 method tail
+
+    multi method tail(Supply:D:)
+    multi method tail(Supply:D: Callable:D $limit)
+    multi method tail(Supply:D: \limit)
+
+Creates a "tail" supply with the same semantics as L<List.tail|/type/List#method_tail>.
+
+    my $s = Supply.from-list(4, 10, 3, 2);
+    my $ts = $s.tail(2);
+    $ts.tap(&say);           # OUTPUT: «3␤2␤»
+
+You can call C<.tail> with L<C<Whatever>|/type/Whatever> or C<Inf>; which will return a new
+supply equivalent to the initial one. Calling it with a L<C<WhateverCode>|/type/WhateverCode> will
+be equivalent to skipping until that number.
+
+    my $s = Supply.from-list(4, 10, 3, 2);
+    my $ts = $s.tail( * - 2 );
+    $ts.tap(&say);           # OUTPUT: «3␤2␤»
+
+This feature is only available from the 2020.07 release of Raku.
+
+=head2 method first
+
+    method first(Supply:D: :$end, |c)
+
+This method creates a supply of the first element, or the last element if
+the optional named parameter C<:end> is truthy, from a supply created by
+calling the C<grep> method on the invocant, with any remaining arguments
+as parameters.
+If there is no remaining argument, this method is equivalent to calling
+on the invocant, without parameter, the C<head> or the C<tail> method,
+according to named parameter C<:end>.
+
+    my $rand = supply { emit (rand × 100).floor for ^∞ };
+    my $first-prime = $rand.first: &is-prime;
+    # output the first prime from the endless random number supply $rand,
+    # then the $first-prime supply reaches its end
+    $first-prime.tap: &say;
+
+=head2 method split
+
+    multi method split(Supply:D: \delimiter)
+    multi method split(Supply:D: \delimiter, \limit)
+
+This method creates a supply of the values returned by the C<Str.split>
+method called on the string collected from the invocant.
+See L«C<Str.split>|/type/Str#routine_split» for details on the
+C<\delimiter> argument as well as available extra named parameters.
+The created supply can be limited with the C<\limit> argument, see
+L«C<.head>|#method head».
+
+    my $words = Supply.from-list(<Hello World From Raku!>);
+    my $s = $words.split(/ <?upper> /, 2, :skip-empty);
+    $s.tap(&say); # OUTPUT: «Hello␤World␤»
+
+=head2 method rotate
+
+    method rotate(Supply:D: $rotate = 1)
+
+Creates a supply with elements rotated to the left when C<$rotate>
+is positive or to the right otherwise, in which case the invocant is
+tapped on before a new supply is returned.
+
+    my $supply = Supply.from-list(<a b c d e>).rotate(2);
+    $supply.tap(&say); # OUTPUT: «c␤d␤e␤a␤b␤»
+
+B<Note>: Available since Rakudo 2020.06.
+
+=head2 method rotor
+
+    method rotor(Supply:D: @cycle --> Supply:D)
+
+Creates a "rotoring" supply with the same semantics as L<List.rotor|/type/List#routine_rotor>.
+
+=head2 method delayed
+
+    method delayed(Supply:D: $seconds, :$scheduler = $*SCHEDULER --> Supply:D)
+
+Creates a new supply in which all values flowing through the given supply
+are emitted, but with the given delay in seconds.
+
+=head2 method throttle
+
+=for code :method
+multi method throttle(Supply:D:
+      Int()  $elems,
+      Real() $seconds,
+      Real() $delay  = 0,
+      :$scheduler    = $*SCHEDULER,
+      :$control,
+      :$status,
+      :$bleed,
+      :$vent-at,
+    )
+
+=for code :method
+multi method throttle(Supply:D:
+      Int()  $elems,
+      Callable:D $process,
+      Real() $delay = 0,
+      :$scheduler   = $*SCHEDULER,
+      :$control,
+      :$status,
+      :$bleed,
+      :$vent-at,
+    )
+
+Arguments to C<.throttle> are defined as follows:
+
+=begin table
+Argument                  | Meaning
+========================================================================
+  $limit,                 | values / time or simultaneous processing
+  $seconds or $process    | time-unit / code to process simultaneously
+  $delay = 0,             | initial delay before starting, in seconds
+  :$control,              | supply to emit control messages on (optional)
+  :$status,               | supply to tap status messages from (optional)
+  :$bleed,                | supply to bleed messages to (optional)
+  :$vent-at,              | bleed when so many buffered (optional)
+  :$scheduler,            | scheduler to use, default $*SCHEDULER
+=end table
+
+This method produces a C<Supply> from a given one, but makes sure the number of
+messages passed through is limited.
+
+It has two modes of operation: per time-unit or by maximum number of
+executions of a block of code: this is determined by the type of the second
+positional parameter.
+
+The first positional parameter specifies the limit that should be applied.
+
+If the second positional parameter is a L<C<Callable>|/type/Callable>, then the limit indicates
+the maximum number of parallel processes executing the Callable, which is
+given the value that was received.  The emitted values in this case will be
+the L<C<Promise>|/type/Promise>s that were obtained from C<start>ing the L<C<Callable>|/type/Callable>.
+
+If the second positional parameter is a real number, it is interpreted as
+the time-unit (in seconds).  If you specify B<.1> as the value, then it makes
+sure you don't exceed the limit for every tenth of a second.
+
+If the limit is exceeded, then incoming messages are buffered until there
+is room to pass on / execute the Callable again.
+
+The third positional parameter is optional: it indicates the number of
+seconds the throttle will wait before passing on any values.
+
+The C<:control> named parameter optionally specifies a Supply that you can
+use to control the throttle while it is in operation.  Messages that
+can be sent, are strings in the form of "key:value".  Please see below
+for the types of messages that you can send to control the throttle.
+
+The C<:status> named parameter optionally specifies a Supply that will receive
+any status messages.  If specified, it will at least send one status message
+after the original Supply is exhausted.  See L<status message|#status_message> below.
+
+The C<:bleed> named parameter optionally specifies a Supply that will receive
+any values that were either explicitly bled (with the B<bleed> control
+message), or automatically bled (if there's a B<vent-at> active).
+
+The C<:vent-at> named parameter indicates the number of values that may be
+buffered before any additional value will be routed to the C<:bleed> Supply.
+Defaults to 0 if not specified (causing no automatic bleeding to happen).
+Only makes sense if a C<:bleed> Supply has also been specified.
+
+The C<:scheduler> named parameter indicates the scheduler to be used.  Defaults
+to C<$*SCHEDULER>.
+
+=head3 control messages
+
+These messages can be sent to the C<:control> Supply.  A control message
+consists of a string of the form "key: value", e.g. "limit: 4".
+
+=item limit
+
+Change the number of messages (as initially given in the first positional)
+to the value given.
+
+=item bleed
+
+Route the given number of buffered messages to the C<:bleed> Supply.
+
+=item vent-at
+
+Change the maximum number of buffered values before automatic bleeding
+takes place.  If the value is lower than before, will cause immediate
+rerouting of buffered values to match the new maximum.
+
+=item status
+
+Send a status message to the C<:status> Supply with the given id.
+
+=head3 status message
+
+The status return message is a hash with the following keys:
+
+=item allowed
+
+The current number of messages / callables that is still allowed to be
+passed / executed.
+
+=item bled
+
+The number of messages routed to the C<:bleed> Supply.
+
+=item buffered
+
+The number of messages currently buffered because of overflow.
+
+=item emitted
+
+The number of messages emitted (passed through).
+
+=item id
+
+The id of this status message (a monotonically increasing number).  Handy
+if you want to log status messages.
+
+=item limit
+
+The current limit that is being applied.
+
+=item vent-at
+
+The maximum number of messages that may be buffered before they're
+automatically re-routed to the C<:bleed> Supply.
+
+=head3 Examples
+
+Have a simple piece of code announce when it starts running asynchronously,
+wait a random amount of time, then announce when it is done.  Do this 6 times,
+but don't let more than 3 of them run simultaneously.
+
+  my $s = Supply.from-list(^6);  # set up supply
+  my $t = $s.throttle: 3,        # only allow 3 at a time
+  {                              # code block to run
+      say "running $_";          # announce we've started
+      sleep rand;                # wait some random time
+      say "done $_"              # announce we're done
+  }                              # don't need ; because } at end of line
+  $t.wait;                       # wait for the supply to be done
+
+and the result of one run will be:
+
+=for code :lang<text>
+running 0
+running 1
+running 2
+done 2
+running 3
+done 1
+running 4
+done 4
+running 5
+done 0
+done 3
+done 5
+
+=head2 method stable
+
+    method stable(Supply:D: $time, :$scheduler = $*SCHEDULER --> Supply:D)
+
+Creates a new supply that only passes on a value flowing through the given
+supply if it wasn't superseded by another value in the given C<$time> (in
+seconds). Optionally uses another scheduler than the default scheduler,
+using the C<:scheduler> parameter.
+
+To clarify the above, if, during the timeout C<$time>, additional values
+are emitted to the L<C<Supplier>|/type/Supplier> all but the last one will be thrown away.
+Each time an additional value is emitted to the L<C<Supplier>|/type/Supplier>, during the
+timeout, C<$time> is reset.
+
+This method can be quite useful when handling UI input, where it is not desired
+to perform an operation until the user has stopped typing for a while rather
+than on every keystroke.
+
+=begin code
+my $supplier = Supplier.new;
+my $supply1 = $supplier.Supply;
+$supply1.tap(-> $v { say "Supply1 got: $v" });
+$supplier.emit(42);
+
+my Supply $supply2 = $supply1.stable(5);
+$supply2.tap(-> $v { say "Supply2 got: $v" });
+sleep(3);
+$supplier.emit(43);  # will not be seen by $supply2 but will reset $time
+$supplier.emit(44);
+sleep(10);
+# OUTPUT: «Supply1 got: 42␤Supply1 got: 43␤Supply1 got: 44␤Supply2 got: 44␤»
+=end code
+
+As can be seen above, C<$supply1> received all values emitted to the L<C<Supplier>|/type/Supplier>
+while C<$supply2> only received one value. The 43 was thrown away because it
+was followed by another 'last' value 44 which was retained and sent to C<$supply2>
+after approximately eight seconds, this due to the fact that the timeout C<$time> was
+reset after three seconds.
+
+=head2 method produce
+
+    method produce(Supply:D: &with --> Supply:D)
+
+Creates a "producing" supply with the same semantics as L<List.produce|/type/List#routine_produce>.
+
+    my $supply = Supply.from-list(1..5).produce({$^a + $^b});
+    $supply.tap(-> $v { say "$v" }); # OUTPUT: «1␤3␤6␤10␤15␤»
+
+=head2 method lines
+
+    method lines(Supply:D: :$chomp = True --> Supply:D)
+
+Creates a supply that will emit the characters coming in line by line from a
+supply that's usually created by some asynchronous I/O operation. The optional
+C<:chomp> parameter indicates whether to remove line separators: the default is
+C<True>.
+
+=head2 method words
+
+    method words(Supply:D: --> Supply:D)
+
+Creates a supply that will emit the characters coming in word for word from a
+supply that's usually created by some asynchronous I/O operation.
+
+    my $s = Supply.from-list("Hello Word!".comb);
+    my $ws = $s.words;
+    $ws.tap(&say);           # OUTPUT: «Hello␤Word!␤»
+
+=head2 method unique
+
+    method unique(Supply:D: :$as, :$with, :$expires --> Supply:D)
+
+Creates a supply that only provides unique values, as defined
+by the optional C<:as> and C<:with> parameters (same as with
+L<C<unique>|/type/independent-routines#routine_unique>).  The optional
+C<:expires> parameter how long to wait (in seconds) before "resetting"
+and not considering a value to have been seen, even if it's the same as
+an old value.
+
+=head2 method repeated
+
+    method repeated(Supply:D: :&as, :&with)
+
+Creates a supply that only provides repeated values, as defined
+by the optional C<:as> and C<:with> parameters (same as with
+L<C<unique>|/type/independent-routines#routine_unique>).
+
+    my $supply = Supply.from-list(<a A B b c b C>).repeated(:as(&lc));
+    $supply.tap(&say);           # OUTPUT: «A␤b␤b␤C␤»
+
+See L<C<repeated>|/type/independent-routines#routine_repeated>
+for more examples that use its sub form.
+
+B<Note>: Available since version 6.e (L<Rakudo|/language/glossary#Rakudo> 2020.01 and later).
+
+=head2 method squish
+
+    method squish(Supply:D: :$as, :$with --> Supply:D)
+
+Creates a supply that only provides unique values, as defined
+by the optional C<:as> and C<:with> parameters (same as with
+L<C<squish>|/type/independent-routines#routine_squish>).
+
+=head2 method max
+
+    method max(Supply:D: &custom-routine-to-use = &infix:<cmp> --> Supply:D)
+
+Creates a supply that only emits values from the given supply if they are
+larger than any value seen before. In other words, from a continuously
+ascending supply it will emit all the values. From a continuously descending
+supply it will only emit the first value. The optional parameter specifies
+the comparator, just as with L<Any.max|/type/Any#routine_max>.
+
+=head2 method min
+
+    method min(Supply:D: &custom-routine-to-use = &infix:<cmp> --> Supply:D)
+
+Creates a supply that only emits values from the given supply if they are
+smaller than any value seen before.  In other words, from a continuously
+descending supply it will emit all the values.  From a continuously ascending
+supply it will only emit the first value.  The optional parameter specifies
+the comparator, just as with L<Any.min|/type/Any#routine_min>.
+
+=head2 method minmax
+
+    method minmax(Supply:D: &custom-routine-to-use = &infix:<cmp> --> Supply:D)
+
+Creates a supply that emits a Range every time a new minimum or maximum
+values is seen from the given supply.  The optional parameter specifies
+the comparator, just as with L<Any.minmax|/type/Any#routine_minmax>.
+
+=head2 method skip
+
+    method skip(Supply:D: Int(Cool) $number = 1 --> Supply:D)
+
+Returns a new C<Supply> which will emit all values from the given C<Supply>
+except for the first C<$number> values, which will be thrown away.
+
+=for code
+my $supplier = Supplier.new;
+my $supply = $supplier.Supply;
+$supply = $supply.skip(3);
+$supply.tap({ say $_ });
+$supplier.emit($_) for 1..10; # OUTPUT: «4␤5␤6␤7␤8␤9␤10␤»
+
+=head2 method start
+
+    method start(Supply:D: &startee --> Supply:D)
+
+Creates a supply of supplies. For each value in the original supply, the code
+object is scheduled on another thread, and returns a supply either of a single
+value (if the code succeeds), or one that quits without a value (if the code
+fails).
+
+This is useful for asynchronously starting work that you don't block on.
+
+Use C<migrate> to join the values into a single supply again.
+
+=head2 method migrate
+
+    method migrate(Supply:D: --> Supply:D)
+
+Takes a C<Supply> which itself has values that are of type C<Supply> as input. Each
+time the outer C<Supply> emits a new C<Supply>, this will be tapped and its values
+emitted. Any previously tapped C<Supply> will be closed. This is useful for migrating
+between different data sources, and only paying attention to the latest one.
+
+For example, imagine an application where the user can switch between different
+stocks. When they switch to a new one, a connection is established to a web socket
+to get the latest values, and any previous connection should be closed. Each stream
+of values coming over the web socket would be represented as a Supply, which
+themselves are emitted into a Supply of latest data sources to watch.
+The C<migrate> method could be used to flatten this supply of supplies into a single
+Supply of the current values that the user cares about.
+
+Here is a simple simulation of such a program:
+
+=begin code
+my Supplier $stock-sources .= new;
+
+sub watch-stock($symbol) {
+    $stock-sources.emit: supply {
+        say "Starting to watch $symbol";
+        whenever Supply.interval(1) {
+            emit "$symbol: 111." ~ 99.rand.Int;
+        }
+        CLOSE say "Lost interest in $symbol";
+    }
+}
+
+$stock-sources.Supply.migrate.tap: *.say;
+
+watch-stock('GOOG');
+sleep 3;
+watch-stock('AAPL');
+sleep 3;
+=end code
+
+Which produces output like:
+
+=begin code :lang<text>
+Starting to watch GOOG
+GOOG: 111.67
+GOOG: 111.20
+GOOG: 111.37
+Lost interest in GOOG
+Starting to watch AAPL
+AAPL: 111.55
+AAPL: 111.6
+AAPL: 111.6
+=end code
+
+=head1 Methods that combine supplies
+
+=head2 method merge
+
+    method merge(Supply @*supplies --> Supply:D)
+
+Creates a supply to which any value seen from the given supplies, is emitted.
+The resulting supply is done only when all given supplies are done.  Can also
+be called as a class method.
+
+=head2 method zip
+
+    method zip(**@s, :&with)
+
+Creates a supply that emits combined values as soon as there is a new value
+seen on B<all> of the supplies.  By default, L<C<List>|/type/List>s are
+created, but this can be changed by specifying your own combiner with the
+C<:with> parameter.  The resulting supply is done as soon as B<any> of the given
+supplies are done.  Can also be called as a class method.
+
+This can also be used as a class method; in case it's used as an object
+method the corresponding supply will be one of the supplies combined (with no
+special treatment).
+
+=head2 method zip-latest
+
+    method zip-latest(**@s, :&with, :$initial )
+
+Creates a supply that emits combined values as soon as there is a new value
+seen on B<any> of the supplies.  By default, L<C<List>|/type/List>s are
+created, but this can be changed by specifying your own combiner with the
+C<:with> parameter.  The optional :initial parameter can be used to indicate
+the initial state of the combined values.  By default, all supplies have to
+have at least one value emitted on them before the first combined values is
+emitted on the resulting supply.  The resulting supply is done as soon as
+B<any> of the given supplies are done.  Can also be called as a class method.
+
+=head1 I/O features exposed as supplies
+
+=head2 sub signal
+
+    sub signal(*@signals, :$scheduler = $*SCHEDULER)
+
+Creates a supply for the Signal enums (such as SIGINT) specified, and an
+optional C<:scheduler> parameter.  Any signals received, will be emitted on
+the supply.  For example:
+
+    signal(SIGINT).tap( { say "Thank you for your attention"; exit 0 } );
+
+would catch Control-C, thank you, and then exit.
+
+To go from a signal number to a X<Signal|Reference,Signal>, you can do something like this:
+
+    signal(Signal(2)).tap( -> $sig { say "Received signal: $sig" } );
+
+The list of supported signals can be found by checking C<Signal::.keys> (as
+you would any enum). For more details on how enums work see
+L<enum|/language/typesystem#enum>.
+
+B<Note:> L<Rakudo|/language/glossary#Rakudo> versions up to 2018.05
+had a bug due to which numeric values of signals were incorrect on
+some systems. For example, C<Signal(10)> was returning C<SIGBUS> even
+if it was actually C<SIGUSR1> on a particular system. That being said,
+using C<signal(SIGUSR1)> was working as expected on all Rakudo
+versions except 2018.04, 2018.04.1 and 2018.05, where the intended
+behavior can be achieved by using C<signal(SIGBUS)> instead. These
+issues are resolved in Rakudo releases after 2018.05.
+
+=head2 method IO::Notification.watch-path
+
+=for code
+method watch-path($path --> Supply:D)
+
+Creates a supply to which the OS will emit values to indicate changes on the
+filesystem for the given path.  Also has a shortcut with the C<watch> method
+on an IO object, like this:
+
+=for code
+IO::Notification.watch-path(".").act( { say "$^file changed" } );
+".".IO.watch.act(                     { say "$^file changed" } );   # same
+
+=end pod

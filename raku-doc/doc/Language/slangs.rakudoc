@@ -1,0 +1,343 @@
+=begin pod :kind("Language") :subkind("Language") :category("tutorial")
+
+=TITLE Slangs
+
+=SUBTITLE Slangs in Raku
+
+The term "Slang" is used two different ways within the Raku community:
+
+=item1 To refer to sublanguages within Raku, such as the quoting sublanguage
+or the regex sublanguage.
+
+=item1 To refer to variants of Raku that are created by adding in a slang
+module that modifies the grammar of the language.
+
+=head1 Sublanguages within Raku
+
+The C<~> twigil is for referring to sublanguages (called slangs). The
+following are useful:
+
+X<|Variables,$~MAIN>X<|Variables,$~Quote>X<|Variables,$~Quasi>
+X<|Variables,$~Regex>X<|Variables,$~Trans>X<|Variables,$~P5Regex>
+
+=begin table
+    $~MAIN       the current main language (e.g., Raku statements)
+    $~Quote      the current root of quoting language
+    $~Quasi      the current root of quasiquoting language
+    $~Regex      the current root of regex language
+    $~Trans      the current root of transliteration language
+    $~P5Regex    the current root of the Perl regex language
+=end table
+
+You C<augment> these languages in your current lexical scope.
+
+=begin code
+use MONKEY-TYPING;
+augment slang Regex {  # derive from $~Regex and then modify $~Regex
+    token backslash:std<\Y> { YY };
+}
+=end code
+
+The C<MONKEY-TYPING> pragma is a necessary prerequisite to using the
+C<augment> keyword.  It can be thought of as a reminder that the
+following code is of a type that's usually discouraged.  More
+documentation on C<augment> is at
+L<the augment declarator|/language/variables#The_augment_declarator>.
+
+=head1 Slangs that Modify the Language
+
+=head2 Existing Slangs
+
+Many slangs are made available as modules through zef.  These are useful for:
+
+=item1 Using directly, so you don't have to write your own slang
+
+=item1 As examples, for inspiration in writing your own slangs
+
+To see the existing Slang modules, we can look at:
+
+=item1 L<Everything tagged Slang|https://raku.land/tags/slang>
+
+=item1 L<A search for slang|https://raku.land/?q=slang>
+
+=head2 Avoiding Slangs
+
+Writing slangs is a beautiful and powerful tool, but sometimes, there's no point killing a mosquito with a flamethrower.
+Sometimes, it's best to see if you can achieve something slang-like with
+simpler tools.
+
+Before diving into creating a slang, consider these alternatives:
+
+=item1 L<Custom Operators|/language/optut> allow you to define new operators
+(prefix, infix, postfix, circumfix, or postcircumfix) that can be used
+throughout your code. This is often sufficient when you just need a new
+syntactic construct for operations.
+
+=item1 L<Custom Traits|/type/Sub#Traits> (created using C<trait_mod>) let you
+add compile-time behavior to declarations. Traits can modify classes,
+routines, variables, and other constructs without changing the grammar.
+
+=item1 Custom Declarators (like the C<model> declarator used in Red ORM) allow
+you to create new keywords that behave similarly to built-in declarators like
+C<class> or C<sub>. While this is a little advanced, it's still less complex
+than creating a full slang, as it typically involves working with the grammar
+at a more focused level.
+
+=head3 Creating Custom Declarators
+
+The most direct way to create a custom declarator that works like built-in
+declarators (such as C<class>, C<role>, or C<sub>) is to use the
+C<EXPORTHOW::DECLARE> mechanism. This is the approach used by Red ORM for its
+C<model> declarator.
+
+=head4 Using EXPORTHOW::DECLARE
+
+The C<EXPORTHOW::DECLARE> mechanism allows you to register a custom HOW
+(Higher Order Workings) class that the compiler will use when it encounters
+your declarator keyword. Here's a complete example:
+
+=begin code
+# lib/DeclaratorOne.rakumod
+# Custom declarator-one implementation
+# Similar to how Red ORM implements the "model" declarator
+
+class MetamodelX::DeclaratorOne is Metamodel::ClassHOW {}
+
+my package EXPORTHOW {
+    package DECLARE {
+        constant declarator-one = MetamodelX::DeclaratorOne;
+    }
+}
+=end code
+
+To use this declarator:
+
+=begin code :skip-test<needs module>
+use DeclaratorOne;
+
+declarator-one Foo {
+    has $.name;
+    method greet { say "Hello from $.name()!" }
+}
+
+my $foo = Foo.new(name => "World");
+$foo.greet;  # OUTPUT: «Hello from World!␤»
+=end code
+
+How it works:
+
+=item1 You create a HOW class that extends an appropriate base HOW (such as
+C<Metamodel::ClassHOW> for class-like declarators, or C<Metamodel::ParametricRoleHOW>
+for role-like declarators).
+
+=item1 You export it via the C<EXPORTHOW::DECLARE> package, where the constant
+name matches your desired declarator keyword.
+
+=item1 When the compiler encounters your declarator keyword, it uses your HOW
+to construct the type, just as it would use C<Metamodel::ClassHOW> for C<class>
+declarations.
+
+This approach integrates seamlessly with Raku's grammar and type system, making
+your custom declarator work exactly like built-in declarators.
+
+For a real-world example, see how Red ORM implements the C<model> declarator
+in L<its source code|https://github.com/FCO/Red/blob/master/lib/Red/Model.rakumod>.
+
+=head4 Custom Attribute Classes
+
+You can also customize what class is used when attributes are created with C<has>.
+This is done by exporting a custom attribute class via C<EXPORTHOW::DECLARE>.
+Unlike class declarators which extend a HOW class, custom attribute classes extend
+the L<C<Attribute>|/type/Attribute> class itself.
+
+This allows you to change the behavior of C<has> attributes within classes that use
+your custom class declarator. You still use C<has> to declare attributes, but they
+will be instantiated as instances of your custom attribute class instead of the
+default C<Attribute> class.
+
+Here's an example showing just the custom attribute class part (based on
+L<ValueClass|https://github.com/FCO/ValueClass>):
+
+=begin code :skip-test<needs module>
+# Custom attribute class example
+# Note: This is just the attribute class part. You would also need to define
+# a HOW class for the class declarator (like MetamodelX::ValueClassHOW).
+
+class ValueClass::Attribute is Attribute {
+    method compose(|) {
+        # Custom behavior during attribute composition
+        # For example, validate that attributes can't be rw
+        die "Attributes { $.name } can't be rw on a value-class" if $.rw;
+        nextsame
+    }
+
+    method container_initializer(|c) {
+        # Custom initialization logic
+        # This can change default values or types
+        if $.name.starts-with: '@' {
+            return -> { Tuple.new }
+        } elsif $.name.starts-with: '%' {
+            return -> { ValueMap.new }
+        }
+        nextsame
+    }
+}
+
+# Export the attribute class via EXPORTHOW::DECLARE
+# (The class declarator would also be exported here)
+my package EXPORTHOW {
+    package DECLARE {
+        # constant value-class = MetamodelX::ValueClassHOW;  # Not shown here
+        constant value-class-attr = ValueClass::Attribute;
+    }
+}
+=end code
+
+To use this:
+
+=begin code :skip-test<needs module>
+use ValueClass;
+
+value-class MyClass {
+    has $.name;    # Regular scalar attribute (with ValueClass validation)
+    has @.items;   # This becomes a Tuple
+    has %.data;    # This becomes a ValueMap
+}
+
+my $obj = MyClass.new(name => "Test", items => [1,2,3]);
+say $obj.name;   # OUTPUT: «Test␤»
+=end code
+
+How it works:
+
+=item1 You create a class that extends L<C<Attribute>|/type/Attribute>, which is the
+base class for all attributes in Raku.
+
+=item1 You can override methods like C<compose> and C<container_initializer> to
+customize the behavior of attributes created with C<has>.
+
+=item1 You export it via the C<EXPORTHOW::DECLARE> package, where the constant
+name (typically ending in C<-attr>) maps to your custom attribute class.
+
+=item1 When you use your custom class declarator (like C<value-class>), any C<has>
+attributes declared within that class will be instantiated as instances of your
+custom attribute class instead of the default C<Attribute> class.
+
+=item1 You still use C<has> to declare attributes; the custom attribute class
+simply changes what class those attributes are instantiated as.
+
+For a real-world example, see how L<ValueClass|https://github.com/FCO/ValueClass>
+implements custom attributes in L<its source code|https://github.com/FCO/ValueClass/blob/master/lib/ValueClass/Attribute.rakumod>.
+
+=head2 Prerequisites for Understanding Slangs
+
+If all you wish to do is use existing Slangs, you can stop reading now.
+However, if you wish to understand better how to make or modify Slangs, then
+the recommended reading before continuing is:
+
+=item1 L<Grammar tutorial|/language/grammar_tutorial>
+
+=item1 L<Grammars|/language/grammars>
+
+=item1 Not required, but helpful:
+L<class Grammar|/type/Grammar>
+
+
+=head2 A Slang Example
+
+To get a good view of a nice, simple Slang, the best candidate would be the
+source for L<Slang::Lambda|https://raku.land/zef:lizmat/Slang::Lambda>.
+
+Slang::Lambda modifies the Raku grammar to make it possible to use
+the C<λ> (lambda) symbol as the starter symbol of a pointy block (which is
+usually C«->»).  The source is so short we can include it here:
+
+=begin code :skip-test<needs module>
+my role RakuLambda {
+    token pointy-block-starter { '->' | '→' | '<->' | '↔' | 'λ' }
+}
+
+my role LegacyLambda {
+    token lambda { '->' | '<->' | 'λ' }
+}
+
+use Slangify:ver<0.0.4+>:auth<zef:lizmat> RakuLambda, Mu, LegacyLambda;
+=end code
+
+Then to use it, we do:
+
+=begin code :skip-test<needs module>
+use Slang::Lambda;
+
+say (1,2,3).map: λ $x { $x+1 }  # (2 3 4)
+
+=end code
+
+The code is self-evident to those familiar with Raku's grammars.
+This is all well and good, but sometimes there's a large gap between
+being able to read code, and being able to write it.  How did Elizabeth (the
+author of Slang::Lambda) know to use Slangify?  How did she know what token
+names to declare?  In her case, it was through extensive study of Raku and
+how it works, but in order to avoid this, we're going to step through some
+of these things now.
+
+=head2 Slangify
+
+To ease the process of creating Slangs, Elizabeth Mattijsen also created
+the L<Slangify|https://raku.land/zef:lizmat/Slangify> module (that's how
+she knew about it!)  The Slangify module is a module intended for slang
+developers.
+
+It abstracts the internals of slang creation and activation so that module
+developers of slangs have a consistent interface they can work with across
+current and future versions of the Raku Programming Language.
+
+To use it you do the following:
+
+=begin code :skip-test<needs module>
+use Slangify Foo::Grammar, Foo::Actions;
+=end code
+
+Either the Grammar or the Actions can be replaced with L<C<Mu>|/type/Mu> to indicate that
+they should remain unchanged.
+
+Two additional parameters, for legacy grammars and legacy actions, are also
+accepted.
+
+While using Slangify is logically the last step in your code, it's worth
+understanding it somewhat before you begin, so that you can align your
+code with it.  For further details, read the documentation for
+L<Slangify|https://raku.land/zef:lizmat/Slangify>.
+
+=head2 The Raku Grammar
+
+This is the point where you need to do the most digging.  The Raku grammar
+is not small, and nor is it simple; its extensive error messages, which
+are great when programming, hinder the readability.
+
+The sources for the Raku grammar are:
+
+=item1 L<The new AST grammar|https://github.com/rakudo/rakudo/blob/main/src/Raku/Grammar.nqp>
+
+=item1 L<The old, pre-AST grammar|https://github.com/rakudo/rakudo/blob/main/src/Perl6/Grammar.nqp>
+
+Unfortunately there's no substitute for digging through the grammar and
+locating the tokens/rules which you wish to override.
+
+=head2 The Slang Grammar
+
+Now you need to write the slang grammar, much like Slang::Lambda.  The
+links above to the grammar documentation should help here.
+
+=head2 The Slang Actions
+
+Many slangs will also need an Actions class backing them.  This is also
+documented in the grammar documentation linked above.
+
+=head2 Publishing the module
+
+You'll want to get your module published too.  To do this, follow the
+instructions under L<Distributions: An Introduction|/language/distributions/introduction>
+and related pages.
+
+=end pod

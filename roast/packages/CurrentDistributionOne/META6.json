@@ -1,0 +1,14 @@
+{
+    "perl"        : "6.c",
+    "name"        : "CurrentDistributionOne",
+    "auth"        : "foo@bar.baz",
+    "description" : "A distribution for basic testing of $?DISTRIBUTION and %?RESOURCES",
+    "depends"     : [ ],
+    "provides"    : {
+        "CurrentDistributionOne" : "lib/CurrentDistributionOne.rakumod"
+    },
+    "resources" : [
+        "foo.txt"
+    ]
+}
+

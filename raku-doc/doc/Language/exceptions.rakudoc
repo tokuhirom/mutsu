@@ -1,0 +1,487 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Exceptions
+
+=SUBTITLE Using exceptions in Raku
+
+Exceptions in Raku are objects that hold information about errors. An
+error can be, for example, the unexpected receiving of data or a network
+connection no longer available, or a missing file. The information that
+an exception object stores is, for instance, a human-readable message
+about the error condition, the backtrace of the raising of the error,
+and so on.
+
+All built-in exceptions inherit from L<C<Exception>|/type/Exception>, which
+provides some basic behavior, including the storage of a backtrace and an
+interface for the backtrace printer.
+
+=head1 Typed exceptions
+
+Typed exceptions are intended for use to indicate any of several
+predefined error conditions. Each of these provides information
+about the error, and when thrown may be caught by code intended
+to handle that kind of error. L<C<Exception>|/type/Exception>s
+can be delayed, that is, generated for handling but not thrown,
+by wrapping them in a L<C<Failure>|/type/Failure> object.
+
+For example, if while executing C<.frobnicate> on an object, a needed path
+C<foo/bar> becomes unavailable, then an
+L<C<X::IO::DoesNotExist>|/type/X::IO::DoesNotExist> exception can be thrown:
+
+=begin code
+method frobnicate($path) {
+    X::IO::DoesNotExist.new(:$path, :trying("frobnicate")).throw
+      unless $path.IO.e;
+    # do the actual frobnication
+}
+=end code
+
+=begin code :preamble<sub frobnicate() {}>
+frobnicate("foo/bar");
+# OUTPUT: «Failed to find 'foo/bar' while trying to do '.frobnicate'
+#          in block <unit> at my-script.raku:1»
+=end code
+
+Note how the object has provided the backtrace with information about what
+went wrong. A user of the code can now more easily find and correct the
+problem.
+
+Instead of calling the C<.throw> method on the L<C<X::IO::DoesNotExist>|/type/X::IO::DoesNotExist>
+object, one can also use that object as a parameter to C<die>:
+
+=begin code :preamble<my $path>
+die X::IO::DoesNotExist.new(:$path, :trying("frobnicate"));
+=end code
+
+=head1 I<Ad hoc> exceptions
+
+If you call L<C<.throw>|/type/Exception#method_throw>,
+L<C<die>|/type/Exception#routine_die>, or
+L<C<fail>|/type/Exception#routine_fail> on an argument that is not
+some type of L<C<Exception>|/type/Exception>, then that argument gets wrapped in an
+L<C<X::AdHoc>|/type/X::AdHoc> object which is then used by the call.
+
+For example, you can call L<C<die>|/type/Exception#routine_die>
+on a string describing the error, and that string will become the
+C<message> of the L<C<X::AdHoc>|/type/X::AdHoc> exception:
+
+    die "oops, something went wrong";
+    # OUTPUT: «oops, something went wrong in block <unit> at my-script.raku:1␤»
+
+It is worth noting that C<die> prints the error message to the standard error
+C<$*ERR>.
+
+L<C<X::AdHoc>|/type/X::AdHoc> is an L<C<Exception>|/type/Exception> type like any
+other, but the intent is for use as a default type; it should not
+be used in cases for which specific L<C<Exception>|/type/Exception> types have already
+been provided.  It's probably not helpful to have a specific catch
+handler for the type of L<C<X::AdHoc>|/type/X::AdHoc>.
+
+=head1 X<Catching exceptions|Language,CATCH>
+
+It's possible to handle exceptional circumstances by supplying a C<CATCH> block:
+
+=begin code :preamble<my $path>
+CATCH {
+    when X::IO { $*ERR.say: "some kind of IO exception was caught!" }
+}
+X::IO::DoesNotExist.new(:$path, :trying("frobnicate")).throw
+
+# OUTPUT: «some kind of IO exception was caught!»
+=end code
+
+Here, we are saying that if any exception of type L<C<X::IO>|/type/X::IO> occurs, then the
+message C<some kind of IO exception was caught!> will be sent to I<stderr>,
+which is what C<$*ERR.say> does, getting displayed on whatever constitutes the
+standard error device in that moment, which will probably be the console by
+default.
+
+Note that the match target is a role. To allow user defined exceptions
+to match in the same manner, they must implement the given role. Just
+existing in the same namespace will make them look alike but won't match
+in a C<CATCH> block.
+
+A C<CATCH> block places any exception thrown in its topic variable
+(C<$_>), thus it's possible to catch and handle various categories of
+exceptions inside a C<when> block. To handle all exceptions, use a
+C<default> statement. This example prints out almost the same
+information as the normal backtrace printer. Note that the I<dot>
+methods apply to C<$_>, which holds the
+L<C<Exception>|/type/Exception> within the C<CATCH> block.
+
+    CATCH {
+         default {
+             $*ERR.say: .message;
+             for .backtrace.reverse {
+                 next if .file.starts-with('SETTING::');
+                 next unless .subname;
+                 $*ERR.say: "  in block {.subname} at {.file} line {.line}";
+             }
+         }
+    }
+
+While this is a very common pattern, it is not strictly necessary to use
+C<default> or C<when> in a C<CATCH> block. This is done to prevent the
+control flow from reaching the end of the block where, unless the
+exception has been L<resumed|#Resuming_of_exceptions>, the exception
+will continue to be thrown.  Allowing this can be used for logging
+purposes, for instance:
+
+=for code
+# In the outermost block of a script...
+my IO::Handle:D $log = open sprintf('logs/%d-%d.txt', $*INIT-INSTANT, $*PID), :a;
+CATCH { $log.printf: "[%d] Died with %s: %s$?NL", now, .^name, .message }
+END   { $log.close }
+
+The C<CATCH> block semantics apply to the B<entire> lexical scope
+in which it is defined, B<regardless> of where it is defined inside that
+lexical scope.  It is therefore advised to put any C<CATCH> block at the
+start of the lexical scope to which they apply so that the casual reader
+of the code can immediately see that there is something special going on.
+
+=head2 Exception handlers and enclosing blocks
+
+After a CATCH has handled the exception, the block enclosing the C<CATCH> block
+is exited.
+
+In other words, even when the exception is handled successfully, the I<rest of
+the code> in the enclosing block will never be executed.
+
+  die "something went wrong ...";
+
+  CATCH {
+      # will definitely catch all the exception
+      default { .Str.say; }
+  }
+
+  say "This won't be said.";   # but this line will be never reached since
+                               # the enclosing block will be exited immediately
+  # OUTPUT: «something went wrong ...␤»
+
+Compare with this:
+
+  {
+
+    CATCH {
+        default { .Str.say; }
+    }
+
+    die "something went wrong ...";
+
+  }
+
+  say "Hi! I am at the outer block!"; # OUTPUT: «Hi! I am at the outer block!␤»
+
+See L<Resuming of exceptions|/language/exceptions#Resuming_of_exceptions>, for
+how to return control back to where the exception originated.
+
+=head1 X<C<try> blocks|Language,try blocks>
+
+A C<try> block is a normal block which implicitly turns on the
+L<C<use fatal> pragma|/language/pragmas#fatal> and
+includes an implicit C<CATCH> block that drops the exception, which
+means you can use it to contain them. Caught exceptions are stored
+inside the C<$!> variable, which holds a value of type L<C<Exception>|/type/Exception>.
+(Note that immediately after a C<try> block, if no L<C<Exception>|/type/Exception>
+had been thrown, then C<$!> will be undefined.)
+
+A normal block like this one will simply fail:
+
+=for code
+{
+    my $x = +"a";
+    say $x.^name;
+} # OUTPUT: «Failure␤»
+
+However, a C<try> block will contain the exception and put it into the
+C<$!> variable:
+
+=begin code
+try {
+    my $x = +"a";
+    say $x.^name;
+}
+
+if $! { say "Something failed!" } # OUTPUT: «Something failed!␤»
+say $!.^name;                     # OUTPUT: «X::Str::Numeric␤»
+=end code
+
+Any exception that is thrown in such a block will be caught by a
+C<CATCH> block, either implicit or provided by the user. In the latter
+case, any unhandled exception will be rethrown. If you choose not to
+handle the exception, they will be contained by the block.
+
+=begin code
+try {
+    die "Tough luck";
+    say "Not gonna happen";
+}
+
+try {
+    fail "FUBAR";
+}
+=end code
+
+X<|Tutorial,resume (Exceptions)>
+In both C<try> blocks above, exceptions will be contained within the
+block, but the C<say> statement will not be run. We can handle them,
+though:
+
+    class E is Exception { method message() { "Just stop already!" } }
+
+    try {
+        E.new.throw; # this will be local
+
+        say "This won't be said.";
+    }
+
+    say "I'm alive!";
+
+    try {
+        # NOTE: Raku allows you to place the CATCH block anywhere in the
+        # scope of the enclosing block. Some prefer it at the top for
+        # visibility, others at the end.
+        CATCH {
+            when X::AdHoc { .Str.say; .resume }
+        }
+
+        die "No, I expect you to DIE Mr. Bond!";
+
+        say "I'm immortal.";
+
+        E.new.throw;
+
+        say "No, you don't!";
+    }
+
+Which would output:
+
+    =begin code :lang<text>
+    I'm alive!
+    No, I expect you to DIE Mr. Bond!
+    I'm immortal.
+    Just stop already!
+      in block <unit> at exception.raku line 21
+    =end code
+
+This is because the C<CATCH> block is handling just the L<C<X::AdHoc>|/type/X::AdHoc> exception
+thrown by the C<die> statement, but not the C<E> exception. In the
+absence of a C<CATCH> block, all exceptions will be contained and
+dropped, as indicated above. C<resume> will resume execution right after
+the exception has been thrown; in this case, in the C<die> statement.
+Please consult the section on
+L<resuming of exceptions|/language/exceptions#Resuming_of_exceptions>
+for more information on this.
+
+A C<try> block is a normal block and as such, uses its last statement
+as its return value. We can therefore use it as a right-hand
+side.
+
+=begin code
+say try { +"99999" } // "oh no"; # OUTPUT: «99999␤»
+say try { +"hello" } // "oh no"; # OUTPUT: «oh no␤»
+=end code
+
+Try blocks support C<else> blocks indirectly by returning the return
+value of the expression or L<C<Nil>|/type/Nil> if an exception was thrown.
+
+    with try +"♥" {
+        say "this is my number: $_"
+    } else {
+        say "not my number!"
+    }
+    # OUTPUT: «not my number!␤»
+
+C<try> can also be used with a statement instead of a block, that is, as a
+L<statement prefix|/language/statement-prefixes#try>:
+
+=begin code
+say try "some-filename.txt".IO.slurp // "sane default";
+# OUTPUT: «sane default␤»
+=end code
+
+What C<try> actually causes is, via the C<use fatal> pragma, an immediate throw
+of the exceptions that happen within its scope, but by doing so the C<CATCH>
+block is invoked from the point where the exception is thrown, which defines its
+scope.
+
+=begin code
+my $error-code = "333";
+sub bad-sub {
+    die "Something bad happened";
+}
+try {
+    my $error-code = "111";
+    bad-sub;
+
+    CATCH {
+        default {
+            say "Error $error-code ", .^name, ': ',.Str
+        }
+    }
+}
+# OUTPUT: «Error 111 X::AdHoc: Something bad happened␤»
+=end code
+
+
+=head1 Throwing exceptions
+
+Exceptions can be thrown explicitly with the L<C<die>|/type/Exception#routine_die>
+routine and with the L<C<.throw>|/type/Exception#method_throw>
+method of an L<C<Exception>|/type/Exception> object. In addition,
+unhandled L<C<Failure>|/type/Failure> objects will throw when garbage-collected.
+
+This example throws an L<C<X::AdHoc>|/type/X::AdHoc> exception, catches it and allows the code
+to continue from the point of the exception by calling the C<.resume> method.
+
+    {
+        X::AdHoc.new(:payload<foo>).throw;
+        "OHAI".say;
+        CATCH {
+            when X::AdHoc { .resume }
+        }
+    }
+
+    "OBAI".say;
+
+    # OUTPUT: «OHAI␤OBAI␤»
+
+If the C<CATCH> block doesn't match the exception thrown, then the
+exception's payload is passed on to the backtrace printing mechanism.
+
+    {
+        X::AdHoc.new(:payload<foo>).throw;
+        "OHAI".say;
+        CATCH {  }
+    }
+
+    "OBAI".say;
+
+    # OUTPUT: «foo
+    #          in block <unit> at my-script.raku:1»
+
+This next example doesn't resume from the point of the exception. Instead,
+it continues after the enclosing block, since the exception is caught, and then
+control continues after the C<CATCH> block.
+
+    {
+        X::AdHoc.new(:payload<foo>).throw;
+        "OHAI".say;
+        CATCH {
+            when X::AdHoc { }
+        }
+    }
+
+    "OBAI".say;
+
+    # OUTPUT: «OBAI␤»
+
+C<throw> can be viewed as the method form of C<die>, just that in this
+particular case, the sub and method forms of the routine have different
+names.
+
+=head1 Delaying exceptions as failures
+
+As noted above in L<I<Ad hoc> exceptions|/language/exceptions#Ad_hoc_exceptions>,
+in addition to L<C<throw>|/routine/throw> and L<C<die>|/routine/die>, you can also
+call L<C<fail>|/routine/fail> on an exception in order to handle it later.
+This is a usual thing to do if you want to return the exception to the caller
+for them to handle.
+
+If the resulting L<C<Failure>|/type/Failure> object is returned into sink
+context (that is, not handled), it's the same as if you had called C<die> or
+C<throw>. If it is instead returned into Boolean context or checked for
+definedness, then it is considered "handled" and does not throw. If it is
+assigned to a variable, the throw is delayed until the variable is
+garbage-collected if it hasn't been handled before that time.
+
+For example, assuming you don't have permission to create a new directory at
+the root level, then C<mkdir "/test"> will return a L<C<Failure>|/type/Failure>:
+
+    mkdir "/test";              # Returns Failure into sink context, acts like die()
+    my $result = mkdir "/test"; # throws when garbage-collected unless handled by then
+    so mkdir "/test";           # Failure "handled", doesn't die
+    if mkdir "/test" {          # Failure also "handled", doesn't die
+        ...                     # mkdir was successful
+    }
+    unless mkdir "/test" {
+        ...                     # Here we can handle the Failure (for real)
+    }
+
+=head1 Resuming of exceptions
+
+Exceptions interrupt control flow and divert it away from the statement
+following the statement that threw it. Any exception handled by the
+user can be resumed and control flow will continue with the statement
+following the statement that threw the exception. To do so, call the
+method C<.resume> on the exception object.
+
+    CATCH { when X::AdHoc { .resume } }         # this is step 2
+
+    die "We leave control after this.";         # this is step 1
+
+    say "We have continued with control flow."; # this is step 3
+
+Resuming will occur right after the statement that has caused the exception, and
+in the innermost call frame:
+
+=begin code
+sub bad-sub {
+    die "Something bad happened";
+    return "not returning";
+}
+
+{
+    my $return = bad-sub;
+    say "Returned $return";
+    CATCH {
+        default {
+            say "Error ", .^name, ': ', .Str;
+            $return = '0';
+            .resume;
+        }
+    }
+}
+# OUTPUT:
+# Error X::AdHoc: Something bad happened
+# Returned not returning
+=end code
+
+In this case, C<.resume> is getting to the C<return> statement that happens
+right after the C<die> statement. Please note that the assignment to C<$return>
+is taking no effect, since the C<CATCH> statement is happening I<inside> the
+call to C<bad-sub>, which, via the C<return> statement, assigns the C<not
+returning> value to it.
+
+=head1 Uncaught exceptions
+
+If an exception is thrown and not caught, it causes the program to exit with a
+non-zero status code, and typically prints a message to the standard error
+stream of the program. This message is obtained by calling the C<gist> method
+on the exception object. You can use this to suppress the default behavior of
+printing a backtrace along with the message:
+
+    class X::WithoutLineNumber is X::AdHoc {
+        multi method gist(X::WithoutLineNumber:D:) {
+            $.payload
+        }
+    }
+    die X::WithoutLineNumber.new(payload => "message")
+
+    # prints "message\n" to $*ERR and exits, no backtrace
+
+=head1 Control exceptions
+
+Control exceptions are raised when throwing an Exception which does the
+L<C<X::Control>|/type/X::Control> role (since Rakudo 2019.03). They are
+usually thrown by certain L<keywords|/language/phasers#CONTROL> and are
+handled either automatically or by the appropriate L<phaser|/language/phasers#Loop_phasers>.
+Any unhandled control exception is converted to a normal exception.
+
+=begin code
+{ return; CATCH { default { $*ERR.say: .^name, ': ', .Str } } }
+# OUTPUT: «X::ControlFlow::Return: Attempt to return outside of any Routine␤»
+# was CX::Return
+=end code
+
+=end pod

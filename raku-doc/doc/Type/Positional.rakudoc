@@ -1,0 +1,72 @@
+=begin pod :kind("Type") :subkind("role") :category("composite")
+
+=TITLE role Positional
+
+=SUBTITLE Object that supports looking up values by index
+
+    role Positional[::T = Mu] { ... }
+
+Role for objects which support indexing them using the
+L«C<[ ]> postcircumfix operator|/language/operators#postcircumfix_[_]»
+(usually list-like objects). Example types with Positional role
+include L<C<List>|/type/List>, L<C<Array>|/type/Array>, L<C<Range>|/type/Range>,
+and L<C<Buf>|/type/Buf>.
+
+=head1 Methods
+
+=head2 method of
+
+    method of()
+
+Returns the type constraint for elements of the positional container, that
+is, the C<T> in the definition above, which, as it can be seen, defaults
+to L<C<Mu>|/type/Mu>. It is returned as a type object.
+
+=for code
+my @þ;
+say @þ.of.^name;   # OUTPUT: «Mu␤
+my Str @þð;
+say @þð.of.raku;   # OUTPUT: «Str␤»
+say (my int @).of; # OUTPUT: «(int)␤»
+
+=head1 Methods that should be provided by classes that mix in this role
+
+=head2 method elems
+
+    method elems()
+
+Should return the number of available elements in the instantiated object.
+
+=head2 method AT-POS
+
+    method AT-POS(\position)
+
+Should return the value / container at the given position.
+
+=head2 method EXISTS-POS
+
+    method EXISTS-POS(\position)
+
+Should return a L<C<Bool>|/type/Bool> indicating whether the given position actually has a
+value.
+
+=head2 method STORE
+
+    method STORE(\values, :$INITIALIZE)
+
+This method should only be supplied if you want to support the:
+
+=for code :preamble<role Foo {}>
+my @a is Foo = 1,2,3;
+
+syntax for binding your implementation of the C<Positional> role.
+
+Should accept the values to (re-)initialize the object with.  The optional
+named parameter will contain a C<True> value when the method is called on
+the object for the first time.  Should return the invocant.
+
+=head1 See also
+
+See L<Methods to implement for positional subscripting|/language/subscripts#Methods_to_implement_for_positional_subscripting> for information about additional methods that can be implemented for the C<Positional> role.
+
+=end pod

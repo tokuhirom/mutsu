@@ -1,0 +1,120 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Version
+
+=SUBTITLE Module version descriptor
+
+    class Version { }
+
+Version objects identify version of software components (and potentially other
+entities). Raku uses them internally for versioning modules.
+
+X<|Syntax,v (version)>
+
+A version consists of several parts, which are visually represented by joining
+them with a dot. A version part is usually an integer, a string like C<alpha>,
+or a L<C<Whatever>|/type/Whatever>-star C<*>. The latter is used to indicate that any version
+part is acceptable in another version that is compared to the current one.
+
+    say v1.0.1 ~~ v1.*;     # OUTPUT: «True␤»
+    say v1.0.1 ~~ v1.*.1;   # OUTPUT: «True␤»
+
+The first part of version literals contains C<v> and a number; this might be
+followed by alphanumeric and L<C<Whatever>|/type/Whatever> parts and trailed by C<+>. Multiple
+parts are separate with a dot C<.>. A trailing C<+> indicates that higher
+versions are OK in comparisons:
+
+    say v1.2 ~~ v1.0;                 # OUTPUT: «False␤»
+    say v1.2 ~~ v1.0+;                # OUTPUT: «True␤»
+    say v0.and.anything.else ~~ v0+;  # OUTPUT: «True␤»
+
+In comparisons, order matters, and every part is compared in turn.
+
+    say v1.2 cmp v2.1;      # OUTPUT: «Less␤»
+
+The C<+> suffix is always taken into account in comparisons:
+
+    say v1.0.1+ <=> v1.0.1; # OUTPUT: «More␤»
+
+And C<*> (L<C<Whatever>|/type/Whatever>) is too, and considered always C<Less> than whatever digit
+is in the corresponding part, even if C<*> is trailed by C<+>:
+
+    say v1.* <=> v1.0;      # OUTPUT: «Less␤»
+    say v1.* <= v1.0;       # OUTPUT: «True␤»
+    say v1.*+ <= v1.0;      # OUTPUT: «True␤»
+
+Please note that method calls, including pseudo methods like C<WHAT>, require
+version literals either to be enclosed with parentheses or use some other method
+to separate them from the dot that denotes a method call, like in these
+examples:
+
+    say (v0.and.some.*.stuff).parts;  # OUTPUT: «(0 and some * stuff)␤»
+    say v0.and.some.*.stuff .parts;   # OUTPUT: «(0 and some * stuff)␤»
+
+=head1 Methods
+
+=head2 method new
+
+    method new(Str:D $s)
+
+Creates a C<Version> from a string C<$s>.  The string is combed
+for the numeric, alphabetic, and wildcard components of the version object.
+Any characters other than alphanumerics and asterisks are assumed
+to be equivalent to a dot.  A dot is also assumed between any adjacent
+numeric and alphabetic characters.
+
+=head2 method parts
+
+    method parts(Version:D: --> List:D)
+
+Returns the list of parts that make up this C<Version> object
+
+    my $v1 = v1.0.1;
+    my $v2 = v1.0.1+;
+    say $v1.parts;                                    # OUTPUT: «(1 0 1)␤»
+    say $v2.parts;                                    # OUTPUT: «(1 0 1)␤»
+
+The C<+> suffix is not considered a I<part> of the C<Version> object, and thus
+not returned by this method, as shown above in the C<$v2> variable.
+
+=head2 method plus
+
+    method plus(Version:D: --> Bool:D)
+
+Returns C<True> if comparisons against this version allow larger versions too.
+
+    my $v1 = v1.0.1;
+    my $v2 = v1.0.1+;
+    say $v1.plus;                                     # OUTPUT: «False␤»
+    say $v2.plus;                                     # OUTPUT: «True␤»
+
+=head2 method Str
+
+    method Str(Version:D: --> Str:D)
+
+Returns a string representation of the invocant.
+
+    my $v1 = v1.0.1;
+    my $v2 = Version.new('1.0.1');
+    say $v1.Str;                                      # OUTPUT: «1.0.1␤»
+    say $v2.Str;                                      # OUTPUT: «1.0.1␤»
+
+=head2 method gist
+
+    method gist(Version:D: --> Str:D)
+
+Returns a string representation of the invocant, just like
+L<C<Str>|#method_Str>, prepended with a lowercase C<v>.
+
+    my $v1 = v1.0.1;
+    my $v2 = Version.new('1.0.1');
+    say $v1.gist;                                      # OUTPUT: «v1.0.1␤»
+    say $v2.gist;                                      # OUTPUT: «v1.0.1␤»
+
+=head2 method Capture
+
+    method Capture()
+
+Throws L<C<X::Cannot::Capture>|/type/X::Cannot::Capture>.
+
+=end pod

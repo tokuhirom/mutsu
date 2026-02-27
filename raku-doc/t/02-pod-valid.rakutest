@@ -1,0 +1,57 @@
+#!/usr/bin/env raku
+
+use Test;
+BEGIN plan :skip-all<Test applicable to git checkout only> unless '.git'.IO.e;
+
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Ensure any text that isn't a code example is valid C<Pod6>.
+
+=end overview
+
+my @files = RakuDoc::Test::Files.pods;
+
+if @files {
+    plan +@files;
+} else {
+    plan :skip-all<No rakudoc files specified>
+}
+
+my %data;
+my $lock = Lock::Async.new;
+
+my $verbose = %*ENV<RAKU_DOC_TEST_VERBOSE>;
+
+@files.race.map: -> $file {
+    react {
+        my $proc = Proc::Async.new([$*EXECUTABLE-NAME, '-c', '--doc', $file]);
+
+        whenever $proc.stdout.lines {
+            ; #discard
+        }
+
+        whenever $proc.stderr.lines {
+            # An error occurred
+            $verbose and diag("$file error: $_");
+            $lock.protect: {
+                %data{$file} = False;
+            };
+        }
+
+        whenever $proc.start {
+            $verbose and diag("processing $file");
+            $lock.protect: {
+                if %data{$file}:!exists {
+                    %data{$file} = !.exitcode;  # 0 = True, anything else False
+                }
+            };
+            done;
+        }
+    }
+}
+
+for %data.keys.sort -> $file {
+    ok %data{$file}, "$file has clean Pod6";
+}

@@ -1,0 +1,64 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class IO::Notification
+
+=SUBTITLE Asynchronous notification for file and directory changes
+X<|Types,FileChangeEvent (enum)>
+X<|Types,FileChanged (FileChangeEvent)>
+X<|Types,FileRenamed (FileChangeEvent)>
+=for code
+enum FileChangeEvent (:FileChanged(1), :FileRenamed(2));
+=for code
+class IO::Notification {}
+
+Essentially, this class exists as a placeholder for the C<IO::Notification.watch-path($path)>
+method, that produces a L<C<Supply>|/type/Supply>
+of L<C<IO::Notification::Change>|/type/IO::Notification::Change> events for a
+file or directory.
+
+=head1 Methods
+
+=head2 method watch-path
+
+=for code
+method watch-path(IO::Notification: Str() $path, :$scheduler = $*SCHEDULER)
+
+Returns a L<C<Supply>|/type/Supply> that emits L<C<IO::Notification::Change>|/type/IO::Notification::Change> objects.
+
+If C<$path> is a file, only modifications of that file are reported. If
+C<$path> is a directory, both modifications to the directory itself (for
+example permission changes) and to files in the directory (including new
+files in the directory) are reported.
+
+The C<:$scheduler> named argument allows you to specify which thread scheduler
+is going to be responsible for the notification stream; it can be omitted if
+the default scheduler is used.
+
+=begin code
+my $supply = IO::Notification.watch-path( "/var/log/syslog" );
+
+$supply.tap( -> $v { say "Got ", $v });
+
+sleep 60;
+=end code
+
+This snippet of code sets a watch on the system log file, emitting the kind
+of event that has occurred or capturing an error otherwise; the created
+L<C<Supply>|/type/Supply> is tapped, and the event printed. It does so for 60 minutes,
+emitting something like this:
+
+=for code :lang<text>
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+Got /var/log/syslog: FileChanged
+
+The only kind of information this method provides is the bare fact that
+something has change or been renamed. You will need to actually open and read
+the file or directory to check the actual changes.
+
+=end pod

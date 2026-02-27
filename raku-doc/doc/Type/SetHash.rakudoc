@@ -1,0 +1,194 @@
+=begin pod :kind("Type") :subkind("class") :category("composite")
+
+=TITLE class SetHash
+
+=SUBTITLE Mutable collection of distinct objects
+
+    class SetHash does Setty { }
+
+A C<SetHash> is a mutable set, meaning a collection of distinct elements in no
+particular order. (For I<immutable> sets, see L<C<Set>|/type/Set> instead.)
+
+Objects/values of any type are allowed as set elements. Within a L<C<Set>|/type/Set>, every
+element is guaranteed to be unique (in the sense that no two elements would
+compare positively with the L<===|/routine/===> operator):
+
+=begin code
+my $fruits = <peach apple orange apple apple>.SetHash;
+
+say $fruits.elems;      # OUTPUT: «3␤»
+say $fruits.keys.sort;  # OUTPUT: «apple orange peach␤»
+=end code
+
+Just like L<C<Set>|/type/Set>s, C<SetHash>es can be treated as object hashes using the C<{ }>
+postcircumfix operator, which returns the value C<True> for keys that are
+elements of the set, and C<False> for keys that aren't.
+
+=begin code
+my $fruits = <peach apple orange apple apple>.SetHash;
+
+say $fruits<apple>;     # OUTPUT: «True␤»
+say $fruits<kiwi>;      # OUTPUT: «False␤»
+=end code
+
+Unlike L<C<Set>|/type/Set>s, C<SetHash>es are mutable.  You can add an item or list of items
+to the C<SetHash> with the C<set> method and can remove an item or list of items
+with the C<unset> method:
+
+=begin code
+my $fruits = <peach>.SetHash;
+$fruits.set('apple');
+say $fruits;            # OUTPUT: «SetHash(apple peach)␤»
+
+$fruits.unset('peach');
+say $fruits;            # OUTPUT: «SetHash(apple)␤»
+
+$fruits.set(<kiwi banana apple>);
+say $fruits;            # OUTPUT: «SetHash(apple banana kiwi)␤»
+
+$fruits.unset(<apple banana kiwi>);
+say $fruits;            # OUTPUT: «SetHash()␤»
+=end code
+
+Be careful not to confuse the C<set> method, which adds an item to a C<SetHash>
+with the L<C<Set>|/type/Set> method, which converts the mutable C<SetHash> into an immutable
+L<C<Set>|/type/Set>.
+
+As an alternative to using the C<set> and C<unset> methods, you can also add or
+remove set elements by assigning a value that boolifies to C<True> or C<False>,
+respectively:
+
+=begin code
+my $fruits = <peach apple orange>.SetHash;
+
+$fruits<apple kiwi> = False, True;
+say $fruits.keys.sort;  # OUTPUT: «kiwi orange peach␤»
+=end code
+
+Here is a convenient shorthand idiom for adding and removing SetHash elements
+using assignment:
+
+=begin code
+my SetHash $fruits .= new;
+say $fruits<cherry>;      # OUTPUT: «False␤»
+$fruits<cherry>++;
+say $fruits<cherry>;      # OUTPUT: «True␤»
+$fruits<apple banana kiwi>»++; # Add multiple elements
+
+$fruits<cherry>--;
+say $fruits<cherry>;      # OUTPUT: «False␤»
+$fruits<banana kiwi>»--; # Remove multiple elements
+=end code
+
+=head1 Creating C<SetHash> objects
+
+C<SetHash>es can be composed using C<SetHash.new>. Any positional parameters,
+regardless of their type, become elements of the set:
+
+    my $n = SetHash.new: "zero" => 0, "one" => 1, "two" => 2;
+    say $n.keys.raku;        # OUTPUT: «(:two(2), :zero(0), :one(1)).Seq␤»
+    say $n.keys.map(&WHAT);  # OUTPUT: «((Pair) (Pair) (Pair))␤»
+
+Alternatively, the C<.SetHash> coercer (or its functional form, C<SetHash()>)
+can be called on an existing object to coerce it to a C<SetHash>. Its semantics
+depend on the type and contents of the object. In general it evaluates the
+object in list context and creates a set with the resulting items as elements,
+although for Hash-like objects or Pair items, only the keys become elements of
+the set - and keys mapped to values which boolify to C<False> are skipped:
+
+    my $n = ("zero" => 0, "one" => 1, "two" => 2).SetHash;
+    say $n.keys.raku;        # OUTPUT: «("one", "two").Seq␤»
+    say $n.keys.map(&WHAT);  # OUTPUT: «((Str) (Str))␤»
+
+It is also possible to initialize a single key with the use of C<{}>:
+
+    my $sh = SetHash.new;
+    $sh{ 'key1' } = True;
+    $sh{ 'key2' } = 'Hello World!';
+    $sh{ 'key3' } = 0;  # does not store the key since 0.Bool is False
+    say $sh;            # OUTPUT: «SetHash(key1 key2)␤»
+    say $sh.keys.raku;  # OUTPUT: «("key1", "key2").Seq␤»
+
+or, in order to initialize more than one key at the same time, use a list
+assignment:
+
+   my $sh = SetHash.new;
+   $sh{ 'a', 'b', 'c' } = True, False, True;
+   say $sh.keys.raku;  # OUTPUT: «("a", "c").Seq␤»
+
+You can also create C<SetHash> masquerading as a hash by using the C<is> trait:
+
+    my %sh is SetHash = <a b c>;
+    say %sh<a>;  # OUTPUT: «True␤»
+    say %sh<d>;  # OUTPUT: «False␤»
+
+Since 6.d (2019.03 and later) it is also possible to specify the type of values
+you would like to allow in a C<SetHash>.  This can either be done when calling
+C<.new>:
+
+    # only allow Pairs
+    my $n = SetHash[Pair].new: "zero" => 0, "one" => 1, "two" => 2;
+
+or using the masquerading syntax:
+
+    # only allow strings
+    my %sh is SetHash[Str] = <a b c>;
+    say %sh<a>;  # OUTPUT: «True␤»
+    say %sh<d>;  # OUTPUT: «False␤»
+
+    # only allow whole numbers
+    my %sh is SetHash[Int] = <a b c>;
+    # Type check failed in binding; expected Int but got Str ("a")
+
+=head1 Operators
+
+See L<Operators with set
+semantics|/language/setbagmix#Operators_with_set_semantics> for a complete
+list of "set operators" applicable to, among other types, C<SetHash>.
+
+Examples:
+
+=begin code
+my ($a, $b) = SetHash.new(1, 2, 3), SetHash.new(2, 4);
+
+say $a (<) $b;  # OUTPUT: «False␤»
+say $a (&) $b;  # OUTPUT: «SetHash(2)␤»
+say $a (^) $b;  # OUTPUT: «SetHash(1 3 4)␤»
+say $a (|) $b;  # OUTPUT: «SetHash(1 2 3 4)␤»
+
+# Unicode versions:
+say $a ⊂ $b;  # OUTPUT: «False␤»
+say $a ∩ $b;  # OUTPUT: «SetHash(2)␤»
+say $a ⊖ $b;  # OUTPUT: «SetHash(1 3 4)␤»
+say $a ∪ $b;  # OUTPUT: «SetHash(1 2 3 4)␤»
+=end code
+
+=head1 Methods
+
+=head2 method set
+
+    method set(SetHash:D: \to-set --> Nil)
+
+When given single key, C<set> adds it to the C<SetHash>.  When given a
+L<C<List>|/type/List>, L<C<Array>|/type/Array>, L<C<Seq>|/type/Seq>, or any other type that C<does> the
+L<C«Iterator»|/type/Iterator> Role, C<set> adds each element of the
+L<C<Iterator>|/type/Iterator> as a key to the C<SetHash>.
+
+I<Note:> since release 2020.02.
+
+=head2 method unset
+
+    method unset(SetHash:D: \to-unset --> Nil)
+
+When given single key, C<unset> removes it from the C<SetHash>.  When
+given a L<C<List>|/type/List>, L<C<Array>|/type/Array>, L<C<Seq>|/type/Seq>, or any other type that C<does> the
+L<C«Iterator»|/type/Iterator> Role, C<unset> removes each element of
+the L<C<Iterator>|/type/Iterator> from the C<SetHash> (if it was present as a key).
+
+I<Note:> since release 2020.02.
+
+=head1 See Also
+
+L<Sets, Bags, and Mixes|/language/setbagmix>
+
+=end pod

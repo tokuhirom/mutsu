@@ -1,0 +1,105 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class CompUnit::Repository::FileSystem
+
+=SUBTITLE CompUnit::Repository::FileSystem
+
+=for code :preamble<role CompUnit::Repository::Locally {}; role CompUnit::Repository {};>
+class CompUnit::Repository::FileSystem
+    does CompUnit::Repository::Locally
+    does CompUnit::Repository
+    { }
+
+A L<C<CompUnit::Repository>|/type/CompUnit::Repository> implementation backed by the filesystem typically used
+in development situations. This is what is used by C<-I .> / C<-I lib> (which are
+actually C<-I file#.> and C<-I file#lib>) or C<use lib "."> / C<use lib "lib">.
+Unlike L<C<CompUnit::Repository::Installation>|/type/CompUnit::Repository::Installation>, this represents a single distribution.
+
+=head1 Methods
+
+=head2 method candidates
+
+    multi method candidates(Str:D $name, :$auth, :$ver, :$api)
+    multi method candidates(CompUnit::DependencySpecification $spec)
+
+Return all distributions that contain a module matching the specified C<$name>, C<auth>,
+C<ver>, and C<api>.
+
+    # assuming one is cloned into the zef git repository...
+    my $repo = CompUnit::Repository::FileSystem.new(prefix => $*CWD);
+    with $repo.candidates("Zef").head -> $dist {
+        say "Zef version: " ~ $dist.meta<version>;
+    }
+    else {
+        say "No candidates for 'Zef' found";
+    }
+
+=head2 method files
+
+    multi method files(Str:D $name, :$auth, :$ver, :$api)
+    multi method files(CompUnit::DependencySpecification $spec)
+
+Return all distributions that match the specified C<auth> C<ver> and C<api>, and
+contains a non-module file matching the specified C<$name>.
+
+    # assuming one is cloned into the zef git repository...
+    my $repo = CompUnit::Repository::FileSystem.new(prefix => $*CWD);
+    say $repo.files('bin/zef', :ver<419.0+>).head.<name>              // "Nada"; # OUTPUT: «Nada␤»
+    say $repo.files('resources/config.txt', :ver<419.0+>).head.<name> // "Nada"; # OUTPUT: «Nada␤»
+
+    say $repo.files('bin/zef', :ver<0.4.0+>).head.<name>;                        # OUTPUT: «zef␤»
+    say $repo.files('resources/config.txt', :ver<0.4.0+>).head.<name>;           # OUTPUT: «zef␤»
+
+=head2 method resolve
+
+    method resolve(CompUnit::DependencySpecification $spec --> CompUnit:D)
+
+Returns a L<C<CompUnit>|/type/CompUnit> mapped to the highest version distribution matching C<$spec> from
+the first repository in the repository chain that contains any version of a distribution
+matching C<$spec>.
+
+=head2 method need
+
+=for code :method :preamble<method !precomp-stores() {...};>
+method need(
+    CompUnit::DependencySpecification $spec,
+    CompUnit::PrecompilationRepository $precomp = self.precomp-repository(),
+    CompUnit::PrecompilationStore :@precomp-stores = self!precomp-stores(),
+    --> CompUnit:D)
+
+Loads and returns a L<C<CompUnit>|/type/CompUnit> which is mapped to the highest version distribution
+matching C<$spec> from the first repository in the repository chain that contains
+any version of a distribution matching C<$spec>.
+
+=head2 method load
+
+    method load(IO::Path:D $file --> CompUnit:D)
+
+Load the C<$file> and return a L<C<CompUnit>|/type/CompUnit> object representing it.
+
+=head2 method loaded
+
+    method loaded(--> Iterable:D)
+
+Returns all L<C<CompUnit>|/type/CompUnit>s this repository has loaded.
+
+=head2 method short-id
+
+    method short-id()
+
+Returns the repo short-id, which for this repository is C<file>.
+
+=head2 attribute extensions
+
+    my $repo = CompUnit::RepositoryFileSystem.new(:prefix($*CWD));
+    say $repo.extensions; # OUTPUT: «[rakumod pm6 pm]␤»
+
+The extensions of files the repository will consider raku modules when C<prefix> does
+not contain a META6.json file. This can be set when including the library path itself
+by setting the attribute through the path spec:
+
+=for code :lang<shell>
+    # Like '-I lib', but only considers .rakumod and .pm6 files as raku modules
+    raku -I "file#extensions<rakumod pm6>#lib" -e 'use MyModule'
+
+=end pod

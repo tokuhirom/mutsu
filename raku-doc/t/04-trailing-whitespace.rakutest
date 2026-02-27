@@ -1,0 +1,28 @@
+#!/usr/bin/env raku
+
+use Test;
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Make sure that no line includes trailing whitespace.
+
+=end overview
+
+my @files = RakuDoc::Test::Files.files.grep({$_ ne 'LICENSE'});
+
+plan +@files;
+
+for @files -> $file {
+    my $ok = True;
+    my $row = 0;
+    for $file.IO.lines -> $line {
+        ++$row;
+        if $line ~~ / \s $/ {
+           $ok = False; last;
+        }
+    }
+    my $error = $file;
+    $error ~= " (line $row)" if !$ok;
+    ok $ok, "$error: Must not have any trailing whitespace.";
+}

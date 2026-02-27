@@ -1,0 +1,100 @@
+#!/usr/bin/env raku
+
+use Test;
+
+use Pod::Cache;
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Appropriately use "a" and "an".
+
+=end overview
+
+my @files = RakuDoc::Test::Files.files.grep(* ne 'LICENSE' | 'CREDITS' | 'xt/an-grammar.rakutest');
+
+plan +@files;
+
+sub test-it(Str $output, Str $file) {
+    if $file.contains('/i18n/') {
+        skip("$file is not english");
+        next;
+    }
+    subtest $file => {
+        # Look at every two words together...
+        for $output.words.rotor(2 => -1) -> ($an, $other) {
+            # ... if the first one is "a" or "an"
+            next unless $an.lc eq 'an'|'a';
+
+            # This is probably code
+            next if $other eq '=>' | '=' | '($a)' | '$.a';
+            next if $other.starts-with('X<hash' | 'e)');
+
+            # A is probably a variable in this context
+            next if $other.lc eq 'is' | 'and' | 'or' | 'into' | 'if' | 'as' | 'o';
+
+            # Too much trouble to reword example/table
+            next if $other eq 'Extract' | 'expects';
+
+            # Assume we should be using 'a'
+            my $wanted = "a";
+
+            # In all cases, ignore a trailing . that is part of the word
+            my $word = $other.ends-with('.') ?? $other.chop !! $other;
+
+            # Process items where we care about the punctuation
+            if $word.starts-with('X::' | '@' | '&' ) {
+                $wanted = "an";
+            } elsif $word eq '=' | '&' {
+                $wanted = "an";
+            }
+
+            # Strip out any remaining punctuation to look at alpha/digits
+            $word = $word.subst(:g, /<-alpha -digit>+/, " ").words[0] // '';
+
+            # Probably code example
+            next if $word eq 'A' and $an eq 'A';
+
+            # Still have to check?
+            if $wanted eq "a" {
+                # Words that are empty or Nil at this point should be failed
+                if $word.DEFINITE and $word ne "" {
+                    # Allow all vowels
+                    if $word.lc.starts-with(any(<a e i o u>)) {
+                        $wanted = "an";
+                        # Except for words that start with a consonant sound
+                        if $word    eq 'US' or
+                           $word.lc eq
+                            'once' | 'one' | 'u' | 'uc' | 'ucfirst' | 'udp' | 'ui' | 'unary' | 'uni' |
+                            'unicode' | 'uniform' | 'uniprops' | 'unique' | 'unit' | 'unitcheck' |
+                            'universally'| 'unix' | 'uri' | 'url' | 'usable' | 'usage' | 'use' |
+                            'useful' | 'used' | 'user' | 'usual' | 'usually' | 'utc' | 'utf8' | 'utility'
+                            {
+                            $wanted = "a";
+                        }
+                    }
+
+                    # Allow some single characters that start with vowel sounds
+                    if $word.lc eq any <m l n x> {
+                        $wanted = "an";
+
+                        # Special case for \n, which is either "newline" or "backslash n"
+                        if $other.lc eq '\n' {
+                            $wanted = "a";
+                        }
+                    }
+
+                    # Allow some words that have a consonant but use a vowel sound
+                    if $word.lc eq any(<mp3 hour lc lcfirst nfc nfd nfkc nfkd nqp html rvalue lvalue>) {
+                        $wanted = "an";
+                    }
+                }
+            }
+            is $an.lc, $wanted, "$an $other";
+        }
+    }
+}
+
+for @files -> $file {
+    test-it(Pod::Cache.cache-file($file).IO.slurp, $file)
+}

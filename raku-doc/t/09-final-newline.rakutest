@@ -1,0 +1,25 @@
+#!/usr/bin/env raku
+
+use Test;
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Make sure that text files end in a newline
+
+=end overview
+
+my @files = RakuDoc::Test::Files.files\
+    .grep({$_ ne 'LICENSE'})\
+    .grep({! $_.contains: 'custom-theme'})\
+    .grep({! $_.contains: 'util/trigger-rebuild.txt'});
+
+if @files {
+    plan +@files;
+} else {
+    plan :skip-all<No relevant files specified>;
+}
+
+for @files -> $file {
+    ok $file.IO.slurp.substr(*-1) eq "\n", "$file must end in a newline";
+}

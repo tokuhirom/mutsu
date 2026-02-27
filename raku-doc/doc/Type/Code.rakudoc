@@ -1,0 +1,224 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Code
+
+=SUBTITLE Code object
+
+    class Code is Any does Callable {}
+
+C<Code> is the ultimate base class of all code objects in Raku. It
+exposes functionality that all code objects have. While thunks are
+directly of type C<Code>, most code objects (such as those resulting
+from blocks, subroutines or methods) will belong to some subclass of C<Code>.
+
+=head1 Methods
+
+=head2 method ACCEPTS
+
+    multi method ACCEPTS(Code:D: Mu $topic)
+
+Usually calls the code object and passes C<$topic> as an argument.
+However, when called on a code object that takes no arguments, the code
+object is invoked with no arguments and C<$topic> is dropped. The
+result of the call is returned.
+
+=head2 method arity
+
+    method arity(Code:D: --> Int:D)
+
+Returns the minimum number of positional arguments that must be passed
+in order to call the code object. Any optional or slurpy parameters in the
+code object's L<C<Signature>|/type/Signature> do not contribute, nor do named parameters.
+
+    sub argless() { }
+    sub args($a, $b?) { }
+    sub slurpy($a, $b, *@c) { }
+    say &argless.arity;             # OUTPUT: «0␤»
+    say &args.arity;                # OUTPUT: «1␤»
+    say &slurpy.arity;              # OUTPUT: «2␤»
+
+=head2 method assuming
+
+    method assuming(Callable:D $self: |primers)
+
+Returns a new L<C<Callable>|/type/Callable> that has been L<primed|/language/glossary#priming>
+with the arguments passed to C<assuming>.  In other words, the new function
+implements the same behavior as the original, but has the values passed to
+C<.assuming> already bound to the corresponding parameters.
+
+    my sub slow($n){ my $i = 0; $i++ while $i < $n; $i }
+
+    # takes only one parameter and as such wont forward $n
+    sub bench(&c) { c, now - ENTER now }
+
+    say &slow.assuming(10000000).&bench; # OUTPUT: «(10000000 7.5508834)␤»
+
+For a sub with arity greater than one, you can use L«C<Whatever> C<*>|/type/Whatever» for all of
+the positional parameters that are not "assumed".
+
+    sub first-and-last ( $first, $last ) {
+        say "Name is $first $last";
+    }
+
+    my &surname-smith = &first-and-last.assuming( *, 'Smith' );
+
+    surname-smith( 'Joe' ); # OUTPUT: «Name is Joe Smith␤»
+
+You can handle any combination of assumed and not assumed positional parameters:
+
+=begin code
+sub longer-names ( $first, $middle, $last, $suffix ) {
+    say "Name is $first $middle $last $suffix";
+}
+
+my &surname-public = &longer-names.assuming( *, *, 'Public', * );
+
+surname-public( 'Joe', 'Q.', 'Jr.'); # OUTPUT: «Name is Joe Q. Public Jr.␤»
+=end code
+
+Named parameters can be assumed as well:
+
+    sub foo { say "$^a $^b $:foo $:bar" }
+    &foo.assuming(13, foo => 42)(24, bar => 72); # OUTPUT: «13 24 42 72␤»
+
+And you can use C<.assuming> on all types of L<Callables|/type/Callable>,
+including L<Methods|/type/Method> and L<Blocks|/type/Block>:
+
+    # We use a Whatever star for the invocant:
+    my &comber = Str.^lookup('comb').assuming( *, /R \w+/ );
+    say comber 'Raku is awesome! Ruby is great! And Rust is OK too';
+    # OUTPUT: «(Raku Ruby Rust)␤»
+
+    my &learner = {
+        "It took me $:months months to learn $^lang"
+    }.assuming: 'Raku';
+    say learner months => 2;  # OUTPUT: «It took me 2 months to learn Raku␤»
+
+=head2 method count
+
+    method count(Code:D: --> Real:D)
+
+Returns the maximum number of positional arguments that may be passed
+when calling the code object. For code objects that can accept any
+number of positional arguments (that is, they have a slurpy parameter),
+C<count> will return C<Inf>. Named parameters do not contribute.
+
+    sub argless() { }
+    sub args($a, $b?) { }
+    sub slurpy($a, $b, *@c) { }
+    say &argless.count;             # OUTPUT: «0␤»
+    say &args.count;                # OUTPUT: «2␤»
+    say &slurpy.count;              # OUTPUT: «Inf␤»
+
+=head2 method of
+
+    method of(Code:D: --> Mu)
+
+Returns the L<return type constraint|/language/signatures#Constraining_return_types>
+of the C<Code>:
+
+    say -> () --> Int {}.of; # OUTPUT: «(Int)␤»
+
+=head2 method signature
+
+    multi method signature(Code:D: --> Signature:D)
+
+Returns the L<C<Signature>|/type/Signature> object for this code object, which describes
+its parameters.
+
+    sub a(Int $one, Str $two) {};
+    say &a.signature; # OUTPUT: «(Int $one, Str $two)␤»
+
+=head2 method cando
+
+    method cando(Capture $c)
+
+Returns a list of candidates that can be called with the given
+L<C<Capture>|/type/Capture>.  Since C<Code> objects do not have any multiple
+dispatch, this either returns a list with the object, or an empty list.
+
+    my $single = \'a';         # a single argument Capture
+    my $plural = \('a', 42);   # a two argument Capture
+    my &block = { say $^a };   # a Block object, that is a subclass of Code, taking one argument
+    say &block.cando($single); # OUTPUT: «(-> $a { #`(Block|94212856419136) ... })␤»
+    say &block.cando($plural); # OUTPUT: «()␤»
+
+=head2 method Str
+
+    multi method Str(Code:D: --> Str:D)
+
+Will output the method name, but also produce a warning. Use C<.raku> or
+C<.gist> instead.
+
+    sub marine() { }
+    say ~&marine;
+    # OUTPUT: «Sub object coerced to string (please use .gist or .raku to do that)␤marine␤»
+    say &marine.Str;
+    # OUTPUT: «Sub object coerced to string (please use .gist or .raku to do that)␤marine␤»
+    say &marine.raku; # OUTPUT: «sub marine { #`(Sub|94280758332168) ... }␤»
+
+=head2 method file
+
+    method file(Code:D: --> Str:D)
+
+Returns the name of the file in which the code object was declared.
+
+    say &infix:<+>.file;   # OUTPUT: «SETTING::src/core.c/Numeric.rakumod␤»
+
+=head2 method line
+
+    method line(Code:D: --> Int:D)
+
+Returns the line number in the source code at which the code object's
+declaration begins.
+
+    say &infix:<+>.line;   # OUTPUT: «208␤»
+
+If the code object was generated automatically (and thus I<not>
+declared in the source code), then C<line> returns the line on which
+the enclosing scope's declaration begins.  For example, when called on
+an L<automatically generated accessor method|
+/language/objects#Attributes> produced by the C<has $.name>
+syntax, C<line> returns the line on which the method's class's
+declaration begins.
+
+For example, if you have the following source file:
+
+    class Food {                # Line 1
+        has $.ingredients;      # Line 2
+                                # Line 3
+        method eat {};          # Line 4
+    }                           # Line 5
+
+Then the C<line> method would give you the following output:
+
+=begin code :preamble<class Food { has $.ingredients; method eat {};}>
+say Food.^lookup('eat').line;          # OUTPUT: «4␤»
+say Food.^lookup('ingredients').line;  # OUTPUT: «1␤»
+=end code
+
+=head2 method bytecode-size
+
+    method bytecode-size(--> Int:D)
+
+Note: this method has been available in Rakudo compiler on the MoarVM backend only, starting from 2022.06 release.
+
+Returns the number of bytes that the code object occupies in memory.  Note
+that if the code object is in fact a C<multi>, then the bytecode size will
+be reported for the C<proto>.  You can use the C<.candidates> method to
+obtain each candidate, and then call the C<bytecode-size> methods on them.
+
+    say &grep.bytecode-size;              # OUTPUT: «114␤»
+    say &grep.cadidates>>.bytecode-size;  # OUTPUT: «424␤258␤»
+
+=head2 method is-implementation-detail
+
+    method is-implementation-detail(--> False)
+
+Note: this method has been available in Rakudo compiler starting from 2020.05 release.
+
+Returns C<True> if the code object was marked with
+L«C<is implementation-detail> trait|/language/traits#is_implementation-detail_trait»,
+C<False> otherwise.
+
+=end pod

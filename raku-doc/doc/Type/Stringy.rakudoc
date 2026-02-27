@@ -1,0 +1,11 @@
+=begin pod :kind("Type") :subkind("role") :category("basic")
+
+=TITLE role Stringy
+
+=SUBTITLE String or object that can act as a string
+
+    role Stringy { ... }
+
+Common role for string types (such as Str).
+
+=end pod

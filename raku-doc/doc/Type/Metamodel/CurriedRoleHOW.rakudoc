@@ -1,0 +1,72 @@
+=begin pod :kind("Type") :subkind("class") :category("metamodel")
+
+=TITLE role Metamodel::CurriedRoleHOW
+
+=SUBTITLE Support for parameterized roles that have not been instantiated
+
+=for code :skip-test<TWEAK>
+    class Metamodel::CurriedRoleHOW
+        does Metamodel::Naming
+        does Metamodel::TypePretense
+        does Metamodel::RolePunning {}
+
+I<Warning>: this class is part of the Rakudo implementation, and is not
+a part of the language specification.
+
+Sometimes, we see references to roles that provide parameters but
+do not fully resolve them. For example, in:
+
+=for code :preamble<role R[::Type] {}; class Type {}>
+class C does R[Type] { }
+
+We need to represent C<R[T]>, but we cannot yet fully specialize the
+role because we don't have the first parameter at hand. We may also
+run into the issue where we have things like:
+
+=for code :preamble<role R[::T] {}; class T {}; my $x>
+sub foo(R[T] $x) { ... }
+if $x ~~ R[T] { ... }
+
+Where we clearly want to talk about a partial parameterization of a
+role and actually want to do so in a way distinct from a particular
+instantiation of it. This metaobject represents those "partial types"
+as both a way to curry on your way to a full specialization, but also
+as a way to do type-checking or punning.
+
+This class will show up in parameterized roles. For instance:
+
+=begin code
+role Zipi[::T] {
+    method zape { "Uses " ~ T.^name };
+}
+role Zipi[::T, ::Y] {
+    method zape { "Uses " ~ T.^name ~ " and " ~ Y.^name };
+}
+for Zipi[Int], Zipi[Int,Str] -> $role {
+    say $role.HOW;
+    say $role.new().zape;
+}
+# OUTPUT:
+# Perl6::Metamodel::CurriedRoleHOW.new
+# Uses Int
+# Perl6::Metamodel::CurriedRoleHOW.new
+# Uses Int and Str
+=end code
+
+Since there are several variants of C<Zipi>, providing a parameter I<curries>
+it, but it's still up to the compiler to find out the actual realization taking
+into account the C<ParametricRoleGroup>, so these (partially instantiated) roles
+show up as C<Metamodel::CurriedRoleHOW> as shown in the example; even if there's
+a single parameter an instantiated role will also be of the same type:
+
+    role Zape[::T] {};
+    say Zape[Int].HOW; #: «Perl6::Metamodel::CurriedRoleHOW.new␤»
+
+Curried roles L<pretend to be|/type/Metamodel::TypePretense> of types
+L<C<Mu>|/type/Mu>, L<C<Any>|/type/Any>, and L<C<Cool>|/type/Cool>, and
+L<delegate|/type/Metamodel::MethodDelegation> methods to L<C<Any>|/type/Any>.
+
+I<Note>: As with most of the C<Metamodel> classes, this one is mainly for illustration
+purposes and is not intended for the end user to instantiate.
+
+=end pod

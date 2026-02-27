@@ -1,0 +1,34 @@
+=begin pod :kind("Language") :subkind("Language") :category("beginning")
+
+=TITLE Filename extensions
+
+=SUBTITLE The extensions recommended for files with Raku content.
+
+=begin table
+File contents          | Extension | Historic extensions
+========================================================
+Raku script            | .raku     | .pl, .p6
+Raku module            | .rakumod  | .pm, .pm6
+Raku documentation     | .rakudoc  | .pm, pm6, pod, pod6
+Test files in raku     | .rakutest | .t
+Not Quite Perl (NQP)   | .nqp      |
+=end table
+
+Note that in most cases, the historic extensions will still work.
+
+=head1 Introduction
+
+An extension is the part of the filename after the final '.'; if no '.'
+is present, there is no extension.
+
+Filename extensions can be used to associate behavior with the file content, such as opening
+a specialized reader or editor, running a program with the file content as input, etc.
+Even when it is not required by the operating system, filename extensions can provide a useful
+reminder about the contents of the file.
+
+=head1 History
+
+The Raku language was originally known as Perl 6, and this is reflected in the historic column
+above. Please use the current extensions whenever possible when generating new code.
+
+=end pod

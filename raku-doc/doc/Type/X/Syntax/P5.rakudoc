@@ -1,0 +1,23 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Syntax::P5
+
+=SUBTITLE Compilation error due to use of Perl-only syntax
+
+    class X::Syntax::P5 does X::Syntax { }
+
+Syntax error thrown when some piece of code is clearly Perl, not Raku.
+
+For example
+
+=for code :skip-test<compile time error>
+for my $a (1, 2) { };
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+This appears to be Perl code
+
+
+=end pod

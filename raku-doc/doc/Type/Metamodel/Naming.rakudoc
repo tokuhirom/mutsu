@@ -1,0 +1,31 @@
+=begin pod :kind("Type") :subkind("role") :category("metamodel")
+
+=TITLE role Metamodel::Naming
+
+=SUBTITLE Metaobject that supports named types
+
+    role Metamodel::Naming { }
+
+I<Warning>: this role is part of the Rakudo implementation, and is not
+a part of the language specification.
+
+L<Metamodel|/language/mop> role for (optionally) named things, like classes,
+roles and enums.
+
+=head1 Methods
+
+=head2 method name
+
+    method name($type)
+
+Returns the name of the metaobject, if any.
+
+    say 42.^name;       # OUTPUT: «Int␤»
+
+=head2 method set_name
+
+    method set_name($type, $new_name)
+
+Sets the new name of the metaobject.
+
+=end pod

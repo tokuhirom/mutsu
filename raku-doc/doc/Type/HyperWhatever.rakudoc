@@ -1,0 +1,53 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class HyperWhatever
+
+=SUBTITLE Placeholder for multiple unspecified values/arguments
+
+    class HyperWhatever { }
+
+C<HyperWhatever> is very similar in functionality to L<C<Whatever>|/type/Whatever>. The
+difference lies in C<HyperWhatever> standing in for I<multiple> values, rather
+than a single one.
+
+=head1 Standalone term
+
+Just like with L<C<Whatever>|/type/Whatever>, if a
+C<HyperWhatever> is used as a term on its own, no priming
+is done and the C<HyperWhatever> object will be used as-is:
+
+    sub foo ($arg) { say $arg.^name }
+    foo **; # OUTPUT: «HyperWhatever␤»
+
+You can choose to interpret such a value as standing for multiple values in your
+own routines. In core, a C<HyperWhatever> can be used with
+this meaning when smartmatching with L<C<List>|/type/List>s:
+
+    say (1, 8)                ~~ (1, **, 8); # OUTPUT: «True␤»
+    say (1, 2, 4, 5, 6, 7, 8) ~~ (1, **, 8); # OUTPUT: «True␤»
+    say (1, 2, 8, 9)          ~~ (1, **, 8); # OUTPUT: «False␤»
+
+Wherever a C<HyperWhatever> appears in the list on the
+right-hand side means any number of elements can fill that space in the list
+being smartmatched.
+
+=head1 Priming
+
+When it comes to priming, the C<HyperWhatever> follows the
+same rules as L<C<Whatever>|/type/Whatever>. The only difference is
+C<HyperWhatever> produces a L<C<Callable>|/type/Callable> with
+a L«C<*@> slurpy|/language/signatures#Flattening_slurpy:_*@» as a signature:
+
+    say (**²)(1, 2, 3, 4, 5); # OUTPUT: «(1 4 9 16 25)␤»
+
+A C<HyperWhatever> closure can be imagined as a
+L«C<WhateverCode>|/type/WhateverCode» with B<another> sub wrapped around it
+that simply maps each element in the arguments over:
+
+    my &hyper-whatever = sub (*@args) { map *², @args }
+    say hyper-whatever(1, 2, 3, 4, 5); # OUTPUT: «(1 4 9 16 25)␤»
+
+When priming, mixing C<HyperWhatever> with
+L<C<Whatever>|/type/Whatever> is not permitted.
+
+=end pod

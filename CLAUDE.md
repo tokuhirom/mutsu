@@ -82,7 +82,7 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
 ### Test infrastructure
 
 - `t/*.t`: Local tests in Raku syntax, run via prove
-- `roast/`: Official Raku spec test suite (read-only git submodule)
+- `roast/`: Official Raku spec test suite (vendored, read-only)
 - `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
 - `TODO_roast/`: Per-file pass/fail tracking (split by synopsis number, e.g. `TODO_roast/S02.md`)
 - TAP protocol implemented in `runtime/test_functions.rs`

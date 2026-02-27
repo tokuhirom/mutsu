@@ -1,0 +1,518 @@
+=begin pod :kind("Language") :subkind("Language") :category("tutorial")
+
+=TITLE Doing math with Raku
+
+=SUBTITLE Different mathematical paradigms and how they are implemented in this language
+
+=head1 Arithmetic
+
+Raku can do arithmetic using different data types. L<C<Num>|/type/Num>, L<C<Rat>|/type/Rat> and
+L<C<Complex>|/type/Complex> can all operate as a L<field under the operations of addition, subtraction, multiplication and division|https://en.wikipedia.org/wiki/Field_(mathematics)>
+(technically, it should be noted that data types dealing with floating point number representations are not a field in the mathematical sense due to the inherent
+imprecisions of their arithmetic. However, they constitute an approximate enough, computer friendly version of such mathematical objects for most of the cases).
+The equivalent mathematical fields are:
+
+=begin table
+Raku class       Field
+=============    ==============================================
+Rat              ℚ
+Num              ℝ
+Complex          ℂ
+=end table
+
+The integers (L<C<Int>|/type/Int>), or ℤ, as they're usually called in mathematics, are not a
+mathematical field but rather a ring, since they are not closed under
+multiplicative inverses. However, if the integer division C<div> is used, their operations will always
+yield other integers; if C</> is used, on the other hand, in general the result will be a
+L<C<Rat>|/type/Rat>.
+
+Besides, L<C<Int>|/type/Int> can do infinite-precision arithmetic (or at least infinite as
+memory allows; C<Numeric overflow> can still occur), without falling back to
+L<C<Num>|/type/Num> if the number is too big:
+
+    my @powers = 2, 2 ** * ... Inf; say @powers[4].chars; # OUTPUT: «19729␤»
+
+Also strictly speaking, the Rational class that behaves like a mathematical
+field is L<C<FatRat>|/type/FatRat>. For efficiency reasons, operating with L<C<Rat>|/type/Rat>s will fall
+back to L<C<Num>|/type/Num> when the numbers are big enough or when there is a big
+difference between numerator and denominator. L<C<FatRat>|/type/FatRat> can work with arbitrary
+precision, the same as the default L<C<Int>|/type/Int> class.
+
+Some modules in the ecosystem can work with additional data types
+mathematically:
+
+=item L<C<Math::Vector>|https://github.com/colomon/Math-Vector>
+basic operations for L<vectors|https://en.wikipedia.org/wiki/Coordinate_vector>.
+
+=item L<C<Math::Matrix>|https://github.com/pierre-vigier/Perl6-Math-Matrix>
+operates on L<matrices rings over numeric rings|https://en.wikipedia.org/wiki/Matrix_(mathematics)>.
+
+=item L<C<Math::Quaternion>|https://github.com/Util/Perl6-Math-Quaternion>
+operates on the L<quaternion algebra, ℍ|https://en.wikipedia.org/wiki/Quaternion>,
+which are a generalization of complex numbers.
+
+=item L<C<Math::Polynomial>|https://github.com/colomon/Math-Polynomial> works
+with polynomials, and is able to do simple arithmetic with them.
+
+=item L<C<Math::Symbolic>|https://github.com/raydiak/Math-Symbolic>, for
+symbolic math.
+
+Numbers are duck-typed automatically to the numeric class they actually
+represent:
+
+    .^name.say for (4, ⅗, 1e-9, 3+.1i); # OUTPUT: «Int␤Rat␤Num␤Complex␤»
+
+Arithmetic operations are performed by taking into account the type of operands:
+
+    say .33-.22-.11 == 0; # OUTPUT: «True␤»
+
+In this case, all numbers are interpreted as L<C<Rat>|/type/Rat>s, which makes the operation
+exact. In general, most other languages would interpret them as floating point
+numbers, which can also be achieved in Raku if needed:
+
+    say .33.Num -.22.Num - .11.Num; # OUTPUT: «1.3877787807814457e-17␤»
+
+For cases such as this, Raku also includes an C<approximately equal> operator,
+L<≅|/language/operators#infix_=~=>
+
+    say .33.Num -.22.Num - .11.Num ≅ 0; # OUTPUT: «True␤»
+
+
+=head1 Sets
+
+Raku includes the L<C<Set>|/type/Set> data type, as well as support for
+L<most set operations|/language/setbagmix#Operators_with_set_semantics>.
+L<Union and intersection|https://en.wikipedia.org/wiki/Algebra_of_sets>
+are not only native operations, they use their I<natural> symbols, ∩ and ∪. For
+instance, this code would check the fundamental laws of the arithmetic of sets
+for a limited number of sets:
+
+=begin code
+my @arbitrary-numbers = ^100;
+my \U = @arbitrary-numbers.Set;
+
+my @sets;
+
+@sets.push: Set.new( @arbitrary-numbers.pick( @arbitrary-numbers.elems.rand)) for @arbitrary-numbers;
+
+my (@union, @intersection);
+
+for @sets -> $set {
+    @union.push: $set ∩ $set === $set;
+    @intersection.push: $set ∪ $set === $set;
+}
+
+say "Idempotent union is ", so @union.all;
+# OUTPUT: «Idempotent union is True␤»
+say "Idempotent intersection is ", so @intersection.all;
+# OUTPUT: «Idempotent intersection is True␤»
+my (@universe, @empty-set, @id-universe, @id-empty);
+
+for @sets -> \A {
+    @universe.push: A ∪ U === U;
+    @id-universe.push: A ∩ U === A;
+    @empty-set.push: A ∩ ∅ === ∅;
+    @id-empty.push: A ∪ ∅ === A;
+}
+
+say "Universe dominates ", so @universe.all;    # OUTPUT: «Universe dominates True␤»
+say "Empty set dominates ", so @empty-set.all;  # OUTPUT: «Empty set dominates True␤»
+
+say "Identity with U ", so @id-universe.all;    # OUTPUT: «Identity with U True␤»
+say "Identity with ∅ ", so @id-empty.all;       # OUTPUT: «Identity with ∅ True»
+=end code
+
+In this code, which uses the L<empty set|/language/setbagmix#term_%E2%88%85>
+which is already defined by Raku, not only do we check if the equalities in the
+algebra of sets hold, we also use, via L<sigilless variables|/language/variables#index-entry-\_(sigilless_variables)> and the
+Unicode form of the set operators, expressions that are as close as possible to
+the original form; C<A ∪ U === U>, for example, except for the use of the
+L<value identity operator C<===>|/routine/===> is very close to the actual
+mathematical expression in the L<Wikipedia entry|https://en.wikipedia.org/wiki/Algebra_of_sets>.
+
+We can even test De Morgan's law, as in the code below:
+
+=begin code
+my @alphabet = 'a'..'z';
+my \U = @alphabet.Set;
+sub postfix:<⁻>(Set $a) { U ⊖ $a }
+my @sets;
+@sets.push: Set.new( @alphabet.pick( @alphabet.elems.rand)) for @alphabet;
+my ($de-Morgan1,$de-Morgan2) = (True,True);
+for @sets X @sets -> (\A, \B){
+    $de-Morgan1 &&= (A ∪ B)⁻  === A⁻ ∩ B⁻;
+    $de-Morgan2 &&= (A ∩ B)⁻  === A⁻ ∪ B⁻;
+}
+say "1st De Morgan is ", $de-Morgan1;
+say "2nd De Morgan is ", $de-Morgan2;
+=end code
+
+We declare C<⁻> as the I<complement> operation, which computes the symmetrical
+difference ⊖ between the Universal set C<U> and our set. Once that is declared,
+it is relatively easy to express operations such as the complementary of the
+union of A and B, C<(A ∪ B)⁻>, with a notation that is very close to the original
+mathematical notation.
+
+=head1 Sequences
+
+A L<sequence|https://en.wikipedia.org/wiki/Sequence> is an I<enumerated>
+collection of objects in which repetitions are allowed, and also a first-class
+data type in Raku called L<C<Seq>|/type/Seq>. L<C<Seq>|/type/Seq> is able to represent infinite
+sequences, like the natural numbers:
+
+    my \𝕟 = 1,2 … ∞;
+    say 𝕟[3];         # OUTPUT: «4␤»
+
+Infinite sequences use ∞, C<Inf> or C<*> (Whatever) as terminator. L<…|/language/operators#infix_...> is the
+list generator, which in fact can understand arithmetic and geometric
+progression sequences as long as you insert the first numbers:
+
+    say 1,5,9 … * > 100;
+    # OUTPUT: «(1 5 9 13 17 21 25 29 33 37 41 45 49 53 57 61 65 69 73 77 81 85 89 93 97 101)␤»
+    say 1,3,9 … * > 337; # OUTPUT: «(1 3 9 27 81 243 729)␤»
+
+The first sequence will be terminated when the generated number is bigger than
+100; the second sequence, which is a geometric progression, when it is bigger
+than 337.
+
+The fact that an arbitrary generator can be used makes easy to generate
+sequences such as L<Fibonacci numbers|https://en.wikipedia.org/wiki/Fibonacci_number>:
+
+    say 1,1, * + * … * > 50;#  OUTPUT: «(1 1 2 3 5 8 13 21 34 55)␤»
+
+We can, in fact, compute the approximation to the L<golden ratio|https://en.wikipedia.org/wiki/Golden_ratio> this way:
+
+    my @phis = (2.FatRat, 1 + 1 / * ... *);
+    my @otherphi = (1 - @phis[200], 1 + 1 / * ... *);
+    say @otherphi[^10, |(20, 30 ... 100)];  # OUTPUT:
+    # «((-0.61803398874989484820458683436563811772030918
+    # -0.61803398874989484820458683436563811772030918
+    # -0.61803398874989484820458683436563811772030918
+    # -0.61803398874989484820458683436563811772030918
+    # -0.61803398874989484820458683436563811772030918
+    # -0.618033…»
+
+The L<Math::Sequences|https://github.com/ajs/perl6-Math-Sequences> module
+includes many mathematical sequences, already defined for you. It has many
+L<sequences from the encyclopedia|https://oeis.org/>, some of them with their
+original name, such as ℤ.
+
+Some set operators also operate on sequences, and they can be used to find out if an object is part of it:
+
+    say 876 ∈ (7,14 … * > 1000) ; # OUTPUT: «False␤»
+
+In this particular case, we can find out if C<876> is a multiple of 7 straight
+away, but the same principle holds for other sequences using complicated
+generators. And we can use set inclusion operators too:
+
+    say (55,89).Set ⊂ (1,1, * + * … * > 200); # OUTPUT: «True␤»
+
+That said, it does not take into account if it is effectively a subsequence, just
+the presence of the two elements here. Sets have no order, and even if you don't
+explicitly cast the subsequence into a Set or explicitly cast it into a L<C<Seq>|/type/Seq>
+it will be coerced into such for the application of the inclusion operator.
+
+
+=head1 Mathematical constants
+
+Raku includes a set of mathematical constants:
+
+    say π; # OUTPUT: «3.141592653589793␤»
+    say τ; # Equivalent to 2π; OUTPUT: «6.283185307179586␤»
+    say 𝑒; # OUTPUT: «2.718281828459045␤»
+
+These constants are also available
+through L<ASCII equivalents|/language/unicode_ascii>: C<e>, C<pi> and C<tau>.
+
+The L<Math::Constants|https://github.com/JJ/p6-math-constants> module
+includes an additional series of physical and mathematical constants such as the
+previously mentioned golden ratio φ or the Planck's constant ℎ.
+
+Since Raku allows for definition of variables that use Unicode graphemes, and
+also variable and constant names without any kind of sigil, it is considered a
+good practice to use the actual mathematical name of concepts to denominate them
+wherever possible.
+
+=head1 Numerical integration of ordinary differential equations
+
+Raku is an amazing programming language, and you can do a
+lot of cool math with it. A great amount of work during an applied
+mathematician's work is to simulate the models they create. For this
+reason, in every coding language, a numerical integrator is a must-have.
+Learning how to do this in Raku can be very useful.
+
+=head2 Requirements
+
+In Raku there are some modules in the ecosystem that can make it easier:
+=item L<C<Math::Model>|https://github.com/moritz/Math-Model>
+which lets you write mathematical and physical models in an easy and
+natural way.
+=item L<C<Math::RungeKutta>|https://github.com/moritz/Math-RungeKutta>
+Runge-Kutta integration for systems of ordinary, linear differential
+equations.
+
+For this example we are going to use
+L<C<Math::Model>|https://github.com/moritz/Math-Model> for its
+useful syntax, but remember that this module requires
+L<C<Math::RungeKutta>|https://github.com/moritz/Math-RungeKutta> as well.
+Simply install them with I<zef> before using these examples.
+
+=head2 Malthus model
+
+Let's start with the I<'Hello World'> of mathematical Ecology:
+L<Malthusian growth model|https://en.wikipedia.org/wiki/Malthusian_growth_model>.
+A Malthusian growth model, sometimes called a simple exponential growth
+model, is essentially exponential growth based on the idea of the
+function being proportional to the speed to which the function grows.
+The equation, then, looks like this:
+
+I<dx/dt = g*x>
+
+I<x(0) = x_0>
+
+Where I<g> is the population growth rate, sometimes called Malthusian
+parameter.
+
+How can we translate that into Raku? Well Math::Model brings some help
+with a very understandable way to do that:
+
+=begin code :skip-test<needs ecosystem>
+use Math::Model;
+
+my $m = Math::Model.new(
+    derivatives => {
+        velocity => 'x',
+    },
+    variables   => {
+        velocity           => { $:growth_constant * $:x },
+        growth_constant    => { 1 }, # basal growth rate
+    },
+    initials    => {
+        x       => 3,
+    },
+    captures    => ('x'),
+);
+
+$m.integrate(:from(0), :to(8), :min-resolution(0.5));
+$m.render-svg('population growth malthus.svg', :title('population growth'));
+=end code
+
+To fully understand what is going on, let's go through it step by step.
+
+=head3 Step by step explanation
+
+=begin item
+First we load the module that make
+the calculations: L<C<Math::Model>|https://github.com/moritz/Math-Model>.
+
+=begin code :skip-test<Snippet for explanation purposes>
+use Math::Model;
+=end code
+=end item
+
+=begin item
+We create the model to add all the information in it.
+=begin code :skip-test<Snippet for explanation purposes>
+my $m = Math::Model.new(
+=end code
+=end item
+
+=begin item
+We declare the derivatives that are in our model. In this case, if
+you remember our equation, we have our variable I<x> and its derivative
+I<x'> (usually know as the velocity).
+
+=begin code
+derivatives => {
+    velocity => 'x',
+},
+=end code
+=end item
+
+=begin item
+After that, we declare how our models evolve. We just need
+formulas for the derivatives that are not also integration variables
+(in this case, only I<x>), and for other variables we use in the formulas
+ (the growth rate).
+
+=begin code
+variables   => {
+    velocity           => { $:growth_constant * $:x},
+    growth_constant    => { 1 }, # basal growth rate
+},
+=end code
+=end item
+
+
+=begin item
+Finally we declare our initial conditions and use I<captures> to
+tell L<C<Math::Model>|https://github.com/moritz/Math-Model> which
+variable or variables to record while the simulation is running.
+
+=begin code
+initials    => {
+    x       => 3,
+},
+captures    => ('x'),
+=end code
+=end item
+
+
+At this point our model is set. We need to run the simulation and render
+ a cool plot about our results:
+=begin code :preamble<my $m>
+$m.integrate(:from(0), :to(8), :min-resolution(0.5));
+$m.render-svg('population growth malthus.svg', :title('population growth'));
+=end code
+
+There, we select our time limits and the resolution. Next, we generate a
+ plot.
+All understood? Well, let's see our result!
+
+L<link to the image|https://rawgit.com/thebooort/perl-6-math-model-tutorial/master/population%20growth%20malthus.svg>
+
+Looks great! But to be honest, it is quite unrepresentative. Let's explore
+other examples from more complex situations!
+
+=head2 Logistic model
+
+Resources aren't infinite and our population is not going to grow
+forever. P-F Verhulst thought the same thing, so he presented the
+L<logistic model|https://en.wikipedia.org/wiki/Logistic_function>. This
+ model is a common model of population growth, where the rate of
+ reproduction is proportional to both the existing population and the
+  amount of available resources, all else being equal.
+It looks like this:
+
+I<dx/dt = g*x*(1-x/k)>
+
+I<x(0)=x_0>
+
+where the constant g defines the growth rate and k is the carrying
+ capacity.
+Modifying the above code we can simulate its behavior in time:
+
+=begin code :skip-test<needs ecosystem>
+use Math::Model;
+
+my $m = Math::Model.new(
+    derivatives => {
+        velocity => 'x',
+    },
+    variables   => {
+        velocity           => { $:growth_constant * $:x - $:growth_constant * $:x * $:x / $:k },
+        growth_constant    => { 1 },   # basal growth rate
+        k                  => { 100 }, # carrying capacity
+    },
+    initials    => {
+        x       => 3,
+    },
+    captures    => ('x'),
+);
+
+$m.integrate(:from(0), :to(8), :min-resolution(0.5));
+$m.render-svg('population growth logistic.svg', :title('population growth'));
+=end code
+
+Let's look at our cool plot:
+L<link to the image|https://rawgit.com/thebooort/perl-6-math-model-tutorial/master/population%20growth%20logistic.svg>
+
+As you can see population growths till a maximum.
+
+=head2 Strong Allee Effect
+
+Interesting, isn't it? Even if these equations seem basic they are
+linked to a lot of behaviors in our world, like tumor growth. But,
+before end, let me show you a curious case.
+Logistic model could be accurate but... What happens when, from a
+certain threshold, the population size is so small that the survival
+rate and / or the reproductive rate drops due to the individual's inability
+ to find other ones?
+
+Well, this is an interesting phenomenon described by W.C.Allee, usually
+known as L<Allee effect|https://en.wikipedia.org/wiki/Allee_effect>.
+A simple way to obtain different behaviors associated with this effect
+is to use the logistic model as a departure, add some terms, and get a
+cubic growth model like this one:
+
+I<dx/dt=r*x*(x/a-1)*(1-x/k)>
+
+where all the constants are the same as before and A is called
+I<critical point>.
+
+Our code would be:
+
+=begin code :skip-test<needs ecosystem>
+use Math::Model;
+
+my $m = Math::Model.new(
+    derivatives => {
+        velocity_x    => 'x',
+    },
+    variables   => {
+        velocity_x           => { $:growth_constant * $:x *($:x/$:a -1)*(1- $:x/$:k) },
+        growth_constant    => { 0.7 },   # basal growth rate
+        k                  => { 100 }, # carrying capacity
+        a                  => { 15 },  # critical point
+    },
+    initials    => {
+        x       => 15,
+    },
+    captures    => ('x'),
+);
+
+$m.integrate(:from(0), :to(100), :min-resolution(0.5));
+$m.render-svg('population growth allee.svg', :title('population growth'));
+=end code
+
+Try to execute this one yourself to see the different behaviors that
+arise when you change the initial condition around the critical point!
+
+=head2 Weak Allee Effect
+
+Whilst the strong Allee effect is a demographic Allee effect with a critical
+population size or density, the weak Allee effect is a demographic Allee effect
+without a critical population size or density, i.e., a population exhibiting a
+weak Allee effect will possess a reduced per capita growth rate at lower population
+density or size. However, even at this low population size or density, the population
+will always exhibit a positive per capita growth rate. This model differs lightly from
+the strong one, getting a new formula:
+
+I<dx/dt=r*x*(1-x/k)*(x/a)**n>, with n>0
+
+Our code would be:
+
+=begin code :skip-test<needs ecosystem>
+use Math::Model;
+
+my $m = Math::Model.new(
+    derivatives => {
+        velocity_x => 'x',
+    },
+    variables   => {
+        velocity_x           => { $:growth_constant * $:x *(1- $:x/$:k)*($:x/$:a)**$:n },
+        growth_constant    => { 0.7 },   # basal growth rate
+        k                  => { 100 }, # carrying capacity
+        a                  => { 15 },  # critical point
+        n                  => { 4  }
+    },
+    initials    => {
+        x       => 15,
+    },
+    captures    => ('x'),
+);
+
+$m.integrate(:from(0), :to(100), :min-resolution(0.5));
+$m.render-svg('population growth allee.svg', :title('population growth'));
+=end code
+
+
+
+=head2 Extra info
+
+Do you like physics? Check the original post by the creator of the
+modules that have been used, Moritz Lenz:
+L<https://perlgeek.de/blog-en/perl-6/physical-modelling.html>.
+
+
+=end pod

@@ -1,0 +1,23 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Syntax::Self::WithoutObject
+
+=SUBTITLE Compilation error due to invoking C<self> in an ineligible scope
+
+    class X::Syntax::Self::WithoutObject does X::Syntax { }
+
+Syntax error thrown when C<self> is referenced in a place where no
+invocant is available.
+
+For example
+
+=for code :skip-test<compile time error>
+self;
+
+outside a class or role declaration dies with
+
+=for code :lang<text>
+===SORRY!===
+'self' used where no object is available
+
+=end pod

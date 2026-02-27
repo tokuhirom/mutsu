@@ -1,0 +1,25 @@
+#!/usr/bin/env raku
+
+use Test;
+BEGIN plan :skip-all<Test applicable to git checkout only> unless '.git'.IO.e;
+use RakuDoc::Test::Files;
+
+my @files = RakuDoc::Test::Files.files\
+    .grep({$_ ne 'LICENSE'|'Makefile'})\
+    .grep({! $_.contains('custom-theme')});
+
+plan +@files;
+
+for @files -> $file {
+    my @lines;
+    my $line-no = 1;
+    for $file.IO.lines -> $line {
+        @lines.push($line-no) if $line.contains("\t");
+        $line-no++;
+    }
+    if @lines {
+        flunk "$file has tabs on lines: {@lines}";
+    } else {
+        pass "$file has no tabs";
+    }
+}

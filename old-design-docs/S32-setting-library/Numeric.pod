@@ -1,0 +1,672 @@
+=encoding utf8
+
+=head1 TITLE
+
+DRAFT: Synopsis 32: Setting Library - Numeric
+
+=head1 VERSION
+
+    Created: 19 Mar 2009 extracted from S29-functions.pod
+
+    Last Modified: 14 Feb 2015
+    Version: 20
+
+This documents Int, Numeric, Rat, Complex, and Bool.
+
+=head1 Function Packages
+
+=head2 Bool
+
+=over 4
+
+=item succ
+
+ multi method succ ( Bool $b: --> Bool ) is export
+
+Returns C<Bool::True>.
+
+=item pred
+
+ multi method pred ( Bool $b: --> Bool ) is export
+
+Returns C<Bool::False>.
+
+=back
+
+=head2 Numeric
+
+C<Numeric> is a role for everything that's a scalar number. So C<Num>, C<Int>,
+C<Rat>, C<Complex> and other numeric types do that role. However it is an
+abstract interface, so C<$number.WHAT> will never return C<Numeric>.
+
+Users who provide their own scalar numeric types are encouraged to implement the
+C<Numeric> role.  It is intended that such types support the basic arithmetic
+operators to the extent possible, as well as C<==>.  In addition, it is hoped that
+comparison operators will at least return consistent results, even if there is no
+sensible mathematical ordering of your type.  That allows functions like sort to
+not choke and die if they are handed a value of your type.  (See also the C<Real>
+role for scalar numeric types that represent real numbers.)
+
+The following are all defined in the C<Numeric> role:
+
+C<Numeric> provides some constants in addition to the basic
+mathematical functions.
+
+    constant tau is export = 6.28318_53071_79586_47692_52867_66559_00576;
+    constant pi  is export = 3.14159_26535_89793_23846_26433_83279_50288;
+    constant e   is export = 2.71828_18284_59045_23536_02874_71352_66249;
+    constant i   is export = 1i;
+
+C<τ> and C<π> are provided as aliases for C<tau> and C<pi>, respectively.
+
+=over
+
+=item Real
+
+ multi method Real ( --> Real )
+
+If this C<Numeric> is equivalent to a C<Real>, return that C<Real>.
+(For instance, if this number is a C<Complex> with a zero imaginary part.)
+Fail with C<X::Numeric::Real> otherwise.
+
+=item Int
+
+ multi method Int ( --> Int )
+
+If this C<Numeric> is equivalent to a C<Real>, return the equivalent of
+calling C<truncate> on that C<Real> to get an C<Int>. Fail with
+C<X::Numeric::Real> otherwise.
+
+=item Rat
+
+ multi method Rat ( Real $epsilon = 1.0e-6 --> Rat )
+
+If this C<Numeric> is equivalent to a C<Real>, return a C<Rat> which is
+within C<$epsilon> of that C<Real>'s value. Fail with C<X::Numeric::Real>
+otherwise.
+
+=item Num
+
+ multi method Num ( --> Num )
+
+If this C<Numeric> is equivalent to a C<Real>, return that C<Real> as a C<Num>
+as accurately as is possible. Fail with C<X::Numeric::Real> otherwise.
+
+=item succ
+
+ multi method succ ( Numeric $x: --> Numeric ) is export
+ multi method succ ( Int $x: --> Int     )     is export
+
+Returns the successor of C<$x>. This method is used by C<< prefix:<++> >> and
+C<< postfix:<++> >> to increment the value in a container.
+
+=item pred
+
+ multi method pred ( Numeric $x: --> Numeric ) is export
+ multi method pred ( Int $x: --> Int     ) is export
+
+Returns the predecessor of C<$x>. This method is used by C<< prefix:<--> >>
+and C<< postfix:<--> >> to decrement the value in a container.
+
+=item abs
+
+ multi method abs ( Numeric $x: --> Numeric ) is export
+
+Absolute Value.
+
+=item conj
+
+ multi method conj ( Numeric $x: --> Numeric ) is export
+
+The complex conjugate of the value. For non-complex types, returns self.
+
+=item exp
+
+ multi method exp ( Numeric $exponent: Numeric :$base = Num::e --> Numeric ) is export
+
+Performs similar to C<$base ** $exponent>. C<$base> defaults to the
+constant I<e>.
+
+=item log
+
+ multi method log ( Numeric $x: Numeric $base = Num::e --> Numeric ) is export
+
+Logarithm of base C<$base>, default Natural. Calling with C<$x == 0> is an
+error.
+
+=item log10
+
+ multi method log10 (Numeric $x: --> Numeric ) is export
+
+A base C<10> logarithm, otherwise identical to C<log>.
+
+=item rand
+
+ sub term:<rand> ( --> Num )
+
+Pseudo random number in range C<< 0 ..^ 1 >>.  That is, C<0> is
+theoretically possible, while C<1> is not.  Note that there is no
+unary C<rand> function in Perl 6, but there is a C<rand> method.
+For picking a random integer you probably want
+to use something like C<(1..6).pick> instead.
+
+=item sqrt
+
+ multi method sqrt ( Numeric $x: --> Numeric ) is export
+
+Returns the principal square root of the parameter.
+
+=item roots
+
+  method roots (Numeric $x: Int $n ) is export
+
+Returns a list of all C<$n>th (complex) roots of C<$x>. Returns C<NaN> if
+C<< $n <= 0 >>, itself if C<$n == 0>,  and is free to return a single C<NaN>
+if C<$x> is C<NaN> or C<Inf>, or in case of complex numbers if one of the
+components is.
+
+=item i
+
+ multi postfix:<i> ( Numeric $x --> Complex )
+
+Returns a complex number representing the parameter multiplied by the imaginary
+unit C<i>.  Note that there is no C<.i> method.  To follow a variable name
+with the postfix, it's necessary to use a backslash or parentheses:
+
+    $land\i
+    ($land)i
+
+=item to-radians
+
+ multi method to-radians ( Numeric $x: TrigBase $base --> Numeric ) is export
+
+Convert from C<$base> to radians.
+
+=item from-radians
+
+ multi method from-radians ( Numeric $x: TrigBase $base --> Numeric ) is export
+
+Convert from radians to C<$base>.
+
+=item narrow
+
+ multi method narrow ( Numeric $x: ) is export
+
+Attempts to coerce the number to the narrowest type that can represent it accurately;
+for instance, a C<Rat> with a denominator of 1 maybe be coerced to an C<Int> instead;
+an integral C<Num> may likewise turn into an C<Int>.  (Neither C<Num> nor C<Rat> convert
+to each other, however.)  C<Complex> with a 0 imaginary part may narrow to a C<Real> type.
+Conjecturally, wide native types could narrow to narrower native types.
+
+=back
+
+
+=head2 Real
+
+    role Real does Numeric;
+
+C<Real>, like C<Numeric>, is an abstract role that represents the interface of
+a real scalar number (i.e. neither C<Complex> nor vector-like). For example
+C<Num>, C<Int>, C<Bool> and C<Rat> implement the C<Real> role.
+
+Users who provide their own scalar real numeric types are encouraged to implement the
+C<Real> role.  Because real numbers are strictly-totally-ordered and
+C<Real> types try to emulate that property, it is desirable that any two
+C<Real> types be mutually compatible, even if they are not aware of each other.  The
+current proposal requires you to define a C<Bridge> method in your C<Real> type, which
+converts your type into a neutral C<Real> type by restating it in terms of the fundamental
+Perl 6 types and calling C<Bridge> on them.  This then makes the default C<Real> methods
+and operators all work with your C<Real> type.  While the name of this method may changed,
+it is hoped that something like this will remain in the spec.
+
+=over
+
+=item Complex
+
+ multi method Complex ( --> Complex )
+
+Returns a C<Complex> whose real part is this C<Real> and whose imaginary part is 0.
+
+=item Str
+
+ multi method Str ( --> Str )
+
+Returns the C<Real> as a C<Str>.  All built-in C<Real> types format it as a decimal
+number, so for example, the C<Rat> C<5/4> is returned as C<"1.2">.
+
+=item base
+
+  multi method base($base, $digits?)
+
+Returns a C<Str> representing the invocant in base C<$base>. Fails if C<$base>
+is smaller than C<2> or larger than C<36>.
+
+For bases above ten, the digit repertoire is enhanced with uppercase latin
+characters starting from C<A>.
+
+The optional C<$digits> argument asks for that many digits of fraction
+(which may not be negative).  If omitted, a reasonable default is chosen
+based on type.  For Int this default is 0.  For Num, the default is 8.
+For Rat, the number of places is scaled to the size of the denominator,
+with a minimum of 6.
+
+The final digit produced is always rounded.
+
+=item floor
+
+ multi method floor ( Real $x: --> Int ) is export
+
+Returns the highest integer not greater than C<$x>.
+
+=item ceiling
+
+ multi method ceiling ( Real $x: --> Int ) is export
+
+Returns the lowest integer not less than C<$x>.
+
+=item round
+
+ multi method round ( Real $x: $scale = 1 --> Real ) is export
+
+With no arguments, returns the nearest integer to C<$x>.  If C<$scale>
+is given, rounds $x to the nearest multiple of C<$scale>.  The algorithm is:
+
+    floor($x / $scale + 0.5) * $scale
+
+(Other rounding algorithms will be given extended names beginning with "round".)
+
+=item truncate
+
+ multi method truncate ( Real $x: --> Int ) is export
+
+Returns the closest integer to C<$x> whose absolute value is not greater
+than the absolute value of C<$x>.  (In other words, just chuck any
+fractional part.)  This is the default rounding function used by
+implicit integer conversions.
+
+You may also truncate using explicit integer casts, either C<Int()> for
+an arbitrarily large integers, or C<int()> for native integers.
+
+=item sign
+
+ multi method sign ( Real $x: --> Int ) is export
+
+Returns 1 when C<$x> is greater than 0, -1 when it is less than 0, 0 when it
+is equal to 0, or undefined when the value passed is undefined.
+
+=item srand
+
+ multi srand ( Real $seed = default_seed_algorithm())
+
+Seed the generator C<rand> uses. C<$seed> defaults to some combination
+of various platform dependent characteristics to yield a non-deterministic seed.
+Note that you get one C<srand()> for free when you start a Perl program, so
+you I<must> call C<srand()> yourself if you wish to specify a deterministic seed
+(or if you wish to be differently nondeterministic).
+
+=item rand
+
+ multi method rand (Real $x: --> Num ) is export
+
+Pseudo random number in range C<< 0 ..^ $x >>.  That is, C<0> is
+theoretically possible, while C<$x> is not.  For picking a random integer
+you probably want to use something like C<(1..6).pick> instead.
+
+=item cis
+
+    multi method cis (Real $angle: --> Complex ) is export
+
+Returns 1.unpolar($angle)
+
+=item unpolar
+
+    multi method unpolar (Real $mag: Real $angle --> Complex ) is export
+
+Returns a complex number specified in polar coordinates.  Angle is in radians.
+
+=item polymod
+
+    method polymod(*@mods)
+
+Returns a sequence of mod results corresponding to the divisors in
+C<@mods>.  If the number of divisors is finite, returns one more result
+than the number of divisors, and the final result is the remainder after
+all the divisions.  If the number of divisors is infinite, runs until
+the remainder is 0.  The C<Int> version of this method assumes all the
+divisors are also integers.  Coerce the invocant to C<Num> or C<Rat>
+if you wish to use fractional operations.
+
+=back
+
+=head2 Num
+
+    class Num does Real
+
+C<Num> is a machine-precision numeric real value.
+
+=head2 Complex
+
+C<Complex> is an immutable type. Each C<Complex> object stores two numbers,
+the real and imaginary part. For all practical purposes a C<Complex> with
+a C<NaN> in real or imaginary part may be considered a C<NaN> itself (and
+C<(NaN+1i) ~~ NaN> is C<True>).
+
+Coercion of a C<Complex> to any C<Real> returns the real part (coerced, if
+necessary) if the imaginary part is 0, and fails otherwise. Comparison
+between a C<Real> number and a C<Complex> must be smart enough not to coerce
+the C<Complex> to a real number blindly.
+
+=over 4
+
+=item new
+
+    multi method new(Real $re, Real $im --> Complex )
+
+Constructs a C<Complex> number from real and imaginary part. This is the
+method form of C<$re+$im\i>.  (But use the C<< <1+2i> >> form for literals,
+so that you don't have to worry about precedence or rely on constant folding.)
+
+=item polar
+
+    multi method polar (Complex $nim: --> List ) is export
+
+Returns (magnitude, angle) corresponding to the complex number.
+The magnitude is non-negative, and the angle in the range C<-π ..^ π>.
+
+=item re
+
+    multi method re( --> Real )
+
+Returns the real part of the complex number.
+
+=item im
+
+    multi method im( --> Real )
+
+Returns the imaginary part of a complex number.
+
+=item conj
+
+    multi method conj(Complex $c --> Complex )
+
+Returns C<< ($c.re - $c.im\i) >>, the complex conjugate.
+
+=item gist
+
+    multi method gist( --> Str )
+
+Returns a string representation of the form "C<1+2i>", without
+internal spaces.  (C<Str> coercion also returns this.)
+
+=item perl
+
+    multi method perl( --> Str )
+
+Returns a string representation corresponding to the unambiguous
+C<val()>-based representation of complex literals, of the form "C<< <1+2i> >>",
+without internal spaces, and including the angles that keep the C<+>
+from being treated as a normal addition operator.
+
+=item floor
+
+ multi method floor ( Complex $c: --> Complex ) is export
+
+Returns C<$c.re.floor + $c.im.floor>.  That is, each of the real and imaginary parts
+is rounded to the highest integer not greater that the value of that part.
+
+=item ceiling
+
+ multi method ceiling ( Complex $c: --> Complex ) is export
+
+Returns C<$c.re.ceiling + $c.im.ceiling>.  That is, each of the real and imaginary
+parts is rounded to the lowest integer not less that the value of that part.
+
+=item round
+
+ multi method round ( Complex $c: $scale = 1 --> Complex ) is export
+
+With no arguments, rounds both the real and imaginary parts to the nearest
+integer and returns a new Complex number.  If C<$scale> is given, rounds both
+parts of $c to the nearest multiple of C<$scale>.  Uses the same algorithm as
+Real.round on each part of the number.
+
+=item truncate
+
+ multi method truncate ( Complex $c: --> Complex ) is export
+
+Removes the fractional part of both the real and imaginary parts of the number,
+using Real.truncate, and returns the result as a new Complex.
+
+=back
+
+=head2 Trigonometric functions
+
+The following are also defined in C<Numeric>.  Most trig functions are
+specified to operate in terms of radians, as the mathematical and programming
+standard.  Functions are provided to convert other angle specifications to and
+from radians.  Angle specifications are given in terms of enum TrigBase:
+
+ enum TrigBase is export (
+    Radians  => 1,
+    Degrees  => (pi / 180),
+    Gradians => (pi / 200),
+    Circles  => 2*pi
+ );
+
+=over 4
+
+=item I<Standard Trig Functions>
+
+ Numeric multi method func ( Numeric  $x ) is export
+
+where I<func> is one of:
+sin, cos, tan, asin, acos, atan, sec, cosec, cotan, asec, acosec,
+acotan, sinh, cosh, tanh, asinh, acosh, atanh, sech, cosech, cotanh,
+asech, acosech, acotanh.
+
+Performs the various trigonometric functions.  The argument is always expressed
+in radians.  The return value from C<CORE::> versions of these functions is
+always C<Num>, unless domain limits force it to be C<Complex> instead.
+
+=item I<Converting Angles>
+
+If you prefer to express angles in units other than radians, you have two
+choices.  First, you can convert the angles into radians, by multiplication:
+
+ sin(90 * Degrees)
+
+or by using the C<to-radians> method:
+
+ sin(90.to-radians(Degrees));
+
+Alternatively, you can use the C<trigbase> pragma to install a new set of
+trigonometric functions into the current lexical scope, which will handle
+a different unit:
+
+ use trigbase Degrees;
+ sin(90)
+
+The parameter to the trigbase pragma must be something that is usable as a
+number.  The above code fragment is more or less equivalent to:
+
+ constant $?TRIGBASE = Degrees;
+ sub sin($x) { CORE::sin($x * Degrees) }
+ # repeat for all the other trig operators
+ sin(90)
+
+Two points must be emphasized.  First, C<trigbase> has no effect on the method
+forms of trig operators; C<.sin> always expects radians.  Second, because it
+defines dozens of subs, it's probably a good idea to use C<trigbase> in the
+highest scope where it makes sense.
+
+The C<$?TRIGBASE> constant is not used by the trig operators themselves.  It
+exists only to allow modules to be C<trigbase> aware.
+
+=item atan2
+
+ multi method atan2 ( Real $y: Real $x = 1, TrigBase $base = CALLER::<$?TRIGBASE> --> Real )
+ multi atan2 ( Real $y, Real $x = 1, TrigBase $base = CALLER::<$?TRIGBASE> --> Real )
+
+This second form of C<atan> computes the arctangent of C<$y/$x>, and takes
+the quadrant into account. Otherwise behaves as other trigonometric functions.
+
+=back
+
+=head2 Int
+
+An C<Int> is an immutable, integral number of arbitrary size.
+
+=over
+
+=item expmod
+
+ multi method expmod ( Int $x: Int $y, Int $mod --> Int ) is export
+
+Returns C<$x> raised to the C<$y> power within modulus C<$mod>.
+
+=item is-prime
+
+ multi method is-prime ( Int $x: Int $tries = 100) is export
+
+Returns True if C<$x> is known to be a prime, or is likely to be a
+prime based on a probabalistic Miller-Rabin test.  (The optional
+argument tells how many times to iterate the probabalistic test,
+if such is necessary.)
+
+Returns False if C<$x> is known not to be a prime.
+
+=item lsb
+
+ multi method lsb ( Int $x: ) is export
+
+Returns the least significant bit position containing a 1 bit, counting
+bit positions from least significant to most significant.  (In other
+words, it's the base 2 logarithm of number represented by that 1 bit.)
+
+This function returns C<Nil> on a 0 value, since there are no bits set.
+Negative integers are treated as 2's complement, so always have
+a lowest bit set somewhere, if only the sign bit.  Hence, a -32768
+returns an lsb of 15 regardless of whether it's stored in an C<int16>
+or an C<Int>.
+
+=item msb
+
+ multi method msb ( Int $x: ) is export
+
+Returns the most significant bit position containing a 1 bit, that is,
+the base 2 logarithm of the top 1 bit.
+
+This function returns C<Nil> on a 0 value.  For negative values, the
+function is dependent on the type.  For native types, signed integers
+are treated as unsigned, so a negative number stored in C<int64> will
+always return 63.  Negative integers stored in an C<Int> notionally
+have an infinite number of 1 bits on top, which is a problem.
+Instead of returning C<+Inf>, which is relatively useless, we return
+the position of the first of that infinite supply of sign bits.
+So C<msb(-1)> returns 0, C<msb(-2)> returns 1, and C<msb(-32768)>
+returns 15, just as if we'd converted it from C<int16> to C<uint16>
+and examined that for its top bit.
+
+=back
+
+=head2 Rat
+
+    class Rat does Real
+
+An immutable rational number, represented by two C<Int>s, a numerator and
+a denominator. All interface methods return values as if the numerator and
+denominator were stored in a normal form: both numerator and denominator are
+minimal in their magnitude, and the denominator is positive. So
+C<Rat.new(2, -4).denominator> return C<2>, because the normal form is C<-1/2>.
+
+(An implementation is allowed to be lazy about this internally when it
+determines that normalizing repeatedly is detrimental to performance,
+such as when adding a column of numbers that all have an internal
+denominator of 100.)
+
+=over
+
+=item new
+
+    multi method new(Int $num, Int $denom)
+
+Constructs a C<Rat> object from the numerator and denominator.
+Fails if C<$denom == 0>.  You can use division to produce a C<Rat>
+through constant folding, but generally if you know the values in
+advance, you should use one of literal forms so that you don't have to
+rely on precedence.  You may use the C<val()>-based C<< <3/5> >> form,
+or you can simply write decimal numbers with a decimal point, since
+C<12.34> is essentially identical to C<< <1234/100> >> as a literal.
+
+=item nude
+
+    multi method nude( --> List )
+
+Returns a C<List> of numerator and denominator.
+
+=item denominator
+
+    multi method denominator( --> Int )
+
+Returns the denominator.
+
+=item numerator
+
+    multi method numerator( --> Int )
+
+Returns the numerator.
+
+=item gist
+
+    multi method gist( --> Str )
+
+Returns a string representation of the number in decimal.  If the
+number can be represented exactly in decimal, it will be.  In any case,
+the portion before the decimal point (the "integer" part) is guaranteed
+to be exact.  The precision of the fractional part is defined to be
+one more digit than the size of the denominator after the integer part
+has been removed, but at least 6 digits for repeating fractions.
+The final digit of the fractional part is rounded.
+
+C<Str> coercion is identical to C<gist>.
+
+=item perl
+
+    multi method perl( --> Str )
+
+Returns a string representation corresponding to the unambiguous
+C<val()>-based representation of rational literals.  If the
+number can be represented exactly in decimal, it will be. Otherwise uses
+the form "C<< <3/5> >>", without internal spaces, and including the
+angles that keep the C</> from being treated as a normal division
+operator.
+
+=item base-repeating
+
+  multi method base-repeating($base)
+
+Returns two strings representing the invocant in base C<$base>. Fails if C<$base>
+is smaller than C<2> or larger than C<36>.
+
+For bases above ten, the digit repertoire is enhanced with uppercase latin
+characters starting from C<A>.
+
+The first returned string is the non-repeating part of the representation.
+The second is the repeating part.  The precision is arbitrarily limited to 100000.
+Above that, the repeating group will return '???'.  If there is no repeating group,
+the second returned string is C<''>.
+
+=back
+
+=head1 AUTHORS
+
+    Rod Adams <rod@rodadams.net>
+    Larry Wall
+    Aaron Sherman <ajs@ajs.com>
+    Mark Stosberg <mark@summersault.com>
+    Carl Mäsak <cmasak@gmail.com>
+    Moritz Lenz <moritz@faui2k3.org>
+    Tim Nelson <wayland@wayland.id.au>
+    Stefan O'Rear <stefanor@cox.net>
+
+=for vim:set expandtab sw=4:

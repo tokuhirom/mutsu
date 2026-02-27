@@ -1,0 +1,1571 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Any
+
+=SUBTITLE Thing/object
+
+    class Any is Mu {}
+
+While L<C<Mu>|/type/Mu> is the root of the Raku class hierarchy, C<Any>
+is the class that serves as a default base class for new classes, and as the
+base class for most built-in classes.
+
+Since Raku intentionally confuses items and single-element lists, most methods
+in C<Any> are also present on class L<C<List>|/type/List>, and coerce to
+List or a list-like type.
+
+=head1 Methods
+
+=head2 method ACCEPTS
+
+    multi method ACCEPTS(Any:D: Mu $other)
+
+Usage:
+
+=begin code :lang<pseudo>
+EXPR.ACCEPTS(EXPR);
+=end code
+
+Returns C<True> if C<$other === self> (i.e. it checks object identity).
+
+Many built-in types override this for more specific comparisons.
+
+=head2 routine any
+
+    method any(        --> Junction:D)
+    multi  any(+values --> Junction:D)
+    multi  any(@values --> Junction:D)
+
+Interprets the invocant or arguments as a list and creates an
+L<any|/routine/any>-L<C<Junction>|/type/Junction> from it.
+
+    say so 2 == <1 2 3>.any;        # OUTPUT: «True␤»
+    say so 5 == any(<1 2 3>);       # OUTPUT: «False␤»
+
+=head2 routine all
+
+    method all(        --> Junction:D)
+    multi  all(+values --> Junction:D)
+    multi  all(@values --> Junction:D)
+
+Interprets the invocant or arguments as a list and creates an
+L<all|/routine/all>-L<C<Junction>|/type/Junction> from it.
+
+    say so 3 < <2 3 4>.all;         # OUTPUT: «False␤»
+    say so 1 < all(<2 3 4>);        # OUTPUT: «True␤»
+
+=head2 routine one
+
+    method one(        --> Junction:D)
+    multi  one(+values --> Junction:D)
+    multi  one(@values --> Junction:D)
+
+Interprets the invocant or arguments as a list and creates a
+L<one|/routine/one>-L<C<Junction>|/type/Junction> from it.
+
+    say so 1 == (1, 2, 3).one;      # OUTPUT: «True␤»
+    say so 1 == one(1, 2, 1);       # OUTPUT: «False␤»
+
+=head2 routine none
+
+    method none(        --> Junction:D)
+    multi  none(+values --> Junction:D)
+    multi  none(@values --> Junction:D)
+
+Interprets the invocant or arguments as a list and creates a
+L<none|/routine/none>-L<C<Junction>|/type/Junction> from it.
+
+    say so 1 == (1, 2, 3).none;     # OUTPUT: «False␤»
+    say so 4 == none(1, 2, 3);      # OUTPUT: «True␤»
+
+=head2 method list
+
+    multi method list(Any:U:)
+    multi method list(Any:D \SELF:)
+
+Applies the infix L«C<,>|/routine/,» operator to the invocant and returns
+the resulting L<C<List>|/type/List>:
+
+    say 42.list.^name;           # OUTPUT: «List␤»
+    say 42.list.elems;           # OUTPUT: «1␤»
+
+Subclasses of C<Any> may choose to return any I<core> type that
+does the L<C<Positional>|/type/Positional> role
+from L«C<.list>|/routine/list». Use L«C<.List>|/routine/List» to
+coerce specifically to L<C<List>|/type/List>.
+
+X<|Syntax,@ list contextualizer>
+C<@> can also be used as a list or L<C<Positional>|/type/Positional> contextualizer:
+
+=for code
+my $not-a-list-yet = $[1,2,3];
+say $not-a-list-yet.raku;             # OUTPUT: «$[1, 2, 3]␤»
+my @maybe-a-list = @$not-a-list-yet;
+say @maybe-a-list.^name;              # OUTPUT: «Array␤»
+
+In the first case, the list is I<itemized>. C<@> as a prefix puts the initial
+scalar in a list context by calling C<.list> and turning it into an L<C<Array>|/type/Array>.
+
+=head2 method push
+
+    multi method push(Any:U \SELF: |values --> Positional:D)
+
+The method push is defined for undefined invocants and allows for autovivifying
+undefined to an empty L<C<Array>|/type/Array>, unless the undefined value
+implements L<C<Positional>|/type/Positional> already. The argument provided will
+then be pushed into the newly created Array.
+
+    my %h;
+    say %h<a>;     # OUTPUT: «(Any)␤»      <-- Undefined
+    %h<a>.push(1); # .push on Any
+    say %h;        # OUTPUT: «{a => [1]}␤» <-- Note the Array
+
+=head2 routine reverse
+
+    multi        reverse(*@list  --> Seq:D)
+    multi method reverse(List:D: --> Seq:D)
+
+Returns a L<C<Seq>|/type/Seq> with the same elements in reverse order.
+
+Note that C<reverse> always refers to reversing elements of a list;
+to reverse the characters in a string, use L<flip|/routine/flip>.
+
+Examples:
+
+    say <hello world!>.reverse;     # OUTPUT: «(world! hello)␤»
+    say reverse ^10;                # OUTPUT: «(9 8 7 6 5 4 3 2 1 0)␤»
+
+=head2 method sort
+
+    multi method sort()
+    multi method sort(&custom-routine-to-use)
+
+Sorts iterables with L<cmp|/routine/cmp> or given code object and returns a new
+L<C<Seq>|/type/Seq>. Optionally, takes a L<C<Callable>|/type/Callable> as a positional
+parameter, specifying how to sort.
+
+Examples:
+
+    say <b c a>.sort;                           # OUTPUT: «(a b c)␤»
+    say 'bca'.comb.sort.join;                   # OUTPUT: «abc␤»
+    say 'bca'.comb.sort({$^b cmp $^a}).join;    # OUTPUT: «cba␤»
+    say '231'.comb.sort(&infix:«<=>»).join;     # OUTPUT: «123␤»
+
+    sub by-character-count { $^a.chars <=> $^b.chars }
+    say <Let us impart what we have seen tonight unto young Hamlet>.sort(&by-character-count);
+    # OUTPUT: «(us we Let what have seen unto young impart Hamlet tonight)␤»
+
+=head2 routine map
+
+    multi method map(\SELF: &code)
+    multi        map(&code, +values)
+
+C<map> will iterate over the invocant and apply the number of positional
+parameters of the code object from the invocant per call.  The returned values
+of the code object will become elements of the returned L<C<Seq>|/type/Seq>.
+
+The additional parameters C<:$label> and C<:$item>,
+available in the C<method> form, are useful only internally, since C<for> loops get
+converted to C<map>s. The C<:$label> takes an existing L<C<Label>|/type/Label> to
+label the C<.map>'s loop with and C<:$item> controls whether the iteration will
+occur over C<(SELF,)> (if C<:$item> is set) or C<SELF>.
+
+In C<sub> form, it will apply the C<code> block to the C<values>, which will be
+used as invocant.
+
+The forms with C<|c>, C<Iterable:D \iterable> and C<Hash:D \hash> as signatures
+will fail with C<X::Cannot::Map>, and are mainly meant to catch common traps.
+
+Inside a C<for> statement that has been sunk, a L<C<Seq>|/type/Seq> created by a map will
+also sink:
+
+=for code
+say gather for 1 {
+    ^3 .map: *.take;
+} # OUTPUT: «(0 1 2)␤»
+
+In this case, C<gather> sinks the C<for> statement, and the result of sinking
+the L<C<Seq>|/type/Seq> will be iterating over its elements, calling C<.take> on them.
+
+=head2 routine deepmap
+
+    method deepmap(&block --> Iterable) is nodal
+    sub    deepmap(&op, \obj --> Iterable)
+
+C<deepmap> will apply its argument (or first argument for the sub form) to
+each element and return a new L<C<Iterable>|/type/Iterable> with the return
+values of the argument, unless the element does the
+L<C<Iterable>|/type/Iterable> role. For those elements
+L<deepmap|/routine/deepmap> will descend recursively into the sublist.
+
+    say [[1,2,3],[[4,5],6,7]].deepmap(* + 1);
+    # OUTPUT: «[[2 3 4] [[5 6] 7 8]]␤»
+    say deepmap * + 1, [[1,2,3],[[4,5],6,7]];
+    # OUTPUT: «[[2 3 4] [[5 6] 7 8]]␤»
+
+In the case of L<C<Associative>|/type/Associative>s, it will be applied to its values:
+
+=for code
+{ what => "is", this => "thing", a => <real list> }.deepmap( *.flip ).say;
+# OUTPUT: «{a => (laer tsil), this => gniht, what => si}␤»
+say deepmap *.flip, {what=>'is', this=>'thing', a=><real list>};
+# OUTPUT: «{a => (laer tsil), this => gniht, what => si}␤»
+
+=head2 routine duckmap
+
+    method duckmap(&block --> Iterable) is rw is nodal
+    sub    duckmap(&op, \obj --> Iterable)
+
+C<duckmap> will apply its argument (or first argument for the sub form) to each
+element that behaves in such a way that the argument can be applied. If it
+fails, it will descend recursively if possible, or otherwise return the item
+without any transformation. It will act on values if the object is
+L<C<Associative>|/type/Associative>.
+
+=for code
+<a b c d e f g>.duckmap(-> $_ where <c d e>.any { .uc }).say;
+# OUTPUT: «(a b C D E f g)␤»
+(('d', 'e'), 'f').duckmap(-> $_ where <e f>.any { .uc }).say;
+# OUTPUT: «((d E) F)␤»
+{ first => ('d', 'e'), second => 'f'}.duckmap(-> $_ where <e f>.any { .uc }).say;
+# OUTPUT: «{first => (d E), second => F}␤»
+
+In the first case, it is applied to C<c>, C<d> and C<e> which are the ones that
+meet the conditions for the block (C<{ .uc }>) to be applied; the rest are
+returned as is.
+
+In the second case, the first item is a list that does not meet the condition,
+so it's visited; that flat list will behave in the same way as the first one.
+Similarly in the third case; here it's only the values in each pair that are
+visited.
+
+    say duckmap *², [[1,2,3],[[4,5],6,7]];   # OUTPUT: «[9 9]␤»
+
+You can square anything as long as it behaves like a number. In this case, there
+are two arrays with 3 elements each; these arrays will be converted into the
+number 3 and squared. In the next case, however
+
+    say duckmap -> Rat $_ { $_²}, [[1,2,3],[[4,5],6.1,7.2]];
+    # OUTPUT: «[[1 2 3] [[4 5] 37.21 51.84]]␤»
+
+3-item lists are not L<C<Rat>|/type/Rat>, so it descends recursively, but eventually only
+applies the operation to those that match L<C<Rat>|/type/Rat>.
+
+Although on the surface (and name), C<duckmap> might look similar to
+L<C<deepmap>|/routine/deepmap>, the latter is applied recursively regardless of
+the type of the item.
+
+=head2 routine nodemap
+
+    method nodemap(&block --> Iterable) is nodal
+    sub    nodemap(&op, \obj --> Iterable)
+
+C<nodemap> will apply its argument (or first argument for the sub form) to each
+element and return a new L<C<Iterable>|/type/Iterable> with the return values
+of its L<C<Callable>|/type/Callable> argument. In contrast to
+L<deepmap|/routine/deepmap> it will B<not> descend recursively into sublists if
+it finds elements which L<do|/routine/does> the L<C<Iterable>|/type/Iterable>
+role.
+
+    say nodemap *+1, [[1,2,3], [[4,5],6,7], 7];
+    # OUTPUT: «(4, 4, 8)␤»
+
+    say [[2, 3], [4, [5, 6]]]».nodemap(*+1)
+    # OUTPUT: «((3 4) (5 3))␤»
+
+The examples above would have produced the exact same results if we had used
+L<map|/routine/map> instead of C<nodemap>. The difference between the two lies
+in the fact that L<map|/routine/map> flattens out L<C<Slip>|/type/Slip>s while
+C<nodemap> doesn't.
+
+    say [[2,3], [[4,5],6,7], 7].nodemap({.elems == 1 ?? $_ !! slip});
+    # OUTPUT: «(() () 7)␤»
+    say [[2,3], [[4,5],6,7], 7].map({.elems == 1 ?? $_ !! slip});
+    # OUTPUT: «(7)␤»
+
+When applied to L<C<Associative>|/type/Associative>s, it will act on the values:
+
+    say nodemap *.flip, { what => "is", this => "thing" };
+    # OUTPUT: «{this => gniht, what => si}␤»
+
+=head2 method flat
+
+    method flat() is nodal
+
+Interprets the invocant as a list, flattens
+L<non-containerized|/language/containers> L<C<Iterable>|/type/Iterable>s into a
+flat list, and returns that list. Keep in mind L<C<Map>|/type/Map> and
+L<C<Hash>|/type/Hash> types are L<C<Iterable>|/type/Iterable> and so will be flattened
+into lists of pairs.
+
+    say ((1, 2), (3), %(:42a));      # OUTPUT: «((1 2) 3 {a => 42})␤»
+    say ((1, 2), (3), %(:42a)).flat; # OUTPUT: «(1 2 3 a => 42)␤»
+
+Note that L<C<Array>|/type/Array>s containerize their elements by default, and so
+C<flat> will not flatten them. You can use the
+
+L<hyper method call|/language/operators#methodop_%C2%BB._/_methodop_%3E%3E.> to call the
+L«C<.List>|/routine/List» method on all the inner L<C<Iterable>|/type/Iterable>s
+and so de-containerize them, so that C<flat> can flatten them:
+
+    say [[1, 2, 3], [(4, 5), 6, 7]]      .flat; # OUTPUT: «([1 2 3] [(4 5) 6 7])␤»
+    say [[1, 2, 3], [(4, 5), 6, 7]]».List.flat; # OUTPUT: «(1 2 3 4 5 6 7)␤»
+
+For more fine-tuned options, see L<deepmap|/routine/deepmap>,
+L<duckmap|/routine/duckmap>, and
+L<signature destructuring|/language/signatures#Destructuring_arguments>
+
+=head2 method eager
+
+    method eager() is nodal
+
+Interprets the invocant as a L<C<List>|/type/List>, evaluates it eagerly, and
+returns that L<C<List>|/type/List>.
+
+    my  $range = 1..5;
+    say $range;         # OUTPUT: «1..5␤»
+    say $range.eager;   # OUTPUT: «(1 2 3 4 5)␤»
+
+=head2 routine elems
+
+    multi method elems(Any:U: --> 1)
+    multi method elems(Any:D:)
+    multi        elems($a)
+    multi        elems(array:D \a)
+
+Interprets the invocant or argument as a list, and returns the number of
+elements in the list.
+
+    say elems 42;                   # OUTPUT: «1␤»
+    say <a b c>.elems;              # OUTPUT: «3␤»
+    say Whatever.elems ;            # OUTPUT: «1␤»
+
+It will also return 1 for classes.
+
+=head2 routine end
+
+    multi method end(Any:U: --> 0)
+    multi method end(Any:D:)
+    multi        end($a)
+    multi        end(array:D \a)
+    multi        end($, *%)
+
+Interprets the invocant or argument as a list, and returns the last index of
+that list.
+
+    say 6.end;                      # OUTPUT: «0␤»
+    say <a b c>.end;                # OUTPUT: «2␤»
+    say end ^9;                     # OUTPUT: «8␤»
+
+=head2 method pairup
+
+    multi method pairup(Any:U:)
+    multi method pairup(Any:D:)
+
+Returns an
+empty L<C<Seq>|/type/Seq> if the invocant is a type object
+
+    Range.pairup.say; # OUTPUT: «()␤»
+
+Interprets the invocant as a list, and constructs a list of
+L<C<Pair>|/type/Pair>s from it, in the same way that assignment to a
+L<C<Hash>|/type/Hash> does.  That is, it takes two consecutive elements and
+constructs a pair from them, unless the item in the key position already is a
+pair (in which case the pair is passed through, and the next list item, if any,
+is considered to be a key again). It returns a L<C<Seq>|/type/Seq> of L<C<Pair>|/type/Pair>s.
+
+    say (a => 1, 'b', 'c').pairup.raku;     # OUTPUT: «(:a(1), :b("c")).Seq␤»
+
+X<|Syntax,$ (item contextualizer)>
+
+=head2 method Array
+
+    method Array(--> Array:D) is nodal
+
+Coerces the invocant to an L<C<Array>|/type/Array>.
+
+=head2 method List
+
+    method List(--> List:D) is nodal
+
+Coerces the invocant to L<C<List>|/type/List>, using the L<list|/routine/list>
+method.
+
+=head2 method serial
+
+    multi method serial()
+
+This method is Rakudo specific, and is not included in the Raku spec.
+
+The method returns the self-reference to the instance itself:
+
+=begin code
+my $b;                 # defaults to Any
+say $b.serial.^name;   # OUTPUT: «Any␤»
+say $b.^name;          # OUTPUT: «Any␤»
+my $breakfast = 'food';
+$breakfast.serial.say; # OUTPUT: «food␤»
+=end code
+
+This is apparently a no-op, as exemplified by the third example above. However,
+in L<C<HyperSeq>|/type/HyperSeq>s and L<C<RaceSeq>|/type/RaceSeq>s it returns a
+serialized L<C<Seq>|/type/Seq>, so it can be considered the opposite of the C<hyper/race>
+methods. As such, it ensures that we are in serial list-processing mode, as
+opposed to the autothreading mode of those methods.
+
+=head2 method Hash
+
+    multi method Hash( --> Hash:D)
+
+Coerces the invocant to L<C<Hash>|/type/Hash>.
+
+=head2 method hash
+
+    multi method hash(Any:U:)
+    multi method hash(Any:D:)
+
+When called on a type object, returns an empty L<C<Hash>|/type/Hash>. On instances,
+it is equivalent to assigning the invocant to a C<%->sigiled variable and
+returning that.
+
+Subclasses of C<Any> may choose to return any I<core> type that does the
+L<C<Associative>|/type/Associative> role from L«C<.hash>|/routine/hash». Use
+L«C<.Hash>|/routine/Hash» to coerce specifically to L<C<Hash>|/type/Hash>.
+
+=begin code
+my $d; # $d is Any
+say $d.hash; # OUTPUT: {}
+
+my %m is Map = a => 42, b => 666;
+say %m.hash;  # OUTPUT: «Map.new((a => 42, b => 666))␤»
+say %m.Hash;  # OUTPUT: «{a => 42, b => 666}␤»
+=end code
+
+=head2 method Slip
+
+    method Slip(--> Slip:D) is nodal
+
+Coerces the invocant to L<C<Slip>|/type/Slip>.
+
+=head2 method Map
+
+    method Map(--> Map:D) is nodal
+
+Coerces the invocant to L<C<Map>|/type/Map>.
+
+=head2 method Seq
+
+    method Seq() is nodal
+
+Coerces the invocant to L<C<Seq>|/type/Seq>.
+
+=head2 method Bag
+
+    method Bag(--> Bag:D) is nodal
+
+Coerces the invocant to L<C<Bag>|/type/Bag>, whereby
+L<C<Positional>|/type/Positional>s are treated as lists of values.
+
+=head2 method BagHash
+
+    method BagHash(--> BagHash:D) is nodal
+
+Coerces the invocant to L<C<BagHash>|/type/BagHash>, whereby
+L<C<Positional>|/type/Positional>s are treated as lists of values.
+
+=head2 method Set
+
+    method Set(--> Set:D) is nodal
+
+Coerces the invocant to L<C<Set>|/type/Set>, whereby L<C<Positional>|/type/Positional>s
+are treated as lists of values.
+
+=head2 method SetHash
+
+    method SetHash(--> SetHash:D) is nodal
+
+Coerces the invocant to L<C<SetHash>|/type/SetHash>, whereby
+L<C<Positional>|/type/Positional>s are treated as lists of values.
+
+=head2 method Mix
+
+    method Mix(--> Mix:D) is nodal
+
+Coerces the invocant to L<C<Mix>|/type/Mix>, whereby L<C<Positional>|/type/Positional>s
+are treated as lists of values.
+
+=head2 method MixHash
+
+    method MixHash(--> MixHash:D) is nodal
+
+Coerces the invocant to L<C<MixHash>|/type/MixHash>, whereby
+L<C<Positional>|/type/Positional>s are treated as lists of values.
+
+=head2 method Supply
+
+    method Supply(--> Supply:D) is nodal
+
+First, it coerces the invocant to a C<list> by applying its
+L«C<.list>|/routine/list» method, and then to a L<C<Supply>|/type/Supply>.
+
+=head2 routine min
+
+    multi method min(&by?, :$k, :$v, :$kv, :$p )
+    multi        min(+args, :&by, :$k, :$v, :$kv, :$p)
+
+Coerces the invocant to L<C<Iterable>|/type/Iterable> and returns the smallest
+element using L<cmp|/routine/cmp> semantics; in the case of L<C<Map>|/type/Map>s and
+L<C<Hash>|/type/Hash>es, it returns the L<C<Pair>|/type/Pair> with the B<lowest> value.
+
+A L<C<Callable>|/type/Callable> positional argument can be given to the
+C<method> form.  If that L<C<Callable>|/type/Callable> accepts a single argument, then it
+will be used to convert the values to be sorted B<before> doing comparisons.
+The original value is still the one returned from C<min>.
+
+If that L<C<Callable>|/type/Callable> accepts two arguments, it will be used as the
+comparator instead of C<cmp>.
+
+In C<sub> form, the invocant is passed as an argument and any L<C<Callable>|/type/Callable>
+must be specified with the named argument C<:by>.
+
+    say (1,7,3).min();              # OUTPUT: «1␤»
+    say (1,7,3).min({1/$_});        # OUTPUT: «7␤»
+    say min(1,7,3);                 # OUTPUT: «1␤»
+    say min(1,7,3,:by( { 1/$_ } )); # OUTPUT: «7␤»
+    min( %(a => 3, b=> 7 ) ).say ;  # OUTPUT: «a => 3␤»
+
+As of the 2023.08 Rakudo compiler release, B<additional> named arguments
+can be specified to get B<all> possible information related to the lowest
+value.  Whenever any of these named arguments is specified, the returned
+value will B<always> be a L<C<List>|/type/List>.
+
+=item :k
+
+Returns a L<C<List>|/type/List> with the indices of the lowest values found.
+
+=item :v
+
+Returns a L<C<List>|/type/List> with the actual values of the lowest values found.  In
+the case of a L<C<Map>|/type/Map> or L<C<Hash>|/type/Hash>, these would the L<C<Pair>|/type/Pair>s.
+
+=item :kv
+
+Returns a L<C<List>|/type/List> with the index and the value alternating.
+
+=item :p
+
+Returns a L<C<List>|/type/List> of L<C<Pair>|/type/Pair>s in which the key is the index value, and
+the value is the actual lowest value (which in the case of a L<C<Map>|/type/Map> or a
+L<C<Hash>|/type/Hash> would be a L<C<Pair>|/type/Pair>).
+
+    say <a b c a>.min(:k);  # OUTPUT:«(0 3)␤»
+    say <a b c a>.min(:v);  # OUTPUT:«(a a)␤»
+    say <a b c a>.min(:kv); # OUTPUT:«(0 a 3 a)␤»
+    say <a b c a>.min(:p);  # OUTPUT:«(0 => a 3 => a)␤»
+
+=head2 routine max
+
+    multi method max(&by?, :$k, :$v, :$kv, :$p )
+    multi        max(+args, :&by, :$k, :$v, :$kv, :$p)
+
+The interface of the C<max> method / routine is the same as the one of
+L<min|#routine min>.  But instead of the lowest value, it will return the
+B<highest> value.
+
+    say (1,7,3).max();                # OUTPUT: «7␤»
+    say (1,7,3).max({1/$_});          # OUTPUT: «1␤»
+    say max(1,7,3,:by( { 1/$_ } ));   # OUTPUT: «1␤»
+    say max(1,7,3);                   # OUTPUT: «7␤»
+    max( %(a => 'B', b=> 'C' ) ).say; # OUTPUT: «b => C␤»
+
+As of the 2023.08 Rakudo compiler release:
+
+    say <a b c c>.max(:k);  # OUTPUT:«(2 3)␤»
+    say <a b c c>.max(:v);  # OUTPUT:«(c c)␤»
+    say <a b c c>.max(:kv); # OUTPUT:«(2 c 3 c)␤»
+    say <a b c c>.max(:p);  # OUTPUT:«(2 => c 3 => c)␤»
+
+=head2 routine minmax
+
+    multi method minmax()
+    multi method minmax(&by)
+    multi        minmax(+args, :&by!)
+    multi        minmax(+args)
+
+Returns a L<C<Range>|/type/Range> from the smallest to the largest element.
+
+If a L<C<Callable>|/type/Callable> positional argument is provided, each value is
+passed into the filter, and its return value is compared instead of the original
+value. The original values are still used in the returned L<C<Range>|/type/Range>.
+
+In C<sub> form, the invocant is passed as an argument and a comparison L<C<Callable>|/type/Callable>
+can be specified with the named argument C<:by>.
+
+    say (1,7,3).minmax();        # OUTPUT:«1..7␤»
+    say (1,7,3).minmax({-$_});   # OUTPUT:«7..1␤»
+    say minmax(1,7,3);           # OUTPUT: «1..7␤»
+    say minmax(1,7,3,:by( -* )); # OUTPUT: «7..1␤»
+
+=head2 method minpairs
+
+    multi method minpairs(Any:D:)
+
+Calls L«C<.pairs>|/routine/pairs» and returns a L<C<Seq>|/type/Seq> with
+all of the Pairs with minimum values, as judged by the
+L«C<cmp> operator|/routine/cmp»:
+
+    <a b c a b c>.minpairs.raku.put; # OUTPUT: «(0 => "a", 3 => "a").Seq␤»
+    %(:42a, :75b).minpairs.raku.put; # OUTPUT: «(:a(42),).Seq␤»
+
+=head2 method maxpairs
+
+    multi method maxpairs(Any:D:)
+
+Calls L«C<.pairs>|/routine/pairs» and returns a L<C<Seq>|/type/Seq> with all of the
+Pairs with maximum values, as judged by the L«C<cmp>
+operator|/routine/cmp»:
+
+    <a b c a b c>.maxpairs.raku.put; # OUTPUT: «(2 => "c", 5 => "c").Seq␤»
+    %(:42a, :75b).maxpairs.raku.put; # OUTPUT: «(:b(75),).Seq␤»
+
+=head2 method keys
+
+    multi method keys(Any:U: --> List)
+    multi method keys(Any:D: --> List)
+
+For defined C<Any> returns its L<keys|/routine/keys> after calling C<list> on it,
+otherwise calls C<list> and returns it.
+
+    my $setty = Set(<Þor Oðin Freija>);
+    say $setty.keys; # OUTPUT: «(Þor Oðin Freija)␤»
+
+See also L<C<List.keys>|/type/List#routine_keys>.
+
+Trying the same on a class will return an empty list, since most of them
+don't really have keys.
+
+=head2 method flatmap
+
+    method flatmap(&block, :$label)
+
+Convenience method, analogous to L<C<.map(&block)>|#routine_map>L<C<.flat>|#method_flat>.
+
+=head2 method roll
+
+    multi method roll(--> Any)
+    multi method roll($n --> Seq)
+
+Coerces the invocant to a C<list> by applying its
+L«C<.list>|/routine/list» method and uses
+L«C<List.roll>|/type/List#routine_roll» on it.
+
+    my Mix $m = ("þ" xx 3, "ð" xx 4, "ß" xx 5).Mix;
+    say $m.roll;    # OUTPUT: «ð␤»
+    say $m.roll(5); # OUTPUT: «(ß ß þ ß þ)␤»
+
+C<$m>, in this case, is converted into a list and then a (weighted in this case)
+dice is rolled on it. See also L<C<List.roll>|/type/List#routine_roll> for more
+information.
+
+=head2 method iterator
+
+    multi method iterator(Any:)
+
+Returns the object as an iterator after converting it to a list. This is the
+function called from the C<for> statement.
+
+    .say for 3; # OUTPUT: «3␤»
+
+An iterable subclass of C<Any> should provide its own implementation of this
+method, but other classes can inherit this as-is to provide a
+single-item-list iterator in contexts that require one.
+
+=head2 method pick
+
+    multi method pick(--> Any)
+    multi method pick($n --> Seq)
+
+Coerces the invocant to a L<C<List>|/type/List> by applying
+its L«C<.list>|/routine/list» method and uses
+L«C<List.pick>|/type/List#routine_pick» on it.
+
+    my Range $rg = 'α'..'ω';
+    say $rg.pick(3); # OUTPUT: «(β α σ)␤»
+
+
+=head2 routine skip
+
+    multi method skip()
+    multi method skip(Whatever)
+    multi method skip(Callable:D $w)
+    multi method skip(Int() $n)
+    multi method skip($skip, $produce)
+
+Creates a L<C<Seq>|/type/Seq> from 1-item list's iterator and uses
+L«C<Seq.skip>|/type/Seq#method_skip» on it, please check that document for real
+use cases; calling C<skip> without argument is equivalent to C<skip(1)>.
+
+    multi skip(\skipper, +values)
+
+As of release 2022.07 of the Rakudo compiler, there is also a "sub" version
+of C<skip>.  It B<must> have the skip specifier as the first argument.  The
+rest of the arguments are turned into a L<C<Seq>|/type/Seq> and then have the C<skip>
+method called on it.
+
+=head2 method are
+
+    multi method are(Any:)
+    multi method are(Any: Any $type)
+
+The argumentless version available as of release 2022.02 of the Rakudo
+compiler.  The version with the type argument is in the 6.e language version
+(early implementation exists in Rakudo compiler 2024.05+).
+
+If called without arguments, returns the strictest type (or role) to which
+B<all> elements of the list will smartmatch.  Returns L<C<Nil>|/type/Nil>
+on an empty list.
+
+    say (1,2,3).are;        # OUTPUT: «(Int)␤»
+    say <a b c>.are;        # OUTPUT: «(Str)␤»
+    say <42 666>.are;       # OUTPUT: «(IntStr)␤»
+    say (42,666e0).are;     # OUTPUT: «(Real)␤»
+    say (42,i).are;         # OUTPUT: «(Numeric)␤»
+    say ("a",42,3.14).are;  # OUTPUT: «(Cool)␤»
+    say ().are;             # OUTPUT: «Nil␤»
+
+Scalar values are interpreted as a single element list.
+
+    say 42.are;             # OUTPUT: «(Int)␤»
+    say Int.are;            # OUTPUT: «(Int)␤»
+
+Hashes will be interpreted as a list of pairs, and as such will always
+produce the L<C<Pair>|/type/Pair> type object.  Use the C<.keys> or
+C<.values> method to get the strictest type of the keys or the values of
+a hash.
+
+    my %h = a => 42, b => "bar";
+    say %h.keys.are;        # OUTPUT: «(Str)␤»
+    say %h.values.are;      # OUTPUT: «(Cool)␤»
+
+If called with a type argument, will check if all types in the invocant
+smartmatch with the given type.  If so, returns C<True>.  If any of the
+smartmatches fails, returns a L<C<Failure>|/type/Failure>.
+
+    say (1,2,3).are(Int);         # OUTPUT: «True␤»
+    say <a b c>.are(Str);         # OUTPUT: «True␤»
+    say <42 666>.are(Int);        # OUTPUT: «True␤»
+    say <42 666>.are(Str);        # OUTPUT: «True␤»
+    say (42,666e0).are(Real);     # OUTPUT: «True␤»
+    say (42,i).are(Numeric);      # OUTPUT: «True␤»
+    say ("a",42,3.14).are(Cool);  # OUTPUT: «True␤»
+    say ().are(Int);              # OUTPUT: «True␤»
+
+    Int.are(Str);      # OUTPUT: «Expected 'Str' but got 'Int'␤»
+    (1,2,3).are(Str);  # OUTPUT: «Expected 'Str' but got 'Int' in element 0␤»
+
+=head2 method prepend
+
+    multi method prepend(Any:U: --> Array)
+    multi method prepend(Any:U: @values --> Array)
+
+Called with no arguments on an empty variable, it initializes it as an
+empty L<C<Array>|/type/Array>; if called with arguments, it creates an array and then
+applies L«C<Array.prepend>|/type/Array#routine_prepend» on it.
+
+    my $a;
+    say $a.prepend; # OUTPUT: «[]␤»
+    say $a;         # OUTPUT: «[]␤»
+    my $b;
+    say $b.prepend(1,2,3); # OUTPUT: «[1 2 3]␤»
+
+=head2 method unshift
+
+    multi method unshift(Any:U: --> Array)
+    multi method unshift(Any:U: @values --> Array)
+
+Initializes C<Any> variable as empty L<C<Array>|/type/Array> and calls
+L«C<Array.unshift>|/type/Array#routine_unshift» on it.
+
+    my $a;
+    say $a.unshift; # OUTPUT: «[]␤»
+    say $a;         # OUTPUT: «[]␤»
+    my $b;
+    say $b.unshift([1,2,3]); # OUTPUT: «[[1 2 3]]␤»
+
+=head2 routine first
+
+    multi method first(Bool:D $t)
+    multi method first(Regex:D $test, :$end, *%a)
+    multi method first(Callable:D $test, :$end, *%a is copy)
+    multi method first(Mu $test, :$end, *%a)
+    multi method first(:$end, *%a)
+    multi        first(Bool:D $t, |)
+    multi        first(Mu $test, +values, *%a)
+
+In general, coerces the invocant to a C<list> by applying its
+L«C<.list>|/routine/list» method and uses
+L«C<List.first>|/type/List#routine_first» on it.
+
+However, this is a multi with different signatures, which are implemented with
+(slightly) different behavior, although using it as a subroutine is equivalent
+to using it as a method with the second argument as the object.
+
+For starters, using a L<C<Bool>|/type/Bool> as the argument will always return a L<C<Failure>|/type/Failure>.
+The form that uses a C<$test> will return the first element that smartmatches
+it, starting from the end if C<:end> is used.
+
+    say (3..33).first;           # OUTPUT: «3␤»
+    say (3..33).first(:end);     # OUTPUT: «33␤»
+    say (⅓,⅔…30).first( 0xF );   # OUTPUT: «15␤»
+    say first 0xF, (⅓,⅔…30);     # OUTPUT: «15␤»
+    say (3..33).first( /\d\d/ ); # OUTPUT: «10␤»
+
+The third and fourth examples use the C<Mu $test> forms which smartmatches and
+returns the first element that does. The last example uses as a test a regex for
+numbers with two figures, and thus the first that meets that criterion is number
+10. This last form uses the L<C<Callable>|/type/Callable> multi:
+
+    say (⅓,⅔…30).first( * %% 11, :end, :kv ); # OUTPUT: «(65 22)␤»
+
+Besides, the search for first will start from the C<:end> and returns the set of
+key/values in a list; the I<key> in this case is simply the position it occupies
+in the L<C<Seq>|/type/Seq>. The C<:kv> argument, which is part of the C<%a> argument in the
+definitions above, modifies what C<first> returns, providing it as a flattened
+list of keys and values; for a listy object, the key will always be the index.
+
+From version 6.d, the test can also be a L<C<Junction>|/type/Junction>:
+
+    say (⅓,⅔…30).first( 3 | 33, :kv ); # OUTPUT: «(8 3)␤»
+
+=head2 method unique
+
+    multi method unique()
+    multi method unique( :&as!, :&with! )
+    multi method unique( :&as! )
+    multi method unique( :&with! )
+
+Creates a sequence of unique elements either of the object or of C<values> in
+the case it's called as a C<sub>.
+
+    <1 2 2 3 3 3>.unique.say; # OUTPUT: «(1 2 3)␤»
+    say unique <1 2 2 3 3 3>; # OUTPUT: «(1 2 3)␤»
+
+The C<:as> and C<:with> parameters receive functions that are used for
+transforming the item before checking equality, and for checking equality, since
+by default the L<C<===>|/routine/===> operator is used:
+
+    ("1", 1, "1 ", 2).unique( as => Int, with => &[==] ).say; # OUTPUT: «(1 2)␤»
+
+Please see L<C<unique>|/type/independent-routines#routine_unique> for
+additional examples that use its sub form.
+
+=head2 method repeated
+
+    multi method repeated()
+    multi method repeated( :&as!, :&with! )
+    multi method repeated( :&as! )
+    multi method repeated( :&with! )
+
+Similarly to L<C<unique>|/type/Any#method_unique>, finds repeated elements in
+C<values> (as a routine) or in the object, using the C<:as> associative argument
+as a normalizing function and C<:with> as equality function.
+
+    <1 -1 2 -2 3>.repeated(:as(&abs),:with(&[==])).say; # OUTPUT: «(-1 -2)␤»
+    (3+3i, 3+2i, 2+1i).repeated(as => *.re).say;        # OUTPUT: «(3+2i)␤»
+
+It returns the last repeated element before normalization, as shown in the
+example above. See
+L<C<repeated>|/type/independent-routines#routine_repeated> for more
+examples that use its sub form.
+
+=head2 method squish
+
+    multi method squish( :&as!, :&with = &[===] )
+    multi method squish( :&with = &[===] )
+
+Similar to L<C<.repeated>|/type/Any#method_repeated>, returns the sequence of
+first elements of contiguous sequences of equal elements, after normalization by
+the function C<:as>, if present, and using as an equality operator the C<:with>
+argument or C<===> by default.
+
+=for code
+"aabbccddaa".comb.squish.say;             # OUTPUT: «(a b c d a)␤»
+"aABbccdDaa".comb.squish( :as(&lc) ).say; # OUTPUT: «(a B c d a)␤»
+(3+2i,3+3i,4+0i).squish( as => *.re, with => &[==]).put; # OUTPUT: «3+2i 4+0i␤»
+
+As shown in the last example, a sequence can contain a single element. See
+L<C<squish>|/type/independent-routines#routine_squish> for additional C<sub>
+examples.
+
+=head2 method permutations
+
+    method permutations(|c)
+
+Coerces the invocant to a C<list> by applying its
+L«C<.list>|/routine/list» method and uses
+L«C<List.permutations>|/type/List#routine_permutations» on it.
+
+    say <a b c>.permutations;
+    # OUTPUT: «((a b c) (a c b) (b a c) (b c a) (c a b) (c b a))␤»
+    say set(1,2).permutations;
+    # OUTPUT: «((2 => True 1 => True) (1 => True 2 => True))␤»
+
+Permutations of data structures with a single or no element will return a
+list containing an empty list or a list with a single element.
+
+    say 1.permutations; # OUTPUT: «((1))␤»
+
+=head2 method join
+
+    method join($separator = '') is nodal
+
+Converts the object to a list by calling
+L<C<self.list>|/type/Any#method_list>,
+and calls L<C<.join>|/type/List#routine_join> on the list.
+Can take a separator, which is an empty string by default.
+
+    (1..3).join.say;       # OUTPUT: «123␤»
+    <a b c>.join("❧").put; # OUTPUT: «a❧b❧c␤»
+
+=head2 routine categorize
+
+    multi method categorize()
+    multi method categorize(Whatever)
+    multi method categorize($test, :$into!, :&as)
+    multi method categorize($test, :&as)
+    multi        categorize($test, +items, :$into!, *%named )
+    multi        categorize($test, +items, *%named )
+
+The first form will always fail. The second form classifies on the
+identity of the given object, which usually only makes sense in
+combination with the C<:&as> argument.
+
+In its simplest form, it uses a C<$test> whose result will be used as a key; the
+values of the key will be an array of the elements that produced that key as a
+result of the test.
+
+=for code
+say (1..13).categorize( * %% 3);
+say categorize( * %% 3, 1..13)
+# OUTPUT: «{False => [1 2 4 5 7 8 10 11 13], True => [3 6 9 12]}␤»
+
+The C<:as> argument will normalize before categorizing
+
+=for code
+say categorize( * %% 3, -5..5, as => &abs )
+# OUTPUT: «{False => [5 4 2 1 1 2 4 5], True => [3 0 3]}␤»
+
+The C<$into> associative argument can be used to put the result instead of
+returning a new L<C<Hash>|/type/Hash>.
+
+=for code
+my %leap-years;
+my @years = (2002..2009).map( { Date.new( $_~"-01-01" ) } );
+@years.categorize( *.is-leap-year , into => %leap-years );
+say %leap-years
+# OUTPUT:
+# «{ False
+# => [2002-01-01 2003-01-01 2005-01-01 2006-01-01 2007-01-01 2009-01-01],
+#    True => [2004-01-01 2008-01-01]}␤»
+
+The function used to categorize can return an array indicating all possible bins
+their argument can be put into:
+
+=begin code
+sub divisible-by( Int $n --> Array(Seq) ) {
+    gather {
+        for <2 3 5 7> {
+            take $_ if $n %% $_;
+        }
+    }
+}
+
+say (3..13).categorize( &divisible-by );
+# OUTPUT:
+# «{2 => [4 6 8 10 12], 3 => [3 6 9 12], 5 => [5 10], 7 => [7]}␤»
+=end code
+
+In this case, every number in the range is classified in as many bins as it can
+be divided by.
+
+Support for using L<C<Whatever>|/type/Whatever> as the test was added in Rakudo compiler
+release 2023.02.
+
+=head2 routine classify
+
+    multi method classify()
+    multi method classify(Whatever)
+    multi method classify($test, :$into!, :&as)
+    multi method classify($test, :&as)
+    multi        classify($test, +items, :$into!, *%named )
+    multi        classify($test, +items, *%named )
+
+The first form will always fail. The second form classifies on the
+identity of the given object, which usually only makes sense in
+combination with the C<:&as> argument.
+
+The rest include a C<$test> argument, which is a function that will
+return a scalar for every input; these will be used as keys of a hash
+whose values will be arrays with the elements that output that key for
+the test function.
+
+=for code
+my @years = (2003..2008).map( { Date.new( $_~"-01-01" ) } );
+@years.classify( *.is-leap-year , into => my %leap-years );
+say %leap-years;
+# OUTPUT: «{False => [2003-01-01 2005-01-01 2006-01-01 2007-01-01],
+#           True => [2004-01-01 2008-01-01]}␤»
+
+
+Similarly to L<C<.categorize>|/type/Any#routine_categorize>, elements can be
+normalized by the L<C<Callable>|/type/Callable> passed with the C<:as> argument, and it can use
+the C<:into> named argument to pass a L<C<Hash>|/type/Hash> the results will be classified
+into; in the example above, it's defined on the fly.
+
+From version 6.d, C<.classify> will also work with L<C<Junction>|/type/Junction>s.
+
+Support for using L<C<Whatever>|/type/Whatever> as the test was added in Rakudo compiler
+release 2023.02.
+
+=head2 routine reduce
+
+    multi method reduce(Any:U: & --> Nil)
+    multi method reduce(Any:D: &with)
+    multi        reduce (&with, +list)
+
+This routine combines the elements in a list-y object, and produces a single
+result, by applying a binary subroutine. It applies its argument (or first
+argument for the sub form) as an operator to all the elements in the object (or
+second argument for the sub form), producing a single result. The subroutine
+must be either an
+L<infix operator|/language/operators#index-entry-infix_operator>
+or take two positional arguments. When using an infix operator, we must provide
+the code object of its subroutine version, i.e., the operator category, followed
+by a colon, then a list quote construct with the symbol(s) that make up the
+operator (e.g., C«infix:<+>»). See L<Operators|/language/operators>.
+
+    say (1..4).reduce(&infix:<+>);   # OUTPUT: «10␤»
+    say reduce &infix:<+>, 1..4;     # OUTPUT: «10␤»
+    say reduce &min, 1..4;           # OUTPUT: «1␤»
+
+    sub hyphenate(Str \a, Str \b) { a ~ '-' ~ b }
+    say reduce &hyphenate, 'a'..'c'; # OUTPUT: «a-b-c␤»
+
+Applied to a class, the routine will always return L<C<Nil>|/type/Nil>.
+
+    say Range.reduce(&infix:<+>);    # OUTPUT: «Nil␤»
+    say Str.reduce(&infix:<~>);      # OUTPUT: «Nil␤»
+
+See L<List.reduce|/type/List#routine_reduce> for a more thorough discussion.
+
+=head2 routine produce
+
+    multi method produce(Any:U: & --> Nil)
+    multi method produce(Any:D: &with)
+    multi        produce (&with, +list)
+
+This is similar to L<C<reduce>|/routine/reduce#(List)_routine_reduce>, but
+returns a list with the accumulated values instead of a single result.
+
+=for code
+<10 5 3>.reduce( &[*] ).say ; # OUTPUT: «150␤»
+<10 5 3>.produce( &[*] ).say; # OUTPUT: «(10 50 150)␤»
+
+The last element of the produced list would be the output produced by the
+C<.reduce> method.
+
+If it's a class, it will simply return Nil.
+
+=head2 method pairs
+
+    multi method pairs(Any:U:)
+    multi method pairs(Any:D:)
+
+Returns an empty
+L<C<List>|/type/List> if the invocant is a type object:
+
+    say Num.pairs; # OUTPUT: «()␤»
+
+For a value object, it converts the invocant to a L<C<List>|/type/List> via the
+C<list> method and returns the result of L<List.pairs|/type/List#routine_pairs>
+on it.
+
+    <1 2 2 3 3 3>.Bag.pairs.say;# OUTPUT: «(1 => 1 3 => 3 2 => 2)␤»
+
+In this case, every element (with weight) in a bag is converted to a pair.
+
+=head2 method antipairs
+
+    multi method antipairs(Any:U:)
+    multi method antipairs(Any:D:)
+
+Returns an
+empty L<C<List>|/type/List> if the invocant is a type object
+
+    Range.antipairs.say; # OUTPUT: «()␤»
+
+If it's a value object, it returns the inverted list of pairs after converting
+it to a list of pairs; the values will become keys and the other way round.
+
+    %(s => 1, t=> 2, u => 3).antipairs.say ;# OUTPUT: «(2 => t 1 => s 3 => u)␤»
+
+=head2 method invert
+
+    multi method invert(Any:U:)
+    multi method invert(Any:D:)
+
+Applied to a type object will return an empty list; applied to an object will
+convert it to a list and apply L<C<List.invert>|/type/List#routine_invert> to
+it, that is, interchange key with value in every Pair. The resulting list needs
+to be a list of L<C<Pair>|/type/Pair>s.
+
+    "aaabbcccc".comb.Bag.invert.say; # OUTPUT: «(4 => c 3 => a 2 => b)␤»
+
+In this case, a L<C<Bag>|/type/Bag> can be converted to a list of L<C<Pair>|/type/Pair>s. If the result of
+converting the object to a list is not a list of pairs, the method will fail.
+
+
+=head2 routine kv
+
+    multi method kv(Any:U:)
+    multi method kv(Any:D:)
+    multi        kv($x)
+
+
+Returns an empty L<C<List>|/type/List> if the invocant is a type object:
+
+    Sub.kv.say ;# OUTPUT: «()␤»
+
+It calls C<list> on the invocant for value objects and returns the result of
+L<List.kv|/type/List#routine_kv> on it as a list where keys and values will be
+ordered and contiguous
+
+    <1 2 3>.kv.say; # OUTPUT: «(0 1 1 2 2 3)␤»
+
+In the case of L<C<Positional>|/type/Positional>s, the indices will be considered I<keys>.
+
+=head2 method toggle
+
+    method toggle(Any:D: *@conditions where .all ~~ Callable:D, Bool :$off  --> Seq:D)
+
+L<Iterates|/routine/iterator> over the invocant, producing a L<C<Seq>|/type/Seq>,
+toggling whether the received values are propagated to the result on and off,
+depending on the results of calling L<C<Callables>|/type/Callable> in
+C<@conditions>:
+
+=for code
+say (1..15).toggle(* < 5, * > 10, * < 15); # OUTPUT: «(1 2 3 4 11 12 13 14)␤»
+say (1..15).toggle(:off, * > 2, * < 5, * > 10, * < 15); # OUTPUT: «(3 4 11 12 13 14)␤»
+
+Imagine a switch that's either on or off (C<True> or C<False>), and values are
+produced if it's on. By default, the initial state of that switch is in "on"
+position, unless C<:$off> is set to a true value, in which case the initial
+state will be "off".
+
+A L<C<Callable>|/type/Callable> from the L<head|/routine/head> of C<@conditions> is
+taken (if any are available) and it becomes the current tester. Each value from
+the original sequence is tested by calling the tester L<C<Callable>|/type/Callable>
+with that value. The state of our imaginary switch is set to the return value
+from the tester: if it's truthy, set switch to "on",  otherwise set it to "off".
+
+Whenever the switch is I<toggled> (i.e. switched from "off" to "on" or from
+"on" to "off"), the current tester L<C<Callable>|/type/Callable> is replaced by the
+next L<C<Callable>|/type/Callable> in C<@conditions>, if available, which will be
+used to test any further values. If no more tester L<C<Callable>|/type/Callable>s are available, the
+switch will remain in its current state until the end of iteration.
+
+=begin code
+# our original sequence of elements:
+say list ^10; # OUTPUT: «(0 1 2 3 4 5 6 7 8 9)␤»
+# toggled result:
+say ^10 .toggle: * < 4, * %% 2, &is-prime; # OUTPUT: «(0 1 2 3 6 7)␤»
+
+# First tester Callable is `* < 4` and initial state of switch is "on".
+# As we iterate over our original sequence:
+# 0 => 0 < 4 === True  switch is on, value gets into result, switch is
+#                      toggled, so we keep using the same Callable:
+# 1 => 1 < 4 === True  same
+# 2 => 2 < 4 === True  same
+# 3 => 3 < 4 === True  same
+# 4 => 4 < 4 === False switch is now off, "4" does not make it into the
+#                      result. In addition, our switch got toggled, so
+#                      we're switching to the next tester Callable
+# 5 => 5 %% 2 === False  switch is still off, keep trying to find a value
+# 6 => 6 %% 2 === True   switch is now on, take "6" into result. The switch
+#                        toggled, so we'll use the next tester Callable
+# 7 => is-prime(7) === True  switch is still on, take value and keep going
+# 8 => is-prime(8) === False switch is now off, "8" does not make it into
+#                            the result. The switch got toggled, but we
+#                            don't have any more tester Callables, so it
+#                            will remain off for the rest of the sequence.
+=end code
+
+Since the toggle of the switch's state loads the next tester
+L<C<Callable>|/type/Callable>, setting C<:$off> to a C<True> value affects when
+first tester is discarded:
+
+=begin code
+# our original sequence of elements:
+say <0 1 2>; # OUTPUT: «(0 1 2)␤»
+# toggled result:
+say <0 1 2>.toggle: * > 1; # OUTPUT: «()␤»
+
+# First tester Callable is `* > 1` and initial state of switch is "on".
+# As we iterate over our original sequence:
+# 0 => 0 > 1 === False  switch is off, "0" does not make it into result.
+#                      In addition, switch got toggled, so we change the
+#                      tester Callable, and since we don't have any more
+#                      of them, the switch will remain "off" until the end
+=end code
+
+The behavior changes when C<:off> is used:
+
+=begin code
+# our original sequence of elements:
+say <0 1 2>; # OUTPUT: «(0 1 2)␤»
+# toggled result:
+say <0 1 2>.toggle: :off, * > 1; # OUTPUT: «(2)␤»
+
+# First tester Callable is `* > 1` and initial state of switch is "off".
+# As we iterate over our original sequence:
+# 0 => 0 > 1 === False  switch is off, "0" does not make it into result.
+#                       The switch did NOT get toggled this time, so we
+#                       keep using our current tester Callable
+# 1 => 1 > 1 === False  same
+# 2 => 2 > 1 === True   switch is on, "2" makes it into the result
+=end code
+
+=head2 routine head
+
+    multi method head(Any:D:) is raw
+    multi method head(Any:D: Callable:D $w)
+    multi method head(Any:D: $n)
+
+Returns either the first element in the object, or the first C<$n> if that's
+used.
+
+    "aaabbc".comb.head.put; # OUTPUT: «a␤»
+    say ^10 .head(5);           # OUTPUT: «(0 1 2 3 4)␤»
+    say ^∞ .head(5);            # OUTPUT: «(0 1 2 3 4)␤»
+    say ^10 .head;              # OUTPUT: «0␤»
+    say ^∞ .head;               # OUTPUT: «0␤»
+
+In the first two cases, the results are different since there's no defined order
+in L<C<Mix>|/type/Mix>es. In the other cases, it returns a L<C<Seq>|/type/Seq>. A L<C<Callable>|/type/Callable> can be used
+to return all but the last elements:
+
+    say (^10).head( * - 3 );# OUTPUT: «(0 1 2 3 4 5 6)␤»
+
+As of release 2022.07 of the Rakudo compiler, there is also a "sub" version
+of C<head>.
+
+    multi head(\specifier, +values)
+
+It B<must> have the head specifier as the first argument.  The rest of
+the arguments are turned into a L<C<Seq>|/type/Seq> and then have the C<head>
+method called on it.
+
+=head2 routine tail
+
+    multi method tail() is raw
+    multi method tail($n)
+
+Returns the last or the list of the C<$n> last elements of an object. C<$n> can
+be a L<C<Callable>|/type/Callable>, usually a L<C<WhateverCode>|/type/WhateverCode>, which will be used to get all but
+the first C<n> elements of the object.
+
+=for code
+say (^12).reverse.tail ;     # OUTPUT: «0␤»
+say (^12).reverse.tail(3);   # OUTPUT: «(2 1 0)␤»
+say (^12).reverse.tail(*-7); # OUTPUT: «(4 3 2 1 0)␤»
+
+As of release 2022.07 of the Rakudo compiler, there is also a "sub" version
+of C<tail>.
+
+    multi tail(\specifier, +values)
+
+It B<must> have the tail specifier as the first argument.  The rest of
+the arguments are turned into a L<C<Seq>|/type/Seq> and then have the C<tail>
+method called on it.
+
+=head2 method tree
+
+    multi method tree(Any:U:)
+    multi method tree(Any:D:)
+    multi method tree(Any:D: Whatever )
+    multi method tree(Any:D: Int(Cool) $count)
+    multi method tree(Any:D: @ [&first, *@rest])
+    multi method tree(Any:D: &first, *@rest)
+
+Returns the class if it's undefined or if it's not L<C<Iterable>|/type/Iterable>,
+returns the result of applying the C<tree> method to its invocant otherwise.
+
+    say Any.tree; # OUTPUT: «Any␤»
+
+C<.tree> has different prototypes for L<C<Iterable>|/type/Iterable> elements.
+
+=for code
+my @floors = ( 'A', ('B','C', ('E','F','G')));
+say @floors.tree(1).flat.elems; # OUTPUT: «6␤»
+say @floors.tree(2).flat.elems; # OUTPUT: «2␤»
+say @floors.tree( *.join("-"),*.join("—"),*.join("|"));# OUTPUT: «A-B—C—E|F|G␤»
+
+With a number, it iteratively applies C<tree> to every element in the
+lower level; the first instance will apply C<.tree(0)> to every
+element in the array, and likewise for the next example.
+
+The second prototype applies the L<C<WhateverCode>|/type/WhateverCode> passed as arguments
+to every level in turn; the first argument will go to level 1 and so
+on. C<tree> can, thus, be a great way to process complex all levels of
+complex, multi-level, data structures.
+
+=head2 method nl-out
+
+    method nl-out(--> Str)
+
+Returns L<C<Str>|/type/Str> with the value of "\n". See
+L«C<IO::Handle.nl-out>|/type/IO::Handle#method_nl-out» for the
+details.
+
+    Num.nl-out.print;     # OUTPUT: «␤»
+    Whatever.nl-out.print;# OUTPUT: «␤»
+    33.nl-out.print;      # OUTPUT: «␤»
+
+=head2 method combinations
+
+    method combinations(|c)
+
+Coerces the invocant to a C<list> by applying its L«C<.list>|/routine/list»
+method and uses L«C<List.combinations>|/type/List#routine_combinations» on it.
+
+=for code
+say (^3).combinations; # OUTPUT: «(() (0) (1) (2) (0 1) (0 2) (1 2) (0 1 2))␤»
+
+Combinations on an empty data structure will return a list with a single
+element, an empty list; on a data structure with a single element it will
+return a list with two lists, one of them empty and the other with a single
+element.
+
+    say set().combinations; # OUTPUT: «(())␤»
+
+=head2 method grep
+
+    method grep(Mu $matcher, :$k, :$kv, :$p, :$v --> Seq)
+
+Coerces the invocant to a C<list> by applying
+its L«C<.list>|/routine/list» method and uses
+L«C<List.grep>|/type/List#routine_grep» on it.
+
+For undefined invocants, based on C<$matcher> the return value can
+be either C<((Any))> or the empty List.
+
+    my $a;
+    say $a.grep({ True }); # OUTPUT: «((Any))␤»
+    say $a.grep({ $_ });   # OUTPUT: «()␤»
+
+=head2 method append
+
+    multi method append(Any:U \SELF: |values)
+
+In the case the instance is not a positional-thing, it instantiates it as a new
+L<C<Array>|/type/Array>, otherwise clone the current instance. After that, it
+appends the values passed as arguments to the array obtained calling
+L«C<Array.append>|/type/Array#method_append» on it.
+
+    my $a;
+    say $a.append; # OUTPUT: «[]␤»
+    my $b;
+    say $b.append((1,2,3)); # OUTPUT: «[1 2 3]␤»
+
+=head2 method values
+
+    multi method values(Any:U:)
+    multi method values(Any:D:)
+
+Will return an empty list for undefined or class arguments, and the object
+converted to a list otherwise.
+
+    say (1..3).values; # OUTPUT: «(1 2 3)␤»
+    say List.values;   # OUTPUT: «()␤»
+
+=head2 method collate
+
+    method collate()
+
+The C<collate> method sorts taking into account Unicode grapheme
+characteristics; that is, sorting more or less as one would expect instead of
+using the order in which their codepoints appear. C<collate> will behave this
+way if the object it is applied to is L<C<Iterable>|/type/Iterable>.
+
+=begin code
+say ('a', 'Z').sort; # (Z a)
+say ('a', 'Z').collate; # (a Z)
+say <ä a o ö>.collate; # (a ä o ö)
+my %hash = 'aa' => 'value', 'Za' => 'second';
+say %hash.collate; # (aa => value Za => second);
+=end code
+
+This method is affected by the
+L<C<$*COLLATION>|/language/variables#index-entry-$*COLLATION> variable, which
+configures the four X<collation levels|Language,collation levels>. While Primary, Secondary and
+Tertiary mean different things for different scripts, for the Latin script used
+in English they mostly correspond with Primary being Alphabetic, Secondary being
+Diacritics and Tertiary being Case.
+
+In the example below you can see how when we disable tertiary collation which in
+Latin script generally is for case, and also disable quaternary which breaks
+any ties by checking the codepoint values of the strings, we get B<Same> back
+for B<A> and B<a>:
+
+    $*COLLATION.set(:quaternary(False), :tertiary(False));
+    say 'a' coll 'A'; # OUTPUT: «Same␤»
+    say ('a','A').collate == ('A','a').collate; # OUTPUT: «True␤»
+
+The variable affects the L<C<coll>|/routine/coll> operator as shown as well as
+this method.
+
+=head2 method cache
+
+    method cache()
+
+Provides a L<C<List>|/type/List> representation of the object itself, calling
+the method C<list> on the instance.
+
+=head2 method batch
+
+    multi method batch(Int:D $batch)
+    multi method batch(Int:D :$elems!)
+
+Coerces the invocant to a C<list> by applying
+its L«C<.list>|/routine/list» method and uses
+L«C<List.batch>|/type/List#method_batch» on it.
+
+=head2 method rotor
+
+    multi method rotor(Any:D: Int:D $batch, :$partial)
+    multi method rotor(Any:D: *@cycle, :$partial)
+
+Creates a L<C<Seq>|/type/Seq> that groups the elements of the object in lists of C<$batch>
+elements.
+
+    say (3..9).rotor(3); # OUTPUT: «((3 4 5) (6 7 8))␤»
+
+With the C<:partial> named argument, it will also include lists that do not get
+to be the C<$batch> size:
+
+    say (3..10).rotor(3, :partial); # OUTPUT: «((3 4 5) (6 7 8) (9 10))␤»
+
+C<.rotor> can be called with an array of integers and pairs, which will be
+applied in turn. While integers will establish the batch size, as above,
+L<C<Pair>|/type/Pair>s will use the key as batch size and the value as number of elements to
+skip if it's positive, or overlap if it's negative.
+
+    say (3..11).rotor(3, 2 => 1, 3 => -2, :partial);
+    # OUTPUT: «((3 4 5) (6 7) (9 10 11) (10 11))␤»
+
+In this case, the first batch (ruled by an integer) has 3 elements; the second
+one has 2 elements (key of the pair), but skips one (the number 8); the third
+one has size 2 (because partials are allowed), and an overlap of 2 also.
+
+The overlap cannot be larger than the sublist size; in that case, it will
+throw an L<C<Exception>|/type/Exception>:
+
+=for code :skip-test<Throws>
+say (3..11).rotor(3, 2 => 1, 3 => -4, :partial);
+# OUTPUT: «(exit code 1) Rotorizing gap is out of range. Is: -4, should be in
+# -3..^Inf; ␤Ensure a negative gap is not larger than the length of the
+# sublist␤ ␤␤»
+
+Non-L<C<Int>|/type/Int> values of C<$batch> will be coerced to Int:
+
+    say (3..9).rotor(3+⅓); # OUTPUT: «((3 4 5) (6 7 8))␤»
+
+Please see also L<C<list.rotor>|/type/List#routine_rotor> for examples applied to
+lists.
+
+=head2 method sum
+
+    method sum() is nodal
+
+If the content is iterable, it returns the sum of the values after pulling them
+one by one, or 0 if the list is empty.
+
+=for code
+(3,2,1).sum; # OUTPUT: «6␤»
+say 3.sum;   # OUTPUT: «3␤»
+
+It will fail if any of the elements cannot be converted to a number.
+
+=head2 multi method slice
+
+    method slice(Any:D: *@indices --> Seq:D)
+
+Available as of the 2021.02 release of the Rakudo compiler.
+
+Converts the invocant to a L<C<Seq>|/type/Seq> and then calls the
+L<slice method|/type/Seq#multi_method_slice> on it.
+
+    say (1..10).slice(0, 3..6, 8);  # OUTPUT: «(1 4 5 6 7 9)␤»
+
+=head2 routine snip
+
+    multi        snip(\matcher, +values)
+    multi method snip(\values: \matcher)
+
+Available as of 6.e language version (early implementation exists in Rakudo
+compiler 2022.07+).
+
+The C<snip> method / subroutine provides a way to cut a given L<C<Iterable>|/type/Iterable>
+into two or more L<C<List>|/type/List>s.  A "snip" will be made as soon as the smartmatch
+of a value in the given L<C<Iterable>|/type/Iterable> returns False.  The matcher may also
+be a list of matchers: as soon as a "snip" was made, will it start checking
+using the next matcher.  The rest of the L<C<Iterable>|/type/Iterable> will be produced if
+there are no matchers left.
+
+=for code :solo :preamble<use v6.e.PREVIEW;>
+.say for snip * < 10, 2, 5, 13, 9, 6;      # OUTPUT: «(2 5)␤(13 9 6)␤»
+.say for snip (* < 10, * < 20), 5, 13, 29; # OUTPUT: «(5)␤(13)␤(29)␤»
+.say for snip Int, 2, 5, 5, "a", "b";      # OUTPUT: «(2 5 5)␤(a b)␤»
+.say for (2, 5, 13, 9, 6).snip(* < 10);    # OUTPUT: «(2 5)␤(13 9 6)␤»
+.say for (5, 13,29).snip(* < 10, * < 20);  # OUTPUT: «(5)␤(13)␤(29)␤»
+.say for (2, 5, 5, "a", "b").snip: Int;    # OUTPUT: «(2 5 5)␤(a b)␤»
+
+=head2 routine snitch
+
+    multi  snitch(\snitchee)
+    multi  snitch(&snitcher, \snitchee)
+    method snitch(\snitchee: &snitcher = &note)
+
+Available as of 6.e language version (early implementation exists in Rakudo
+compiler 2022.12+).
+
+The C<snitch> method / subroutine is a debugging / logging tool that will
+always return any invocant / argument given unchanged.
+
+By default, it will L<note|/routine/note> the invocant / argument, but
+this can be overridden by specifying a L<C<Callable>|/type/Callable> that is expected to
+take the invocant / argument as its only argument.
+
+=for code :solo :preamble<use v6.e.PREVIEW;> :ok-test<dd>
+(my $a = 42).snitch = 666; say $a;  # OUTPUT: «42␤666␤»
+(1..5).snitch;                      # OUTPUT: «1..5␤»
+(1..5).Seq.snitch;                  # OUTPUT: «(1 2 3 4 5)␤»
+(1..5).Seq.snitch(&dd);             # OUTPUT: «(1, 2, 3, 4, 5).Seq␤»
+(1..5).map(*+1).snitch;             # OUTPUT: «(2 3 4 5 6)␤»
+say (1..3).Seq.snitch.map(*+2);     # OUTPUT: «(1 2 3)␤(3 4 5)␤»
+
+The same, using the feed operator:
+
+=for code :solo :preamble<use v6.e.PREVIEW;>
+(1..3).Seq ==> snitch() ==> map(*+2) ==> say();  # OUTPUT: «(1 2 3)␤(3 4 5)␤»
+
+Using a custom logger:
+
+=begin code
+my @snitched;
+my @result = (1..3).Seq.snitch({ @snitched.push($_) }).map(*+2);
+say @snitched;  # OUTPUT: «[(1 2 3)]␤»
+say @result;    # OUTPUT: «[3 4 5]␤»
+=end code
+
+=end pod

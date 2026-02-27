@@ -1,0 +1,145 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE role Numeric
+
+=SUBTITLE Number or object that can act as a number
+
+    role Numeric { ... }
+
+Common role for numbers and types that can act as numbers.
+
+Binary numeric operations return an object of the "wider" type:
+
+=begin code :lang<text>
+Int         narrowest
+Rat
+FatRat
+Num
+Complex     widest
+=end code
+
+So for example the product of a L<C<Rat>|/type/Rat> and an L<C<Int>|/type/Int> is a L<C<Rat>|/type/Rat>.
+
+Unary operations that in pure math usually return an irrational number
+generally return L<C<Num>|/type/Num> in Raku.
+
+=head1 Methods
+
+=head2 method Numeric
+
+    multi method Numeric(Numeric:D: --> Numeric:D)
+    multi method Numeric(Numeric:U: --> Numeric:D)
+
+The C<:D> variant simply returns the invocant. The C<:U> variant issues a warning about using
+an uninitialized value in numeric context and then returns C<self.new>.
+
+=head2 method narrow
+
+    method narrow(Numeric:D --> Numeric:D)
+
+Returns the number converted to the narrowest type that can hold it without
+loss of precision.
+
+    say (4.0 + 0i).narrow.raku;     # OUTPUT: «4␤»
+    say (4.0 + 0i).narrow.^name;    # OUTPUT: «Int␤»
+
+=head2 method ACCEPTS
+
+    multi method ACCEPTS(Numeric:D: $other)
+
+Returns C<True> if C<$other> can be coerced to C<Numeric> and
+is L<numerically equal|/routine/==, infix ⩵> to the invocant (or both evaluate
+to C<NaN>).
+
+=head2 routine log
+
+    multi        log(Numeric:D, Numeric $base = e --> Numeric:D)
+    multi method log(Numeric:D: Numeric $base = e --> Numeric:D)
+
+Calculates the logarithm to base C<$base>. Defaults to the natural logarithm.
+Throws an exception if C<$base> is C<1>.
+
+Returns C<NaN> for negative arguments.  As of 6.e language version (early
+implementation exists in Rakudo compiler 2023.02+), will return a
+L<C<Complex>|/type/Complex> value for negative arguments.
+
+=head2 routine log10
+
+    multi        log10(Numeric:D  --> Numeric:D)
+    multi method log10(Numeric:D: --> Numeric:D)
+
+Calculates the logarithm to base 10. Returns C<-Inf> for C<0>.
+
+Returns C<NaN> for negative arguments.  As of 6.e language version (early
+implementation exists in Rakudo compiler 2023.02+), will return a
+L<C<Complex>|/type/Complex> value for negative arguments.
+
+=head2 routine log2
+
+    multi        log2(Numeric:D)
+    multi method log2(Numeric:D:)
+
+Calculates the logarithm to base 2. Returns C<-Inf> for C<0>.
+
+Returns C<NaN> for negative arguments.  As of 6.e language version (early
+implementation exists in Rakudo compiler 2023.02+), will return a
+L<C<Complex>|/type/Complex> value for negative arguments.
+
+=head2 routine exp
+
+    multi        exp(Numeric:D, Numeric:D $base = e --> Numeric:D)
+    multi method exp(Numeric:D: Numeric:D $base = e --> Numeric:D)
+
+Returns C<$base> to the power of the number, or C<e> to the power of the
+number if called without a second argument.
+
+=head2 method roots
+
+    multi method roots(Numeric:D: Int:D $n --> Positional)
+
+Returns a list of the C<$n> complex roots, which evaluate to the original
+number when raised to the C<$n>th power.
+
+=head2 routine abs
+
+    multi        abs(Numeric:D  --> Real:D)
+    multi method abs(Numeric:D: --> Real:D)
+
+Returns the absolute value of the number.
+
+=head2 routine sqrt
+
+    multi        sqrt(Numeric:D --> Numeric:D)
+    multi method sqrt(Numeric:D --> Numeric:D)
+
+Returns a square root of the number. For real numbers the positive square
+root is returned.
+
+On negative real numbers, C<sqrt> returns L<C<NaN>|/type/Num#NaN> rather than a complex number,
+in order to not confuse people who are not familiar with complex arithmetic.
+If you want to calculate complex square roots, coerce to L<C<Complex>|/type/Complex> first, or
+use the C<roots> method.
+
+As of 6.e language version (early implementation exists in Rakudo compiler
+2023.02+), B<will> return a L<C<Complex>|/type/Complex> value for negative
+arguments.
+
+=head2 method Bool
+
+    multi method Bool(Numeric:D:)
+
+Returns C<False> if the number is equivalent to zero, and C<True> otherwise.
+
+=head2 method succ
+
+    method succ(Numeric:D:)
+
+Returns the number incremented by one (successor).
+
+=head2 method pred
+
+    method pred(Numeric:D:)
+
+Returns the number decremented by one (predecessor).
+
+=end pod

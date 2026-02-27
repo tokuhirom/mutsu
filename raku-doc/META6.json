@@ -1,0 +1,36 @@
+{
+  "name": "Raku doc",
+  "description": "Raku™ documentation",
+  "version": "2.0",
+  "raku": "6.*",
+  "authors": [
+    "raku"
+  ],
+  "auth": "raku",
+  "test-depends": [
+    "Cro::HTTP::Client",
+    "File::Temp",
+    "Test::META",
+    "Doc::TypeGraph",
+    "RakuDoc::Test::Files:ver<0.3+>"
+  ],
+  "build-depends": [],
+  "provides": {
+      "Pod::Cache": "lib/Pod/Cache.rakumod",
+      "Pod::Convenience": "lib/Pod/Convenience.rakumod"
+  },
+  "support": {
+    "source": "git://github.com/Raku/doc.git"
+  },
+  "license": "Artistic-2.0",
+  "tags": [
+    "raku",
+    "pod6",
+    "rakudoc",
+    "documentation",
+    "reference",
+    "perl6"
+  ],
+  "source-url": "git://github.com/Raku/doc.git",
+  "meta6": "0"
+}

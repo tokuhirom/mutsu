@@ -1,0 +1,29 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Tap
+
+=SUBTITLE Subscription to a Supply
+
+    class Tap {}
+
+A Tap is a subscription to a L<C<Supply>|/type/Supply>.
+
+    my $s = Supplier.new;
+    my $tap = $s.Supply.on-close({ say "Tap closed" }).tap(
+        -> $v { say "the value is $v" },
+        done    => { say "Supply is done" },
+        quit    => -> $ex { say "Supply finished with error $ex" },
+    );
+
+    # later
+    $tap.close;
+
+=head1 Methods
+
+=head2 method close
+
+    method close(Tap:D:)
+
+Closes the tap.
+
+=end pod

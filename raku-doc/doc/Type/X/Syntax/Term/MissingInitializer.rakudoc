@@ -1,0 +1,28 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Syntax::Term::MissingInitializer
+
+=SUBTITLE Compilation error due to declaring a term without initialization
+
+    class X::Syntax::Term::MissingInitializer does X::Syntax { }
+
+Syntax error when a term (a backslash variable) is declared without
+initialization assignment.
+
+For example
+
+=for code :skip-test<compile time error>
+my \foo;
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+Term definition requires an initializer
+
+Valid code would be
+
+=for code
+my \foo = 42;
+
+=end pod

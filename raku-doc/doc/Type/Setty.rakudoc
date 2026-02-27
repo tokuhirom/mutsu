@@ -1,0 +1,246 @@
+=begin pod :kind("Type") :subkind("role") :category("composite")
+
+=TITLE role Setty
+
+=SUBTITLE Collection of distinct objects
+
+    role Setty does QuantHash { }
+
+A role for collections which make sure that each element can only appear once.
+See L<C<Set>|/type/Set> and L<C<SetHash>|/type/SetHash>.
+
+=head1 Methods
+
+=head2 method new-from-pairs
+
+    method new-from-pairs(*@pairs --> Setty:D)
+
+Constructs a Setty object from a list of L«C<Pair> objects|/type/Pair»
+given as positional arguments:
+
+    say Set.new-from-pairs: 'butter' => 0.22, 'salt' => 0, 'sugar' => 0.02;
+    # OUTPUT: «Set(butter sugar)␤»
+
+B<Note:> be sure you aren't accidentally passing the Pairs as positional arguments;
+the quotes around the keys in the above example are significant.
+
+=head2 method grab
+
+    method grab($count = 1)
+
+Removes and returns C<$count> elements chosen at random (without repetition)
+from the set.
+
+If C<*> is passed as C<$count>, or C<$count> is greater than or equal to the
+size of the set, then all its elements are removed and returned in random order.
+
+Only works on mutable sets; When used on an immutable set, it results in an
+exception.
+
+=head2 method grabpairs
+
+    method grabpairs($count = 1)
+
+Removes C<$count> elements chosen at random (without repetition) from the set,
+and returns a list of L<C<Pair>|/type/Pair> objects whose keys are the grabbed elements and
+whose values are C<True>.
+
+If C<*> is passed as C<$count>, or C<$count> is greater than or equal to the
+size of the set, then all its elements are removed and returned as L<C<Pair>|/type/Pair>s in
+the aforementioned way in random order.
+
+Only works on mutable sets; When used on an immutable set, it results in an
+exception.
+
+=head2 method pick
+
+    multi method pick($count = 1)
+
+Returns C<$count> elements chosen at random (without repetition) from the set.
+
+If C<*> is passed as C<$count>, or C<$count> is greater than or equal to the
+size of the set, then all its elements are returned in random order (shuffled).
+
+=head2 method pickpairs
+
+    multi method pickpairs(Setty:D: --> Pair:D)
+    multi method pickpairs(Setty:D: $count --> Seq:D)
+
+Returns a L<C<Pair>|/type/Pair> or a L<C<Seq>|/type/Seq> of L<C<Pair>|/type/Pair>s depending on the candidate of the method
+being invoked. Each L<C<Pair>|/type/Pair> returned has an element of the invocant as its key and
+C<True> as its value. In contrast to L<grabpairs|#method grabpairs>, the elements
+are 'picked' without replacement.
+
+If C<*> is passed as C<$count>, or C<$count> is greater than or equal to the number
+of L<elements|#method elems> of the invocant, then all element/C<True> L<C<Pair>|/type/Pair>s from
+the invocant are returned in a random sequence; i.e. they are returned shuffled;
+
+Note that each C<pickpairs> invocation maintains its own private state and has
+no effect on subsequent C<pickpairs> invocations.
+
+    my $numbers = set (4, 2, 3);
+    say $numbers.pickpairs;                           # OUTPUT: «4 => True␤»
+    say $numbers.pickpairs(1);                        # OUTPUT: «(3 => True)␤»
+    say $numbers.pickpairs(*);                        # OUTPUT: «(2 => True 4 => True 3 => True)␤»
+
+=head2 method roll
+
+    multi method roll($count = 1)
+
+Returns a lazy list of C<$count> elements, each randomly selected from the set.
+Each random choice is made independently, like a separate die roll where each
+die face is a set element.
+
+If C<*> is passed as C<$count>, the list is infinite.
+
+=head2 method antipairs
+
+    multi method antipairs(Setty:D: --> Seq:D)
+
+Returns all elements in the set and C<True> as a L<C<Seq>|/type/Seq> of L<C<Pair>|/type/Pair>s,
+where the element itself is the value, i.e. the opposite of method C<pairs>.
+
+    my $s = Set.new(1, 2, 3, 1);
+    say $s.antipairs.sort;                            # OUTPUT: «(True => 1 True => 2 True => 3)␤»
+
+=head2 method keys
+
+    multi method keys(Setty:D: --> Seq:D)
+
+Returns a L<C<Seq>|/type/Seq> of all elements of the set.
+
+    my $s = Set.new(1, 2, 3);
+    say $s.keys;                                      # OUTPUT: «(3 1 2)␤»
+
+=head2 method values
+
+    multi method values(Setty:D: --> Seq:D)
+
+Returns a L<C<Seq>|/type/Seq> containing as many C<True> values as the set has elements.
+
+    my $s = Set.new(1, 2, 3);
+    say $s.values;                                    # OUTPUT: «(True True True)␤»
+
+=head2 method kv
+
+    multi method kv(Setty:D: --> Seq:D)
+
+Returns a L<C<Seq>|/type/Seq> of the set's elements and C<True> values interleaved.
+
+    my $s = Set.new(1, 2, 3);
+    say $s.kv;                                        # OUTPUT: «(3 True 1 True 2 True)␤»
+
+=head2 method elems
+
+    method elems(Setty:D: --> Int)
+
+The number of elements of the set.
+
+=head2 method total
+
+    method total(Setty:D: --> Int)
+
+The total of all the values of the L<C<QuantHash>|/type/QuantHash> object. For a C<Setty>
+object, this is just the number of elements.
+
+=head2 method minpairs
+
+    multi method minpairs(Setty:D: --> Seq:D)
+
+Returns the value of L«C<self.pairs>|/routine/pairs»
+(as all Pairs have minimum values). See also
+L«C<Any.minpairs>|/routine/minpairs»
+
+=head2 method maxpairs
+
+    multi method maxpairs(Setty:D: --> Seq:D)
+
+Returns the value of L«C<self.pairs>|/routine/pairs»
+(as all Pairs have maximum values). See also
+L«C<Any.maxpairs>|/routine/maxpairs»
+
+=head2 method default
+
+    method default(--> False)
+
+Returns the default value of the invocant, i.e. the value which is returned
+when trying to access an element in the C<Setty> object which has not been
+previously initialized or when accessing an element which has explicitly
+been set to L<C<Nil>|/type/Nil> or C<False>.
+
+    my $s1 = SetHash.new(1, 2, 3);
+    say $s1{2};                                           # OUTPUT: «True␤»
+    $s1{2} = Nil;
+    say $s1{2};                                           # OUTPUT: «False␤»
+    # access non initialized element
+    say $s1{4};                                           # OUTPUT: «False␤»
+
+=head2 method ACCEPTS
+
+    method ACCEPTS($other)
+
+Returns C<True> if C<$other> and C<self> contain all the same elements,
+and no others.
+
+=head2 method Bag
+
+    method Bag(Setty:D: --> Bag:D)
+
+Returns a L<C<Bag>|/type/Bag> containing the elements of the invocant.
+
+    my Bag $b = Set.new(1, 2, 3).Bag;
+    say $b;                                           # OUTPUT: «Bag(3 1 2)␤»
+
+The quantity of the elements in this created bag will be set to one:
+
+    say (1,2,3).Bag{1};                              # OUTPUT: «1␤»
+
+
+=head2 method BagHash
+
+    method BagHash(Setty:D: --> BagHash:D)
+
+Returns a L<C<BagHash>|/type/BagHash> containing the elements of the invocant.
+
+    my BagHash $b = Set.new(1, 2, 3).BagHash;
+    say $b;                                           # OUTPUT: «BagHash(1 2 3)␤»
+
+=head2 method Bool
+
+    multi method Bool(Setty:D: --> Bool:D)
+
+Returns C<True> if the invocant contains at least one element.
+
+    my $s1 = Set.new(1, 2, 3);
+    say $s1.Bool;                                     # OUTPUT: «True␤»
+
+    my $s2 = $s1 ∩ Set.new(4, 5);                     # set intersection operator
+    say $s2.Bool;                                     # OUTPUT: «False␤»
+
+=head2 method Mix
+
+    method Mix(Setty:D: --> Mix:D)
+
+Returns a L<C<Mix>|/type/Mix> containing the elements of the invocant.
+
+    my Mix $b = Set.new(1, 2, 3).Mix;
+    say $b;                                           # OUTPUT: «Mix(3 1 2)␤»
+
+The elements of the returned L<C<Mix>|/type/Mix> will have weights equal to 1:
+
+    say (1,2,3).Mix{3};                               # OUTPUT: «1␤»
+
+=head2 method MixHash
+
+    method MixHash(Setty:D: --> MixHash:D)
+
+Returns a L<C<MixHash>|/type/MixHash> containing the elements of the invocant.
+
+    my MixHash $b = Set.new(1, 2, 3).MixHash;
+    say $b;                                           # OUTPUT: «MixHash(1 2 3)␤»
+
+=head1 See Also
+
+L<Sets, Bags, and Mixes|/language/setbagmix>
+
+=end pod

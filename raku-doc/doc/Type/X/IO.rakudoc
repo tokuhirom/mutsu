@@ -1,0 +1,13 @@
+=begin pod :kind("Type") :subkind("role") :category("exception")
+
+=TITLE role X::IO
+
+=SUBTITLE IO related error
+
+    role X::IO does X::OS {}
+
+Common role for IO related errors.
+
+This role does not provide any additional methods.
+
+=end pod

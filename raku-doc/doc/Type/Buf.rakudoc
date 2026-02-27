@@ -1,0 +1,440 @@
+=begin pod :kind("Type") :subkind("role") :category("composite")
+
+=TITLE role Buf
+
+=SUBTITLE Mutable buffer for binary data
+
+    role Buf[::T = uint8] does Blob[T] is repr('VMArray') is array_type(T){ ... }
+
+A C<Buf> does the role of a mutable sequence of (usually unsigned) integers.
+
+    my $bú = Buf.new(1, 2, 3);
+    $bú[1] = 42;
+    say $bú.raku; # OUTPUT: «Buf.new(1,42,3)␤»
+
+However, it's a parameterized type, and you can instantiate with several
+integer types:
+
+    my $bú = Buf[int32].new(3, -3, 0xff32, -44);
+    say $bú; # OUTPUT: «Buf[int32]:0x<03 -3 FF32 -2C>␤»
+
+By default, C<Buf> uses 8-bit unsigned integers, that is, it is
+equivalent to Buf[uint8]. Some other types of C<Buf>s which are used
+often get their own class name.
+
+X<|Types,buf8>X<|Types,buf16>X<|Types,buf32>X<|Types,buf64>
+=begin table
+buf8 | Buf[uint8]
+buf16 | Buf[uint16]
+buf32 | Buf[uint32]
+buf64 | Buf[uint64]
+=end table
+
+You can use these the same way you would with C<Buf>:
+
+    my $bú = buf8.new(3, 6, 254);
+    say $bú; # OUTPUT: «Buf[uint8]:0x<03 06 fe>␤»
+
+There are some methods on other objects, e.g.
+L<C<encode>|/type/Str#method_encode> that might return a C<buf8> in some
+cases where it is the best representation for a particular encoding.
+
+=head1 Methods
+
+=head2 method subbuf-rw
+
+    method subbuf-rw($from = 0, $elems = self.elems - $from) is rw
+
+A mutable version of C<subbuf> that returns a L<C<Proxy>|/type/Proxy>
+functioning as a writable reference to a part of a buffer. Its first
+argument, C<$from> specifies the index in the buffer from which a
+substitution should occur, and its last argument, C<$elems> specifies
+how many elements are to be replaced.
+
+For example, to replace one element at index 3 with two elements, C<100>
+and C<101>:
+
+    my Buf $bú .= new(0..5);
+    $bú.subbuf-rw(3,1) = Buf.new(100, 101);
+    say $bú.raku;   # OUTPUT: «Buf.new(0,1,2,100,101,4,5)␤»
+
+In the case the C<$elems> argument is not specified, the substitution
+happens at the specified index C<$from> removing all trailing elements:
+
+    my Buf $bú .= new(0..5);
+    $bú.subbuf-rw(3) = Buf.new(200);
+    say $bú.raku;   # OUTPUT: «Buf.new(0,1,2,200)␤»
+
+In the case the C<$from> argument is not specified, the substitution
+happens from the very beginning of the buffer:
+
+    my Buf $bú .= new(0..5);
+    $bú.subbuf-rw = Buf.new(123, 123);
+    say $bú.raku;   # OUTPUT: «Buf.new(123, 123)␤»
+
+=head2 routine subbuf-rw
+
+    multi subbuf-rw(Buf:D \b) is rw
+    multi subbuf-rw(Buf:D \b, Int() $from) is rw
+    multi subbuf-rw(Buf:D \b, $from, $elems) is rw
+
+Returns a writable reference to a part of a buffer.
+Invokes the C<subbuf-rw> method on the specified C<Buf>:
+
+    my Buf $bú .= new(1,2,3);
+    subbuf-rw($bú,2,1) = Buf.new(42);
+    say $bú.raku;   # OUTPUT: «Buf.new(1,2,42)␤»
+
+=head2 method reallocate
+
+    method reallocate(Buf:D: Int:D $elems)
+
+Change the number of elements of the C<Buf>, returning the changed
+C<Buf>. The size of C<Buf> will be adapted depending on the number of
+C<$elems> specified: if it is smaller than the actual size of the C<Buf>
+the resulting C<Buf> will be shrunk down, otherwise it will be enlarged
+to fit the number of C<$elems>. In the case the C<Buf> is enlarged,
+newly created items will be assigned a Virtual Machine specific null
+value, therefore you should not rely upon their value since it could be
+inconsistent across different virtual machines.
+
+    my Buf $bú .= new(^10);
+    $bú.reallocate(5);
+    say $bú.raku;  # OUTPUT: «Buf.new(0,1,2,3,4)␤»
+
+    $bú = Buf.new( 1..3 );
+    $bú.reallocate( 10 );
+    say $bú.raku; # OUTPUT: «Buf.new(1,2,3,0,0,0,0,0,0,0)␤»
+
+=head2 method list
+
+    multi method list(Buf:D:)
+
+Returns a L<C<List>|/type/List> of integers.
+
+    say Buf.new(122,105,112,205).list; # OUTPUT: «(122 105 112 205)␤»
+
+=head2 method push
+
+    method push( $elems )
+
+Adds elements at the end of the buffer.
+
+     my $bú = Buf.new( 1, 1, 2, 3, 5 );
+     $bú.push( 8 );
+     say $bú.raku; # OUTPUT: «Buf.new(1,1,2,3,5,8)␤»
+
+=head2 method pop
+
+    method pop()
+
+Returns and removes the last element of the buffer.
+
+     my $bú = Buf.new( 1, 1, 2, 3, 5 );
+     say $bú.pop(); # OUTPUT: «5␤»
+     say $bú.raku;  # OUTPUT: «Buf.new(1,1,2,3)␤»
+
+=head2 method append
+
+    method append( $elems )
+
+Appends to the end of the buffer.
+
+     my $bú = Buf.new( 1, 1, 2, 3, 5 );
+     $bú.append(9, 8, 7, 6);
+     say $bú.raku; # OUTPUT: «Buf.new(1,1,2,3,5,9,8,7,6)␤»
+
+=head2 method prepend
+
+    method prepend( $elems )
+
+Inserts elements at the beginning of the buffer.
+
+    my $bú = Buf.new( 1, 1, 2, 3, 5 );
+    $bú.prepend( 0 );
+    say $bú.raku; # OUTPUT: «Buf.new(0,1,1,2,3,5)␤»
+
+=for comment
+Duplicated from Array.prepend
+
+The difference from method C<unshift> is that if you prepend a B<single> array
+or list argument, C<prepend> will flatten that array / list, whereas C<unshift>
+prepends the list / array as just a single element.
+
+=head2 method shift
+
+    method shift()
+
+Removes and returns the first element of the buffer.
+
+    my $bú = Buf.new( 1, 1, 2, 3, 5 );
+    say $bú.shift(); # OUTPUT: «1␤»
+    say $bú.raku;    # OUTPUT: «Buf.new(1,2,3,5)␤»
+
+=head2 method unshift
+
+    method unshift()
+
+Inserts elements at the beginning of the buffer.
+
+    my $bú = Buf.new( 1, 1, 2, 3, 5 );
+    $bú.unshift( 0 );
+    say $bú.raku; # OUTPUT: «Buf.new(0,1,1,2,3,5)␤»
+
+=head2 method splice
+
+    method splice( Buf:D: $start = 0, $elems?, *@replacement --> Buf)
+
+Substitutes elements of the buffer by other elements, returning a buffer
+with the removed elements.
+
+    my $bú = Buf.new( 1, 1, 2, 3, 5 );
+    say $bú.splice:  0, 3, <3 2 1>;  # OUTPUT: «Buf:0x<01 01 02>␤»
+    say $bú.raku;                    # OUTPUT: «Buf.new(3,2,1,3,5)␤»
+
+=head1 Methods on buf8 only (6.d, 2018.12 and later)
+
+These methods are available on the C<buf8> type only.  They allow low level
+access to writing bytes to the underlying data and in different ways with
+regards to type (integer or floating point (num)), size (8, 16, 32, 64 or 128
+bits), signed or unsigned (for integer values) and endianness (native, little
+and big endianness).  These methods always return L<C<Nil>|/type/Nil>.
+
+Endianness must be indicated by using values of the L<C<Endian>|/type/Endian>
+enum as the B<third> parameter to these methods.  If no endianness is
+specified, C<NativeEndian> will be assumed.  Other values are
+C<LittleEndian> and C<BigEndian>.
+
+The buffer will be automatically resized to support any bytes being written
+if it is not large enough yet.
+
+=head2 method write-uint8
+
+    method write-uint8(buf8:D: uint $pos, uint8 $value, $endian = NativeEndian --> Nil)
+
+Writes an unsigned 8-bit integer value at the given position.  The C<$endian>
+parameter has no meaning, but is available for consistency.
+
+=head2 method write-int8
+
+    method write-int8(buf8:D: uint $pos, int8 $value, $endian = NativeEndian --> Nil)
+
+Writes a signed 8-bit integer value at the given position.  The C<$endian>
+parameter has no meaning, but is available for consistency.
+
+=head2 method write-uint16
+
+    method write-uint16(buf8:D: uint $pos, uint16 $value, $endian = NativeEndian --> Nil)
+
+Writes an unsigned 16-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int16
+
+    method write-int16(buf8:D: uint $pos, int16 $value, $endian = NativeEndian --> Nil)
+
+Writes a signed 16-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-uint32
+
+    method write-uint32(buf8:D: uint $pos, uint32 $value, $endian = NativeEndian --> Nil)
+
+Writes an unsigned 32-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int32
+
+    method write-int32(buf8:D: uint $pos, int32 $value, $endian = NativeEndian --> Nil)
+
+Writes a signed 32-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-uint64
+
+    method write-uint64(buf8:D: uint $pos, uint64 $value, $endian = NativeEndian --> Nil)
+
+Writes an unsigned 64-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int64
+
+    method write-int64(buf8:D: uint $pos, Int:D $value, $endian = NativeEndian --> Nil)
+
+Writes a signed 64-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-uint128
+
+    method write-uint128(buf8:D: uint $pos, UInt:D $value, $endian = NativeEndian --> Nil)
+
+Writes an unsigned 128-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int128
+
+    method write-int128(buf8:D: uint $pos, Int:D $value, $endian = NativeEndian --> Nil)
+
+Writes a signed 128-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-num32
+
+    method write-num32(buf8:D: uint $pos, num32 $value, $endian = NativeEndian --> Nil)
+
+Writes a native C<num32> IEEE floating point value at the given position with
+the given endianness.
+
+=head2 method write-num64
+
+    method write-num64(buf8:D: uint $pos, num64 $value, $endian = NativeEndian --> Nil)
+
+Writes a native C<num64> IEEE floating point value at the given position with
+the given endianness.
+
+=head1 Methods on buf8 only (6.d, 2019.03 and later)
+
+=head2 method write-ubits
+
+    method write-ubits(buf8:D: uint $pos, uint $bits, UInt:D $value --> Nil)
+
+Writes an unsigned integer value to the B<bits> from the given B<bit> offset
+and given number of bits.  The endianness of the bits is assumed to be
+C<BigEndian>.  Always returns Nil.
+
+=head2 method write-bits
+
+    method write-bits(buf8:D: uint $pos, uint $bits, Int:D $value --> Nil)
+
+Writes a signed integer value for the B<bits> from the given B<bit> offset
+and given number of bits.  The endianness of the bits is assumed to be
+C<BigEndian>.  Always returns Nil.
+
+=head1 Methods on buf8 only (6.d, 2019.10 and later)
+
+These methods are available on the C<buf8> type only.  They allow low level
+access to writing bytes to the underlying data and in different ways with
+regards to type (integer or floating point (num)), size (8, 16, 32, 64 or 128
+bits), signed or unsigned (for integer values) and endianness (native, little
+and big endianness).
+
+These methods can also be called on the C<buf8> type object, in which case
+a new C<buf8> object will be returned.  Otherwise, the invocant will be
+returned to allow for easier chaining of operations on the C<buf8> object.
+The buffer will be automatically resized to support any bytes being written
+if it is not large enough yet.
+
+Endianness must be indicated by using values of the L<C<Endian>|/type/Endian>
+enum as the B<third> parameter to these methods.  If no endianness is
+specified, C<NativeEndian> will be assumed.  Other values are
+C<LittleEndian> and C<BigEndian>.
+
+=head2 method write-uint8
+
+    method write-uint8(buf8: uint $pos, uint8 $value, $endian = NativeEndian --> buf8:D)
+
+Writes an unsigned 8-bit integer value at the given position.  The C<$endian>
+parameter has no meaning, but is available for consistency.
+
+=head2 method write-int8
+
+    method write-int8(buf8: uint $pos, int8 $value, $endian = NativeEndian --> buf8:D)
+
+Writes a signed 8-bit integer value at the given position.  The C<$endian>
+parameter has no meaning, but is available for consistency.
+
+=head2 method write-uint16
+
+    method write-uint16(buf8: uint $pos, uint16 $value, $endian = NativeEndian --> buf8:D)
+
+Writes an unsigned 16-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int16
+
+    method write-int16(buf8: uint $pos, int16 $value, $endian = NativeEndian --> buf8:D)
+
+Writes a signed 16-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-uint32
+
+    method write-uint32(buf8: uint $pos, uint32 $value, $endian = NativeEndian --> buf8:D)
+
+Writes an unsigned 32-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int32
+
+    method write-int32(buf8: uint $pos, int32 $value, $endian = NativeEndian --> buf8:D)
+
+Writes a signed 32-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-uint64
+
+    method write-uint64(buf8: uint $pos, uint64 $value, $endian = NativeEndian --> buf8:D)
+
+Writes an unsigned 64-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int64
+
+    method write-int64(buf8: uint $pos, Int:D $value, $endian = NativeEndian --> buf8:D)
+
+Writes a signed 64-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-uint128
+
+    method write-uint128(buf8: uint $pos, UInt:D $value, $endian = NativeEndian --> buf8:D)
+
+Writes an unsigned 128-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-int128
+
+    method write-int128(buf8: uint $pos, Int:D $value, $endian = NativeEndian --> buf8:D)
+
+Writes a signed 128-bit integer value at the given position with the given
+endianness.
+
+=head2 method write-num32
+
+    method write-num32(buf8: uint $pos, num32 $value, $endian = NativeEndian --> buf8:D)
+
+Writes a native C<num32> IEEE floating point value at the given position with
+the given endianness.
+
+=head2 method write-num64
+
+    method write-num64(buf8: uint $pos, num64 $value, $endian = NativeEndian --> buf8:D)
+
+Writes a native C<num64> IEEE floating point value at the given position with
+the given endianness.
+
+=head2 method write-ubits
+
+    method write-ubits(buf8: uint $pos, uint $bits, UInt:D $value --> buf8:D)
+
+Writes an unsigned integer value to the B<bits> from the given B<bit> offset
+and given number of bits.  The endianness of the bits is assumed to be
+C<BigEndian>.
+
+=head2 method write-bits
+
+    method write-bits(buf8: uint $pos, uint $bits, Int:D $value --> buf8:D)
+
+Writes a signed integer value for the B<bits> from the given B<bit> offset
+and given number of bits.  The endianness of the bits is assumed to be
+C<BigEndian>.
+
+=head2 method Blob
+
+    method Buf(Buf:D: --> Blob:D)
+
+Available as of the 2021.06 Rakudo compiler release.
+
+Coerces the invocant into an immutable L<C<Blob>|/type/Blob> object.
+
+=end pod

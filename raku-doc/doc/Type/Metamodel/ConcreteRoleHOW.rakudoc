@@ -1,0 +1,38 @@
+=begin pod :kind("Type") :subkind("class") :category("metamodel")
+
+=TITLE role Metamodel::ConcreteRoleHOW
+
+=SUBTITLE Provides an implementation of a concrete instance of a role
+
+=for code :skip-test<TWEAK>
+    class Metamodel::ConcreteRoleHOW
+        does Metamodel::Naming
+        does Metamodel::Versioning
+        does Metamodel::PrivateMethodContainer
+        does Metamodel::MethodContainer
+        does Metamodel::MultiMethodContainer
+        does Metamodel::AttributeContainer
+        does Metamodel::RoleContainer
+        does Metamodel::MultipleInheritance
+        does Metamodel::ArrayType
+        does Metamodel::Concretization {}
+
+I<Warning>: this class is part of the Rakudo implementation, and is not
+a part of the language specification.
+
+You can use this to build roles, in the same way that C<ClassHOW> can be used to
+build classes:
+
+=for code
+my $a = Metamodel::ConcreteRoleHOW.new_type(name => "Bar");
+$a.^compose;
+say $a.^roles; # OUTPUT: «(Mu)␤»
+
+The main difference with
+L<C<ClassHOW.new_type>|/type/Metamodel::ClassHOW#method_new_type> is that you
+can mix-in roles in this newly created one.
+
+I<Warning>: this class is part of the Rakudo implementation, and is not
+a part of the language specification.
+
+=end pod

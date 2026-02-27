@@ -1,0 +1,375 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Metaobject protocol (MOP)
+
+=SUBTITLE Introspection and the Raku object system
+
+X<|Language,MOP>
+X<|Language,Introspection>
+
+Raku is built on a metaobject layer. That means that there are objects
+(the I<metaobjects>) that control how various object-oriented constructs
+(such as classes, roles, methods, attributes or enums) behave.
+
+The metaobject has a practical benefit to the user when a normal object's type
+is needed. For example:
+
+=begin code
+my $arr = [1, 2];
+say $arr.^name;   # OUTPUT: «Array␤»
+=end code
+
+To get a more in-depth understanding of the metaobject for a C<class>, here is
+an example repeated twice: once as normal declarations in Raku, and once
+expressed through the L<metamodel|/type/Metamodel::ClassHOW>:
+
+    class A {
+        method x() { say 42 }
+    }
+
+    A.x();
+
+corresponds to:
+
+    constant A := Metamodel::ClassHOW.new_type( name => 'A' );  # class A {
+    A.^add_method('x', my method x(A:) { say 42 });             #   method x()
+    A.^compose;                                                 # }
+
+    A.x();
+
+(except that the declarative form is executed at compile time, and the latter
+form does not).
+
+The metaobject behind an object can be obtained with C<$obj.HOW>, where HOW
+stands for Higher Order Workings (or, I<HOW the *%@$ does this work?>).
+
+Here, the calls with C<.^> are calls to the metaobject, so C<A.^compose> is
+a shortcut for C<A.HOW.compose(A)>. The invocant is passed in the parameter
+list as well, to make it possible to support prototype-style type systems,
+where there is just one metaobject (and not one metaobject per type, as
+standard Raku does it).
+
+As the example above demonstrates, all object oriented features are
+available to the user, not just to the compiler. In fact the compiler just
+uses such calls to metaobjects.
+
+=head1 Metamethods
+
+These are introspective macros that resemble method calls.
+
+Metamethods are generally named with ALLCAPS, and it is considered good style
+to avoid creating your own methods with ALLCAPS names (since they are used
+conventionally for things like L<phasers|/syntax/Phasers>. This will avoid
+conflicts with any metamethods that may appear in future versions of the
+language.
+
+=head2 X<WHAT|Syntax,WHAT>
+
+The type object of the type. This is a pseudo-method that can be overloaded
+without producing error or warning, but will be ignored.
+
+For example C<42.WHAT> returns the L<C<Int>|/type/Int> type object.
+
+=head2 X<WHICH|Syntax,WHICH>
+
+The object's identity value. This can be used for hashing and identity
+comparison, and is how the C<===> infix operator is implemented.
+
+=head2 X<WHO|Syntax,WHO>
+
+The package supporting the object.
+
+=head2 X<WHERE|Syntax,WHERE>
+
+The memory address of the object. Note that this is not stable in
+implementations with moving/compacting garbage collectors. Use C<WHICH> for
+a stable identity indicator.
+
+=head2 X<HOW|Syntax,HOW>
+
+Returns the metaclass object, as in "Higher Order Workings".
+
+    say (%).HOW.^name # OUTPUT: «Perl6::Metamodel::ClassHOW+{<anon>}␤»
+
+C<HOW> returns an object of type C<Perl6::Metamodel::ClassHOW> in this case;
+objects of this type are used to build classes. The same operation on the C<&>
+sigil will return C<Perl6::Metamodel::ParametricRoleGroupHOW>. You will be
+calling this object whenever you use the C<^> syntax to access metamethods. In
+fact, the code above is equivalent to C<say (&).HOW.HOW.name(&)> which is much
+more unwieldy. L<C<Metamodel::ClassHOW>|/type/Metamodel::ClassHOW> is part of the
+Rakudo implementation, so use with caution.
+
+=head2 X<WHY|Syntax,WHY>
+
+The attached L<Pod|/language/pod> value.
+
+=head2 X<DEFINITE|Syntax,DEFINITE>
+
+The object has a valid concrete representation. This is a pseudo-method that
+can be overloaded without producing error or warning, but will be ignored.
+
+Returns C<True> for instances and C<False> for type objects.
+
+=head2 X<VAR|Syntax,VAR>
+
+Returns the underlying L<C<Scalar>|/type/Scalar> object, if there is one.
+
+X<|Language,is itemized?>
+The presence of a L<C<Scalar>|/type/Scalar> object indicates that the object is "itemized".
+
+    .say for (1, 2, 3);           # OUTPUT: «1␤2␤3␤», not itemized
+    .say for $(1, 2, 3);          # OUTPUT: «(1 2 3)␤», itemized
+    say (1, 2, 3).VAR ~~ Scalar;  # OUTPUT: «False␤»
+    say $(1, 2, 3).VAR ~~ Scalar; # OUTPUT: «True␤»
+
+Please refer to the L<section on item
+context|/language/contexts#Item_context> for more information.
+
+=head1 Metaclass methods
+
+Same as you can define object and class methods (which do not have access to
+the instance variables), you can define metaclass methods, which will work on
+the metaclass. These are conventionally defined by a caret (C<^>) at the
+front of the method identifier. These metaclass methods might return a type
+object or a simple object; in general, they are only conventionally related
+to the metaobject protocol and are, otherwise, simple methods with a peculiar
+syntax.
+
+These methods will get called with the type name as first argument, but this
+needs to be declared explicitly.
+
+=for code
+class Foo {
+    method ^bar( Mu \foo) {
+        foo.^set_name( foo.^name ~ "[þ]" );
+    }
+}
+my $foo = Foo.new();
+say $foo.^name; # OUTPUT: «Foo␤»
+Foo.^bar();
+say $foo.^name; # OUTPUT: «Foo[þ]␤»
+
+This metaclass method will, via invoking class metamethods, change the name
+of the class it's been declared. Since this has been acting on the metaclass,
+any new object of the same class will receive the same name; invoking C<say Foo
+.new().^name> will return the same value. As it can be seen, the metaclass
+method is
+invoked with no arguments; C<\foo> will, in this case, become the C<Foo> when
+invoked.
+
+The metaclass methods can receive as many arguments as you want.
+
+=for code
+class Foo {
+    method ^bar( Mu \foo, Str $addenda) {
+        foo.^set_name( foo.^name ~ $addenda );
+    }
+}
+Foo.new().^bar(  "[baz]" );
+my $foo = Foo.new();
+say $foo.^name;  # OUTPUT: «Foo[baz]␤»
+
+Again, implicitly, the method call will furnish the first argument, which is
+the type object. Since they are metaclass methods, you can invoke them on a
+class (as above) or on an object (as below). The result will be exactly the
+same.
+
+=head1 Structure of the metaobject system
+
+B<Note:> this documentation largely reflects the metaobject system as
+implemented by the L<Rakudo Raku compiler|https://rakudo.org/>, since the
+L<design documents|https://design.raku.org/> are very light on details.
+
+For each type declarator keyword, such as C<class>, C<role>, C<enum>, C<module>,
+C<package>, C<grammar> or C<subset>, there is a separate metaclass in the
+C<Metamodel::> namespace. (Rakudo implements them in the C<Perl6::Metamodel::>
+namespace, and then maps C<Perl6::Metamodel> to C<Metamodel>).
+
+Many of these metaclasses share common functionality. For example roles,
+grammars and classes can all contain methods and attributes, as well as being
+able to do roles.  This shared functionality is implemented in roles which are
+composed into the appropriate metaclasses. For example, the role L<C<Metamodel::RoleContainer>|/type/Metamodel::RoleContainer> implements the
+functionality that a type can hold roles and
+L<C<Metamodel::ClassHOW>|/type/Metamodel::ClassHOW>, which is the metaclass behind
+the C<class> keyword, does this role.
+
+Most metaclasses have a C<compose> method that you must call when you're done
+creating or modifying a metaobject. It creates method caches, validates things
+and so on, and weird behavior ensues if you forget to call it, so don't :-).
+
+=head2 Bootstrapping concerns
+
+You might wonder how L<C<Metamodel::ClassHOW>|/type/Metamodel::ClassHOW> can be a class, when being a
+class is defined in terms of L<C<Metamodel::ClassHOW>|/type/Metamodel::ClassHOW>, or how the roles
+responsible for role handling can be roles. The answer is I<by magic>.
+
+Just kidding. Bootstrapping is implementation specific. Rakudo does it by
+using the object system of the language in which itself is implemented,
+which happens to be (nearly) a subset of Raku known as
+L<NQP|/language/faq#What_language_is_NQP_written_in?>. NQP
+has a primitive, class-like kind called C<knowhow>, which is used to
+bootstrap its own classes and roles implementation. C<knowhow> is built on
+primitives that the virtual machine under NQP provides.
+
+Since the object model is bootstrapped in terms of lower-level types,
+introspection can sometimes return low-level types instead of the ones you
+expect, like an NQP-level routine instead of a normal L<C<Routine>|/type/Routine>
+object, or a bootstrap-attribute instead of L<C<Attribute>|/type/Attribute>.
+
+=head2 Composition time and static reasoning
+
+In Raku, a type is constructed as it is parsed, so in the beginning, it must
+be mutable. However if all types were always mutable, all reasoning about them
+would get invalidated at any modification of a type. For example the list of
+parent types and thus the result of type checking can change during that time.
+
+So to get the best of both worlds, there is a time when a type transitions from
+mutable to immutable. This is called I<composition>, and for syntactically
+declared types, it happens when the type declaration is fully parsed (so usually
+when the closing curly brace is parsed).
+
+If you create types through the metaobject system directly, you must call
+C<.^compose> on them before they become fully functional.
+
+Most metaclasses also use composition time to calculate some properties like
+the method resolution order, publish a method cache, and other house-keeping
+tasks. Meddling with types after they have been composed is sometimes
+possible, but usually a recipe for disaster. Don't do it.
+
+=head2 Power and responsibility
+
+The metaobject protocol offers much power that regular Raku code
+intentionally limits, such as calling private methods on classes that don't
+trust you, peeking into private attributes, and other things that usually
+simply aren't done.
+
+Regular Raku code has many safety checks in place; not so the metamodel. It
+is close to the underlying virtual machine, and violating the contracts with
+the VM can lead to all sorts of strange behaviors that, in normal code, would
+obviously be bugs.
+
+So be extra careful and thoughtful when writing metatypes.
+
+=head2 Power, convenience and pitfalls
+
+The metaobject protocol is designed to be powerful enough to implement the
+Raku object system. This power occasionally comes at the cost of convenience.
+
+For example, when you write C<my $x = 42> and then proceed to call methods on
+C<$x>, most of these methods end up acting on the L<integer|/type/Int> 42, not
+on the L<scalar container|/type/Scalar> in which it is stored. This is a piece
+of convenience found in ordinary Raku. Many parts of the metaobject
+protocol cannot afford to offer the convenience of automatically ignoring
+scalar containers, because they are used to implement those scalar containers
+as well. So if you write C<my $t = MyType; ... ; $t.^compose> you are
+composing the Scalar that the C<$>-sigiled variable implies, not C<MyType>.
+
+The consequence is that you need to have a rather detailed understanding of
+the subtleties of Raku in order to avoid pitfalls when working with the MOP,
+and can't expect the same L<"do what I mean"|/language/glossary#DWIM>
+convenience that ordinary Raku code offers.
+
+=head1 Archetypes
+
+Typically, when multiple kinds of types share a property, it is
+implemented with a metarole to be mixed into their metaclasses. However,
+not all common properties of types can be implemented as mixins. Certain
+properties are common to various kinds of types, but do not share enough
+behavior to be possible to implement as mixins. These properties are
+known as I<archetypes>.
+
+HOWs should provide an C<archetypes> metamethod that takes no arguments
+and returns a C<Metamodel::Archetypes> instance. This is used by the
+compiler to determine what archetypes are supported by metaobjects.
+The rest of this section will cover how each of the archetypes that
+exist in Rakudo work.
+
+X<|Language,Parameterization>
+
+=head2 parametric
+
+Parametric types are incomplete types that may have an arbitrary number
+of type parameters. Here, type parameters refer to parameters of the
+type itself; these may be any object that a signature allows you to
+include, not just types alone. When parameterized with type arguments,
+parametric types will produce a more complete type of some sort.
+
+If a HOW supports parameterization, it should have the C<parametric>
+archetype and must provide a C<parameterize> metamethod. The
+C<parameterize> metamethod must accept a metaobject and may accept
+any number of type parameters as arguments, returning a metaobject.
+For example, a C<parameterize> metamethod that allows a type to be
+parameterized with any type arguments may have this signature:
+
+    method parameterize(Mu $obj is raw, |parameters --> Mu)
+
+=head3 Parametric classes and grammars
+
+Because of how the parametric archetype is implemented, it's possible
+for classes and grammars to be augmented with support for
+parameterization by giving them a C<parameterize> metamethod, despite
+the type not having the C<parametric> archetype. This can be useful in
+cases where the features of roles make them inappropriate to use for a
+parametric type.
+
+One scenario where parametric classes and grammars are useful is when
+parameterizations of a type should override or add multiple dispatch
+candidates to existing methods or regexes on the original parametric
+type. This is the case with parameterizations of types like
+L<C<Array>|/type/Array> and L<C<Hash>|/type/Hash>, which may optionally be
+parameterized to mix in more type-safe versions of their methods that
+work with instances' values directly. In Rakudo, these are implemented
+as parametric classes using the metamethods provided by
+L<C<Metamodel::Mixins>|/type/Metamodel::Mixins> and
+L<C<Metamodel::Naming>|/type/Metamodel::Naming> to create a mixin of the
+metaobject given and reset its name before returning it. This technique
+can be used to write extensible grammars when used in combination with
+multi tokens, for instance:
+
+=begin code
+grammar Bot::Grammar {
+    token TOP { <topic> || .+ }
+
+    proto token topic {*}
+    multi token topic:sym<command> { <command> <.ws> <command-args> }
+
+    token command      { '$' <!ws>+ }
+    token command-args { <!ws>+ % <.ws> }
+
+    method ^parameterize(::?CLASS:U $this is raw, +roles) {
+        my Str:D $name   = self.name: $this;
+        my Mu    $mixin := $this.^mixin: |roles;
+        $mixin.^set_name: [~] $name, '[', roles.map(*.^name).join(','), ']';
+        $mixin
+    }
+}
+
+role Greetings[Str:D $name] {
+    multi token topic:sym<greeting> { ^ [ 'hi' | 'hello' | 'hey' | 'sup' ] <.ws> $name }
+}
+
+my constant GreetBot = Bot::Grammar[Greetings['GreetBot']];
+GreetBot.parse: 'sup GreetBot';
+say ~$/; # OUTPUT: «sup GreetBot␤»
+=end code
+
+Parametric classes can also be used to simulate support for
+parameterization on other kinds. For instance, the
+L<Failable|https://modules.raku.org/dist/Failable:cpan:KAIEPI> ecosystem
+module is a parametric class that produces a subset upon
+parameterization. While the module itself does some caching to ensure no
+more type objects are made than what's necessary, a more basic version
+of it can be implemented like so:
+
+=begin code
+class Failable {
+    method ^parameterize(Failable:U $this is raw, Mu $obj is raw --> Mu) {
+        Metamodel::SubsetHOW.new_type:
+            name       => $this.^name ~ '[' ~ $obj.^name ~ ']',
+            refinee    => Metamodel::Primitives.is_type($obj, Any) ?? Any !! Mu,
+            refinement => $obj | Failure
+    }
+}
+=end code
+
+=end pod

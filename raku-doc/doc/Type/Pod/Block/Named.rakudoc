@@ -1,0 +1,27 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Pod::Block::Named
+
+=SUBTITLE Named block in a Pod document
+
+    class Pod::Block::Named is Pod::Block { }
+
+Class for a named Pod block. For example
+
+=begin code
+=begin MySection
+...
+=end MySection
+=end code
+
+creates a C<Pod::Block::Named> with name C<MySection>.
+
+=head1 Methods
+
+=head2 method name
+
+    method name(--> Str:D)
+
+Returns the name of the block.
+
+=end pod

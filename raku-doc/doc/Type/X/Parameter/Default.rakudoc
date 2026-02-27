@@ -1,0 +1,47 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Parameter::Default
+
+=SUBTITLE Compilation error due to an unallowed default value in a signature
+
+    class X::Parameter::Default does X::Comp { }
+
+Compile-time error thrown when a parameter in a signature has default value,
+but isn't allowed to have one. That is the case with slurpy parameters
+(because a slurpy always binds successfully, even to zero arguments)
+and with mandatory parameters.
+
+Example:
+
+=for code :skip-test<compile time error>
+sub f($x! = 3) { }
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+Cannot put default on required parameter $x
+
+And
+
+=for code :skip-test<compile time error>
+sub f(*@ = 3) { }
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+Cannot put default on anonymous slurpy parameter
+
+=head1 Methods
+
+=head2 method how
+
+Returns a string describing how the parameter is qualified that makes
+it disallow default values, for example C<"slurpy"> or C<"mandatory">.
+
+=head2 method parameter
+
+Returns the parameter name
+
+=end pod

@@ -1,0 +1,253 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Int
+
+=SUBTITLE Integer (arbitrary-precision)
+
+=for code
+class Int is Cool does Real { }
+
+C<Int> objects store integral numbers of arbitrary size. C<Int>s are immutable.
+
+There are two main syntax forms for C<Int> literals
+
+    123;         # Int in decimal notation
+    :16<BEEF>;   # Int in radix notation
+
+For your convenience common radix forms come with a prefix shortcut.
+
+    say so :2<11111111> == 0b11111111 == :8<377> == 0o377 == 255 == 0d255 == :16<ff> == 0xff;
+    # OUTPUT: «True␤»
+
+All forms allow underscores between any two digits which can serve as visual
+separators, but don't carry any meaning:
+
+    5_00000;       # five Lakhs
+    500_000;       # five hundred thousand
+    0xBEEF_CAFE;   # a strange place
+    :2<1010_1010>; # 0d170
+
+Radix notation also supports round and square brackets which allow you to parse
+a string for a given base, and putting together digits into a whole number
+respectively:
+
+    :16("9F");         # 159
+    :100[99, 2, 3];    # 990203
+
+These notations allow you to use variables, too:
+
+    my $two = "2";
+    my $ninety-nine = "99";
+    :16($ninety-nine); # 153
+    :100[99, $two, 3]; # 990203
+
+=head1 Methods
+
+=head2 method new
+
+    multi method new(Any:U $type)
+    multi method new(Any:D \value --> Int:D)
+    multi method new(int   \value --> Int:D)
+
+The first form will throw an exception; the second and third form will create
+ a new Int from the actual integer value contained in the variable.
+
+=head2 method Str
+
+    multi method Str(Int:D)
+    multi method Str(Int:D, :$superscript)
+    multi method Str(Int:D, :$subscript)
+
+Returns a string representation of the number.
+
+    say 42.Str;                # OUTPUT: «42␤»
+
+L«C<Cool>|/type/Cool» being a parent class of C<Int>, an explicit call
+to the C<Int.Str> method is seldom needed, unless you want the string
+to be returned in superscript or subscript.
+
+    say 42.Str(:superscript); # OUTPUT: «⁴²␤»
+    say 42.Str(:subscript);   # OUTPUT: «₄₂␤»
+
+The C<:superscript> and C<:subscript> named arguments are available as
+of the 2023.05 Rakudo compiler release.
+
+=head2 method Capture
+
+    method Capture()
+
+Throws C<X::Cannot::Capture>.
+
+=head2 routine chr
+
+    multi        chr(Int:D  --> Str:D)
+    multi method chr(Int:D: --> Str:D)
+
+Returns a one-character string, by interpreting the integer as a Unicode
+codepoint number and converting it to the corresponding character.
+
+Example:
+
+    65.chr;  # returns "A"
+    196.chr; # returns "Ä"
+
+=head2 routine expmod
+
+    multi        expmod(      $x,     $y,     $mod --> Int:D)
+    multi        expmod(Int:D $x, Int $y, Int $mod --> Int:D)
+    multi method expmod(Int:D:    Int $y, Int $mod --> Int:D)
+
+Returns the given C<Int> raised to the C<$y> power within modulus C<$mod>,
+that is gives the result of C<($x ** $y) mod $mod>. The subroutine form
+can accept non-C<Int> arguments, which will be coerced to C<Int>.
+
+    say expmod(4, 2, 5);    # OUTPUT: «1␤»
+    say 7.expmod(2, 5);     # OUTPUT: «4␤»
+
+C<$y> argument can also be negative, in which case, the result is
+equivalent to C<($x ** $y)> mod $mod.
+
+    say 7.expmod(-2, 5);     # OUTPUT: «4␤»
+
+
+=head2 method polymod
+
+    method polymod(Int:D: +@mods)
+
+Returns a sequence of mod results corresponding to the divisors in C<@mods> in
+the same order as they appear there. For the best effect,  the divisors should
+be given from the smallest "unit" to the largest (e.g. 60 seconds per minute, 60
+minutes per hour) and the results are returned in the same way: from smallest to
+the largest (5 seconds, 4 minutes). The last non-zero value will be the last
+remainder.
+
+    say 120.polymod(10);    # OUTPUT: «(0 12)␤»
+    say 120.polymod(10,10); # OUTPUT: «(0 2 1)␤»
+
+In the first case, 120 is divided by 10 giving as a remainder 12, which is the
+last element. In the second, 120 is C<div>ided by 10, giving 12, whose remainder
+once divided by 10 is 2; the result of the integer division of 12 C<div> 10 is
+the last remainder.  The number of remainders will be always one more item than
+the number of given divisors. If the divisors are given as a lazy list, runs
+until the remainder is 0 or the list of divisors is exhausted.
+
+    my $seconds = 1 * 60*60*24 # days
+                + 3 * 60*60    # hours
+                + 4 * 60       # minutes
+                + 5;           # seconds
+
+    say $seconds.polymod(60, 60);                # OUTPUT: «(5 4 27)␤»
+    say $seconds.polymod(60, 60, 24);            # OUTPUT: «(5 4 3 1)␤»
+
+    say 120.polymod:      1, 10, 10², 10³, 10⁴;  # OUTPUT: «(0 0 12 0 0 0)␤»
+    say 120.polymod: lazy 1, 10, 10², 10³, 10⁴;  # OUTPUT: «(0 0 12)␤»
+    say 120.polymod:      1, 10, 10² … ∞;        # OUTPUT: «(0 0 12)␤»
+    my @digits-in-base37 = 9123607.polymod(37 xx *); # Base conversion
+    say @digits-in-base37.reverse                    # OUTPUT: «[4 32 4 15 36]␤»
+
+All divisors must be C<Int>s when called on an C<Int>.
+
+    say 120.polymod(⅓);                            # ERROR
+
+
+To illustrate how the C<Int>, non-lazy version of polymod works, consider
+this code that implements it:
+
+    my $seconds = 2 * 60*60*24 # days
+                + 3 * 60*60    # hours
+                + 4 * 60       # minutes
+                + 5;           # seconds
+
+    my @pieces;
+    for 60, 60, 24 -> $divisor {
+        @pieces.push: $seconds mod $divisor;
+        $seconds div= $divisor
+    }
+    @pieces.push: $seconds;
+
+    say @pieces; # OUTPUT: «[5 4 3 2]␤»
+
+For a more detailed discussion, see
+L<this blog post|http://blogs.perl.org/users/zoffix_znet/2016/05/perl-6-polymod-break-up-a-number-into-denominations.html>.
+
+We can use lazy lists in C<polymod>, as long as they are finite:
+
+=for code
+my $some-numbers = lazy gather { take 3*$_ for 1..3 };
+say 600.polymod( $some-numbers ); # OUTPUT: «(0 2 6 3)␤»
+
+
+=head2 routine is-prime
+
+    multi        is-prime (Int:D $number --> Bool:D)
+    multi method is-prime (Int:D: --> Bool:D)
+
+Returns C<True> if this C<Int> is known to be a prime, or is likely to be a
+prime based on a L<probabilistic Miller-Rabin test|https://en.wikipedia.org/wiki/Miller%E2%80%93Rabin_primality_test>.
+
+Returns C<False> if this C<Int> is known not to be a prime.
+
+    say 2.is-prime;         # OUTPUT: «True␤»
+    say is-prime(9);        # OUTPUT: «False␤»
+
+=head2 routine lsb
+
+    multi method lsb(Int:D:)
+    multi        lsb(Int:D)
+
+Short for "Least Significant Bit".  Returns L<C<Nil>|/type/Nil> if the number is
+0. Otherwise returns the zero-based index from the right of the least
+significant (rightmost) 1 in the binary representation of the number.
+
+    say 0b01011.lsb;        # OUTPUT: «0␤»
+    say 0b01010.lsb;        # OUTPUT: «1␤»
+    say 0b10100.lsb;        # OUTPUT: «2␤»
+    say 0b01000.lsb;        # OUTPUT: «3␤»
+    say 0b10000.lsb;        # OUTPUT: «4␤»
+
+=head2 routine msb
+
+    multi method msb(Int:D:)
+    multi        msb(Int:D)
+
+Short for "Most Significant Bit".  Returns L<C<Nil>|/type/Nil> if the number is 0.
+Otherwise returns the zero-based index from the right of the most significant
+(leftmost) 1 in the binary representation of the number.
+
+    say 0b00001.msb;        # OUTPUT: «0␤»
+    say 0b00011.msb;        # OUTPUT: «1␤»
+    say 0b00101.msb;        # OUTPUT: «2␤»
+    say 0b01010.msb;        # OUTPUT: «3␤»
+    say 0b10011.msb;        # OUTPUT: «4␤»
+
+=head2 routine unival
+
+    multi        unival(Int:D  --> Numeric)
+    multi method unival(Int:D: --> Numeric)
+
+Returns the number represented by the Unicode codepoint with the given integer
+number, or L<NaN|/type/Num#NaN> if it does not represent a number.
+
+    say ord("¾").unival;    # OUTPUT: «0.75␤»
+    say 190.unival;         # OUTPUT: «0.75␤»
+    say unival(65);         # OUTPUT: «NaN␤»
+
+=head2 method Range
+
+Returns a L<Range object|/type/Range> that represents the range of values supported.
+
+=head2 method Bridge
+
+    method Bridge(Int:D: --> Num:D)
+
+Returns the integer converted to L<C<Num>|/type/Num>.
+
+=head1 Operators
+
+=head2 infix div
+
+    multi infix:<div>(Int:D, Int:D --> Int:D)
+
+Does an integer division, rounded down.
+
+=end pod

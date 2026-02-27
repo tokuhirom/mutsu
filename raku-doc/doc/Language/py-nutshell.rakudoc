@@ -1,0 +1,830 @@
+=begin pod :kind("Language") :subkind("Language") :category("migration")
+
+=TITLE Python to Raku - nutshell
+
+=SUBTITLE Learning Raku from Python, in a nutshell
+
+This page is an attempt to provide a way to learn Raku
+for folks coming from a Python background. We discuss
+the equivalent syntax in Raku for a number of Python
+constructs and idioms.
+
+=head1 Basic syntax
+
+=head2 Hello, world
+
+Let's start with printing "Hello, world!". The L<put|/routine/put> keyword in
+Raku is the equivalent of L<print|/routine/print> in Python. Like Python 2,
+parentheses are optional. A newline is added to the end of the line.
+
+I<Python 2>
+
+=for code :lang<python>
+print "Hello, world!"
+
+I<Python 3>
+
+=for code :lang<python>
+print("Hello, world!")
+
+Raku
+
+    put "Hello, world!"
+
+There is also the L<say|/routine/say> keyword, which behaves similarly, but will
+call the L<gist|/routine/gist> method of its argument.
+
+Raku
+
+   my $hello = "Hello, world!";
+   say $hello;  # also prints "Hello, world!"
+                # same as: put $hello.gist
+
+In Python, C<'> and C<"> are interchangeable.
+In Raku, both may be used for quoting, but double
+quotes (C<">) signify that interpolation should be performed.
+For instance, variables that start with a C<$>, and expressions
+contained in curly braces are interpolated.
+
+Raku
+
+    my $planet = 'earth';
+    say "Hello, $planet";                 # OUTPUT: «Hello, earth␤»
+    say 'Hello, $planet';                 # OUTPUT: «Hello, $planet␤»
+    say "Hello, planet number { 1 + 2 }"; # OUTPUT: «Hello, planet number 3␤»
+
+=head2 Statement separators
+
+In Python, a newline signifies the end of a statement.
+There are a few exceptions: A backslash before a newline
+continues a statement across lines. Also if there is
+an unmatched opening parentheses, square bracket, or curly
+brace, the statement continues across lines, until the
+matching curly braces are closed.
+
+In Raku, a semicolon signifies the end of a statement.
+The semicolon may be omitted if it is the last statement
+of a block. The semicolon may also be omitted if there
+is a closing curly brace followed by a newline.
+
+Python
+
+=for code :lang<python>
+print 1 + 2 + \
+    3 + 4
+print ( 1 +
+    2 )
+
+Raku
+
+    say 1 + 2 +
+        3 + 4;
+    say 1 +
+        2;
+
+=head2 Blocks
+
+In Python, indentation is used to indicate a block. Raku
+uses curly braces.
+
+Python
+
+=for code :lang<python>
+if 1 == 2:
+    print("Wait, what?")
+else:
+    print("1 is not 2.")
+
+Raku
+
+    if 1 == 2 {
+        say "Wait, what?"
+    } else {
+        say "1 is not 2."
+    }
+
+Parentheses are optional in both languages for expressions in
+conditionals, as shown above.
+
+=head2 Variables
+
+In Python, variables are declared and initialized at the same time:
+
+=for code :lang<python>
+foo = 12
+bar = 19
+
+In Raku, the C<my> declarator declares a lexical variable. A variable can be
+initialized with C<=>. This variable can either be declared first and later
+initialized or declared and initialized at once.
+
+
+    my $foo;       # declare
+    $foo = 12;     # initialize
+    my $bar = 19;  # both at once
+
+Also, as you may have noticed, variables in Raku usually start with sigils --
+symbols indicating the type of their container. Variables starting with a C<$>
+hold scalars. Variables starting with an C<@> hold arrays, and variables
+starting with a C<%> hold a hash (dict). Sigilless variables, declared with a
+C<\> but used without them, are bound to the value they are assigned to and are
+thus immutable.
+
+Please note that, from now on, we are going to use sigilless variables in most
+examples just to illustrate the similarity with Python. That is technically
+correct, but in general we are going to use sigilless variables in places where
+their immutability (or independence of type, when they are used in signatures)
+is needed or needs to be highlighted.
+
+Python
+
+=begin code :lang<python>
+s = 10
+l = [1, 2, 3]
+d = { 'a' : 12, 'b' : 99 }
+
+print(s)
+print(l[2])
+print(d['a'])
+# 10, 3, 12
+=end code
+
+Raku
+
+    my $s = 10;
+    my @l = 1, 2, 3;
+    my %d = a => 12, b => 99;
+    my \x = 99;
+
+    say $s;
+    say @l[1];
+    say %d<a>;  # or %d{'a'}
+    say x;
+    # 10, 2, 12, 99
+
+
+=head2 Scope
+
+In Python, functions and classes create a new scope, but no other
+block constructor (e.g. loops, conditionals) creates a scope. In
+Python 2, list comprehensions do not create a new scope, but in
+Python 3, they do.
+
+In Raku, every block creates a lexical scope.
+
+Python
+
+=for code :lang<python>
+if True:
+    x = 10
+print(x)
+# x is now 10
+
+Raku
+
+=for code :skip-test<compile time error>
+if True {
+    my $x = 10
+}
+say $x
+# error, $x is not declared in this scope
+
+=for code
+my $x;
+if True {
+    $x = 10
+}
+say $x
+# ok, $x is 10
+
+Python
+
+=for code :lang<python>
+x = 10
+for x in 1, 2, 3:
+   pass
+print(x)
+# x is 3
+
+Raku
+
+    my \x = 10;
+    for 1, 2, 3 -> \x {
+        # do nothing
+    }
+    say x;
+    # x is 10
+
+Lambdas in Python can be written as blocks or pointy blocks in Raku.
+
+Python
+
+=for code :lang<python>
+l = lambda i: i + 12
+
+Raku
+
+=for code :preamble<my $i>
+my $l = -> $i { $i + 12 }
+
+Another Raku idiom for constructing lambdas is the Whatever star, C<*>.
+
+Raku
+
+    my $l = * + 12    # same as above
+
+A C<*> in an expression will become a placeholder for the argument,
+and transform the expression into a lambda at compile time. Each
+C<*> in an expression is a separate positional parameter.
+
+See the section below for more constructs regarding subroutines and blocks.
+
+Another example (from the Python
+L<FAQ|https://docs.python.org/3/faq/programming.html#why-do-lambdas-defined-in-a-loop-with-different-values-all-return-the-same-result>):
+
+Python
+
+=for code :lang<python>
+squares = []
+for x in range(5):
+    squares.append(lambda: x ** 2)
+print(squares[2]())
+print(squares[4]())
+# both 16 since there is only one x
+
+Raku
+
+    my \squares = [];
+    for ^5 -> \x {
+        squares.append({ x² });
+    }
+    say squares[2]();
+    say squares[4]();
+    # 4, 16 since each loop iteration has a lexically scoped x,
+
+Note that C<^N> is like C<range(N)>. Similarly,
+C<N..^M> works like C<range(N, M)> (a list from N
+to M - 1). The range C<N..M> is a list from N to M. The
+C<^> before or after the C<..> indicates that the
+beginning or ending endpoint of the list (or both)
+should be excluded.
+
+Also, C<x²> is a cute way of writing C<x ** 2> (which also
+works fine); the unicode superscript 2 squares a number.
+Many of the other unicode operators work as you would expect
+(exponents, fractions, π), but every unicode operator
+or symbol that can be used in Raku has an ASCII equivalent.
+
+=head2 Control flow
+
+Python has C<for> loops and C<while> loops:
+
+=for code :lang<Python>
+for i in 1, 2:
+    print(i)
+j = 1
+while j < 3:
+    print(j)
+    j += 1
+
+# 1, 2, 1, 2
+
+Raku also has C<for> loops and C<while> loops:
+
+    for 1, 2 -> $i {
+        say $i
+    }
+    my $j = 1;
+    while $j < 3 {
+        say $j;
+        $j += 1
+    }
+
+(Raku also has a few more looping constructs: C<repeat...until>,
+C<repeat...while>, C<until>, and C<loop>.)
+
+C<last> leaves a loop in Raku, and is analogous to
+C<break> in Python. C<continue> in Python is C<next>
+in Raku.
+
+Python
+
+=for code :lang<python>
+for i in range(10):
+    if i == 3:
+        continue
+    if i == 5:
+        break
+    print(i)
+
+Raku
+
+    for ^10 -> $i {
+        next if $i == 3;
+        last if $i == 5;
+        say $i;
+    }
+
+Using C<if> as a statement modifier (as above) is acceptable
+in Raku, even outside of a list comprehension.
+
+The C<yield> statement within a C<for> loop in Python, which produces a
+C<generator>, is like a C<gather>/C<take> construct in Raku. These
+both print 1, 2, 3.
+
+I<Python>
+
+=begin code :lang<python>
+def count():
+    for i in 1, 2, 3:
+        yield i
+
+for c in count():
+    print(c)
+=end code
+
+I<Raku>
+
+    sub count {
+        gather {
+            for 1, 2, 3 -> $i {
+                take $i
+            }
+        }
+    }
+
+    for count() -> $c {
+        say $c;
+    }
+
+Uses of Python's C<enumerate()> and C<.items()> mechanisms for
+iterating lists or dict/maps can both be achieved using the same
+L<kv|/routine/kv> method in Raku (because the "key" of a list is its
+array-like numeric index):
+
+I<Python>
+
+=begin code :lang<python>
+elems = ["neutronium", "hydrogen", "helium", "lithium"]
+for i, e in enumerate(elems):
+    print("Elem no. %d is %s" % (i, e))
+symbols = ["n", "H", "He", "Li"]
+elem4Symbol = {s: e for s, e in zip(symbols, elems)}
+for symbol, elem in elem4Symbol.items():
+    print("Symbol '%s' stands for %s" % (symbol, elem))
+# Elem no. 0 is neutronium
+# Elem no. 1 is hydrogen
+# Elem no. 2 is helium
+# Elem no. 3 is lithium
+# Symbol 'H' stands for hydrogen
+# Symbol 'He' stands for helium
+# Symbol 'Li' stands for lithium
+# Symbol 'n' stands for neutronium
+=end code
+
+I<Raku>
+
+    my @elems = <neutronium hydrogen helium lithium>;
+    for @elems.kv -> $i, $e {
+        say "Elem no. $i is $e"
+    }
+
+    my @symbols = <n H He Li>;
+    my %elem-for-symbol;
+    %elem-for-symbol{@symbols} = @elems;
+
+    # Note that the iteration order will differ from Python
+    for %elem-for-symbol.kv -> $symbol, $element {
+        say "Symbol '$symbol' stands for $element";
+    }
+
+=head2 Lambdas, functions and subroutines>
+
+Declaring a function (subroutine) with C<def> in Python is accomplished
+with C<sub> in Raku.
+
+=begin code :lang<python>
+def add(a, b):
+    return a + b
+
+sub add(\a, \b) {
+    return a + b
+}
+=end code
+
+The C<return> is optional; the value of the last expression is used as
+the return value:
+
+=begin code
+sub add(\a, \b) {
+    a + b
+}
+=end code
+
+=begin code
+# using variables with sigils
+sub add($a, $b) {
+    $a + $b
+}
+=end code
+
+Python 2 functions can be called with positional arguments
+or keyword arguments.  These are determined by the caller.
+In Python 3, some arguments may be "keyword only".
+In Raku, positional and named arguments are determined
+by the signature of the routine.
+
+Python
+
+=begin code :lang<python>
+def speak(word, times):
+    for i in range(times):
+        print word
+speak('hi', 2)
+speak(word='hi', times=2)
+=end code
+
+Raku
+
+Positional parameters:
+
+    sub speak($word, $times) {
+      say $word for ^$times
+    }
+    speak('hi', 2);
+
+Named parameters start with a colon:
+
+    sub speak(:$word, :$times) {
+      say $word for ^$times
+    }
+    speak(word => 'hi', times => 2);
+    speak(:word<hi>, :times<2>);      # Alternative, more idiomatic
+
+Raku supports multiple dispatch, so several signatures
+could be made available by declaring a routine as a C<multi>.
+
+    multi speak($word, $times) {
+      say $word for ^$times
+    }
+    multi speak(:$word, :$times) {
+        speak($word, $times);
+    }
+    speak('hi', 2);
+    speak(:word<hi>, :times<2>);
+
+Named parameters can be sent using a variety of formats:
+
+    sub hello {...};
+    # all the same
+    hello(name => 'world'); # fat arrow syntax
+    hello(:name('world'));  # pair constructor
+    hello :name<world>;     # <> quotes words and makes a list
+    my $name = 'world';
+    hello(:$name);          # lexical var with the same name
+
+Creating an anonymous function can be done with C<sub>, with a block or with
+a pointy block.
+
+Python
+
+=for code :lang<python>
+square = lambda x: x ** 2
+
+Raku
+
+    my $square = sub ($x) { $x ** 2 };  # anonymous sub
+    my $square = -> $x { $x ** 2 };     # pointy block
+    my $square = { $^x ** 2 };          # placeholder variable
+    my $square = { $_ ** 2 };           # topic variable
+
+Placeholder variables are lexicographically ordered to form positional
+parameters. Thus these are the same:
+
+    my $power = { $^x ** $^y };
+    my $power = -> $x, $y { $x ** $y };
+
+=head2 List comprehensions
+
+Postfix statement modifiers and blocks can be combined to
+easily create list comprehensions in Raku.
+
+Python
+
+=for code :lang<python>
+print([ i * 2 for i in [3, 9]])                      # OUTPUT: «[6, 18]␤»
+
+Raku
+
+    say ( $_ * 2 for 3, 9 );                           # OUTPUT: «(6 18)␤»
+    say ( { $^i * 2 } for 3, 9 );                      # OUTPUT: «(6 18)␤»
+    say ( -> \i { i * 2 } for 3, 9 );                  # OUTPUT: «(6 18)␤»
+
+Conditionals can be applied, but the C<if> keyword comes first,
+unlike in Python where the if comes second.
+
+=for code :lang<python>
+print [ x * 2 for x in [1, 2, 3] if x > 1 ]          # OUTPUT: «[4, 6]␤»
+
+vs
+
+    say ( $_ * 2 if $_ > 1 for 1, 2, 3 );              # OUTPUT: «(4 6)␤»
+
+For nested loops, the cross product operator C<X>
+will help:
+
+=for code :lang<python>
+print([ i + j for i in [3,9] for j in [2,10] ])       # OUTPUT: «[5, 13, 11, 19]␤»
+
+becomes either of these:
+
+    say ( { $_[0] + $_[1] } for (3,9) X (2,10) );      # OUTPUT: «(5 13 11 19)␤»
+    say ( -> (\i, \j) { i + j } for (3,9) X (2,10) );  # OUTPUT: «(5 13 11 19)␤»
+    say ( -> ($i, $j) { $i + $j } for (3,9) X (2,10) );# OUTPUT: «(5 13 11 19)␤»
+    say ( { $^a[0] + $^a[1] } for (3,9) X (2,10) );    # OUTPUT: «(5 13 11 19)␤»
+
+Using C<map> (which is just like Python's C<map>) and C<grep> (which is like
+Python's C<filter>) is an alternative.
+
+=head2 Classes and objects
+
+Here's an example from the Python
+L<docs|https://docs.python.org/3/tutorial/classes.html#class-and-instance-variables>.
+First let's go over "instance variables" which are known as attributes
+in Raku:
+
+Python:
+
+=for code :lang<python>
+class Dog:
+    def __init__(self, name):
+        self.name = name
+
+Raku:
+
+    class Dog {
+        has $.name;
+    }
+
+For each created class, Raku provides the constructor method C<new>
+by default which takes named arguments.
+
+Python:
+
+=for code :lang<python>
+d = Dog('Fido')
+e = Dog('Buddy')
+print(d.name)
+print(e.name)
+
+Raku
+
+=for code :preamble<class Dog {}>
+my $d = Dog.new(:name<Fido>); # or: Dog.new(name => 'Fido')
+my $e = Dog.new(:name<Buddy>);
+say $d.name;
+say $e.name;
+
+Class attributes in Raku can be declared in a few ways. One way
+is to just declare a lexical variable and a method for accessing it.
+
+Python:
+
+=for code :lang<python>
+class Dog:
+    kind = 'canine'                # class attribute
+    def __init__(self, name):
+        self.name = name           # instance attribute
+d = Dog('Fido')
+e = Dog('Buddy')
+print(d.kind)
+print(e.kind)
+print(d.name)
+print(e.name)
+
+Raku:
+
+    class Dog {
+        my $kind = 'canine';           # class attribute
+        method kind { $kind }
+        has $.name;                    # instance attribute
+    }
+
+    my $d = Dog.new(:name<Fido>);
+    my $e = Dog.new(:name<Buddy>);
+    say $d.kind;
+    say $e.kind;
+    say $d.name;
+    say $e.name;
+
+In order to mutate attributes in Raku, you must use
+the C<is rw> trait on the attributes:
+
+Python:
+
+=for code :lang<python>
+class Dog:
+    def __init__(self, name):
+        self.name = name
+d = Dog()
+d.name = 'rover'
+
+Raku:
+
+    class Dog {
+        has $.name is rw;
+    }
+    my $d = Dog.new;
+    $d.name = 'rover';
+
+Inheritance is done using C<is>:
+
+Python
+
+=begin code :lang<python>
+class Animal:
+    def jump(self):
+        print ("I am jumping")
+
+class Dog(Animal):
+    pass
+
+d = Dog()
+d.jump()
+=end code
+
+Raku
+
+    class Animal {
+        method jump {
+            say "I am jumping"
+        }
+    }
+
+    class Dog is Animal {
+    }
+
+    my $d = Dog.new;
+    $d.jump;
+
+Multiple inheritance is possible by using the C<is> trait as many times
+as required. Alternatively, it can be used in conjunction with the
+C<also> keyword.
+
+Python
+
+=for code :lang<python>
+class Dog(Animal, Friend, Pet):
+    pass
+
+Raku
+
+    class Animal {}; class Friend {}; class Pet {};
+    ...;
+    class Dog is Animal is Friend is Pet {};
+
+or
+
+    class Animal {}; class Friend {}; class Pet {};
+    ...;
+    class Dog is Animal {
+        also is Friend;
+        also is Pet;
+        ...
+    }
+
+=head2 Decorators
+
+Decorators in Python are a way of wrapping a function
+in another one. In Raku, this is done with C<wrap>.
+
+Python
+
+=begin code :lang<python>
+def greeter(f):
+    def new():
+        print('hello')
+        f()
+    return new
+
+@greeter
+def world():
+    print('world')
+
+world();
+=end code
+
+Raku
+
+    sub world {
+        say 'world'
+    }
+
+    &world.wrap(sub () {
+        say 'hello';
+        callsame;
+    });
+
+    world;
+
+An alternative would be to use a trait:
+
+    # declare the trait 'greeter'
+    multi trait_mod:<is>(Routine $r, :$greeter) {
+        $r.wrap(sub {
+            say 'hello';
+            callsame;
+        })
+    }
+
+    sub world is greeter {
+        say 'world';
+    }
+
+    world;
+
+=head2 Context managers
+
+Context managers in Python declare actions that happen when entering
+or exiting a scope.
+
+Here's a Python context manager that prints the strings
+'hello', 'world', and 'bye'.
+
+=begin code :lang<python>
+class hello:
+    def __exit__(self, type, value, traceback):
+        print('bye')
+    def __enter__(self):
+        print('hello')
+
+with hello():
+    print('world')
+=end code
+
+For "enter" and "exit" events, passing a block as
+an argument would be one option:
+
+    sub hello(Block $b) {
+        say 'hello';
+        $b();
+        say 'bye';
+    }
+
+    hello {
+        say 'world';
+    }
+
+A related idea is 'L<Phasers|/language/phasers>' which may be set up to
+run on entering or leaving a block.
+
+    {
+        LEAVE say 'bye';
+        ENTER say 'hello';
+        say 'world';
+    }
+
+=head2 C<input>
+
+In Python 3, the C<input> keyword is used to prompt the user. This keyword
+can be provided with an optional argument which is written to standard output
+without a trailing newline:
+
+=begin code :lang<python>
+user_input = input("Say hi → ")
+print(user_input)
+=end code
+
+When prompted, you can enter C<Hi> or any other string, which will be stored
+in the C<user_input> variable. This is similar to L<prompt|/routine/prompt> in Raku:
+
+    my $user_input = prompt("Say hi → ");
+    say $user_input; # OUTPUT: whatever you entered.
+
+=head2 Tuples
+
+Python tuples are immutable sequences.  The sequence elements do not need
+to be of the same types.
+
+Python
+
+=for code :lang<python>
+tuple1 = (1, "two", 3, "hat")
+tuple2 = (5, 6, "seven")
+print(tuple1[1])                                   # OUTPUT: «two␤»
+tuple3 = tuple1 + tuple2
+print(tuple3)                                      # OUTPUT: «(1, 'two', 3, 'hat', 5, 6, 'seven')␤»
+
+Raku
+
+Raku does not have a builtin Tuple type. You can get the same behavior from
+Raku using the List type, or from an external module.
+
+    my $list1 = (1, "two", 3, "hat");
+    my $list2 = (5, 6, "seven");
+    say $list1[1];                                 # OUTPUT: «two␤»
+    my $list3 = (slip($list1), slip($list2));
+    my $list4 = (|$list1, |$list2);                # equivalent to previous line
+    say $list3;                                    # OUTPUT: «(1, two, 3, hat, 5, 6, seven)␤»
+
+=end pod

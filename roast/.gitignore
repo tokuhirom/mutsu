@@ -1,0 +1,7 @@
+*.rakudo
+*.rakudo.jvm
+*.rakudo.parrot
+*.rakudo.moar
+*.niecza
+.precomp
+S32-io/server-ready-flag

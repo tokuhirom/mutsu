@@ -1,0 +1,183 @@
+=begin pod :kind("Language") :subkind("Language") :category("advanced")
+
+=TITLE Experimental features
+
+=SUBTITLE Preview of upcoming new language features available for user evaluation
+
+During Raku development, new features are often made available for
+users as experimental before their design is completed. Eventually
+these features may be made part of the Raku specification. To use these
+features, one uses the C<experimental> pragma in program source code, for
+example, like this:
+
+    use experimental :macros;
+
+These are the features that, for the time being, are experimental.
+
+=head2 X<B<pack>|Language,pack>
+
+Pack is a feature that allows binary serialization of general data structures,
+and is inherited from
+L<Perl's pack|http://perldoc.perl.org/functions/pack.html>.
+The C<pack> order creates a L<C<Buf>|/type/Buf> by packing data structures in a certain
+way given by a I<packing string> with the options shown
+L<in the description of C<unpack>|/type/Blob#routine_unpack>. You turn it on by
+inserting this pragma at the beginning of your program:
+
+    use experimental :pack;
+
+For instance, we can pack numbers interpreting them as hexadecimal (C<H>) with
+the pattern repeating until there are no more elements (C<*>):
+
+=for code
+use experimental :pack;
+say pack("H*", "414243").contents;#  OUTPUT: «(65 66 67)␤»
+
+There is a corresponding C<unpack> routine that does exactly the opposite.
+
+=for code
+use experimental :pack;
+my $buf=Buf.new(65,66,67);
+say $buf.unpack("H*"); # OUTPUT: «414243␤»
+
+
+Not all of the symbols above are guaranteed to be implemented, and the roadmap
+does not include a fixed date for getting out of that stage.
+
+Please see also documentation for L<C<pack>|/type/Blob#sub_pack> and
+L<C<unpack>|/type/Blob#routine_unpack> in the L<C<Blob>|/type/Blob> page.
+
+=head2 X<B<macros>|Language,macros>
+
+L<Macros|https://en.wikipedia.org/wiki/Macro_(computer_science)> are
+code-generating routines, that generate code in compile time, before the program
+is executed. In Raku its use is still experimental and it needs to be turned
+on via the pragma
+
+    use experimental :macros;
+
+Macro processing happens during parsing time. A macro generates an abstract
+syntax tree, which is grafted into the program syntax tree. C<quasi> is the
+routine that performs this task.
+
+=begin code
+use experimental :macros;
+macro does-nothing() {
+    quasi {}
+};
+does-nothing; # OUTPUT: «»
+=end code
+
+X<|Language,quasi (macros)>
+Macros are a kind of routine, so they can take arguments in exactly the same
+way, and act also in almost the same way.
+
+=begin code
+use experimental :macros;
+macro is-mighty( $who ) {
+    quasi { "$who is mighty!"}
+};
+say is-mighty "Freija"; # OUTPUT: « "Freija" is mighty!␤»
+=end code
+
+X<|Language,unquoting (macros)>
+X<|Language,{{{}}} (macros)>
+"Almost" accounts for the fact that the argument is inserted as a literal,
+including the quotes. Please note that we can also eliminate the parentheses for
+a macro call, following the same rules as a routine. You can use the unquoting
+construct C<{{{}}}> to get rid of this kind of thing:
+
+=begin code
+use experimental :macros;
+macro is-mighty( $who ) {
+    quasi { {{{$who}}} ~ " is mighty!"}
+};
+say is-mighty "Freija";  # OUTPUT: «Freija is mighty!␤»
+=end code
+
+Since macro expansion happens at parse time, care must be taken when using
+external variables in them:
+
+=begin code
+use experimental :macros;
+my $called;
+macro called() {
+    $called++;
+    quasi { "Called" }
+};
+say called() ~ " $called times";
+say called() ~ " $called times"; # OUTPUT: «Called 2 times␤Called 2 times␤»
+=end code
+
+Since macros are expanded at parse time, C<$called> will be the result when runtime
+starts, which is already C<2>, as printed. Initializing C<$called> with 0,
+however, will make this print C<Called 0 times> since that initialization is run
+I<after> the parse phase, when the macros are expanded.
+
+Macros are terribly useful when complicated, computed initializations need to be
+done. However, they are still in the I<experimental> nursery for a good reason.
+Although the features shown above are not very likely to change, anything, even
+their very presence, might change at any one time depending in necessities, so
+it would be best to keep them away from production code. Meanwhile, taking a
+look at
+L<this article by Masak|https://perl6advent.wordpress.com/2012/12/23/day-23-macros/>
+as well as
+L<C<007>|https://github.com/masak/007>, a new macro language, might provide
+a glimpse into the things to come.
+
+=head2 X<B<cached>|Language,:cached>
+
+The following pragma:
+
+    use experimental :cached;
+
+turns on the C<is cached> trait, which stores the result of a routine call,
+returning the same value if called with the same arguments.
+
+It can be used when heavy calculations are involved, as in this sample that uses
+L<amicable numbers|https://perl6advent.wordpress.com/2018/12/25/calling-numbers-names/#more-7528>,
+taken from the 2018 Advent Calendar:
+
+=begin code
+use experimental :cached;
+
+sub aliquot-parts( $number ) is cached {
+    (^$number).grep: $number %% *;
+}
+
+sub infix:<amic>( $m, $n ) {
+    $m == aliquot-parts($n).sum &&
+    $n == aliquot-parts($m).sum;
+}
+
+# Taken from https://en.wikipedia.org/wiki/Amicable_numbers
+my @numbers = [2620, 2924, 5020, 5564, 6232, 6368, 66928, 66992];
+
+say "Aliquot parts of $_ are ", aliquot-parts $_ for @numbers;
+
+for @numbers X @numbers -> @pair {
+    say "@pair[0] and @pair[1] are ",
+        @pair[0] amic @pair[1]??" "!!"not ", "amicable";
+}
+=end code
+
+This code caches the computation of the I<aliquot parts>, so that when the
+C<amic> operator is called, it's only computed once; as a matter of fact, the
+first loop which prints these aliquot parts will be the only one that actually
+perform the computation.
+
+See also
+L<the description of the trait|/routine/is%20cached> for additional information and examples.
+
+B<Note>: This feature is not thread-safe.
+
+=head2 X<B<rakuast>|Language,:rakuast>
+
+The pragma:
+
+    use experimental :rakuast;
+
+makes the L<C<RakuAST>|/type/RakuAST> package and its classes available for
+use in language versions B<before> C<6.e>.
+
+=end pod

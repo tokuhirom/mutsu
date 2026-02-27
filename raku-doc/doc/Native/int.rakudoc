@@ -1,0 +1,16 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class int
+
+=SUBTITLE Native integer
+
+  class int is Int { }
+
+This class is used to represent integers that are native to the compiler,
+operating system and architecture the interpreter is compiled in.
+
+More information in L<the native types page|/language/nativetypes> as well as in
+the section on L<native numerics|/language/numerics#Native_numerics>.
+
+
+=end pod

@@ -1,0 +1,828 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Lists, sequences, and arrays
+
+=SUBTITLE Positional data constructs
+
+Lists have been a central part of computing since before there were
+computers, during which time many devils have taken up residence in
+their details. They were actually one of the hardest parts of Raku to
+design, but through persistence and patience, Raku has arrived with an
+elegant system for handling them.
+
+=head1 Literal lists
+
+Literal L<C<List>|/type/List>s are created with commas and semicolons, B<not>
+with parentheses (which only group things), so:
+
+    1, 2;                # This is two-element list
+    our $list = (1, 2);  # This is also a List, in parentheses
+    $list = (1; 2);      # same List (see below)
+    $list = (1);         # This is not a List, just a 1 in parentheses
+    $list = (1,);        # This is a one-element List
+
+There is one exception, empty lists are created with just a pair of parentheses:
+
+=for code
+();          # This is an empty List
+=for code :skip-test<syntax error>
+(,);         # This is a syntax error
+
+Note that hanging commas are just fine as long as the beginning and
+end of a list are clear, so feel free to use them for easy code editing.
+
+Parentheses can be used to mark the beginning and end of a L<C<List>|/type/List>, so:
+
+    (1, 2), (1, 2); # This is a list of two lists.
+
+L<C<List>|/type/List>s of L<C<List>|/type/List>s can also be created by combining comma and semicolon.
+This is also called multi-dimensional syntax, because it is most often used to
+index multidimensional arrays.
+
+    say so (1,2; 3,4) eqv ((1,2), (3,4));
+    # OUTPUT: «True␤»
+    say so (1,2; 3,4;) eqv ((1,2), (3,4));
+    # OUTPUT: «True␤»
+    say so ("foo";) eqv ("foo") eqv (("foo")); # not a list
+    # OUTPUT: «True␤»
+
+Unlike a comma, a hanging semicolon does not create a multidimensional list
+in a literal.  However, be aware that this behavior changes in most argument
+lists, where the exact behavior depends on the function... But will usually
+be:
+
+    say('foo';);   # a list with one element and the empty list
+    # OUTPUT: «(foo)()␤»
+    say(('foo';)); # no list, just the string "foo"
+    # OUTPUT: «foo␤»
+
+Because the semicolon doubles as a
+L<statement terminator|/language/control#Statements>
+it will end a literal list when used at the top level, instead creating
+a statement list.  If you want to create a statement list inside parenthesis,
+use a sigil before the parenthesis:
+
+    say so (42) eqv $(my $a = 42; $a;);
+    # OUTPUT: «True␤»
+    say so (42,42) eqv (my $a = 42; $a;);
+    # OUTPUT: «True␤»
+
+Individual elements can be pulled out of a list using a subscript.  The
+first element of a list is at index number zero:
+
+=for code
+say (1, 2)[0];  # says 1
+say (1, 2)[1];  # says 2
+say (1, 2)[2];  # says Nil
+
+Counting backwards from the end is done with the L<C<Whatever>|/type/Whatever> star
+(details on the page on L<Subscripts|/language/subscripts#From_the_end>):
+=for code :skip-test<syntax error>
+say (1, 2)[*-1]; # says 2
+say (1, 2)[-1];  # Error
+
+To access elements of nested (multidimensional) lists,
+separate the indices for different dimensions with semicolons:
+=for code
+say ((<a b>,<c d>),(<e f>,<g h>))[1;0;1]; # says "f"
+
+Pulling out multiple elements at once is possible
+by passing lists or ranges of indices;
+this is described in sections L<Slice indexing context|#Slice_indexing_context>
+and L<Range as slice|#Range_as_slice>.
+
+=head1 The @ sigil
+
+Variables in Raku whose names bear the C<@> sigil are expected to
+contain some sort of list-like object. Other variables may
+also contain these objects, but C<@>-sigiled variables always do, and
+are expected to act the part.
+
+By default, when you assign a L<C<List>|/type/List> to an C<@>-sigiled variable, you create an
+L<C<Array>|/type/Array>. Those are described below. If instead you want to refer directly to a
+L<C<List>|/type/List> object using an C<@>-sigiled variable, you can use binding with C<:=>
+instead.
+
+    my @a := 1, 2, 3;
+
+One of the ways C<@>-sigiled variables act like lists is by always supporting
+L<positional subscripting|/language/subscripts>. Anything bound to an
+C<@>-sigiled value must support the L<C<Positional>|/type/Positional> role which
+guarantees that the following is going to fail:
+
+    my @a := 1; # Type check failed in binding; expected Positional but got Int
+
+
+
+=head1 Reset a list container
+
+To remove all elements from a Positional container assign
+L<C<Empty>|/type/Slip#constant_Empty>, the empty list C<()> or a L<C<Slip>|/type/Slip> of the empty
+list to the container.
+
+    my @a = 1, 2, 3;
+    @a = ();
+    @a = Empty;
+    @a = |();
+
+=head1 Iteration
+
+All lists may be iterated, which means taking each element from the
+list in order and stopping after the last element:
+
+    for 1, 2, 3 { .say }  # OUTPUT: «1␤2␤3␤»
+
+=head2 X<Single Argument Rule|Language,Single Argument Rule>
+
+It is the rule by which the set of parameters passed to an iterator such
+as C<for> is treated as a single argument, instead of several arguments;
+that is C<some-iterator( a, b, c, ...)> will always be treated as
+C<some-iterator( list-or-array(a, b, c))>. In this example
+
+=begin code
+my @list = [ (1, 2, 3),
+             (1, 2, ),
+             [<a b c>, <d e f>],
+             [[1]] ];
+
+for @list -> @element {
+    say "{@element} → {@element.^name}";
+    for @element -> $sub-element {
+        say $sub-element;
+    }
+}
+# OUTPUT:
+#1 2 3 → List
+#1
+#2
+#3
+#1 2 → List
+#1
+#2
+#a b c d e f → Array
+#(a b c)
+#(d e f)
+#1 → Array
+#1
+=end code
+
+Since what C<for> receives is a single argument, it will be treated as a
+list of elements to iterate over. The rule of thumb is that
+L<if there's a comma, anything preceding it is an element|https://perl6advent.wordpress.com/2015/12/14/day-15-2015-the-year-of-the-great-list-refactor/>
+and the list thus created becomes the I<single element>. That happens in
+the case of the two arrays separated by a comma which is the third element in
+the L<C<Array>|/type/Array> we are iterating in this example. In general, quoting the article
+linked
+above, the single argument rule I<... makes for behavior as the programmer
+would expect>.
+
+This rule is equivalent to saying that arguments to iterators will not
+flatten, will not de-containerize, and will behave as if a single argument
+has been handed to them, whatever the shape that argument has.
+
+=for code
+my @a = 1,2; .say for @a, |@a;     # OUTPUT: «[1 2]␤1␤2␤»
+my @a = 1,2; .say for $[@a, |@a ]; # OUTPUT: «[[1 2] 1 2]␤»
+
+In the second case, the single argument is a single element, since we have
+itemized the array. There's an exception to the single argument rule
+L<mentioned in the Synopsis|https://github.com/Raku/old-design-docs/blob/master/S07-lists.pod#The_single_argument_rule>:
+lists or arrays with a single element will be flattened:
+
+=for code
+my @a = 1,2; .say for [[@a ]];     # OUTPUT: «1␤2␤»
+
+The result may be a bit surprising in the case of using a trailing comma:
+=for code
+my @a = 1,2; .say for @a,;         # OUTPUT: «[1 2]␤»
+
+But the L<comma operator|/routine/,> is actually building a higher-order
+L<C<List>|/type/List> with a single element, which is also a L<C<List>|/type/List>. So not so surprising.
+Since it's got a single element, any higher-order list will be also flattened
+as above:
+
+=for code
+my @a = 1,2; .say for [@a,];       # OUTPUT: «[1 2]␤»
+
+=head1 Testing for elements
+
+To test for elements in a L<C<List>|/type/List> or L<C<Array>|/type/Array>, you can use the
+L<"is element of"|/language/setbagmix#infix_(elem),_infix_∈>
+L<C<Set>|/type/Set> operator.
+
+    my @a = <foo bar buzz>;
+    say 'bar' (elem) @a;    # OUTPUT: «True␤»
+    say 'bar' ∈ @a;         # same, using unicode version of operator
+
+This is the equivalent of:
+
+=for code :preamble<my @a>
+'bar' (elem) @a.Set;    # convert the array to a Set first
+
+except that, if possible, it won't actually do the conversion.
+
+It basically compares the value with each element in the array using the
+L<===|/routine/===> infix operator.  If you want to use another way to
+compare values, you probably should use
+L<first|/routine/first#(List)_routine_first>.
+
+=head2 Sequences
+
+Not all lists are born full of elements.  Some only create as many
+elements as they are asked for.  These are called sequences, which are
+of type L<C<Seq>|/type/Seq>. As it so happens, loops return L<C<Seq>|/type/Seq>s.
+
+    (loop { 42.say })[2]  # OUTPUT: «42␤42␤42␤»
+
+So, it is fine to have infinite lists in Raku, just so long as you
+never ask them for all their elements.  In some cases, you may want to
+avoid asking them how long they are too – Raku will try to return
+C<Inf> if it knows a sequence is infinite, but it cannot always know.
+
+These lists can be built using the L<...|/language/operators#infix_...> operator,
+which builds lazy lists using a variety of generating expressions.
+
+Although the L<C<Seq>|/type/Seq> class does provide some positional subscripting, it
+does not provide the full interface of L<C<Positional>|/type/Positional>, so an C<@>-sigiled
+variable may B<not> be bound to a L<C<Seq>|/type/Seq>, and trying to do so will yield
+an error.
+
+    my @s := <a b c>.Seq; CATCH { default { say .^name, ' ', .Str } }
+    # OUTPUT: «X::TypeCheck::Binding Type check failed in binding; expected Positional but got Seq ($(("a", "b","c").Seq))␤»
+
+This is because the L<C<Seq>|/type/Seq> does not keep values around after you have
+used them. This is useful behavior if you have a very long sequence, as
+you may want to throw values away after using them, so that your program
+does not fill up memory. For example, when processing a file of a
+million lines:
+
+    =begin code :preamble<sub do-something-with($x){ }>
+    for 'filename'.IO.lines -> $line {
+        do-something-with($line);
+    }
+    =end code
+
+You can be confident that the entire content of the file will not stay
+around in memory, unless you are explicitly storing the lines somewhere.
+
+On the other hand, you may want to keep old values around in some cases.
+It is possible to hide a L<C<Seq>|/type/Seq> inside a L<C<List>|/type/List>, which will still be
+lazy, but will remember old values. This is done by calling the C<.list>
+method. Since this L<C<List>|/type/List> fully supports L<C<Positional>|/type/Positional>, you may bind it
+directly to an C<@>-sigiled variable.
+
+    my @s := (loop { 42.say }).list;
+    @s[2]; # says 42 three times
+    @s[1]; # does not say anything
+    @s[4]; # says 42 two more times
+
+You may also use the C<.cache> method instead of C<.list>, depending on
+how you want the references handled.  See L<C<Seq>|/type/Seq> for details.
+
+=head2 Using C<.iterator>
+
+All lists mix in the L<C<Iterator>|/type/Iterator> role, and as such have an
+C<.iterator> method they can use for a finer control over a list. We can use it
+like this, for instance:
+
+=begin code
+my @multiples-of-five = 0,5,10 … 500;
+my $odd-iterator = @multiples-of-five.iterator;
+my $odd;
+repeat {
+    $odd-iterator.skip-one;
+    $odd = $odd-iterator.pull-one;
+    say "→ $odd";
+} until $odd.Str eq IterationEnd.Str;
+=end code
+
+Instead of using the iterator implicitly as we do in C<for> loops, we
+explicitly assign it to the C<$odd-iterator> variable to work over the
+odd elements of the sequence only. That way, we can skip even elements
+using C<.skip-one>. We do have to test explicitly for termination, which
+we do in the C<until> expression. When there's nothing left to iterate,
+C<$odd> will have the value C<IterationEnd>. Please see
+L<C<Iterator>|/type/Iterator> for the methods and
+functions that are available.
+
+=head2 Slips
+
+Sometimes you want to insert the elements of a list into another list.
+This can be done with a special type of list called a
+L<C<Slip>|/type/Slip>.
+
+    say (1, (2, 3), 4) eqv (1, 2, 3, 4);         # OUTPUT: «False␤»
+    say (1, Slip.new(2, 3), 4) eqv (1, 2, 3, 4); # OUTPUT: «True␤»
+    say (1, slip(2, 3), 4) eqv (1, 2, 3, 4);     # OUTPUT: «True␤»
+
+Another way to make a L<C<Slip>|/type/Slip> is with the C<|> prefix operator.  Note that
+this has a tighter precedence than the comma, so it only affects a single
+value, but unlike the above options, it will break L<C<Scalar>|/type/Scalar>s.
+
+    say (1, |(2, 3), 4) eqv (1, 2, 3, 4);        # OUTPUT: «True␤»
+    say (1, |$(2, 3), 4) eqv (1, 2, 3, 4);       # OUTPUT: «True␤»
+    say (1, slip($(2, 3)), 4) eqv (1, 2, 3, 4);  # OUTPUT: «True␤»
+
+=head1 X<Lazy lists|Language,laziness in Iterable objects>
+
+L<C<List>|/type/List>s, L<C<Seq>|/type/Seq>s, L<C<Array>|/type/Array>s and any other class that implements the
+L<C<Iterator>|/type/Iterator> role can be lazy, which means that their values are
+computed on demand and stored for later use. One of the ways to create a lazy
+object is to use L<gather/take|/language/control#gather/take> or the L<sequence
+operator|/language/operators#infix_...>. You can also write a class that
+implements the role L<C<Iterator>|/type/Iterator> and returns C<True> on a call to
+L<is-lazy|/routine/is-lazy>. Please note that some methods like C<elems> cannot
+be called on a lazy List and will result in a thrown
+L<C<Exception>|/type/Exception>.
+
+=begin code
+# This array is lazy and its elements will not be available
+# until explicitly requested.
+
+my @lazy-array = lazy 1, 11, 121 ... 10**100;
+say @lazy-array.is-lazy;     # OUTPUT: «True␤»
+say @lazy-array[];           # OUTPUT: «[...]␤»
+
+# Once all elements have been retrieved, the list
+# is no longer considered lazy.
+
+my @no-longer-lazy = eager @lazy-array;  # Forcing eager evaluation
+say @no-longer-lazy.is-lazy;             # OUTPUT: «False␤»
+say @no-longer-lazy[];
+# OUTPUT: (sequence starting with «[1 11 121» ending with a 300 digit number)
+=end code
+
+In the example above, C<@lazy-array> is an L<C<Array>|/type/Array> which, through construction,
+is made C<lazy>. Calling C<is-lazy> on it actually calls the method mixed in by
+the role L<C<Iterator>|/type/Iterator>, which, since it originates in a lazy list, is itself lazy.
+
+A common use case for lazy L<C<Seq>|/type/Seq>s is the processing of infinite sequences of
+numbers, whose values have not been computed yet and cannot be computed in their
+entirety. Specific values in the List will only be computed when they are
+needed.
+
+=for code
+my  $l := 1, 2, 4, 8 ... Inf;
+say $l[0..16];
+# OUTPUT: «(1 2 4 8 16 32 64 128 256 512 1024 2048 4096 8192 16384 32768 65536)␤»
+
+You can easily assign lazy objects to other objects, conserving their laziness:
+
+    my  $l := 1, 2, 4, 8 ... Inf; # This is a lazy Seq.
+    my  @lazy-array = $l;
+    say @lazy-array[10..15]; # OUTPUT: «(1024 2048 4096 8192 16384 32768)␤»
+    say @lazy-array.is-lazy; # OUTPUT: «True␤»
+
+=head1 Immutability
+
+The lists we have talked about so far (L<C<List>|/type/List>, L<C<Seq>|/type/Seq> and L<C<Slip>|/type/Slip>)
+are all immutable.  This means you cannot remove elements from them,
+or re-bind existing elements:
+
+    =begin code
+    (1, 2, 3)[0]:delete; # Error Can not remove elements from a List
+    (1, 2, 3)[0] := 0;   # Error Cannot use bind operator with this left-hand side
+    (1, 2, 3)[0] = 0;    # Error Cannot modify an immutable Int
+    =end code
+
+However, if any of the elements is wrapped in a L<C<Scalar>|/type/Scalar> you
+can still change the value which that L<C<Scalar>|/type/Scalar> points to:
+
+    my $a = 2;
+    (1, $a, 3)[1] = 42;
+    $a.say;            # OUTPUT: «42␤»
+
+that is, it is only the list structure itself – how many elements there are
+and each element's identity – that is immutable.  The immutability is not
+contagious past the identity of the element.
+
+=head1 List contexts
+
+So far we have mostly dealt with lists in neutral contexts.  Lists are actually
+very context sensitive on a syntactical level.
+
+=head2 List assignment context
+
+When a list (or something that is going to be converted into a list) appears on
+the right-hand side of an assignment into an C<@>-sigiled variable, it is
+"eagerly" evaluated.  This means that a L<C<Seq>|/type/Seq> will be iterated until it can
+produce no more elements, for instance.  This is one of the places you do not
+want to put an infinite list, lest your program hang and, eventually, run out of
+memory:
+
+    my @divisors = (gather {
+        for <2 3 5 7> {
+            take $_ if 70 %% $_;
+        }
+    });
+    say @divisors; # OUTPUT: «[2 5 7]␤»
+
+The L<C<gather> statement|/language/control#gather/take>
+creates a lazy list, which is eagerly evaluated when assigned to C<@divisors>.
+
+=head2 Flattening "context"
+
+When you have a list that contains sub-lists, but you only want one flat
+list, you may flatten the list to produce a sequence of values as if all
+parentheses were removed. This works no matter how many levels deep the
+parentheses are nested.
+
+    say (1, (2, (3, 4)), 5).flat eqv (1, 2, 3, 4, 5) # OUTPUT: «True␤»
+
+This is not really a syntactical "context" as much as it is a process of
+iteration, but it has the appearance of a context.
+
+Note that L<C<Scalar>|/type/Scalar>s around a list will make it immune to
+flattening:
+
+    for (1, (2, $(3, 4)), 5).flat { .say } # OUTPUT: «1␤2␤(3 4)␤5␤»
+
+...but an C<@>-sigiled variable will spill its elements.
+
+    my @l := 2, (3, 4);
+    for (1, @l, 5).flat { .say };      # OUTPUT: «1␤2␤3␤4␤5␤»
+    my @a = 2, (3, 4);                 # Arrays are special, see below
+    for (1, @a, 5).flat { .say };      # OUTPUT: «1␤2␤(3 4)␤5␤»
+
+=head2 Argument list (Capture) context
+
+When a list appears as arguments to a function or method call, special
+syntax rules are at play: the list is immediately converted into a
+L<C<Capture>|/type/Capture>.  A L<C<Capture>|/type/Capture> itself has a L<C<List>|/type/List> (C<.list>) and a L<C<Hash>|/type/Hash>
+(C<.hash>). Any L<C<Pair>|/type/Pair> literals whose keys are not quoted, or which are
+not parenthesized, never make it into C<.list>.  Instead, they are
+considered to be named arguments and squashed into C<.hash>.  See
+L<C<Capture>|/type/Capture> for the details of this processing.
+
+Consider the following ways to make a new L<C<Array>|/type/Array> from a L<C<List>|/type/List>.
+These ways place the L<C<List>|/type/List> in an argument list context and because of
+that, the L<C<Array>|/type/Array> only contains C<1> and C<2> but not the L<C<Pair>|/type/Pair>
+C<:c(3)>, which is ignored.
+
+    Array.new(1, 2, :c(3));
+    Array.new: 1, 2, :c(3);
+    new Array: 1, 2, :c(3);
+
+In contrast, these ways do not place the L<C<List>|/type/List> in argument list context,
+so all the elements, even the L<C<Pair>|/type/Pair> C<:c(3)>, are placed in the L<C<Array>|/type/Array>.
+
+    Array.new((1, 2, :c(3)));
+    (1, 2, :c(3)).Array;
+    my @a = 1, 2, :c(3); Array.new(@a);
+    my @a = 1, 2, :c(3); Array.new: @a;
+    my @a = 1, 2, :c(3); new Array: @a;
+
+In argument list context the C<|> prefix operator applied to a L<C<Positional>|/type/Positional>
+will always slip list elements as positional arguments to the Capture,
+while a C<|> prefix operator applied to an L<C<Associative>|/type/Associative> will slip pairs in
+as named parameters:
+
+    my @a := 2, "c" => 3;
+    Array.new(1, |@a, 4);    # Array contains 1, 2, :c(3), 4
+    my %a = "c" => 3;
+    Array.new(1, |%a, 4);    # Array contains 1, 4
+
+=head2 Slice indexing context
+
+From the perspective of the L<C<List>|/type/List> inside a L<slice subscript|/language/subscripts#Slices>,
+is only remarkable in that it is unremarkable: because
+L<adverbs|/language/subscripts#Adverbs> to a slice are attached after the C<]>,
+the inside of a slice is B<not> an argument list, and no special processing
+of pair forms happens.
+
+Most L<C<Positional>|/type/Positional> types will enforce an integer coercion on each element
+of a slice index, so pairs appearing there will generate an error, anyway:
+
+    =begin code
+    (1, 2, 3)[1, 2, :c(3)] # OUTPUT: «Method 'Int' not found for invocant of class 'Pair'␤»
+    =end code
+
+...however this is entirely up to the type – if it defines an order
+for pairs, it could consider C<:c(3)> a valid index.
+
+Indices inside a slice are usually not automatically flattened, but
+neither are sublists usually coerced to L<C<Int>|/type/Int>.  Instead, the list structure
+is kept intact, causing a nested slice operation that replicates the
+structure in the result:
+
+    say ("a", "b", "c")[(1, 2), (0, 1)] eqv (("b", "c"), ("a", "b")) # OUTPUT: «True␤»
+
+Slices can be taken also across several dimensions using I<semilists>, which are lists of slices separated by semicolons:
+
+    my @sliceable = [[ ^10 ], ['a'..'h'], ['Ⅰ'..'Ⅺ']];
+    say @sliceable[ ^3; 4..6 ]; # OUTPUT: «(4 5 6 e f g Ⅴ Ⅵ Ⅶ)␤»
+
+which is selecting the 4 to 6th element from the three first dimensions (C<^3>).
+
+=head2 Range as slice
+
+A L<C<Range>|/type/Range> is a container for a lower and an upper boundary,
+either of which may be excluded. Generating a slice with a L<C<Range>|/type/Range> will
+include any index between the bounds, though an infinite Range will
+L<truncate|/language/subscripts#Truncating_slices> non-existent elements.
+An infinite range with excluded upper boundary (e.g. C<0..^Inf>) is still
+infinite and will reach all elements.
+
+    my @a = 1..5;
+    say @a[0..2];     # OUTPUT: «(1 2 3)␤»
+    say @a[0..^2];    # OUTPUT: «(1 2)␤»
+    say @a[0..*];     # OUTPUT: «(1 2 3 4 5)␤»
+    say @a[0..^*];    # OUTPUT: «(1 2 3 4 5)␤»
+    say @a[0..Inf-1]; # OUTPUT: «(1 2 3 4 5)␤»
+
+Note that when the upper boundary is a L<C<WhateverCode>|/type/WhateverCode> instead of just a L<C<Whatever>|/type/Whatever>,
+the range is not infinite but becomes a L<C<Callable>|/type/Callable> producing L<C<Range>|/type/Range>s. This is
+normal behavior of the C<..> operator. The subscript operator
+L<[]|/language/subscripts#Slices> evaluates the L<C<WhateverCode>|/type/WhateverCode> providing the
+list's C<.elems> as an argument and uses the resulting range to slice:
+
+    =begin code :preamble<my @a = 1..5>
+    say @a[0..*-1];   # OUTPUT: «(1 2 3 4 5)␤»
+    say @a[0..^*-1];  # OUTPUT: «(1 2 3 4)␤»
+    # Produces 0..^2.5 as the slice range
+    say @a[0..^*/2];  # OUTPUT: «(1 2 3)␤»
+    =end code
+
+Notice that C<0..^*> and C<0..^*+0> behave consistently in subscripts despite
+one being an infinite range and the other a WhateverCode producing ranges,
+but C<0..*+0> will give you an additional trailing L<C<Nil>|/type/Nil> because, unlike the
+infinite range C<0..*>, it does not truncate.
+
+=head2 Array constructor context
+
+Inside an Array Literal, the list of initialization values is not in capture
+context and is just a normal list.  It is, however, eagerly evaluated just as
+in assignment.
+
+    say so [ 1, 2, :c(3) ] eqv Array.new((1, 2, :c(3))); # OUTPUT: «True␤»
+    [while $++ < 2 { 42.say; 43 }].map: *.say;           # OUTPUT: «42␤42␤43␤43␤»
+    (while $++ < 2 { 42.say; 43 }).map: *.say;           # OUTPUT: «42␤43␤42␤43␤»
+
+Which brings us to Arrays...
+
+=head1 Arrays
+
+L<C<Array>|/type/Array>s differ from lists in three major ways: Their elements may be typed,
+they automatically itemize their elements, and they are mutable.  Otherwise
+they are Lists and are accepted wherever lists are.
+
+    say Array ~~ List     # OUTPUT: «True␤»
+
+A fourth, more subtle, way they differ is that when working with Arrays, it
+can sometimes be harder to maintain laziness or work with infinite sequences.
+
+=head2 X<Typing|Language,typed array;Syntax,[ ] (typed array)>
+
+Arrays may be typed such that their slots perform a typecheck whenever
+they are assigned to.  An Array that only allows L<C<Int>|/type/Int> values to be assigned
+is of type C<Array[Int]> and one can create one with C<Array[Int].new>.  If
+you intend to use an C<@>-sigiled variable only for this purpose, you may
+change its type by specifying the type of the elements when declaring it:
+
+    =begin code
+    my Int @a = 1, 2, 3;              # An Array that contains only Ints
+    # the same as
+    my @a of Int = 1, 2, 3;           # An Array of Ints
+    my @b := Array[Int].new(1, 2, 3); # Same thing, but the variable is not typed
+    my @b := Array[Int](1, 2, 3);     # Rakudo shortcut for the same code
+    say @b eqv @a;                    # says True.
+    my @c = 1, 2, 3;                  # An Array that can contain anything
+    say @b eqv @c;                    # says False because types do not match
+    say @c eqv (1, 2, 3);             # says False because one is a List
+    say @b eq @c;                     # says True, because eq only checks values
+    say @b eq (1, 2, 3);              # says True, because eq only checks values
+
+    @a[0] = 42;                       # fine
+    @a[0] = "foo";                    # error: Type check failed in assignment
+    =end code
+
+In the above example we bound a typed Array object to an C<@>-sigil variable for
+which no type had been specified. The other way around does not work – you may
+not bind an Array that has the wrong type to a typed C<@>-sigiled variable:
+
+    =begin code
+    my @a := Array[Int].new(1, 2, 3);     # fine
+    @a := Array[Str].new("a", "b");       # fine, can be re-bound
+    my Int @b := Array[Int].new(1, 2, 3); # fine
+    @b := Array.new(1, 2, 3);             # error: Type check failed in binding
+    =end code
+
+When working with typed arrays, it is important to remember that they are
+nominally typed. This means the declared type of an array is what matters.
+Given the following sub declaration:
+
+    sub mean(Int @a) {
+        @a.sum / @a.elems
+    }
+
+Calls that pass an Array[Int] will be successful:
+
+    =begin code :preamble<sub mean(Int @a) {}>
+    my Int @b = 1, 3, 5;
+    say mean(@b);                       # @b is Array[Int]
+    say mean(Array[Int].new(1, 3, 5));  # Anonymous Array[Int]
+    say mean(my Int @ = 1, 3, 5);       # Another anonymous Array[Int]
+    =end code
+
+However, the following calls will all fail, due to passing an untyped array,
+even if the array just happens to contain Int values at the point it is
+passed:
+
+    =begin code :skip-test<illustrates error>
+    my @c = 1, 3, 5;
+    say mean(@c);                       # Fails, passing untyped Array
+    say mean([1, 3, 5]);                # Same
+    say mean(Array.new(1, 3, 5));       # Same again
+    =end code
+
+Note that in any given compiler, there may be fancy, under-the-hood, ways to
+bypass the type check on arrays, so when handling untrusted input, it can be
+good practice to perform additional type checks, where it matters:
+
+    =begin code :preamble<my @a;my $i>
+    for @a -> Int $i { $_++.say };
+    =end code
+
+However, as long as you stick to normal assignment operations inside a trusted
+area of code, this will not be a problem, and typecheck errors will happen
+promptly during assignment to the array, if they cannot be caught at compile
+time.  None of the core functions provided in Raku for operating on lists
+should ever produce a wonky typed Array.
+
+Nonexistent elements (when indexed), or elements to which L<C<Nil>|/type/Nil> has been
+assigned, will assume a default value.  This default may be adjusted on a
+variable-by-variable basis with the C<is default> trait.  Note that an untyped
+C<@>-sigiled variable has an element type of L<C<Mu>|/type/Mu>, however its default value is
+an undefined L<C<Any>|/type/Any>:
+
+    my @a;
+    @a.of.raku.say;                 # OUTPUT: «Mu␤»
+    @a.default.raku.say;            # OUTPUT: «Any␤»
+    @a[0].say;                      # OUTPUT: «(Any)␤»
+    my Numeric @n is default(Real);
+    @n.of.raku.say;                 # OUTPUT: «Numeric␤»
+    @n.default.raku.say;            # OUTPUT: «Real␤»
+    @n[0].say;                      # OUTPUT: «(Real)␤»
+
+=head2 X<Fixed size arrays|Language,Shaped arrays>
+
+To limit the dimensions of an L<C<Array>|/type/Array>, provide the dimensions separated by C<,>
+or C<;> in square brackets after the name of the array container in case there is more
+than one dimension; these are called I<shaped> arrays too. The values of such a
+kind of L<C<Array>|/type/Array> will default to L<C<Any>|/type/Any>. The shape can be accessed at runtime
+via the C<shape> method.
+
+    my @a[2,2];
+    say @a.raku;
+    # OUTPUT: «Array.new(:shape(2, 2), [Any, Any], [Any, Any])␤»
+    say @a.shape;         # OUTPUT: «(2 2)␤»
+    my @just-three[3] = <alpha beta kappa>;
+    say @just-three.raku;
+    # OUTPUT: «Array.new(:shape(3,), ["alpha", "beta", "kappa"])␤»
+
+Shape will control the amount of elements that can be assigned by dimension:
+
+=begin code
+my @just-two[2] = <alpha beta kappa>;
+# Will throw exception: «Index 2 for dimension 1 out of range (must be 0..1)»
+=end code
+
+Assignment to a fixed size L<C<Array>|/type/Array> will promote a List of Lists to an Array of
+Arrays (making then mutable in the process).
+
+    my @a[2;2] = (1,2; 3,4);
+    say @a.Array; # OUTPUT: «[1 2 3 4]␤»
+    @a[1;1] = 42;
+    say @a.raku;
+    # OUTPUT: «Array.new(:shape(2, 2), [1, 2], [3, 42])␤»
+
+As the third statement shows, you can assign directly to an element in a shaped
+array too. B<Note>: the second statement works only from release 2018.09.
+
+Since version 6.d,
+L<C<enum>s|/language/typesystem#enum> can be
+used also as shape parameters:
+
+=for code
+enum Cards <Trump Ace Deuce Trey>;
+my @cards[Deuce;Deuce];
+say @cards.shape; # OUTPUT: «(Deuce Deuce)␤»
+
+=head2 Itemization
+
+For most uses, L<C<Array>|/type/Array>s consist of a number of slots each containing a
+L<C<Scalar>|/type/Scalar> of the correct type.  Every such L<C<Scalar>|/type/Scalar>, in turn, contains a value
+of that type. Raku will automatically type-check values and create Scalars to
+contain them when Arrays are initialized, assigned to, or constructed.
+
+This is actually one of the trickiest parts of Raku list handling to get a
+firm understanding of.
+
+First, be aware that because itemization in Arrays is assumed, it essentially
+means that C<$(…)>s are being put around everything that you assign to an
+array, if you do not put them there yourself.  On the other side, Array.raku
+does not put C<$> to explicitly show scalars, unlike List.raku:
+
+    ((1, 2), $(3, 4)).raku.say; # says "((1, 2), $(3, 4))"
+    [(1, 2), $(3, 4)].raku.say; # says "[(1, 2), (3, 4)]"
+                                # ...but actually means: "[$(1, 2), $(3, 4)]"
+
+It was decided all those extra dollar signs and parentheses were more of an
+eye sore than a benefit to the user.  Basically, when you see a square bracket,
+remember the invisible dollar signs.
+
+Second, remember that these invisible dollar signs also protect against
+flattening, so you cannot really flatten the elements inside of an Array
+with a normal call to C<flat> or C<.flat>.
+
+    ((1, 2), $(3, 4)).flat.raku.say; # OUTPUT: «(1, 2, $(3, 4)).Seq␤»
+    [(1, 2), $(3, 4)].flat.raku.say; # OUTPUT: «($(1, 2), $(3, 4)).Seq␤»
+
+Since the square brackets do not themselves protect against flattening,
+you can still spill the elements out of an Array into a surrounding list
+using C<flat>.
+
+    (0, [(1, 2), $(3, 4)], 5).flat.raku.say; # OUTPUT: «(0, $(1, 2), $(3, 4), 5).Seq␤»
+
+...the elements themselves, however, stay in one piece.
+
+This can irk users of data you provide if you have deeply nested Arrays
+where they want flat data.  Currently they have to deeply map the structure
+by hand to undo the nesting:
+
+    say gather [0, [(1, 2), [3, 4]], $(5, 6)].deepmap: *.take; # OUTPUT: «(0 1 2 3 4 5 6)␤»
+
+... Future versions of Raku might find a way to make this easier.
+However, not returning Arrays or itemized lists from functions, when
+non-itemized lists are sufficient, is something that one should consider
+as a courtesy to their users:
+
+=item Use L<C<Slip>|/type/Slip>s when you want to always merge with surrounding lists.
+=item Use non-itemized lists when you want to make it easy for the user to flatten.
+=item Use itemized lists to protect things the user probably will not want flattened.
+=item Use L<C<Array>|/type/Array>s as non-itemized lists of itemized lists, if appropriate. (E.g. C<[$(1, 2), $(3, 4)]>.)
+=item Use L<C<Array>|/type/Array>s if the user is going to want to mutate the result without copying it first.
+
+The fact that all elements of an array are itemized (in L<C<Scalar>|/type/Scalar>
+containers) is more a gentleman's agreement than a universally enforced
+rule, and it is less well enforced than typechecks in typed arrays.  See
+the section below on binding to Array slots.
+
+=head2 Literal arrays
+
+Literal L<C<Array>|/type/Array>s are constructed with a L<C<List>|/type/List> inside square brackets.
+The L<C<List>|/type/List> is eagerly iterated (at compile time if possible) and values
+in it are each type-checked and itemized.  The square brackets
+themselves will spill elements into surrounding lists when flattened,
+but the elements themselves will not spill due to the itemization.
+
+=head2 Mutability
+
+Unlike lists, L<C<Array>|/type/Array>s are mutable.  Elements may deleted, added, or
+changed.
+
+    my @a = "a", "b", "c";
+    @a.say;                  # OUTPUT: «[a b c]␤»
+    @a.pop.say;              # OUTPUT: «c␤»
+    @a.say;                  # OUTPUT: «[a b]␤»
+    @a.push("d");
+    @a.say;                  # OUTPUT: «[a b d]␤»
+    @a[1, 3] = "c", "c";
+    @a.say;                  # OUTPUT: «[a c d c]␤»
+
+
+=head3 Assigning
+
+Assignment of a list to an L<C<Array>|/type/Array> is eager.  The list will be entirely
+evaluated, and should not be infinite or the program may hang.
+Assignment to a slice of an L<C<Array>|/type/Array> is, likewise, eager, but only up to
+the requested number of elements, which may be finite:
+
+    my @a;
+    @a[0, 1, 2] = (loop { 42 });
+    @a.say;                     # OUTPUT: «[42 42 42]␤»
+
+During assignment, each value will be typechecked to ensure it is a
+permitted type for the L<C<Array>|/type/Array>.  Any L<C<Scalar>|/type/Scalar> will be stripped from
+each value and a new L<C<Scalar>|/type/Scalar> will be wrapped around it.
+
+=head3 Binding
+
+Individual Array slots may be bound the same way C<$>-sigiled variables
+are:
+
+    my $b = "foo";
+    my @a = 1, 2, 3;
+    @a[2] := $b;
+    @a.say;          # OUTPUT: «[1 2 "foo"]␤»
+    $b = "bar";
+    @a.say;          # OUTPUT: «[1 2 "bar"]␤»
+
+... But binding L<C<Array>|/type/Array> slots directly to values is strongly
+discouraged.  If you do, expect surprises with built-in functions.  The
+only time this would be done is if a mutable container that knows the
+difference between values and L<C<Scalar>|/type/Scalar>-wrapped values is needed, or for
+very large L<C<Array>|/type/Array>s where a native-typed array cannot be used. Arrays
+with bound slots should never be supplied to unsuspecting users.
+
+=end pod

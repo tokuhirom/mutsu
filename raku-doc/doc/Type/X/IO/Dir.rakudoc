@@ -1,0 +1,23 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::IO::Dir
+
+=SUBTITLE Error while trying to get a directory's contents
+
+=for code :skip-test<compile time error>
+class X::IO::Dir does X::IO is Exception { }
+
+Error class that is thrown when a L<dir|/routine/dir> call fails.
+
+A typical error message is
+
+=for code :lang<text>
+Failed to get the directory contents of '/tmp/': No such file or directory
+
+=head1 Methods
+
+=head2 method path
+
+Returns the path that L<dir|/routine/dir> failed to read.
+
+=end pod

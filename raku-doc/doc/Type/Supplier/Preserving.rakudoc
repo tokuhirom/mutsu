@@ -1,0 +1,48 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Supplier::Preserving
+
+=SUBTITLE Cached live Supply factory
+
+    class Supplier::Preserving is Supplier { }
+
+This is a factory for live L<C<Supply>|/type/Supply>-type objects, and it
+provides the mechanism for emitting new values onto the supplies, whereby
+values are kept when no consumer has tapped into the L<C<Supply>|/type/Supply>. Any tapping
+will consume the already stored and future values.
+
+Starting a preserving L<C<Supply>|/type/Supply> and consuming its values after it is C<done>:
+
+    my $p = Supplier::Preserving.new;
+    start for ^3 {
+        $p.emit($_);
+        LAST {
+            say „done after { now - BEGIN now}s“;
+            $p.done;
+        }
+    }
+    sleep 2;
+    react {
+        whenever $p.Supply { $_.say; }
+        whenever Promise.in(2) { done }
+    }
+    say „also done after { now - BEGIN now }s“
+
+Will output:
+
+=for code :lang<output>
+done after 0.0638467s
+0
+1
+2
+also done after 4.0534119s
+
+=head1 Methods
+
+=head2 method new
+
+    method new()
+
+The L<C<Supplier>|/type/Supplier> constructor.
+
+=end pod

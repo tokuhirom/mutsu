@@ -1,0 +1,246 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Date
+
+=SUBTITLE Calendar date
+
+    class Date { }
+
+A C<Date> is an immutable object identifying a day in the Gregorian calendar.
+
+C<Date> objects support addition and subtraction of integers, where an
+integer is interpreted as the number of days. You can compare C<Date> objects
+with the numeric comparison operators C«==, <, <=, >, >=, !=».
+Their stringification in C<YYYY-MM-DD> format means that comparing them
+with the string operators C<eq, lt, le> etc. also gives the right result.
+
+C<Date.today> creates
+an object the current day according to the system clock.
+
+    my $d = Date.new(2015, 12, 24); # Christmas Eve!
+    say $d;                         # OUTPUT: «2015-12-24␤»
+    say $d.year;                    # OUTPUT: «2015␤»
+    say $d.month;                   # OUTPUT: «12␤»
+    say $d.day;                     # OUTPUT: «24␤»
+    say $d.day-of-week;             # OUTPUT: «4␤» (Thursday)
+    say $d.later(days => 20);       # OUTPUT: «2016-01-13␤»
+    my $n = Date.new('2015-12-31'); # New Year's Eve
+    say $n - $d;                    # OUTPUT: «7␤», 7 days between New Years/Christmas Eve
+    say $n + 1;                     # OUTPUT: «2016-01-01␤»
+
+B<Note> since version 6.d, .raku can be called on C<Date>.
+
+=head1 Methods
+
+=head2 method new
+
+    multi method new($year, $month, $day, :&formatter --> Date:D)
+    multi method new(:$year!, :$month = 1, :$day = 1  --> Date:D)
+    multi method new(Str $date                        --> Date:D)
+    multi method new(Instant:D $dt                    --> Date:D)
+    multi method new(DateTime:D $dt                   --> Date:D)
+
+Creates a new C<Date> object, either from a triple of (year, month, day)
+that can be coerced to integers, or from a string of the form C<YYYY-MM-DD>
+(L<ISO 8601|https://en.wikipedia.org/wiki/ISO_8601>), or from an Instant
+or DateTime object.  Optionally accepts a formatter as a named parameter.
+
+    my $date = Date.new(2042, 1, 1);
+    $date = Date.new(year => 2042, month => 1, day => 1);
+    $date = Date.new("2042-01-01");
+    $date = Date.new(Instant.from-posix: 1482155532);
+    $date = Date.new(DateTime.now);
+
+Since Rakudo 2022.03, the "day" argument can also be a callable, with C<*>
+representing the last day in a month, and the possibility of getting to the
+day counting from the last one:
+
+    say Date.new(2042, 2, *); # OUTPUT: «2042-02-28␤»
+    say Date.new(2044, 2, *); # OUTPUT: «2044-02-29␤»
+
+=head2 method new-from-daycount
+
+    method new-from-daycount($daycount,:&formatter --> Date:D)
+
+Creates a new C<Date> object given C<$daycount> which is the number
+of days from epoch Nov. 17, 1858, i.e. the
+L<Modified Julian Day|https://en.wikipedia.org/wiki/Julian_day>.
+Optionally accepts a formatter as a named parameter.
+
+    say Date.new-from-daycount(49987);          # OUTPUT: «1995-09-27␤»
+
+=head2 method daycount
+
+    method daycount(Date:D: --> Int:D)
+
+Returns the number of days from epoch Nov. 17, 1858, i.e. the
+L<Modified Julian Day|https://en.wikipedia.org/wiki/Julian_day>.
+
+=head2 method last-date-in-month
+
+    method last-date-in-month(Date:D: --> Date:D)
+
+Returns the last date in the month of the C«Date» object. Otherwise, returns
+the invocant if the day value is already the last day of the month.
+
+    say Date.new('2015-11-24').last-date-in-month; # OUTPUT: «2015-11-30␤»
+
+This should allow for much easier ranges like
+
+=for code :preamble<my $date>
+$date .. $date.last-date-in-month
+
+for all remaining dates in the month.
+
+=head2 method first-date-in-month
+
+    method first-date-in-month(Date:D: --> Date:D)
+
+Returns the first date in the month of the C«Date» object. Otherwise, returns
+the invocant if the day value is already the first day of the month.
+
+    say Date.new('2015-11-24').first-date-in-month; # OUTPUT: «2015-11-01␤»
+
+=head2 method clone
+
+    method clone(Date:D: :$year, :$month, :$day, :&formatter)
+
+Creates a new C<Date> object based on the invocant, but with the given
+arguments overriding the values from the invocant.
+
+    say Date.new('2015-11-24').clone(month => 12);    # OUTPUT: «2015-12-24␤»
+
+=head2 method today
+
+    method today(:&formatter --> Date:D)
+
+Returns a C<Date> object for the current day.  Optionally accepts a
+formatter named parameter.
+
+    say Date.today;
+
+=head2 method truncated-to
+
+    method truncated-to(Date:D: Cool $unit)
+
+Returns a C<Date> truncated to the first day of its year, month or week.
+For example
+
+    my $c = Date.new('2012-12-24');
+    say $c.truncated-to('year');     # OUTPUT: «2012-01-01␤»
+    say $c.truncated-to('month');    # OUTPUT: «2012-12-01␤»
+    say $c.truncated-to('week');     # OUTPUT: «2012-12-24␤», because it's Monday already
+
+=head2 method succ
+
+    method succ(Date:D: --> Date:D)
+
+Returns a C<Date> of the following day. "succ" is short for "successor".
+
+    say Date.new("2016-02-28").succ;   # OUTPUT: «2016-02-29␤»
+
+=head2 method pred
+
+    method pred(Date:D: --> Date:D)
+
+Returns a C<Date> of the previous day. "pred" is short for "predecessor".
+
+    say Date.new("2016-01-01").pred;   # OUTPUT: «2015-12-31␤»
+
+=head2 method Str
+
+    multi method Str(Date:D: --> Str:D)
+
+Returns a string representation of the invocant, as specified by
+L<the formatter|/type/Dateish#method_formatter>. If no formatter was
+specified, an (L<ISO 8601|https://en.wikipedia.org/wiki/ISO_8601>) date
+will be returned.
+
+    say Date.new('2015-12-24').Str;                     # OUTPUT: «2015-12-24␤»
+
+    my $fmt = { sprintf "%02d/%02d/%04d", .month, .day, .year };
+    say Date.new('2015-12-24', formatter => $fmt).Str;  # OUTPUT: «12/24/2015␤»
+
+=head2 method gist
+
+    multi method gist(Date:D: --> Str:D)
+
+Returns the date in C<YYYY-MM-DD> format (L<ISO 8601|https://en.wikipedia.org/wiki/ISO_8601>)
+
+    say Date.new('2015-12-24').gist;                    # OUTPUT: «2015-12-24␤»
+
+=head2 method Date
+
+    method Date(--> Date)
+
+Returns the invocant.
+
+    say Date.new('2015-12-24').Date;  # OUTPUT: «2015-12-24␤»
+    say Date.Date;                    # OUTPUT: «(Date)␤»
+
+=head2 method DateTime
+
+    multi method DateTime(Date:U: --> DateTime:U)
+    multi method DateTime(Date:D: --> DateTime:D)
+
+Converts the invocant to L«C<DateTime>|/type/DateTime»
+
+    say Date.new('2015-12-24').DateTime; # OUTPUT: «2015-12-24T00:00:00Z␤»
+    say Date.DateTime;                   # OUTPUT: «(DateTime)␤»
+
+=head2 method Int
+
+    multi method Int(Date:D: --> Int:D)
+
+Converts the invocant to L«C<Int>|/type/Int».  The same value can be
+obtained with the C<daycount> method.
+
+Available as of release 2023.02 of the Rakudo compiler.
+
+=head2 method Real
+
+    multi method Real(Date:D: --> Int:D)
+
+Converts the invocant to L«C<Int>|/type/Int».  The same value can be
+obtained with the C<daycount> method.
+
+Available as of release 2023.02 of the Rakudo compiler.
+
+=head2 method Numeric
+
+    multi method Numeric(Date:D: --> Int:D)
+
+Converts the invocant to L«C<Int>|/type/Int».  The same value can be
+obtained with the C<daycount> method.  This allows C<Date> objects to
+be used directly in arithmetic operations.
+
+Available as of release 2023.02 of the Rakudo compiler.
+
+=head1 Functions
+
+=head2 sub infix:<->
+
+    multi infix:<-> (Date:D, Int:D --> Date:D)
+    multi infix:<-> (Date:D, Date:D --> Int:D)
+
+Takes a date to subtract from and either an L«C<Int>|/type/Int», representing
+the number of days to subtract, or another C<Date> object.
+Returns a new C<Date> object or the number of days between the
+two dates, respectively.
+
+    say Date.new('2016-12-25') - Date.new('2016-12-24'); # OUTPUT: «1␤»
+    say Date.new('2015-12-25') - Date.new('2016-11-21'); # OUTPUT: «-332␤»
+    say Date.new('2016-11-21') - 332;                    # OUTPUT: «2015-12-25␤»
+
+=head2 sub infix:<+>
+
+    multi infix:<+> (Date:D, Int:D --> Date:D)
+    multi infix:<+> (Int:D, Date:D --> Date:D)
+
+Takes an L«C<Int>|/type/Int» and adds that many days to the given
+C<Date> object.
+
+    say Date.new('2015-12-25') + 332; # OUTPUT: «2016-11-21␤»
+    say 1 + Date.new('2015-12-25');   # OUTPUT: «2015-12-26␤»
+
+=end pod

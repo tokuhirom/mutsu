@@ -1,0 +1,23 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::IO::Unlink
+
+=SUBTITLE Error while trying to remove a file
+
+=for code :skip-test<compile time error>
+class X::IO::Unlink does X::IO is Exception { }
+
+Error class for failed L<unlink|/routine/unlink> operation.
+
+A typical error message is
+
+=for code :lang<text>
+Failed to remove the file 'secret': Permission defined
+
+=head1 Methods
+
+=head2 method path
+
+Returns the path that L<unlink|/routine/unlink> failed to delete.
+
+=end pod

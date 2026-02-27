@@ -1,0 +1,11 @@
+=begin pod :kind("Type") :subkind("role") :category("exception")
+
+=TITLE role X::Pod
+
+=SUBTITLE Pod related error
+
+    role X::Pod { }
+
+Common role for Pod related errors.
+
+=end pod

@@ -1,0 +1,545 @@
+=begin pod :kind("Language") :subkind("Language") :category("beginning")
+
+=TITLE  Raku by example 101
+
+=SUBTITLE A basic introductory example of a Raku program
+
+Suppose that you host a table tennis tournament. The referees tell you
+the results of each game in the format C<Player1 Player2 | 3:2>, which
+means that C<Player1> won against C<Player2> by 3 to 2 sets. You need a
+script that sums up how many matches and sets each player has won to
+determine the overall winner.
+
+The input data (stored in a file called C<scores.txt>) looks like this:
+
+=for code :lang<data>
+Beth Ana Charlie Dave
+Ana Dave | 3:0
+Charlie Beth | 3:1
+Ana Beth | 2:3
+Dave Charlie | 3:0
+Ana Charlie | 3:1
+Beth Dave | 0:3
+
+The first line is the list of players. Every subsequent line records a result
+of a match.
+
+Here's one way to solve that problem in Raku:
+
+=begin code :solo
+use v6;
+
+# start by printing out the header.
+say "Tournament Results:\n";
+
+my $file  = open 'scores.txt'; # get filehandle and...
+my @names = $file.get.words;   # ... get players.
+
+my %matches;
+my %sets;
+
+for $file.lines -> $line {
+    next unless $line; # ignore any empty lines
+
+    my ($pairing, $result) = $line.split(' | ');
+    my ($p1, $p2)          = $pairing.words;
+    my ($r1, $r2)          = $result.split(':');
+
+    %sets{$p1} += $r1;
+    %sets{$p2} += $r2;
+
+    if $r1 > $r2 {
+        %matches{$p1}++;
+    } else {
+        %matches{$p2}++;
+    }
+}
+
+my @sorted = @names.sort({ %sets{$_} }).sort({ %matches{$_} }).reverse;
+
+for @sorted -> $n {
+    my $match-noun = %matches{$n} == 1 ?? 'match' !! 'matches';
+    my $set-noun   = %sets{$n} == 1 ?? 'set' !! 'sets';
+    say "$n has won %matches{$n} $match-noun and %sets{$n} $set-noun";
+}
+=end code
+
+This produces the output:
+
+=begin code :lang<text>
+Tournament Results:
+
+Ana has won 2 matches and 8 sets
+Dave has won 2 matches and 6 sets
+Charlie has won 1 match and 4 sets
+Beth has won 1 match and 4 sets
+=end code
+
+=head1 Pragma X<C<v6>|Tutorial,v6 (Basics)>
+
+=begin code :solo
+use v6;
+=end code
+
+Every Raku program should begin with a line similar to C<use v6;>. This line
+tells the compiler which version of Raku the program expects. For instance,
+6.c is an example of a Raku version. Should you accidentally run the file
+with Perl, you'll get a helpful error message.
+
+=head1 X<Statements|Tutorial,statement (Basics)>
+
+=begin code
+# start by printing out the header.
+say "Tournament Results:\n";
+=end code
+
+A Raku program consists of zero or more statements. A I<statement> ends with
+a semicolon or a curly brace at the end of a line.
+
+In Raku, single line comments start with a single hash character C<#> and
+extend until the end of the line. Raku also supports
+L<multi-line/embedded comments|/language/syntax#Multi-line_/_embedded_comments>.
+The compiler doesn't evaluate comments as program text and they're only intended
+for human readers.
+
+=head1 X<Lexical scope|Tutorial,my (Basics)> and X<block|Tutorial,block (Basics)>
+
+=begin code
+my $file = open 'scores.txt';
+=end code
+
+C<my> declares a lexical variable, which are visible only in the current block
+from the point of declaration to the end of the block. If there's no enclosing
+block, it's visible throughout the remainder of the file (which would
+effectively be the enclosing block). A block is any part of the code enclosed
+between curly braces C<{ }>.
+
+=head2 X<Sigils|Tutorial,sigils (Basics)> and X<identifiers|Tutorial,identifiers (Basics)>
+
+A variable name begins with a I<sigil>, which is a non-alpha-numeric
+symbol such as C<$>, C<@>, C<%>, or C<&> E<mdash> or occasionally the double
+colon C<::>. Sigils indicate the structural interface for the variable,
+such as whether it should be treated as a single value, a compound value,
+a subroutine, etc. After the sigil comes an I<identifier>, which may
+consist of letters, digits and the underscore. Between letters you can
+also use a dash C<-> or an apostrophe C<'>, so C<isn't> and
+C<double-click> are valid identifiers.
+
+=head2 X<Scalar|Tutorial,scalar (Basics)>
+
+Sigils indicate the default access method for a variable. Variables
+with the C<@> sigil are accessed positionally; variables with the C<%>
+sigil are accessed by string key. The C<$> sigil, however, indicates a
+general scalar container that can hold any single value and be accessed
+in any manner. A scalar can even contain a compound object like an
+L<C<Array>|/type/Array> or a L<C<Hash>|/type/Hash>; the C<$> sigil signifies that it should be
+treated as a single value, even in a context that expects multiple
+values (as with an L<C<Array>|/type/Array> or L<C<Hash>|/type/Hash>).
+
+=head2 X<Filehandle|Tutorial,filehandle (Basics)> and X<assignment|Tutorial,assignment (Basics)>
+
+The built-in function C<open> opens a file, here named C<scores.txt>,
+and returns a I<filehandle> E<mdash> an object representing that file. The
+assignment operator C<=> I<assigns> that filehandle to the variable on the left,
+which means that C<$file> now stores the filehandle.
+
+=head2 X<String literals|Tutorial,string literal (Basics)>
+
+C<'scores.txt'> is a I<string literal>. A string is a piece of text, and a
+string literal is a string which appears directly in the program. In this line,
+it's the argument provided to C<open>.
+
+=head1 X<Arrays|Tutorial,array (Basics)>, X<methods|Tutorial,method (Basics)> and X<invocants|Tutorial,invocant (Basics)>
+
+=begin code :preamble<my $file>
+my @names = $file.get.words;
+=end code
+
+The right-hand side calls a I<method> E<mdash> a named group of
+behavior E<mdash> named C<get> on the filehandle stored in C<$file>. The C<get>
+method reads and returns one line from the file, removing the line ending. If
+you print the contents of C<$file> after calling C<get>, you will see that the
+first line is no longer in there. C<words> is also a method, called on the
+string returned from C<get>. C<words> decomposes its I<invocant> E<mdash>
+the string on which it operates E<mdash> into a list of words, which here means
+strings separated by whitespace. It turns the single string C<'Beth Ana Charlie
+Dave'> into the list of strings C<'Beth', 'Ana', 'Charlie', 'Dave'>.
+
+Finally, this list gets stored in the L<C<Array>|/type/Array> C<@names>.
+The C<@> sigil marks the declared variable as an L<C<Array>|/type/Array>.
+Arrays store ordered lists.
+
+=head1 X<Hashes|Tutorial,hash (Basics)>
+
+=begin code
+my %matches;
+my %sets;
+=end code
+
+These two lines of code declare two hashes. The C<%> sigil marks each variable
+as a L<C<Hash>|/type/Hash>. A L<C<Hash>|/type/Hash> is an unordered collection of key-value pairs. Other
+programming languages call that a I<hash table>, I<dictionary>, or I<map>.
+You can query a hash table for the value that corresponds to a certain
+C<$key> with C<%hash{$key}>.
+
+In the score counting program, C<%matches> stores the number of matches each
+player has won. C<%sets> stores the number of sets each player has won. Both
+of these hashes are indexed by the player's name.
+
+=head1 X<C<for>|Tutorial,for (Basics)> and blocks
+
+=begin code :preamble<my $file>
+for $file.lines -> $line {
+    ...
+}
+=end code
+
+C<for> produces a loop that runs the I<block> delimited by curly braces
+once for each item of the list, setting the variable C<$line>
+to the current value of each iteration. C<$file.lines> produces a list of
+the lines read from the file C<scores.txt>, starting with the second line
+of the file since we already called C<$file.get> once, and going all the way
+to the end of the file.
+
+During the first iteration, C<$line> will contain the string C<Ana Dave |
+3:0>; during the second, C<Charlie Beth | 3:1>, and so on.
+
+=begin code :preamble<my $line>
+my ($pairing, $result) = $line.split(' | ');
+=end code
+
+C<my> can declare multiple variables simultaneously. The right-hand side of the
+assignment is a call to a method named C<split>, passing along the string
+C<' | '> as an argument.
+
+C<split> decomposes its invocant into a list of strings, so that joining the
+list items with the separator C<' | '> produces the original string.
+
+C<$pairing> gets the first item of the returned list, and C<$result> the second.
+
+After processing the first line, C<$pairing> will hold the string C<Ana Dave>
+and C<$result> will hold C<3:0>.
+
+The next two lines follow the same pattern:
+
+=begin code :preamble<my $pairing;my $result>
+my ($p1, $p2) = $pairing.words;
+my ($r1, $r2) = $result.split(':');
+=end code
+
+The first extracts and stores the names of the two players in the variables
+C<$p1> and C<$p2>. The second extracts the results for each player and stores
+them in C<$r1> and C<$r2>.
+
+After processing the first line of the file, the variables contain the values:
+=begin table
+    Variable    Contents
+    $line       'Ana Dave \| 3:0'
+    $pairing    'Ana Dave'
+    $result     '3:0'
+    $p1         'Ana'
+    $p2         'Dave'
+    $r1         '3'
+    $r2         '0'
+
+=end table
+
+The program then counts the number of sets each player has won:
+
+=begin code :preamble<my %sets;my $p1;my $p2;my $r1;my $r2>
+%sets{$p1} += $r1;
+%sets{$p2} += $r2;
+=end code
+
+The above two statements involve the C<+=> compound assignment operator. They
+are a variant of the following two statements that use the simple assignment
+operator C<=> and that may be easier to understand at first sight:
+
+=begin code :preamble<my %sets;my $p1;my $p2;my $r1;my $r2>
+%sets{$p1} = %sets{$p1} + $r1;
+%sets{$p2} = %sets{$p2} + $r2;
+=end code
+
+For your program, the shorthand version using the C<+=> compound assignment
+operator is preferred over the longhand version using the simple assignment
+operator C<=>. This is not only because the shorter version requires less
+typing, but also because the C<+=> operator silently initializes undefined
+values of the hash's key-value pairs to zero. In other words: by using C<+=>,
+there is no need to include a separate statement like C<%sets{$p1} = 0> before
+you can meaningfully add C<$r1> to it. We'll look at this behavior in a bit
+more detail below.
+
+=head2 X<C<Any>|Tutorial,Any (Basics)> and X<C<+=>|Tutorial,+= (Basics)>
+
+=begin code :preamble<my %sets;my $p1;my $p2;my $r1;my $r2>
+%sets{$p1} += $r1;
+%sets{$p2} += $r2;
+=end code
+
+C<%sets{$p1} += $r1> means I<increase the value in the variable on the left by $r1>.
+In the first iteration C<%sets{$p1}> is not yet defined, so it defaults to a special
+value called L<C<Any>|/type/Any>. The C<+=> operator conveniently treats the undefined value
+L<C<Any>|/type/Any> as a number with the value C<0>, allowing it to sensibly add some other
+value to it. To perform the addition, the strings C<$r1>, C<$r2>, etc. are
+automatically converted to numbers, as addition is a numeric operation.
+
+=head2 X<Fat arrow|Tutorial,fat arrow (Basics)>, X<pairs|Tutorial,pair (Basics)> and X<autovivification|Tutorial,autovivification (Basics)>
+
+Before these two lines execute, C<%sets> is empty. Adding to an entry that is
+not in the hash yet will cause that entry to spring into existence
+just-in-time, with a value starting at zero. This behavior is known as
+I<autovivification>. After these two lines have run for the first time, C<%sets>
+contains C«'Ana' => 3, 'Dave' => 0». (The fat arrow C«=>» separates the
+key and the value in a L<C<Pair>|/type/Pair>.)
+
+=head2 X<Postincrement|Tutorial,postincrement (Basics)> and X<preincrement|Tutorial,preincrement (Basics)>
+
+=begin code :preamble<my $r1;my $r2;my $p1;my $p2;my %matches;>
+if $r1 > $r2 {
+    %matches{$p1}++;
+} else {
+    %matches{$p2}++;
+}
+=end code
+
+If C<$r1> is numerically larger than C<$r2>, C<%matches{$p1}> increments by one.
+If C<$r1> is not larger than C<$r2>, C<%matches{$p2}> increments. Just as in
+the case of C<+=>, if either hash value did not exist previously, it is
+autovivified by the increment operation.
+
+C<$thing++> is a variant of C<$thing += 1>; it differs from the latter in that
+the return value of the expression is C<$thing> I<before> the increment, and not
+the incremented value. As in many other programming languages, you can use C<++>
+as a prefix. Then it returns the incremented value: C<my $x = 1; say ++$x>
+prints C<2>.
+
+=head1 X<Topic variable|Tutorial,topic variable (Basics)>
+
+=begin code :preamble<my @names;my %sets;my %matches>
+my @sorted = @names.sort({ %sets{$_} }).sort({ %matches{$_} }).reverse;
+=end code
+
+This line consists of three individually simple steps. An array's C<sort>
+method returns a sorted version of the array's contents. However, the default
+sort on an array sorts by its contents. To print player names in winner-first
+order, the code must sort the array by the I<scores> of the players, not their
+names. The C<sort> method's argument is a I<block> used to transform the array
+elements (the names of players) to the data by which to sort. The array items
+are passed in through the I<topic variable> C<$_>.
+
+=head2 Blocks
+
+You have seen blocks before: both the C<for> loop C<<-> $line { ... }>> and
+the C<if> statement worked on blocks. A block is a self-contained piece of
+Raku code with an optional signature (the C<<-> $line>> part).
+
+The simplest way to sort the players by score would be C<@names.sort({
+%matches{$_} })>, which sorts by number of matches won. However Ana and Dave
+have both won two matches. That simple sort doesn't account for the number of
+sets won, which is the secondary criterion to decide who has won the
+tournament.
+
+=head2 Stable sort
+
+When two array items have the same value, C<sort> leaves them in the same order
+as it found them. Computer scientists call this a I<stable sort>. The program
+takes advantage of this property of Raku's C<sort> to achieve the goal by
+sorting twice: first by the number of sets won (the secondary criterion), then
+by the number of matches won (the primary criterion).
+
+After the first sorting step, the names are in the order C<Beth Charlie Dave
+Ana>. After the second sorting step, it's still the same, because no one has
+won fewer matches but more sets than someone else. Such a situation is entirely
+possible, especially at larger tournaments.
+
+C<sort> sorts in ascending order, from smallest to largest. This is the
+opposite of the desired order. Therefore, the code calls the C<.reverse> method
+on the result of the second sort, and stores the final list in C<@sorted>.
+
+=head1 Standard output
+
+=begin code :preamble<my @sorted;my %matches;my %sets>
+for @sorted -> $n {
+    my $match-noun = %matches{$n} == 1 ?? 'match' !! 'matches';
+    my $set-noun   = %sets{$n} == 1 ?? 'set' !! 'sets';
+    say "$n has won %matches{$n} $match-noun and %sets{$n} $set-noun";
+}
+=end code
+
+To print out the players and their scores, the code loops over C<@sorted>,
+setting C<$n> to the name of each player in turn. Read this code as "For each
+element of sorted, set C<$n> to the element, then execute the contents of the
+following block." The variable C<$match-noun> will store either the string
+I<match> if the player has won a single match or I<matches> if the player
+has won zero or more matches. In order to do this, the I<ternary>
+operator (C<?? !!>) is used. If C<%matches{$n} == 1> evaluates to C<True>,
+then I<match> is returned. Otherwise, I<matches> is returned. Either way,
+the returned value is stored in C<$match-noun>. The same approach applies
+to C<$set-noun>.
+
+The statement C<say> prints its arguments to the standard output
+(the screen, normally), followed by a newline. (Use C<print> if you don't
+want the newline at the end.)
+
+Note that C<say> will truncate certain data structures by calling the C<.gist>
+method so C<put> is safer if you want exact output.
+
+=head2 X<Variable interpolation|Tutorial,variable interpolation (Basics)>
+
+When you run the program, you'll see that C<say> doesn't print the contents of
+that string verbatim. In place of C<$n> it prints the contents of the variable
+C<$n> E<mdash> a player's name stored in C<$n>. This automatic substitution
+of code with its contents is called I<interpolation>. This interpolation happens
+only in strings delimited by double quotes C<"...">. Single quoted strings
+C<'...'> do not interpolate:
+
+=head2 X<Double-quoted strings|Tutorial,double-quoted strings> and X<single-quoted strings|Tutorial,single-quoted strings>
+
+=begin code
+my $names = 'things';
+say 'Do not call me $names'; # OUTPUT: «Do not call me $names␤»
+say "Do not call me $names"; # OUTPUT: «Do not call me things␤»
+=end code
+
+Double quoted strings in Raku can interpolate variables with the C<$>
+sigil as well as blocks of code in curly braces. Since any arbitrary
+Raku code can appear within curly braces, L<C<Array>|/type/Array>s and L<C<Hash>|/type/Hash>es may be
+interpolated by placing them within curly braces.
+
+Arrays within curly braces are interpolated with a single space character
+between each item. Hashes within curly braces are interpolated as a series of
+lines. Each line will contain a key, followed by a tab character, then the
+value associated with that key, and finally a newline.
+
+Let's see an example of this now.
+
+In this example, you will see some special syntax that makes it easier
+to make a list of strings. This is the
+C«<...>» L<quote-words|/language/operators#index-entry-qw-quote-words-quote-words>
+construct. When you put words in between the C«<» and C«>» they are all assumed
+to be strings, so you do not need to wrap them each in double quotes
+C«"..."».
+
+=begin code :preamble<my %sets>
+say "Math: { 1 + 2 }";
+# OUTPUT: «Math: 3␤»
+
+my @people = <Luke Matthew Mark>;
+say "The synoptics are: {@people}";
+# OUTPUT: «The synoptics are: Luke Matthew Mark␤»
+
+say "{%sets}";
+# OUTPUT (From the table tennis tournament):
+
+# Charlie 4
+# Dave    6
+# Ana     8
+# Beth    4
+=end code
+
+When array and hash variables appear directly in a double-quoted string (and
+not inside curly braces), they are only interpolated if their name is
+followed by a postcircumfix operator E<mdash> a bracketing pair that follows a
+statement. It's also ok to have a method call between the variable name and
+the postcircumfix.
+
+=head1 Zen slices
+
+=begin code
+my @flavors = <vanilla peach>;
+
+say "we have @flavors";           # OUTPUT: «we have @flavors␤»
+say "we have @flavors[0]";        # OUTPUT: «we have vanilla␤»
+# so-called "Zen slice"
+say "we have @flavors[]";         # OUTPUT: «we have vanilla peach␤»
+
+# method calls ending in postcircumfix
+say "we have @flavors.sort()";    # OUTPUT: «we have peach vanilla␤»
+
+# chained method calls:
+say "we have @flavors.sort.join(', ')";
+                                  # OUTPUT: «we have peach, vanilla␤»
+=end code
+
+=head1 Calling a raku method from another file
+
+To call a raku subroutine from another file, the convention is to have a minimal
+raku module or class file.
+
+=begin code
+# MyClass.rakumod
+class C {
+    has $.x;
+}
+=end code
+
+Then your script can C<use> this file.
+
+=begin code :skip-test
+# myscript.raku
+use MyClass;
+
+my $instance = C.new(x=>42);
+say $instance.x;
+=end code
+
+The C<-I.> directive tells the raku interpreter to look for modules in directory C<.>.
+
+=begin code :lang<shell>
+> raku -I. myscript.raku
+=end code
+
+=head1 Exercises
+
+B<1.> The input format of the example program is redundant: the first line
+containing the name of all players is not necessary, because you can find out
+which players participated in the tournament by looking at their names in the
+subsequent rows, so in principle we could safely remove it.
+
+How can you make the program run if you do not use the C<@names> variable?
+Hint: C<%hash.keys> returns a list of all keys stored in C<%hash>.
+
+B<Answer:> After removing the first line in C<scores.txt>, remove the line C<my
+@names = $file.get.words;> (which would read it), and change:
+
+=begin code :preamble<my @names;my %sets;my %matches>
+my @sorted = @names.sort({ %sets{$_} }).sort({ %matches{$_} }).reverse;
+=end code
+
+... into:
+
+=begin code :preamble<my %sets;my %matches>
+my @sorted = %sets.keys.sort({ %sets{$_} }).sort({ %matches{$_} }).reverse;
+=end code
+
+B<2.> Instead of deleting the redundant C<@names> variable, you can also use it
+to warn if a player appears that wasn't mentioned in the first line, for
+example due to a typo. How would you modify your program to achieve that?
+
+Hint: Try using L<membership operators|/language/operators#infix_(elem),_infix_∈>.
+
+B<Answer:> Change C<@names> to C<@valid-players>. When looping through the
+lines of the file, check to see that C<$p1> and C<$p2> are in
+C<@valid-players>. Note that for membership operators you can also use C<(elem)>
+and C<!(elem)>.
+
+=begin code :preamble<my $file>
+...;
+my @valid-players = $file.get.words;
+...;
+
+for $file.lines -> $line {
+    my ($pairing, $result) = $line.split(' | ');
+    my ($p1, $p2)          = $pairing.split(' ');
+    if $p1 ∉ @valid-players {
+        say "Warning: '$p1' is not on our list!";
+    }
+    if $p2 ∉ @valid-players {
+        say "Warning: '$p2' is not on our list!";
+    }
+    ...
+}
+=end code
+
+=end pod
+

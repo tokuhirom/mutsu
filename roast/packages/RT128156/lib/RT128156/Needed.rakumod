@@ -1,0 +1,1 @@
+class Needed { method version() { 2 } }

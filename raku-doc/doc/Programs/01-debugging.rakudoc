@@ -1,0 +1,109 @@
+=begin pod :kind("Programs") :subkind("programs") :category("programs")
+
+=TITLE Debugging
+
+=SUBTITLE Modules and applications used to debug Raku programs
+
+=head1 Core debugging features
+
+=head2 The C<trace> pragma
+
+The C<trace> pragma causes the program to print out step-by-step which
+lines get executed:
+
+    use trace;
+    sub foo { say "hi" }
+    foo;
+    # OUTPUT:
+    # 2 (/tmp/script.raku line 2)
+    # sub foo { say "hi" }
+    # 5 (/tmp/script.raku line 3)
+    # foo
+    # 3 (/tmp/script.raku line 2)
+    # say "hi"
+    # hi
+
+X<|Subroutines,dd> X<|Language,dumper>
+=head1 Dumper function (C<dd>)
+
+N<This routine is a Rakudo-specific debugging feature and not
+standard Raku.>
+
+The I<Tiny Data Dumper>: This function takes the input list of variables
+and C<note>s them (on C<$*ERR>) in an easy to read format, along with
+the C<name> of the variable.  For example, this prints to the standard
+error stream the variables passed as arguments:
+
+=begin code :ok-test<dd>
+my $a = 42;
+my %hash = "a" => 1, "b" => 2, "c" => 3;
+
+dd %hash, $a;
+#`( OUTPUT:
+    Hash %hash = {:a(1), :b(2), :c(3)}
+    Int $a = 42
+)
+=end code
+
+Please note that C<dd> will ignore named parameters. You can use a
+L<C<Capture>|/type/Capture> or L<C<Array>|/type/Array> to force it to dump everything passed to it.
+
+=begin code :ok-test<dd>
+dd \((:a(1), :b(2)), :c(3));
+dd [(:a(1), :b(2)), :c(3)];
+=end code
+
+If you don't specify any parameters at all, it will just print the type
+and name of the current subroutine / method to the standard error
+stream:
+
+=begin code :ok-test<dd>
+sub a { dd }; a   # OUTPUT: «sub a()␤»
+=end code
+
+This can be handy as a cheap trace function.
+
+=head2 Using backtraces
+
+The L<C<Backtrace>|/type/Backtrace> class gets the current call stack, and can return it as
+a string:
+
+    my $trace = Backtrace.new;
+    sub inner { say ~Backtrace.new; }
+    sub outer { inner; }
+    outer;
+
+    # OUTPUT:
+    # raku /tmp/script.raku
+    #   in sub inner at /tmp/script.raku line 2
+    #   in sub outer at /tmp/script.raku line 3
+    #   in block <unit> at /tmp/script.raku line 4
+
+=head2 Environment variables
+
+See L<Raku Environment
+Variables|https://github.com/rakudo/rakudo/wiki/dev-env-vars>
+for more information.
+
+=head1 Ecosystem debugging modules
+
+There are at least two useful debuggers and two tracers available for Rakudo
+(the Raku compiler).  For more information on these modules, please refer to
+their documentation.
+
+Historically other modules have existed and others are likely to be
+written in the future. Please check the L<Raku
+Modules|https://raku.land/> website for more modules like these.
+
+=head2 L<C<Grammar::Debugger>|https://raku.land/zef:raku-community-modules/Grammar::Debugger> (and C<Grammar::Tracer> in the same distribution)
+
+Simple tracing and debugging support for Raku grammars.
+
+=head2 L<C<Trait::Traced>|https://raku.land/cpan:KAIEPI/Trait::Traced>
+
+This provides the C<is traced> trait, which automatically traces usage of
+features of whatever the trait is applied to. What features of whatever the
+trace is applied to get traced and how traces are handled are customizable.
+Refer to its documentation for more information on how this works.
+
+=end pod
