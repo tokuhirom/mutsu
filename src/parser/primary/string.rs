@@ -374,6 +374,9 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             } else if adverb_name == "o" || adverb_name == "format" {
                 q_format_quote = true;
             }
+            if adverb_name == "o" || adverb_name == "format" {
+                q_format_quote = true;
+            }
             r = &r[end..];
             if let Some(next) = r.strip_prefix(':') {
                 r = next;
@@ -400,14 +403,14 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         (after_q, false)
     };
 
-    let (after_adverb, mut is_format_quote) = if let Some(rest) = after_prefix.strip_prefix(":o") {
+    let (after_adverb, is_format_adverb) = if let Some(rest) = after_prefix.strip_prefix(":o") {
         (rest, true)
     } else if let Some(rest) = after_prefix.strip_prefix(":format") {
         (rest, true)
     } else {
         (after_prefix, false)
     };
-    is_format_quote |= q_format_quote;
+    let is_format_quote = q_format_quote || is_format_adverb;
 
     let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq, q_closure_interp)?;
     if is_format_quote {

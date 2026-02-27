@@ -845,12 +845,17 @@ impl Interpreter {
         if skip_pseudo {
             self.skip_pseudo_method_native = None;
         }
+        let is_pseudo_method = matches!(
+            method,
+            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+        );
         let bypass_native_fastpath = skip_pseudo
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
-            || (matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
+            || (!is_pseudo_method
+                && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {
@@ -1559,8 +1564,12 @@ impl Interpreter {
                     Value::Nil => "Any",
                     Value::Package(name) => name.as_str(),
                     Value::Routine { is_regex: true, .. } => "Regex",
-                    Value::Routine { .. } => "Routine",
-                    Value::Sub(_) | Value::WeakSub(_) => "Sub",
+                    Value::Routine { .. } => "Sub",
+                    Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
+                        Some(Value::Str(kind)) if kind == "Method" => "Method",
+                        _ => "Sub",
+                    },
+                    Value::WeakSub(_) => "Sub",
                     Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                     Value::Instance { class_name, .. } => class_name.as_str(),
                     Value::Junction { .. } => "Junction",
