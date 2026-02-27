@@ -250,14 +250,6 @@ fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String>
     Ok((rest, normalize_raku_identifier(&full)))
 }
 
-fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
-    if let Ok((rest, name)) = parse_qualified_ident_with_hyphens(input) {
-        (rest, name)
-    } else {
-        (input, String::new())
-    }
-}
-
 fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, String) {
     while rest.starts_with(':') && !rest.starts_with("::") {
         let after_colon = &rest[1..];
