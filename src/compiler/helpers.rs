@@ -1184,6 +1184,7 @@ impl Compiler {
                     cond: Expr::Var(result_var.clone()),
                     then_branch: keep_ph,
                     else_branch: undo_ph,
+                    binding_var: None,
                 });
             }
             // Preserve loop-body value for expression contexts that collect iteration results.
