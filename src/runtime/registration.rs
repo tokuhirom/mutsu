@@ -690,9 +690,7 @@ impl Interpreter {
             )));
         }
         let def = new_def;
-        if let Some(assoc) = associativity
-            && name.starts_with("infix:<")
-        {
+        if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("{}::{}", self.current_package, name), assoc.clone());
@@ -905,9 +903,7 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
-        if let Some(assoc) = associativity
-            && name.starts_with("infix:<")
-        {
+        if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("GLOBAL::{}", name), assoc.clone());

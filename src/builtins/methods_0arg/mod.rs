@@ -1147,15 +1147,65 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Seq(_) if method == "raku" || method == "perl" => {
                 Some(Ok(Value::Str(raku_value(target))))
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
-                if method == "gist" =>
-            {
+            Value::Array(items, is_array) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
                     match v {
                         Value::Nil => "Nil".to_string(),
-                        Value::Array(inner, ..) | Value::Seq(inner) | Value::Slip(inner) => {
+                        Value::Array(inner, is_array) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            if *is_array {
+                                format!("[{}]", elems)
+                            } else {
+                                format!("({})", elems)
+                            }
+                        }
+                        Value::Seq(inner) | Value::Slip(inner) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                             format!("({})", elems)
+                        }
+                        Value::Hash(map) => {
+                            let mut sorted_keys: Vec<&String> = map.keys().collect();
+                            sorted_keys.sort();
+                            let parts: Vec<String> = sorted_keys
+                                .iter()
+                                .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
+                                .collect();
+                            format!("{{{}}}", parts.join(" "))
+                        }
+                        other => other.to_string_value(),
+                    }
+                }
+                let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                if *is_array {
+                    Some(Ok(Value::Str(format!("[{}]", inner))))
+                } else {
+                    Some(Ok(Value::Str(format!("({})", inner))))
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) if method == "gist" => {
+                fn gist_item(v: &Value) -> String {
+                    match v {
+                        Value::Nil => "Nil".to_string(),
+                        Value::Array(inner, is_array) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            if *is_array {
+                                format!("[{}]", elems)
+                            } else {
+                                format!("({})", elems)
+                            }
+                        }
+                        Value::Seq(inner) | Value::Slip(inner) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            format!("({})", elems)
+                        }
+                        Value::Hash(map) => {
+                            let mut sorted_keys: Vec<&String> = map.keys().collect();
+                            sorted_keys.sort();
+                            let parts: Vec<String> = sorted_keys
+                                .iter()
+                                .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
+                                .collect();
+                            format!("{{{}}}", parts.join(" "))
                         }
                         other => other.to_string_value(),
                     }

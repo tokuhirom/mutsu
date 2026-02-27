@@ -1971,6 +1971,28 @@ impl Interpreter {
                 attrs.insert("index".to_string(), Value::Int(0));
                 return Ok(Value::make_instance("Iterator".to_string(), attrs));
             }
+            "produce" => {
+                let callable = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("produce expects a callable"))?;
+                if !matches!(
+                    target,
+                    Value::Array(_, _)
+                        | Value::Seq(_)
+                        | Value::Slip(_)
+                        | Value::LazyList(_)
+                        | Value::Range(_, _)
+                        | Value::RangeExcl(_, _)
+                        | Value::RangeExclStart(_, _)
+                        | Value::RangeExclBoth(_, _)
+                        | Value::GenericRange { .. }
+                        | Value::Hash(_)
+                ) {
+                    return Ok(target);
+                }
+                return self.call_function("produce", vec![callable, target]);
+            }
             "map" => {
                 if let Value::Instance {
                     ref class_name,

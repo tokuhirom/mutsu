@@ -465,6 +465,19 @@ mod tests {
     }
 
     #[test]
+    fn primary_parses_produce_as_expr_listop() {
+        let (rest, expr) = primary("produce *+*, 1..10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args, .. } => {
+                assert_eq!(name, "produce");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("expected produce call expression"),
+        }
+    }
+
+    #[test]
     fn primary_reports_invalid_reduction_list_item() {
         let err = primary("[+] 1, :").unwrap_err();
         assert!(err.message().contains("reduction list"));
