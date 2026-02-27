@@ -876,7 +876,28 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         }
         Value::BigRat(n, d) => {
             if !d.is_zero() {
-                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                if let (Some(nn), Some(dd)) = (n.to_f64(), d.to_f64())
+                    && nn.is_finite()
+                    && dd.is_finite()
+                {
+                    Some(nn / dd)
+                } else {
+                    let scale_pow = 30u32;
+                    let scale = num_bigint::BigInt::from(10u8).pow(scale_pow);
+                    let scaled = (n * &scale) / d;
+                    if let Some(scaled_f) = scaled
+                        .to_f64()
+                        .or_else(|| scaled.to_string().parse::<f64>().ok())
+                    {
+                        Some(scaled_f / 10f64.powi(scale_pow as i32))
+                    } else if n.is_zero() {
+                        Some(0.0)
+                    } else if n.is_positive() {
+                        Some(f64::INFINITY)
+                    } else {
+                        Some(f64::NEG_INFINITY)
+                    }
+                }
             } else if n.is_positive() {
                 Some(f64::INFINITY)
             } else if n.is_negative() {

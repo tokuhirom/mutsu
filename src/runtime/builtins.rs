@@ -301,6 +301,7 @@ impl Interpreter {
             "chr" => self.builtin_chr(&args),
             "ord" => self.builtin_ord(&args),
             "ords" => self.builtin_ords(&args),
+            "unival" => self.builtin_unival(&args),
             "flip" => self.builtin_flip(&args),
             "lc" => self.builtin_lc(&args),
             "uc" => self.builtin_uc(&args),
@@ -1705,6 +1706,7 @@ impl Interpreter {
                 | "acotanh"
                 | "chr"
                 | "ord"
+                | "unival"
                 | "chars"
                 | "chomp"
                 | "chop"

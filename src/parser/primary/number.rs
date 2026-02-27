@@ -194,12 +194,31 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
 
 /// Parse a single Unicode numeric literal (vulgar fractions and superscript digits).
 pub(super) fn unicode_numeric_literal(input: &str) -> PResult<'_, Expr> {
+    fn is_superscript_digit(c: char) -> bool {
+        matches!(
+            c,
+            '\u{2070}'
+                | '\u{00B9}'
+                | '\u{00B2}'
+                | '\u{00B3}'
+                | '\u{2074}'
+                | '\u{2075}'
+                | '\u{2076}'
+                | '\u{2077}'
+                | '\u{2078}'
+                | '\u{2079}'
+        )
+    }
+
     let first = input
         .chars()
         .next()
         .ok_or_else(|| PError::expected("unicode numeric literal"))?;
     let rest = &input[first.len_utf8()..];
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+    if let Some(next) = rest.chars().next()
+        && (next.is_alphanumeric() || next == '_')
+        && !is_superscript_digit(next)
+    {
         return Err(PError::expected("unicode numeric literal"));
     }
     if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(first) {
