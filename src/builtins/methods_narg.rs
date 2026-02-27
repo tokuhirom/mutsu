@@ -56,6 +56,20 @@ fn flatten_target(target: &Value, depth: Option<usize>, flatten_arrays: bool) ->
     Value::Seq(Arc::new(flat))
 }
 
+fn fmt_joinable_target(target: &Value) -> bool {
+    matches!(
+        target,
+        Value::Array(..)
+            | Value::Seq(..)
+            | Value::Slip(..)
+            | Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. }
+    )
+}
+
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
 pub(crate) fn native_method_1arg(
@@ -811,6 +825,21 @@ pub(crate) fn native_method_2arg(
 
     match method {
         "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
+        "fmt" => {
+            if !fmt_joinable_target(target) {
+                return Some(Err(RuntimeError::new(
+                    "Too many positionals passed; expected 1 or 2 arguments but got 3",
+                )));
+            }
+            let fmt = arg1.to_string_value();
+            let sep = arg2.to_string_value();
+            let rendered = runtime::value_to_list(target)
+                .into_iter()
+                .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
+                .collect::<Vec<_>>()
+                .join(&sep);
+            Some(Ok(Value::Str(rendered)))
+        }
         "substr" => {
             let s = target.to_string_value();
             let start = match arg1 {
@@ -825,28 +854,6 @@ pub(crate) fn native_method_2arg(
             let end = (start + len).min(chars.len());
             let start = start.min(chars.len());
             Some(Ok(Value::Str(chars[start..end].iter().collect())))
-        }
-        "fmt" => {
-            let fmt = arg1.to_string_value();
-            let separator = arg2.to_string_value();
-            match target {
-                Value::Array(..)
-                | Value::Seq(..)
-                | Value::Slip(..)
-                | Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. } => {
-                    let rendered = runtime::value_to_list(target)
-                        .iter()
-                        .map(|item| runtime::format_sprintf(&fmt, Some(item)))
-                        .collect::<Vec<_>>()
-                        .join(&separator);
-                    Some(Ok(Value::Str(rendered)))
-                }
-                _ => None,
-            }
         }
         "base" => {
             let radix = match arg1 {

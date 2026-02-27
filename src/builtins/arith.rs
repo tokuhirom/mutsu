@@ -103,6 +103,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
                 _ => Value::Int(0),
             }
         }
+    } else if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+    {
+        Value::from_bigint(a - b)
     } else {
         let lf = runtime::to_float_value(&l);
         let rf = runtime::to_float_value(&r);

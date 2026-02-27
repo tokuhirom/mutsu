@@ -1,5 +1,5 @@
 use Test;
-plan 9;
+plan 11;
 
 # q// literal string (no interpolation)
 my $q1 = q/hello world/;
@@ -38,3 +38,9 @@ is $qq4, 'hello Raku', 'qq[] interpolates variables';
 # Q[] is raw and should allow trailing backslash before the closing bracket
 my $q5 = Q[a escape\];
 is $q5, "a escape\\", 'Q[] trailing backslash before closing bracket';
+
+my $q6 = q:c/%08b/;
+is $q6, '%08b', 'q:c adverb form parses as a q literal';
+
+my $bits = 5;
+is q:c/%0{$bits}b/, '%05b', 'q:c interpolates closure expressions';
