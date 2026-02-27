@@ -347,11 +347,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         Some((PrefixUnaryOp::Not, 1))
     } else if input.starts_with("?^") {
         Some((PrefixUnaryOp::BoolBitNeg, 2))
-    } else if input.starts_with('?')
-        && !input.starts_with("??")
-        && !input.starts_with("?|")
-        && !input.starts_with("?&")
-    {
+    } else if input.starts_with('?') && !input.starts_with("??") && !input.starts_with("?|") {
         Some((PrefixUnaryOp::Boolify, 1))
     } else if input.starts_with("so") && !is_ident_char(input.as_bytes().get(2).copied()) {
         Some((PrefixUnaryOp::Boolify, 2))

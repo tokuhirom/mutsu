@@ -1078,6 +1078,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_prefix_boolify_codevar_method_call() {
+        let (rest, expr) = expression("?&foo.cando($c)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Question,
+                expr,
+            } => match *expr {
+                Expr::MethodCall { target, .. } => {
+                    assert!(matches!(*target, Expr::CodeVar(ref name) if name == "foo"));
+                }
+                _ => panic!("expected method call operand"),
+            },
+            _ => panic!("expected prefix boolify expression"),
+        }
+    }
+
+    #[test]
     fn parse_parenthesized_sequence_with_following_smartmatch() {
         let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
         assert_eq!(rest, "");

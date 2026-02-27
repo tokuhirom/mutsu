@@ -402,7 +402,8 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             (r, tc)
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
+        {
             type_constraint = Some(tc);
             r2
         } else {
@@ -456,10 +457,17 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest = r;
     }
 
+    let param_name = match for_original_sigil {
+        b'@' => format!("@{}", name),
+        b'%' => format!("%{}", name),
+        b'&' => format!("&{}", name),
+        _ => name,
+    };
+
     Ok((
         rest,
         ParamDef {
-            name,
+            name: param_name,
             default: None,
             multi_invocant: true,
             required: false,

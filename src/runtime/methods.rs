@@ -1,6 +1,8 @@
 use super::*;
 use crate::ast::CallArg;
-use crate::value::signature::make_params_value_from_param_defs;
+use crate::value::signature::{
+    make_params_value_from_param_defs, make_signature_value, param_defs_to_sig_info,
+};
 
 impl Interpreter {
     pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
@@ -296,99 +298,6 @@ impl Interpreter {
         Some(param_defs)
     }
 
-    fn render_signature_value(expr: &Expr) -> String {
-        match expr {
-            Expr::Literal(v) => match v {
-                Value::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
-                _ => v.to_string_value(),
-            },
-            _ => "...".to_string(),
-        }
-    }
-
-    fn render_where_constraint(where_expr: &Expr) -> String {
-        if let Expr::AnonSub(body) = where_expr
-            && body.len() == 1
-            && let Stmt::Expr(Expr::Literal(Value::Bool(true))) = &body[0]
-        {
-            return "{ True }".to_string();
-        }
-        "{ ... }".to_string()
-    }
-
-    fn render_signature_param(pd: &ParamDef) -> String {
-        let mut out = String::new();
-        if let Some(tc) = &pd.type_constraint {
-            out.push_str(tc);
-            out.push(' ');
-        }
-        if pd.named {
-            out.push(':');
-        }
-        if pd.slurpy {
-            out.push('*');
-        }
-        if !pd.name.starts_with('$')
-            && !pd.name.starts_with('@')
-            && !pd.name.starts_with('%')
-            && !pd.name.starts_with('_')
-            && !pd.slurpy
-        {
-            out.push('$');
-        }
-        out.push_str(&pd.name);
-        if pd.required && pd.default.is_none() {
-            out.push('!');
-        }
-        for trait_name in &pd.traits {
-            out.push_str(" is ");
-            out.push_str(trait_name);
-        }
-        if let Some(where_expr) = &pd.where_constraint {
-            out.push_str(" where ");
-            out.push_str(&Self::render_where_constraint(where_expr));
-        }
-        if let Some(default) = &pd.default {
-            out.push_str(" = ");
-            out.push_str(&Self::render_signature_value(default));
-        }
-        out
-    }
-
-    fn render_sub_signature(
-        &self,
-        data: &crate::value::SubData,
-        assumed_positional: &[Value],
-        assumed_named: &std::collections::HashMap<String, Value>,
-    ) -> String {
-        if let Some(param_defs) =
-            Self::assumed_signature_param_defs(data, assumed_positional, assumed_named)
-        {
-            let rendered: Vec<String> = param_defs
-                .iter()
-                .map(Self::render_signature_param)
-                .collect();
-            return format!(":({})", rendered.join(", "));
-        }
-        if !data.params.is_empty() {
-            let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
-            return format!(":({})", rendered.join(", "));
-        }
-        // Auto-detect @_ / %_ usage for subs without explicit signatures
-        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
-        if use_positional || use_named {
-            let mut parts = Vec::new();
-            if use_positional {
-                parts.push("*@_".to_string());
-            }
-            if use_named {
-                parts.push("*%_".to_string());
-            }
-            return format!(":({})", parts.join(", "));
-        }
-        ":()".to_string()
-    }
-
     fn collect_named_param_keys(
         param_defs: &[ParamDef],
         out: &mut std::collections::HashSet<String>,
@@ -421,6 +330,166 @@ impl Interpreter {
             }
         }
         false
+    }
+
+    fn capture_to_call_args(value: &Value) -> Vec<Value> {
+        match value {
+            Value::Capture { positional, named } => {
+                let mut args = positional.clone();
+                for (k, v) in named {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+                args
+            }
+            other => vec![other.clone()],
+        }
+    }
+
+    fn candidate_matches_call_args(&mut self, candidate: &Value, args: &[Value]) -> bool {
+        match candidate {
+            Value::Sub(data) => {
+                if data.empty_sig && !args.is_empty() {
+                    return false;
+                }
+                if data.param_defs.is_empty() && !data.params.is_empty() {
+                    if args.iter().any(|arg| {
+                        matches!(
+                            arg,
+                            Value::Pair(key, _) if key != "__mutsu_test_callsite_line"
+                        )
+                    }) {
+                        return false;
+                    }
+                    let positional = args
+                        .iter()
+                        .filter(|arg| !matches!(arg, Value::Pair(_, _) | Value::ValuePair(_, _)))
+                        .count();
+                    return positional == data.params.len();
+                }
+                self.method_args_match(args, &data.param_defs)
+            }
+            Value::WeakSub(weak) => weak
+                .upgrade()
+                .is_some_and(|strong| self.method_args_match(args, &strong.param_defs)),
+            Value::Routine { name, .. } => self.resolve_function_with_types(name, args).is_some(),
+            _ => false,
+        }
+    }
+
+    fn routine_candidate_subs(&self, package: &str, name: &str) -> Vec<Value> {
+        let exact_local = format!("{package}::{name}");
+        let exact_global = format!("GLOBAL::{name}");
+        let prefix_local = format!("{package}::{name}/");
+        let prefix_global = format!("GLOBAL::{name}/");
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for (key, def) in &self.functions {
+            if key == &exact_local
+                || key == &exact_global
+                || key.starts_with(&prefix_local)
+                || key.starts_with(&prefix_global)
+            {
+                let fp =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                if seen.insert(fp) {
+                    out.push(Value::make_sub(
+                        def.package.clone(),
+                        def.name.clone(),
+                        def.params.clone(),
+                        def.param_defs.clone(),
+                        def.body.clone(),
+                        self.env.clone(),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    fn sub_signature_value(&self, data: &crate::value::SubData) -> Value {
+        let param_defs =
+            Self::assumed_signature_param_defs(data, &data.assumed_positional, &data.assumed_named)
+                .unwrap_or_else(|| {
+                    if !data.params.is_empty() {
+                        data.params
+                            .iter()
+                            .map(|name| ParamDef {
+                                name: name.clone(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            })
+                            .collect()
+                    } else {
+                        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
+                        let mut defs = Vec::new();
+                        if use_positional {
+                            defs.push(ParamDef {
+                                name: "@_".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: true,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            });
+                        }
+                        if use_named {
+                            defs.push(ParamDef {
+                                name: "%_".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: true,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            });
+                        }
+                        defs
+                    }
+                });
+        let return_type = data.env.get("__mutsu_return_type").and_then(|v| match v {
+            Value::Str(s) => Some(s.clone()),
+            _ => None,
+        });
+        let info = param_defs_to_sig_info(&param_defs, return_type);
+        make_signature_value(info)
     }
 
     fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
@@ -705,43 +774,140 @@ impl Interpreter {
             return self.call_method_with_values(seq, method, args);
         }
 
-        // Resolve Value::Routine to Value::Sub for method dispatch
+        // Callable introspection and wrappers for routine handles
         if let Value::Routine {
             ref name,
             ref package,
             ..
         } = target
-            && method == "assuming"
         {
-            // Create a wrapper Sub that delegates to the multi-dispatch routine
-            let mut sub_data = crate::value::SubData {
-                package: package.clone(),
-                name: name.clone(),
-                params: Vec::new(),
-                param_defs: Vec::new(),
-                body: vec![],
-                env: self.env().clone(),
-                assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
-                id: crate::value::next_instance_id(),
-                empty_sig: false,
-            };
-            // Store the routine name so call_sub_value can dispatch
-            sub_data
-                .env
-                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
-            // Apply assumed args
-            for arg in &args {
-                if let Value::Pair(key, boxed) = arg {
-                    if key == "__mutsu_test_callsite_line" {
-                        continue;
+            if method == "assuming" {
+                // Create a wrapper Sub that delegates to the multi-dispatch routine
+                let mut sub_data = crate::value::SubData {
+                    package: package.clone(),
+                    name: name.clone(),
+                    params: Vec::new(),
+                    param_defs: Vec::new(),
+                    body: vec![],
+                    env: self.env().clone(),
+                    assumed_positional: Vec::new(),
+                    assumed_named: std::collections::HashMap::new(),
+                    id: crate::value::next_instance_id(),
+                    empty_sig: false,
+                };
+                // Store the routine name so call_sub_value can dispatch
+                sub_data
+                    .env
+                    .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+                // Apply assumed args
+                for arg in &args {
+                    if let Value::Pair(key, boxed) = arg {
+                        if key == "__mutsu_test_callsite_line" {
+                            continue;
+                        }
+                        sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                    } else {
+                        sub_data.assumed_positional.push(arg.clone());
                     }
-                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
-                } else {
-                    sub_data.assumed_positional.push(arg.clone());
                 }
+                return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
             }
-            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+            if method == "candidates" && args.is_empty() {
+                return Ok(Value::array(self.routine_candidate_subs(package, name)));
+            }
+            if method == "cando" && args.len() == 1 {
+                let call_args = Self::capture_to_call_args(&args[0]);
+                let matching = self
+                    .resolve_all_matching_candidates(name, &call_args)
+                    .into_iter()
+                    .map(|def| {
+                        Value::make_sub(
+                            def.package,
+                            def.name,
+                            def.params,
+                            def.param_defs,
+                            def.body,
+                            self.env.clone(),
+                        )
+                    })
+                    .collect();
+                return Ok(Value::array(matching));
+            }
+            if method == "signature" && args.is_empty() {
+                let candidates = self.routine_candidate_subs(package, name);
+                if candidates.is_empty() {
+                    let (params, param_defs) = self.callable_signature(&target);
+                    let defs = if !param_defs.is_empty() {
+                        param_defs
+                    } else {
+                        params
+                            .into_iter()
+                            .map(|name| ParamDef {
+                                name,
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            })
+                            .collect()
+                    };
+                    let info = param_defs_to_sig_info(&defs, None);
+                    return Ok(make_signature_value(info));
+                }
+                if candidates.len() == 1 {
+                    return self.call_method_with_values(
+                        candidates[0].clone(),
+                        "signature",
+                        Vec::new(),
+                    );
+                }
+                let mut signatures = Vec::new();
+                for candidate in candidates {
+                    signatures.push(self.call_method_with_values(
+                        candidate,
+                        "signature",
+                        Vec::new(),
+                    )?);
+                }
+                return Ok(Value::Junction {
+                    kind: JunctionKind::Any,
+                    values: std::sync::Arc::new(signatures),
+                });
+            }
+            if method == "can" {
+                let method_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let can = matches!(
+                    method_name.as_str(),
+                    "assuming"
+                        | "signature"
+                        | "candidates"
+                        | "cando"
+                        | "of"
+                        | "name"
+                        | "raku"
+                        | "perl"
+                        | "Str"
+                        | "gist"
+                        | "can"
+                );
+                return Ok(Value::Bool(can));
+            }
         }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
@@ -814,99 +980,20 @@ impl Interpreter {
                 }
                 return Ok(Value::Sub(std::sync::Arc::new(next)));
             }
+            if method == "candidates" && args.is_empty() {
+                return Ok(Value::array(vec![target.clone()]));
+            }
+            if method == "cando" && args.len() == 1 {
+                let call_args = Self::capture_to_call_args(&args[0]);
+                let matches = if self.candidate_matches_call_args(&target, &call_args) {
+                    vec![target.clone()]
+                } else {
+                    Vec::new()
+                };
+                return Ok(Value::array(matches));
+            }
             if method == "signature" && args.is_empty() {
-                let sig =
-                    self.render_sub_signature(data, &data.assumed_positional, &data.assumed_named);
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("raku".to_string(), Value::Str(sig.clone()));
-                attrs.insert("perl".to_string(), Value::Str(sig.clone()));
-                attrs.insert("Str".to_string(), Value::Str(sig.clone()));
-                attrs.insert("gist".to_string(), Value::Str(sig));
-                let param_defs = Self::assumed_signature_param_defs(
-                    data,
-                    &data.assumed_positional,
-                    &data.assumed_named,
-                )
-                .unwrap_or_else(|| {
-                    if !data.params.is_empty() {
-                        data.params
-                            .iter()
-                            .map(|name| ParamDef {
-                                name: name.clone(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                slurpy: false,
-                                double_slurpy: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                            })
-                            .collect()
-                    } else {
-                        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
-                        let mut defs = Vec::new();
-                        if use_positional {
-                            defs.push(ParamDef {
-                                name: "@_".to_string(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                slurpy: true,
-                                double_slurpy: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                            });
-                        }
-                        if use_named {
-                            defs.push(ParamDef {
-                                name: "%_".to_string(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                slurpy: true,
-                                double_slurpy: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                            });
-                        }
-                        defs
-                    }
-                });
-                attrs.insert(
-                    "params".to_string(),
-                    make_params_value_from_param_defs(&param_defs),
-                );
-                return Ok(Value::make_instance("Signature".to_string(), attrs));
+                return Ok(self.sub_signature_value(data));
             }
             if method == "of" && args.is_empty() {
                 let type_name = self
@@ -923,6 +1010,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "candidates"
+                        | "cando"
                         | "of"
                         | "name"
                         | "raku"
