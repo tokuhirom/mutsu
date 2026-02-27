@@ -8,12 +8,13 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["native"]
-native = ["rustyline", "libc"]
+native = ["rustyline", "libc", "pcre2"]
 wasm = ["wasm-bindgen", "console_error_panic_hook"]
 
 [dependencies]
 regex = "1.12.3"
 fancy-regex = "0.14"
+pcre2 = { version = "0.2", optional = true }
 unicode_names2 = "2.0.0"
 num-bigint = "0.4"
 num-traits = "0.2"
