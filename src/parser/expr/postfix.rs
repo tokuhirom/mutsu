@@ -195,8 +195,8 @@ fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
         let rest = &input[start + end + 1..];
         // Check if content has interpolation
         if content.contains('$') || content.contains('@') || content.contains('{') {
-            use super::super::primary::string::interpolate_string_content;
-            let name_expr = interpolate_string_content(content);
+            use super::super::primary::string::interpolate_string_content_with_modes;
+            let name_expr = interpolate_string_content_with_modes(content, true, true);
             return Some((rest, QuotedMethodName::Dynamic(name_expr)));
         }
         return Some((rest, QuotedMethodName::Static(content.to_string())));
@@ -728,6 +728,58 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             } else {
                 (r, None)
             };
+            if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&')
+            {
+                let (r, name_expr) = primary(r)?;
+                let r = consume_unspace(r);
+                if r.starts_with('(') {
+                    let (r, _) = parse_char(r, '(')?;
+                    let (r, _) = ws(r)?;
+                    let (r, args) = parse_call_arg_list(r)?;
+                    let (r, _) = ws(r)?;
+                    let (r, _) = parse_char(r, ')')?;
+                    expr = Expr::DynamicMethodCall {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    };
+                    rest = r;
+                    continue;
+                }
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(':') && !r2.starts_with("::") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    let (r3, first_arg) = expression(r3)?;
+                    let mut args = vec![first_arg];
+                    let mut r_inner = r3;
+                    loop {
+                        let (r4, _) = ws(r_inner)?;
+                        if !r4.starts_with(',') {
+                            break;
+                        }
+                        let r4 = &r4[1..];
+                        let (r4, _) = ws(r4)?;
+                        let (r4, next) = expression(r4)?;
+                        args.push(next);
+                        r_inner = r4;
+                    }
+                    expr = Expr::DynamicMethodCall {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    };
+                    rest = r_inner;
+                    continue;
+                }
+                expr = Expr::DynamicMethodCall {
+                    target: Box::new(expr),
+                    name_expr: Box::new(name_expr),
+                    args: Vec::new(),
+                };
+                rest = r;
+                continue;
+            }
             // Parse method name
             if let Ok((r, name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')

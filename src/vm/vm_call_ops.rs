@@ -367,11 +367,26 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic name"))?;
-        let method = name_val.to_string_value();
         let target = self
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
+        if matches!(
+            name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            let mut callable_args = Vec::with_capacity(args.len() + 1);
+            callable_args.push(target);
+            callable_args.extend(args);
+            let result = self
+                .interpreter
+                .eval_call_on_value(name_val, callable_args)?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
+        let method = name_val.to_string_value();
         let call_result =
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result

@@ -631,6 +631,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_dynamic_variable_method_call_without_parens() {
+        let (rest, expr) = expression("$o.$meth").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::DynamicMethodCall { .. }));
+    }
+
+    #[test]
     fn parse_ternary() {
         let (rest, expr) = expression("$x ?? 1 !! 2").unwrap();
         assert_eq!(rest, "");
