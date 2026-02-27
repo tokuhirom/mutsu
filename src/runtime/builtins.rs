@@ -972,6 +972,16 @@ impl Interpreter {
         call_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // Perl-style slurp idiom used in roast/t/fudge.t:
+        //   local(@ARGV, $/) = $path; <>
+        // Preserve support when `local(...) = ...` is lowered as named-sub lvalue assignment.
+        if name == "local" {
+            self.env
+                .insert("ARGV".to_string(), Value::array(vec![value.clone()]));
+            self.env.insert("/".to_string(), Value::Nil);
+            return Ok(value);
+        }
+
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
             if let Some(target_expr) = Self::rw_sub_target_expr(&def.body) {
                 let allow_target_assign =
