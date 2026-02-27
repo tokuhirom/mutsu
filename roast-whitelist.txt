@@ -356,6 +356,7 @@ roast/S17-supply/do.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t
+roast/S17-supply/lines.t
 roast/S17-supply/list.t
 roast/S17-supply/map.t
 roast/S17-supply/max.t

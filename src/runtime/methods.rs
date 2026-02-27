@@ -590,7 +590,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if matches!(method, "max" | "min")
+        if matches!(method, "max" | "min" | "lines")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(

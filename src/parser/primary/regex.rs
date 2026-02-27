@@ -225,6 +225,16 @@ fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> St
     pattern
 }
 
+fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
+    if let Ok((rest, assign_expr)) = crate::parser::stmt::assign::try_parse_assign_expr(input) {
+        let (rest_ws, _) = ws(rest)?;
+        if !rest_ws.starts_with("=>") || rest_ws.starts_with("==>") {
+            return Ok((rest, assign_expr));
+        }
+    }
+    crate::parser::primary::misc::reduction_call_style_expr(input).or_else(|_| expression(input))
+}
+
 /// Parse comma-separated call arguments inside parens.
 /// Semicolons act as list-associative separators: each `;`-delimited group
 /// is collected into an `Array` node, producing one arg per group.
