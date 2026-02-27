@@ -266,6 +266,7 @@ roast/S12-methods/method-vs-sub.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
+roast/S12-methods/what.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/metaoperators.t

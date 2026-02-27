@@ -155,6 +155,14 @@ impl Interpreter {
             "undefine" => Ok(Value::Nil),
             "local" => Ok(Value::Nil),
             "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "WHAT" => {
+                if args.len() != 1 {
+                    return Err(RuntimeError::new(
+                        "X::Syntax::Argument::MOPMacro: WHAT expects exactly one argument",
+                    ));
+                }
+                self.call_method_with_values(args[0].clone(), "WHAT", vec![])
+            }
             "HOW" => {
                 if args.len() != 1 {
                     return Err(RuntimeError::new(

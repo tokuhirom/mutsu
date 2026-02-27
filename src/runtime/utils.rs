@@ -471,7 +471,17 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Bag(_) => "Bag",
         Value::Mix(_) => "Mix",
         Value::Nil => "Any",
-        Value::Sub(_) | Value::WeakSub(_) => "Sub",
+        Value::Sub(data) => {
+            if matches!(
+                data.env.get("__mutsu_callable_type"),
+                Some(Value::Str(kind)) if kind == "Method"
+            ) {
+                "Method"
+            } else {
+                "Sub"
+            }
+        }
+        Value::WeakSub(_) => "Sub",
         Value::Routine { .. } => "Routine",
         Value::Package(_) => "Package",
         Value::CompUnitDepSpec { .. } => "Any",

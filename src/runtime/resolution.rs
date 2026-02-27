@@ -327,7 +327,7 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
-    pub(super) fn call_sub_value(
+    pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
         args: Vec<Value>,

@@ -629,6 +629,7 @@ impl Interpreter {
             body: body.to_vec(),
             is_test_assertion,
             is_rw,
+            is_method: false,
             empty_sig,
         };
         let single_key = format!("{}::{}", self.current_package, name);
@@ -751,6 +752,7 @@ impl Interpreter {
             body: body.to_vec(),
             is_test_assertion: false,
             is_rw: false,
+            is_method: false,
             empty_sig: false,
         };
         self.insert_token_def(name, def, multi);
@@ -788,6 +790,7 @@ impl Interpreter {
                 body: body.to_vec(),
                 is_test_assertion: false,
                 is_rw: false,
+                is_method: false,
                 empty_sig: false,
             },
         );
@@ -877,6 +880,7 @@ impl Interpreter {
             body: body.to_vec(),
             is_test_assertion,
             is_rw,
+            is_method: false,
             empty_sig,
         };
         let single_key = format!("GLOBAL::{}", name);
@@ -1011,6 +1015,7 @@ impl Interpreter {
                 body: body.to_vec(),
                 is_test_assertion: false,
                 is_rw: false,
+                is_method: false,
                 empty_sig: false,
             },
         );
@@ -1392,6 +1397,7 @@ impl Interpreter {
                             body: method_body.clone(),
                             is_test_assertion: false,
                             is_rw: *is_rw,
+                            is_method: true,
                             empty_sig: false,
                         };
                         self.functions.insert(qualified_name, func_def);
