@@ -27,6 +27,7 @@ pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
         (input, "")
     };
     let (rest_after_name, name) = parse_qualified_ident_with_hyphens_or_empty(rest);
+    let (rest_after_name, name) = parse_var_name_adverb_suffixes(rest_after_name, name);
     let full_name = if twigil.is_empty() {
         name
     } else {
@@ -174,6 +175,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name
     } else {
@@ -256,6 +258,20 @@ fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
     }
 }
 
+fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, String) {
+    while rest.starts_with(':') && !rest.starts_with("::") {
+        let after_colon = &rest[1..];
+        if let Ok((r2, suffix)) = parse_ident_with_hyphens(after_colon) {
+            name.push(':');
+            name.push_str(suffix);
+            rest = r2;
+        } else {
+            break;
+        }
+    }
+    (rest, name)
+}
+
 /// Parse an @array variable reference.
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
@@ -284,6 +300,7 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::ArrayVar("__ANON_ARRAY__".to_string())));
     }
     let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name
     } else {
@@ -321,6 +338,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     }
     // Special: %*ENV
     let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name
     } else {

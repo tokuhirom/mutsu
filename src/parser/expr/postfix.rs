@@ -259,6 +259,17 @@ fn is_postfix_operator_boundary(rest: &str) -> bool {
         })
 }
 
+fn has_ternary_else_after(input: &str) -> bool {
+    let mut rest = input;
+    while let Ok((next, _)) = ws(rest) {
+        if next.len() == rest.len() {
+            break;
+        }
+        rest = next;
+    }
+    rest.starts_with("!!")
+}
+
 fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
     // Don't consume characters that are closing delimiters of circumfix operators
     if crate::parser::stmt::simple::is_circumfix_close_delimiter(input) {
@@ -1077,6 +1088,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // These can appear with whitespace after ] or } subscripts
         if matches!(&expr, Expr::Index { .. } | Expr::ZenSlice(_)) {
             let (r_adv2, _) = ws(rest)?;
+            if r_adv2.starts_with(":v")
+                && !is_ident_char(r_adv2.as_bytes().get(2).copied())
+                && !has_ternary_else_after(&r_adv2[2..])
+            {
+                rest = &r_adv2[2..];
+                continue;
+            }
             if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv2, expr.clone()) {
                 expr = exists_expr;
                 rest = r_after;
