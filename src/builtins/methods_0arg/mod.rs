@@ -1081,6 +1081,37 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .cloned()
                     .unwrap_or_else(|| Value::Str(format!("{}()", class_name)))))
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "CallFrame" => {
+                if method == "gist" {
+                    let file = attributes
+                        .get("file")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let line = attributes
+                        .get("line")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "0".to_string());
+                    Some(Ok(Value::Str(format!("{} at line {}", file, line))))
+                } else {
+                    // .raku: CallFrame.new(...)
+                    let file = attributes
+                        .get("file")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let line = attributes
+                        .get("line")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "0".to_string());
+                    Some(Ok(Value::Str(format!(
+                        "CallFrame.new(annotations => {{:file(\"{}\"), :line(\"{}\")}}, my => {{}})",
+                        file, line
+                    ))))
+                }
+            }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..

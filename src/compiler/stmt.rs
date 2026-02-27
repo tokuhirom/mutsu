@@ -301,8 +301,27 @@ impl Compiler {
                 cond,
                 then_branch,
                 else_branch,
+                binding_var,
             } => {
-                self.compile_condition_expr(cond);
+                if let Some(var_name) = binding_var {
+                    // Desugar: if EXPR -> $var { BODY } else { ELSE }
+                    // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
+                    let desugared_cond = Expr::Var(var_name.trim_start_matches('$').to_string());
+                    let var_decl = Stmt::VarDecl {
+                        name: var_name.clone(),
+                        expr: cond.clone(),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: vec![],
+                    };
+                    self.compile_stmt(&var_decl);
+                    self.compile_condition_expr(&desugared_cond);
+                } else {
+                    self.compile_condition_expr(cond);
+                }
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
                 self.compile_body_with_implicit_try(then_branch);
                 if else_branch.is_empty() {

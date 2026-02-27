@@ -260,6 +260,7 @@ impl Compiler {
                 cond,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 Self::expr_has_placeholder(cond)
                     || then_branch.iter().any(Self::stmt_has_placeholder)
@@ -456,6 +457,7 @@ impl Compiler {
                             cond,
                             then_branch,
                             else_branch,
+                            ..
                         } => {
                             sub_compiler.compile_if_value(cond, then_branch, else_branch);
                             continue;
@@ -554,6 +556,7 @@ impl Compiler {
                         cond,
                         then_branch,
                         else_branch,
+                        ..
                     } => self.compile_if_value(cond, then_branch, else_branch),
                     Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                         self.compile_block_inline(inner)
@@ -818,6 +821,7 @@ impl Compiler {
                 cond: inner_cond,
                 then_branch: inner_then,
                 else_branch: inner_else,
+                ..
             } = &else_branch[0]
             {
                 self.compile_do_if_expr(inner_cond, inner_then, inner_else);
@@ -1059,6 +1063,7 @@ impl Compiler {
                 cond: Expr::Var(first_var.clone()),
                 then_branch,
                 else_branch: next_ph,
+                binding_var: None,
             });
         }
         loop_body.extend(body_main);
@@ -1071,6 +1076,7 @@ impl Compiler {
                 cond: Expr::Var(ran_var),
                 then_branch: last_ph,
                 else_branch: Vec::new(),
+                binding_var: None,
             }]
         };
 

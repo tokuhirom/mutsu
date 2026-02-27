@@ -14,6 +14,9 @@ pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
+    // Optional binding: `if EXPR -> $var { }`
+    let (rest, binding_var) = parse_binding_var(rest)?;
+    let (rest, _) = ws(rest)?;
     let (rest, then_branch) = block(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -26,8 +29,21 @@ pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
             cond,
             then_branch,
             else_branch,
+            binding_var,
         },
     ))
+}
+
+/// Parse optional `-> $var` binding after an if/elsif/with condition.
+fn parse_binding_var(input: &str) -> PResult<'_, Option<String>> {
+    if let Some(rest) = input.strip_prefix("->") {
+        let (rest, _) = ws(rest)?;
+        let (rest, name) = var_name(rest)?;
+        let (rest, _) = ws(rest)?;
+        Ok((rest, Some(name.to_string())))
+    } else {
+        Ok((input, None))
+    }
 }
 
 pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
@@ -44,6 +60,7 @@ pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
                 cond,
                 then_branch,
                 else_branch,
+                binding_var: None,
             }],
         ));
     }
@@ -93,6 +110,7 @@ pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             },
             then_branch: body,
             else_branch: Vec::new(),
+            binding_var: None,
         },
     ))
 }
@@ -1064,6 +1082,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 cond: orwith_cond,
                 then_branch: orwith_with_body,
                 else_branch: orwith_else,
+                binding_var: None,
             }],
         )
     } else if keyword("else", rest).is_some() {
@@ -1081,6 +1100,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             cond,
             then_branch: with_body,
             else_branch,
+            binding_var: None,
         },
     ))
 }

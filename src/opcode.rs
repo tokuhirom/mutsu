@@ -270,8 +270,6 @@ pub(crate) enum OpCode {
     MakeAnonSubParams(u32),
     MakeLambda(u32),
     MakeBlockClosure(u32),
-    IndexAssignInvalid,
-
     // -- Indexing --
     Index,
     DeleteIndexNamed(u32),
@@ -324,6 +322,10 @@ pub(crate) enum OpCode {
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
     IndexAssignExprNested(u32),
+    /// Generic index assignment on a stack-computed target.
+    /// Stack: [target, index, value] → assigns value to target[index].
+    /// Supports callframe .my hash writeback for dynamic variables.
+    IndexAssignGeneric,
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),

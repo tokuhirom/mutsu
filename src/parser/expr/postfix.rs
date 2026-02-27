@@ -652,6 +652,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                         || c == '?'
                                         || c == '+'
                                         || c == '/'
+                                        || c == '$'
+                                        || c == '@'
+                                        || c == '%'
+                                        || c == '&'
                                 })
                         })
                     {
@@ -935,6 +939,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 || c == '?'
                                 || c == '+'
                                 || c == '/'
+                                || c == '$'
+                                || c == '@'
+                                || c == '%'
+                                || c == '&'
                                 || is_non_breaking_space(c)
                         })
                 })

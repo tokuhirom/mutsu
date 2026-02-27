@@ -1413,8 +1413,9 @@ impl VM {
                 self.exec_make_lambda_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::IndexAssignInvalid => {
-                return Err(RuntimeError::new("Invalid assignment target"));
+            OpCode::IndexAssignGeneric => {
+                self.exec_index_assign_generic_op()?;
+                *ip += 1;
             }
             OpCode::MakeBlockClosure(idx) => {
                 self.exec_make_block_closure_op(code, *idx)?;

@@ -686,6 +686,13 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(Value::Num(result)))
         }
+        "EXISTS-KEY" => match target {
+            Value::Hash(map) => {
+                let key = arg.to_string_value();
+                Some(Ok(Value::Bool(map.contains_key(&key))))
+            }
+            _ => None,
+        },
         _ => None,
     }
 }

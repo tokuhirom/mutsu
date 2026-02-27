@@ -28,16 +28,28 @@ impl Interpreter {
                 return Err(e);
             }
         };
+        // Push Sub value to block_stack so callframe().code works for nested calls
+        let sub_val = Value::make_sub(
+            def.package.clone(),
+            def.name.clone(),
+            def.params.clone(),
+            def.param_defs.clone(),
+            def.body.clone(),
+            def.is_rw,
+            self.env.clone(),
+        );
+        self.block_stack.push(sub_val);
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         self.prepare_definite_return_slot(return_spec.as_deref());
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
+        self.block_stack.pop();
         self.pop_test_assertion_context(pushed_assertion);
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
-        self.pop_caller_env();
         let mut restored_env = saved_env;
+        self.pop_caller_env_with_writeback(&mut restored_env);
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
@@ -89,16 +101,27 @@ impl Interpreter {
                                 return Err(e);
                             }
                         };
+                    let sub_val = Value::make_sub(
+                        def.package.clone(),
+                        def.name.clone(),
+                        def.params.clone(),
+                        def.param_defs.clone(),
+                        def.body.clone(),
+                        def.is_rw,
+                        self.env.clone(),
+                    );
+                    self.block_stack.push(sub_val);
                     let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));
                     self.prepare_definite_return_slot(return_spec.as_deref());
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();
+                    self.block_stack.pop();
                     self.pop_test_assertion_context(pushed_assertion);
                     let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
-                    self.pop_caller_env();
                     let mut restored_env = saved_env;
+                    self.pop_caller_env_with_writeback(&mut restored_env);
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
                     self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
                     self.env = restored_env;

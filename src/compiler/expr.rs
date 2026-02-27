@@ -594,6 +594,7 @@ impl Compiler {
                                     },
                                     then_branch: vec![assign_stmt],
                                     else_branch: vec![],
+                                    binding_var: None,
                                 },
                                 Stmt::Expr(Expr::Var(seen_name)),
                             ],
@@ -1219,6 +1220,7 @@ impl Compiler {
                     cond,
                     then_branch,
                     else_branch,
+                    ..
                 } if Self::do_if_branch_supported(then_branch)
                     && Self::do_if_branch_supported(else_branch) =>
                 {
@@ -1514,7 +1516,12 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::Str(name));
                     self.code.emit(OpCode::IndexAssignExprNested(name_idx));
                 } else {
-                    self.code.emit(OpCode::IndexAssignInvalid);
+                    // Generic fallback: compile target, then index, then value
+                    // and emit IndexAssignGeneric to do runtime assignment.
+                    self.compile_expr(target);
+                    self.compile_expr(index);
+                    self.compile_expr(value);
+                    self.code.emit(OpCode::IndexAssignGeneric);
                 }
             }
             Expr::IndirectTypeLookup(inner) => {
