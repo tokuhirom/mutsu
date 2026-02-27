@@ -141,6 +141,7 @@ roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/quietly.t
 roast/S04-statements/repeat.t
+roast/S04-statements/sink.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S04-statements/when.t
