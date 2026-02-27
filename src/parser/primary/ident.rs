@@ -851,17 +851,30 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // sub with params: sub ($x, $y) { ... }
             if r.starts_with('(') {
-                let (r2, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
-                    messages: merge_expected_messages(
-                        "expected anonymous sub parameter list/body",
-                        &err.messages,
-                    ),
-                    remaining_len: err.remaining_len.or(Some(r.len())),
-                })?;
-                return Ok((r2, params_body));
+                match parse_anon_sub_with_params(r) {
+                    Ok((r2, params_body)) => return Ok((r2, params_body)),
+                    Err(err) => {
+                        // `sub(` without whitespace can be a call to a routine named `sub`.
+                        // Keep anonymous-sub diagnostics for `sub (...)` forms, but fall through
+                        // for tight-call syntax so generic call parsing can handle it.
+                        if !rest.starts_with('(') {
+                            return Err(PError {
+                                messages: merge_expected_messages(
+                                    "expected anonymous sub parameter list/body",
+                                    &err.messages,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r.len())),
+                            });
+                        }
+                    }
+                }
             }
             // sub not followed by { or ( in expression context — not valid
-            return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+            if rest.starts_with('(') {
+                // Let generic identifier/call parsing handle `sub(...)` call syntax.
+            } else {
+                return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+            }
         }
         "method" => {
             // Anonymous method in expression context: method () { ... } or method { ... }

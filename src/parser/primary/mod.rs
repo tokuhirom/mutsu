@@ -479,6 +479,21 @@ mod tests {
     }
 
     #[test]
+    fn primary_parses_keyword_named_sub_calls() {
+        let (rest, sub_expr) = primary("sub('foobar')").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(sub_expr, Expr::Call { ref name, .. } if name == "sub"));
+
+        let (rest, my_expr) = primary("my($x)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(my_expr, Expr::Call { ref name, .. } if name == "my"));
+
+        let (rest, loop_expr) = primary("loop(5)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(loop_expr, Expr::Call { ref name, .. } if name == "loop"));
+    }
+
+    #[test]
     fn primary_big_q_bang_delimiter() {
         reset_primary_memo();
         let (rest, expr) = primary("Q!hello!").unwrap();
