@@ -278,6 +278,7 @@ impl Interpreter {
             "join" => self.builtin_join(&args),
             "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "list" => self.builtin_list(&args),
+            "circumfix:<[ ]>" => Ok(Value::array(args.clone())),
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
             "slip" | "Slip" => self.builtin_slip(&args),

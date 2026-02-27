@@ -1020,13 +1020,28 @@ impl Interpreter {
             },
         );
         classes.insert(
-            "X::TypeCheck::Binding".to_string(),
+            "X::TypeCheck".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::TypeCheck::Binding".to_string(), "Exception".to_string()],
+                mro: vec!["X::TypeCheck".to_string(), "Exception".to_string()],
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "X::TypeCheck::Binding".to_string(),
+            ClassDef {
+                parents: vec!["X::TypeCheck".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "X::TypeCheck::Binding".to_string(),
+                    "X::TypeCheck".to_string(),
+                    "Exception".to_string(),
+                ],
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1040,6 +1055,7 @@ impl Interpreter {
                 mro: vec![
                     "X::TypeCheck::Binding::Parameter".to_string(),
                     "X::TypeCheck::Binding".to_string(),
+                    "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
                 wildcard_handles: Vec::new(),
@@ -1048,12 +1064,13 @@ impl Interpreter {
         classes.insert(
             "X::TypeCheck::Argument".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec![
                     "X::TypeCheck::Argument".to_string(),
+                    "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
                 wildcard_handles: Vec::new(),
@@ -1062,12 +1079,13 @@ impl Interpreter {
         classes.insert(
             "X::TypeCheck::Assignment".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec![
                     "X::TypeCheck::Assignment".to_string(),
+                    "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
                 wildcard_handles: Vec::new(),

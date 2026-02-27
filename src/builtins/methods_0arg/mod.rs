@@ -546,6 +546,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
     match method {
         "self" => Some(Ok(target.clone())),
+        "clone" => {
+            match target {
+                Value::Package(_) | Value::Nil => Some(Ok(target.clone())),
+                Value::Array(items, is_array) => {
+                    Some(Ok(Value::Array(Arc::new(items.to_vec()), *is_array)))
+                }
+                Value::Hash(map) => Some(Ok(Value::Hash(Arc::new((**map).clone())))),
+                _ => None, // fall through to slow path for instances etc.
+            }
+        }
         "defined" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) => false,
             Value::Slip(items) if items.is_empty() => false,
