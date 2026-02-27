@@ -631,6 +631,7 @@ impl Interpreter {
             is_rw,
             is_method: false,
             empty_sig,
+            return_type: return_type.cloned(),
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
@@ -771,6 +772,7 @@ impl Interpreter {
             is_rw: false,
             is_method: false,
             empty_sig: false,
+            return_type: None,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -809,6 +811,7 @@ impl Interpreter {
                 is_rw: false,
                 is_method: false,
                 empty_sig: false,
+                return_type: None,
             },
         );
         Ok(())
@@ -899,6 +902,7 @@ impl Interpreter {
             is_rw,
             is_method: false,
             empty_sig,
+            return_type: return_type.cloned(),
         };
         let single_key = format!("GLOBAL::{}", name);
         let multi_prefix = format!("GLOBAL::{}/", name);
@@ -1039,6 +1043,7 @@ impl Interpreter {
                 is_rw: false,
                 is_method: false,
                 empty_sig: false,
+                return_type: None,
             },
         );
         Ok(())
@@ -1421,6 +1426,7 @@ impl Interpreter {
                             is_rw: *is_rw,
                             is_method: true,
                             empty_sig: false,
+                            return_type: None,
                         };
                         self.functions.insert(qualified_name, func_def);
                     }

@@ -66,6 +66,11 @@ impl Compiler {
                         .code
                         .add_constant(Value::Package(self.current_package.clone()));
                     self.code.emit(OpCode::LoadConst(idx));
+                } else if name == "?CLASS" || name == "?ROLE" {
+                    // ::?CLASS / ::?ROLE resolves at runtime from env
+                    // (set by run_instance_method_resolved for method bodies)
+                    let name_idx = self.code.add_constant(Value::Str(name.to_string()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {

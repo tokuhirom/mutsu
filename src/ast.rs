@@ -44,6 +44,8 @@ pub(crate) struct FunctionDef {
     pub(crate) is_method: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
+    /// Return type annotation (e.g., "Str", "Str(Numeric:D)", "Foo:D()")
+    pub(crate) return_type: Option<String>,
 }
 
 pub(crate) fn function_body_fingerprint(

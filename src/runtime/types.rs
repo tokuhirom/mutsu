@@ -73,6 +73,28 @@ fn coerce_value(target: &str, value: Value) -> Value {
                     let g = gcd_i64(numer.abs(), denom);
                     Value::Rat(numer / g, denom / g)
                 }
+                Value::Str(s) => {
+                    if s.contains('.') {
+                        let trimmed = s.trim();
+                        let negative = trimmed.starts_with('-');
+                        let abs_str = if negative { &trimmed[1..] } else { trimmed };
+                        if let Some((int_part, frac_part)) = abs_str.split_once('.') {
+                            let frac_digits = frac_part.len() as u32;
+                            let denom = 10i64.pow(frac_digits);
+                            let int_val = int_part.parse::<i64>().unwrap_or(0);
+                            let frac_val = frac_part.parse::<i64>().unwrap_or(0);
+                            let numer = int_val * denom + frac_val;
+                            let numer = if negative { -numer } else { numer };
+                            let g = gcd_i64(numer.abs(), denom);
+                            Value::Rat(numer / g, denom / g)
+                        } else {
+                            value
+                        }
+                    } else {
+                        let n = s.trim().parse::<i64>().unwrap_or(0);
+                        Value::Rat(n, 1)
+                    }
+                }
                 _ => value,
             }
         }
@@ -901,20 +923,43 @@ impl Interpreter {
                 return false;
             }
             let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
-            let saved = self.env.get("_").cloned();
-            self.env.insert("_".to_string(), predicate_value);
             let ok = if let Some(pred) = &subset.predicate {
-                self.eval_block_value(&[Stmt::Expr(pred.clone())])
-                    .map(|v| v.truthy())
-                    .unwrap_or(false)
+                // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
+                let is_callable_expr = matches!(
+                    pred,
+                    Expr::AnonSub { .. }
+                        | Expr::AnonSubParams { .. }
+                        | Expr::Block(_)
+                );
+                if is_callable_expr {
+                    // Evaluate to get a callable, then call with the value
+                    match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
+                        Ok(callable @ Value::Sub(_)) => {
+                            self.call_sub_value(callable, vec![predicate_value], false)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false)
+                        }
+                        Ok(v) => v.truthy(),
+                        Err(_) => false,
+                    }
+                } else {
+                    // Bare expression: set $_ and evaluate directly
+                    let saved = self.env.get("_").cloned();
+                    self.env.insert("_".to_string(), predicate_value);
+                    let result = self
+                        .eval_block_value(&[Stmt::Expr(pred.clone())])
+                        .map(|v| v.truthy())
+                        .unwrap_or(false);
+                    if let Some(old) = saved {
+                        self.env.insert("_".to_string(), old);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    result
+                }
             } else {
                 true
             };
-            if let Some(old) = saved {
-                self.env.insert("_".to_string(), old);
-            } else {
-                self.env.remove("_");
-            }
             return ok;
         }
         // Role constraints should accept composed role instances/mixins.

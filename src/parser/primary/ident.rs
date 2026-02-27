@@ -152,6 +152,24 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((after, Expr::Var("?MODULE".to_string())));
     }
+    // Handle ::?CLASS — compile-time class pseudo-package
+    if let Some(after) = rest.strip_prefix("?CLASS")
+        && after
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
+    {
+        return Ok((after, Expr::Var("?CLASS".to_string())));
+    }
+    // Handle ::?ROLE — compile-time role pseudo-package
+    if let Some(after) = rest.strip_prefix("?ROLE")
+        && after
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
+    {
+        return Ok((after, Expr::Var("?ROLE".to_string())));
+    }
     // Handle ::($expr) — indirect name lookup
     if let Some(after_paren) = rest.strip_prefix('(') {
         let (r, _) = ws(after_paren)?;
