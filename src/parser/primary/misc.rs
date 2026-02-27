@@ -1191,10 +1191,17 @@ pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::DoStmt(Box::new(Stmt::Package { name, body }))))
 }
 
-/// Parse an anonymous role expression: `role { ... }`
+/// Parse an anonymous role expression: `role { ... }` or `role :: { ... }`
 pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("anonymous role"))?;
     let (rest, _) = ws(rest)?;
+    // Accept optional `::` (null name) before the block
+    let rest = if let Some(r) = rest.strip_prefix("::") {
+        let (r, _) = ws(r)?;
+        r
+    } else {
+        rest
+    };
     // Must be followed by '{' (no name) to be an anonymous role
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous role"));

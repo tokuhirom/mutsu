@@ -1016,7 +1016,8 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
 
     // Optional type constraint (with optional smiley :D, :U, :_)
-    let rest = if let Ok((r, _tc)) = ident(rest) {
+    let mut type_constraint: Option<String> = None;
+    let rest = if let Ok((r, tc)) = ident(rest) {
         // Skip smiley after type name
         let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
             &r[2..]
@@ -1025,6 +1026,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         };
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            type_constraint = Some(tc.to_string());
             r2
         } else {
             rest
@@ -1085,6 +1087,10 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 handles.push(method_name.to_string());
                 cursor = r_name;
             }
+        } else if let Some(after_star) = r.strip_prefix('*') {
+            // handles * — wildcard delegation
+            handles.push("*".to_string());
+            rest = after_star;
         } else {
             let (r_name, method_name) = ident(r)?;
             handles.push(method_name.to_string());
@@ -1100,6 +1106,9 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
         (rest, Some(expr))
+    } else if let Some(tc) = &type_constraint {
+        // Typed attribute with no explicit default → use type object as default
+        (rest, Some(Expr::BareWord(tc.clone())))
     } else {
         (rest, None)
     };

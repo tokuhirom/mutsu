@@ -111,6 +111,23 @@ impl Interpreter {
         if matches!(target_val, Value::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
         }
+        // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
+        if let Value::Mixin(ref inner, ref mixins) = target_val {
+            // Check if any mixed-in role provides CALL-ME
+            for key in mixins.keys() {
+                if let Some(role_name) = key.strip_prefix("__mutsu_role__")
+                    && self.role_has_method(role_name, "CALL-ME")
+                {
+                    return self.call_method_with_values(target_val, "CALL-ME", args);
+                }
+            }
+            // Otherwise, delegate to the inner callable
+            match inner.as_ref() {
+                Value::Sub(_) => return self.call_sub_value(*inner.clone(), args, true),
+                Value::Routine { .. } => return self.call_sub_value(*inner.clone(), args, false),
+                _ => {}
+            }
+        }
         if matches!(target_val, Value::Instance { .. }) {
             return self.call_method_with_values(target_val, "CALL-ME", args);
         }
@@ -495,6 +512,19 @@ impl Interpreter {
                 return native_result;
             }
         }
+        // Check if there's a callable with CALL-ME override (from trait_mod mixin)
+        // before proto dispatch, as CALL-ME takes precedence over multi dispatch.
+        if let Some(callable) = self.env.get(&format!("&{}", name)).cloned()
+            && let Value::Mixin(_, ref mixins) = callable
+        {
+            for key in mixins.keys() {
+                if let Some(role_name) = key.strip_prefix("__mutsu_role__")
+                    && self.role_has_method(role_name, "CALL-ME")
+                {
+                    return self.call_method_with_values(callable, "CALL-ME", args.to_vec());
+                }
+            }
+        }
         if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
@@ -566,6 +596,18 @@ impl Interpreter {
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, routine_is_rw));
         }
+        // Check for callable in env (e.g. &name) before proto dispatch failure.
+        // This handles subs with CALL-ME mixed in via trait_mod.
+        let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
+        let callable_from_plain = self.env.get(name).cloned();
+        if let Some(callable) = callable_from_code_sigil
+            .filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+            .or_else(|| {
+                callable_from_plain.filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+            })
+        {
+            return self.eval_call_on_value(callable, args.to_vec());
+        }
         if self.has_proto(name) {
             let mut err =
                 RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
@@ -582,16 +624,6 @@ impl Interpreter {
                 attrs,
             )));
             return Err(err);
-        }
-        let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
-        let callable_from_plain = self.env.get(name).cloned();
-        if let Some(callable) = callable_from_code_sigil
-            .filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
-            .or_else(|| {
-                callable_from_plain.filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
-            })
-        {
-            return self.eval_call_on_value(callable, args.to_vec());
         }
         if self.has_role(name) {
             return Ok(Value::Pair(

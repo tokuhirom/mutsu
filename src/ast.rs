@@ -335,6 +335,8 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         is_test_assertion: bool,
         supersede: bool,
+        /// Custom `is` traits (non-builtin trait names like `me'd`)
+        custom_traits: Vec<String>,
     },
     TokenDecl {
         name: String,
@@ -508,6 +510,7 @@ pub(crate) enum Stmt {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         is_export: bool,
+        custom_traits: Vec<String>,
     },
     Let {
         name: String,

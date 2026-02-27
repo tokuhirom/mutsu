@@ -8,7 +8,7 @@ use crate::value::Value;
 
 use super::super::add_parse_warning;
 use super::decl::parse_array_shape_suffix;
-use super::{block, ident, keyword, qualified_ident, var_name};
+use super::{block, ident, keyword, parse_raku_ident, qualified_ident, var_name};
 
 /// Known valid parameter traits for `is <trait>` in signatures.
 const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw"];
@@ -504,6 +504,7 @@ pub(super) fn sub_decl_body(
                     export_tags: traits.export_tags.clone(),
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
+                    custom_traits: traits.custom_traits.clone(),
                 },
             ));
         }
@@ -542,6 +543,7 @@ pub(super) fn sub_decl_body(
                 export_tags: traits.export_tags.clone(),
                 is_test_assertion: traits.is_test_assertion,
                 supersede,
+                custom_traits: traits.custom_traits.clone(),
             },
         ));
     }
@@ -582,6 +584,7 @@ pub(super) fn sub_decl_body(
             export_tags: traits.export_tags,
             is_test_assertion: traits.is_test_assertion,
             supersede,
+            custom_traits: traits.custom_traits,
         },
     ))
 }
@@ -654,6 +657,8 @@ pub(crate) struct SubTraits {
     pub is_rw: bool,
     pub return_type: Option<String>,
     pub associativity: Option<String>,
+    /// Non-builtin trait names (e.g. `me'd`) for custom `trait_mod:<is>` dispatch.
+    pub custom_traits: Vec<String>,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
@@ -665,6 +670,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_rw = false;
     let mut return_type = None;
     let mut associativity = None;
+    let mut custom_traits: Vec<String> = Vec::new();
     let mut seen_traits: Vec<String> = Vec::new();
     loop {
         let (r, _) = ws(input)?;
@@ -678,14 +684,14 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     is_rw,
                     return_type,
                     associativity,
+                    custom_traits: custom_traits.clone(),
                 },
             ));
         }
         if let Some(r) = keyword("is", r) {
             let (r, _) = ws(r)?;
-            // Parse the trait name (may include hyphens like test-assertion)
-            let (r, trait_name) =
-                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+            // Parse the trait name (Raku identifier: may include hyphens and apostrophes)
+            let (r, trait_name) = parse_raku_ident(r)?;
             if seen_traits.contains(&trait_name.to_string()) {
                 add_parse_warning(format!(
                     "Potential difficulties:\n    Duplicate 'is {}' trait",
@@ -713,6 +719,18 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
                 is_rw = true;
+            } else if trait_name != "assoc"
+                && trait_name != "equiv"
+                && trait_name != "tighter"
+                && trait_name != "looser"
+                && trait_name != "readonly"
+                && trait_name != "raw"
+                && trait_name != "hidden-from-backtrace"
+                && trait_name != "implementation-detail"
+                && trait_name != "nodal"
+                && trait_name != "pure"
+            {
+                custom_traits.push(trait_name.to_string());
             }
             let (mut r, _) = ws(r)?;
             if r.starts_with('<') {
@@ -760,6 +778,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_rw,
                 return_type,
                 associativity,
+                custom_traits: custom_traits.clone(),
             },
         ));
     }
