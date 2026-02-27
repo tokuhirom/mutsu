@@ -1,6 +1,18 @@
 use super::*;
 
 impl Compiler {
+    fn compile_condition_expr(&mut self, cond: &Expr) {
+        match cond {
+            Expr::Literal(Value::Regex(_)) | Expr::Literal(Value::RegexWithAdverbs { .. }) => {
+                self.compile_expr(&Expr::MatchRegex(match cond {
+                    Expr::Literal(v) => v.clone(),
+                    _ => unreachable!(),
+                }));
+            }
+            other => self.compile_expr(other),
+        }
+    }
+
     fn extract_test_more_plan_arg(arg: &Option<Expr>) -> Option<&Expr> {
         let expr = arg.as_ref()?;
         if let Expr::Binary {
@@ -289,8 +301,27 @@ impl Compiler {
                 cond,
                 then_branch,
                 else_branch,
+                binding_var,
             } => {
-                self.compile_expr(cond);
+                if let Some(var_name) = binding_var {
+                    // Desugar: if EXPR -> $var { BODY } else { ELSE }
+                    // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
+                    let desugared_cond = Expr::Var(var_name.trim_start_matches('$').to_string());
+                    let var_decl = Stmt::VarDecl {
+                        name: var_name.clone(),
+                        expr: cond.clone(),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: vec![],
+                    };
+                    self.compile_stmt(&var_decl);
+                    self.compile_condition_expr(&desugared_cond);
+                } else {
+                    self.compile_condition_expr(cond);
+                }
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
                 self.compile_body_with_implicit_try(then_branch);
                 if else_branch.is_empty() {
@@ -312,7 +343,7 @@ impl Compiler {
                     body_end: 0,
                     label: label.clone(),
                 });
-                self.compile_expr(cond);
+                self.compile_condition_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
@@ -394,7 +425,7 @@ impl Compiler {
                 });
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {
-                    self.compile_expr(cond_expr);
+                    self.compile_condition_expr(cond_expr);
                 } else {
                     self.code.emit(OpCode::LoadTrue);
                 }
@@ -619,7 +650,7 @@ impl Compiler {
                 self.code.patch_body_end(given_idx);
             }
             Stmt::When { cond, body } => {
-                self.compile_expr(cond);
+                self.compile_condition_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;
@@ -686,7 +717,7 @@ impl Compiler {
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {
-                    self.compile_expr(cond_expr);
+                    self.compile_condition_expr(cond_expr);
                 } else {
                     self.code.emit(OpCode::LoadTrue);
                 }
@@ -779,6 +810,7 @@ impl Compiler {
                 name_expr,
                 params,
                 param_defs,
+                return_type,
                 signature_alternates,
                 body,
                 multi,
@@ -815,6 +847,7 @@ impl Compiler {
                     name,
                     params,
                     param_defs,
+                    return_type.as_ref(),
                     body,
                     *multi,
                     state_group.as_deref(),
@@ -824,6 +857,7 @@ impl Compiler {
                         name,
                         alt_params,
                         alt_param_defs,
+                        return_type.as_ref(),
                         body,
                         *multi,
                         state_group.as_deref(),
@@ -862,7 +896,15 @@ impl Compiler {
                 let idx = self.code.add_stmt(lowered);
                 self.code.emit(OpCode::RegisterSub(idx));
                 if name_expr.is_none() {
-                    self.compile_sub_body(name, params, param_defs, body, *multi, None);
+                    self.compile_sub_body(
+                        name,
+                        params,
+                        param_defs,
+                        return_type.as_ref(),
+                        body,
+                        *multi,
+                        None,
+                    );
                 }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {

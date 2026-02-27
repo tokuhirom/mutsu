@@ -280,8 +280,50 @@ fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool)
 }
 
 /// Helper for .raku representation of a value
+fn is_self_array_ref_marker(v: &Value) -> bool {
+    matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
+}
+
 fn raku_value(v: &Value) -> String {
     match v {
+        Value::Array(items, is_array) => {
+            let snapshot = || {
+                items
+                    .iter()
+                    .filter(|item| !is_self_array_ref_marker(item))
+                    .map(raku_value)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let inner = items
+                .iter()
+                .map(|item| {
+                    if is_self_array_ref_marker(item) {
+                        if *is_array {
+                            format!("[{}]", snapshot())
+                        } else {
+                            format!("$[{}]", snapshot())
+                        }
+                    } else {
+                        raku_value(item)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            if *is_array {
+                format!("[{}]", inner)
+            } else {
+                format!("$[{}]", inner)
+            }
+        }
+        Value::Seq(items) => {
+            let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+            format!("({})", inner)
+        }
+        Value::Slip(items) => {
+            let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+            format!("slip({})", inner)
+        }
         Value::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         Value::Int(i) => i.to_string(),
         Value::Rat(n, d) => {
@@ -438,6 +480,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "to" | "pos" => {
                 return Some(Ok(attributes.get("to").cloned().unwrap_or(Value::Int(0))));
             }
+            "gist" => {
+                let mut gist = target.to_string_value();
+                if let Some(Value::Hash(named)) = attributes.get("named")
+                    && !named.is_empty()
+                {
+                    let mut keys: Vec<&String> = named.keys().collect();
+                    keys.sort();
+                    for key in keys {
+                        if let Some(value) = named.get(key) {
+                            gist.push_str(&format!("\n {} => {}", key, value.to_string_value()));
+                        }
+                    }
+                }
+                return Some(Ok(Value::Str(gist)));
+            }
             "Str" => {
                 return Some(Ok(attributes
                     .get("str")
@@ -453,6 +510,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "raku" | "perl" => {
                 return Some(Ok(Value::Str(match_raku_repr(attributes))));
+            }
+            "list" | "Array" => {
+                return Some(Ok(attributes
+                    .get("list")
+                    .cloned()
+                    .unwrap_or_else(|| Value::array(Vec::new()))));
             }
             "ast" => {
                 return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
@@ -779,18 +842,34 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "unique" => match target {
             Value::Array(items, ..) => {
-                let mut seen = Vec::new();
+                let mut seen: Vec<Value> = Vec::new();
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    let key = item.to_string_value();
-                    if !seen.contains(&key) {
-                        seen.push(key);
+                    if !seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        seen.push(item.clone());
                         result.push(item.clone());
                     }
                 }
                 Some(Ok(Value::array(result)))
             }
-            _ => None,
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut seen: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    if !seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        seen.push(item.clone());
+                        result.push(item.clone());
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            _ => Some(Ok(target.clone())),
         },
         "floor" => match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
@@ -1002,6 +1081,37 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .cloned()
                     .unwrap_or_else(|| Value::Str(format!("{}()", class_name)))))
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "CallFrame" => {
+                if method == "gist" {
+                    let file = attributes
+                        .get("file")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let line = attributes
+                        .get("line")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "0".to_string());
+                    Some(Ok(Value::Str(format!("{} at line {}", file, line))))
+                } else {
+                    // .raku: CallFrame.new(...)
+                    let file = attributes
+                        .get("file")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let line = attributes
+                        .get("line")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "0".to_string());
+                    Some(Ok(Value::Str(format!(
+                        "CallFrame.new(annotations => {{:file(\"{}\"), :line(\"{}\")}}, my => {{}})",
+                        file, line
+                    ))))
+                }
+            }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..
@@ -1030,6 +1140,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 } else {
                     Some(Ok(Value::Str(s.clone())))
                 }
+            }
+            Value::Array(_, _) if method == "raku" || method == "perl" => {
+                Some(Ok(Value::Str(raku_value(target))))
+            }
+            Value::Seq(_) if method == "raku" || method == "perl" => {
+                Some(Ok(Value::Str(raku_value(target))))
             }
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
                 if method == "gist" =>
@@ -1180,6 +1296,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "succ" => match target {
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i + 1))),
+            Value::Bool(_) => Some(Ok(Value::Bool(true))),
             Value::Str(s) => {
                 if s.is_empty() {
                     Some(Ok(Value::Str(String::new())))
@@ -1196,6 +1313,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "pred" => match target {
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i - 1))),
+            Value::Bool(_) => Some(Ok(Value::Bool(false))),
             _ => Some(Ok(target.clone())),
         },
         "log" => match target {

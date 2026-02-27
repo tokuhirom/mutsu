@@ -1,4 +1,6 @@
 use super::*;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 impl VM {
@@ -391,33 +393,27 @@ impl VM {
     pub(super) fn exec_bit_and_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
-            _ => Value::Int(0),
-        };
+        let left_big = left.to_bigint();
+        let right_big = right.to_bigint();
+        let result = Value::from_bigint(left_big & right_big);
         self.stack.push(result);
     }
 
     pub(super) fn exec_bit_or_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
-            _ => Value::Int(0),
-        };
+        let left_big = left.to_bigint();
+        let right_big = right.to_bigint();
+        let result = Value::from_bigint(left_big | right_big);
         self.stack.push(result);
     }
 
     pub(super) fn exec_bit_xor_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
-            _ => Value::Int(0),
-        };
+        let left_big = left.to_bigint();
+        let right_big = right.to_bigint();
+        let result = Value::from_bigint(left_big ^ right_big);
         self.stack.push(result);
     }
 
@@ -425,9 +421,24 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
-            _ => Value::Int(0),
+        let (left, right) = (l, r);
+        let result = {
+            let left_big = match left {
+                Value::Int(i) => BigInt::from(i),
+                Value::BigInt(n) => n,
+                other => BigInt::from(runtime::to_int(&other)),
+            };
+            let shift = runtime::to_int(&right);
+            let shifted = if shift >= 0 {
+                left_big << (shift as usize)
+            } else {
+                left_big >> (shift.unsigned_abs() as usize)
+            };
+            if let Some(i) = shifted.to_i64() {
+                Value::Int(i)
+            } else {
+                Value::BigInt(shifted)
+            }
         };
         self.stack.push(result);
     }
@@ -436,9 +447,24 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
-            _ => Value::Int(0),
+        let (left, right) = (l, r);
+        let result = {
+            let left_big = match left {
+                Value::Int(i) => BigInt::from(i),
+                Value::BigInt(n) => n,
+                other => BigInt::from(runtime::to_int(&other)),
+            };
+            let shift = runtime::to_int(&right);
+            let shifted = if shift >= 0 {
+                left_big >> (shift as usize)
+            } else {
+                left_big << (shift.unsigned_abs() as usize)
+            };
+            if let Some(i) = shifted.to_i64() {
+                Value::Int(i)
+            } else {
+                Value::BigInt(shifted)
+            }
         };
         self.stack.push(result);
     }

@@ -430,13 +430,17 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
         // ...^ / …^ (exclusive-end sequence), ... / … (sequence)
         if let Some((r2, op, op_str)) = strip_sequence_op(r) {
             let (r2, _) = ws(r2)?;
-            let (r2, right) = range_expr(r2).map_err(|err| {
-                enrich_expected_error(
-                    err,
-                    format!("expected expression after '{op_str}'").as_str(),
-                    r2.len(),
-                )
-            })?;
+            let (r2, mut right) =
+                comparison_expr_mode(r2, ExprMode::NoSequence).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        format!("expected expression after '{op_str}'").as_str(),
+                        r2.len(),
+                    )
+                })?;
+            if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
+                right = wrap_whatevercode(&right);
+            }
             maybe_wrap_lhs(&mut left);
             left = Expr::Binary {
                 left: Box::new(left),

@@ -44,6 +44,81 @@ fn validate_param_trait<'a>(
     Ok((input, ()))
 }
 
+fn static_default_type(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Value::Int(_)) => Some("Int".to_string()),
+        Expr::Literal(Value::Num(_)) => Some("Num".to_string()),
+        Expr::Literal(Value::Rat(_, _)) => Some("Rat".to_string()),
+        Expr::Literal(Value::Bool(_)) => Some("Bool".to_string()),
+        Expr::Literal(Value::Str(_)) => Some("Str".to_string()),
+        Expr::Literal(Value::Package(name)) => Some(name.clone()),
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
+        _ => None,
+    }
+}
+
+fn constraint_base_type(constraint: &str) -> &str {
+    let mut end = constraint.len();
+    for (idx, ch) in constraint.char_indices() {
+        if ch == '[' || ch == '(' || ch == ':' {
+            end = idx;
+            break;
+        }
+    }
+    &constraint[..end]
+}
+
+fn default_type_matches_constraint(constraint: &str, default_type: &str) -> bool {
+    let base = constraint_base_type(constraint);
+    if matches!(base, "Any" | "Mu" | "Cool") {
+        return true;
+    }
+    if base == default_type {
+        return true;
+    }
+    match base {
+        "Numeric" | "Real" => matches!(default_type, "Int" | "Num" | "Rat"),
+        "Num" => matches!(default_type, "Int" | "Num" | "Rat"),
+        "Rat" => matches!(default_type, "Int" | "Rat"),
+        "Callable" | "Code" | "Block" => default_type == "Callable",
+        _ => false,
+    }
+}
+
+fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
+    let mut saw_optional_positional = false;
+    for pd in params {
+        if pd.traits.iter().any(|t| t == "rw") && (pd.optional_marker || pd.default.is_some()) {
+            return Err(PError::fatal(
+                "X::Trait::Invalid: Cannot make an 'is rw' parameter optional".to_string(),
+            ));
+        }
+        if let (Some(constraint), Some(default_expr)) = (&pd.type_constraint, &pd.default)
+            && let Some(default_type) = static_default_type(default_expr)
+            && !default_type_matches_constraint(constraint, &default_type)
+        {
+            return Err(PError::fatal(format!(
+                "X::Parameter::Default::TypeCheck: Default value type '{}' does not satisfy '{}'",
+                default_type, constraint
+            )));
+        }
+        if pd.named || pd.slurpy {
+            continue;
+        }
+        let is_optional_positional = pd.optional_marker || pd.default.is_some();
+        if saw_optional_positional && !is_optional_positional {
+            return Err(PError::fatal(
+                "X::Parameter::WrongOrder: required positional parameters must come before optional positional parameters"
+                    .to_string(),
+            ));
+        }
+        if is_optional_positional {
+            saw_optional_positional = true;
+        }
+    }
+    Ok(())
+}
+
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
 pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
@@ -362,6 +437,7 @@ pub(super) fn sub_decl_body(
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
+        validate_signature_params(&pd)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
@@ -398,6 +474,7 @@ pub(super) fn sub_decl_body(
             let (r4, _) = parse_char(r3, '(')?;
             let (r4, _) = ws(r4)?;
             let (r4, alt_param_defs) = parse_param_list(r4)?;
+            validate_signature_params(&alt_param_defs)?;
             let (r4, _) = ws(r4)?;
             let (r4, _) = parse_char(r4, ')')?;
             let alt_params: Vec<String> = alt_param_defs.iter().map(|p| p.name.clone()).collect();
@@ -905,19 +982,90 @@ pub(super) fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
 /// Parse a return type annotation (--> Type) and return both remainder and type name.
 pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let (rest, _) = ws(input)?;
-    let start = rest;
-    let mut rest = rest;
-    while !rest.is_empty() && !rest.starts_with(')') && !rest.starts_with(',') {
-        let ch = rest.chars().next().unwrap();
-        if ch.is_alphanumeric() || ch == ':' || ch == '_' || ch == '-' {
-            rest = &rest[ch.len_utf8()..];
-        } else {
-            break;
+    let bytes = rest.as_bytes();
+    let mut idx = 0usize;
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut brace_depth = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+
+    while idx < bytes.len() {
+        let b = bytes[idx];
+
+        if in_single {
+            if b == b'\'' {
+                in_single = false;
+            }
+            idx += 1;
+            continue;
+        }
+        if in_double {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_double = false;
+            }
+            idx += 1;
+            continue;
+        }
+
+        match b {
+            b'\'' => {
+                in_single = true;
+                idx += 1;
+            }
+            b'"' => {
+                in_double = true;
+                idx += 1;
+            }
+            b'(' => {
+                paren_depth += 1;
+                idx += 1;
+            }
+            b')' => {
+                if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
+                    break;
+                }
+                paren_depth = paren_depth.saturating_sub(1);
+                idx += 1;
+            }
+            b'[' => {
+                bracket_depth += 1;
+                idx += 1;
+            }
+            b']' => {
+                bracket_depth = bracket_depth.saturating_sub(1);
+                idx += 1;
+            }
+            b'{' => {
+                if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
+                    break;
+                }
+                brace_depth += 1;
+                idx += 1;
+            }
+            b'}' => {
+                if brace_depth == 0 {
+                    break;
+                }
+                brace_depth -= 1;
+                idx += 1;
+            }
+            b',' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => break,
+            _ => idx += 1,
         }
     }
-    let type_name = start[..start.len() - rest.len()].to_string();
-    let (rest, _) = ws(rest)?;
-    Ok((rest, type_name))
+
+    let annotation = rest[..idx].trim().to_string();
+    if annotation.is_empty() {
+        return Err(PError::expected("return type annotation"));
+    }
+    let (tail, _) = ws(&rest[idx..])?;
+    Ok((tail, annotation))
 }
 
 /// Parse parameter list with return type annotation.
@@ -2002,6 +2150,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResul
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
+        validate_signature_params(&pd)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
