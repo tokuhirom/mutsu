@@ -1,0 +1,241 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Raku native types
+
+=SUBTITLE Using the types the compiler and hardware make available to you
+
+Raku offers a set of I<native> types with a fixed, and known, representation
+in memory. This page shows which ones exist and how they can be used. Please
+check also the page on L<native numerics|/language/numerics#Native_numerics> for
+more information on them.
+
+X<|Tutorial,int>X<|Tutorial,uint>X<|Tutorial,num>X<|Tutorial,str>
+=head1 Types with native representation
+
+Some simple types in Raku have a I<native> representation, indicating
+that they will use the C language representation provided by the
+compiler, operating system and machine. These are the four native types
+available:
+
+=begin table
+int            Equivalent to Int (with limited range)
+uint           Equivalent to Int (with limited range) with the unsigned trait
+num            Equivalent to Num
+str            Equivalent to Str
+=end table
+
+However, these types do not necessarily have the size that is required by the
+L<NativeCall|/language/nativecall> interface (e.g., Raku's C<int> can be 8
+bytes but C's C<int> is only 4 bytes); the types below will have to be
+used instead of the types C<int> or C<num> listed above.
+
+In general, these variables will behave in the same way as regular
+scalar variables, in a behavior that is called
+L<I<auto-boxing>|/language/numerics#Auto-boxing>; however, there are
+some differences, since what you are actually declaring is how they will
+be represented, not their actual type. The first one is that their type
+will be actually their equivalent type, not their native type.
+
+    my int $intillo = 3;
+    say $intillo.^name; # OUTPUT: «Int␤»
+
+This obviously means that they will smartmatch their equivalent (auto-boxed)
+type, not their native type:
+
+    my str $strillo = "tres";
+    say $strillo ~~ str; # OUTPUT: «False␤»
+    say $strillo ~~ Str; # OUTPUT: «True␤»
+
+And also that they will always have a default value, unlike their non-native
+counterparts:
+
+    say (my Str $); # OUTPUT: «(Str)␤»
+    say (my str $); # OUTPUT: «␤»
+    say (my num $); # OUTPUT: «0␤»
+
+B<Note>: In v6.c, the default value for C<num> would have been a NaN.
+
+This is due to the fact that Natives don't know their types because
+they're just values, without any metadata. In
+L<multi-dispatch|/language/glossary#Multi-dispatch>, you can have a
+native candidate, but you cannot differentiate different sizes or
+signedness of the same native type.  That is, you can have an
+L<C<Int>|/type/Int> and L<int|/native/int> candidates, but there would be an
+ambiguity between, for instance L<int|/native/int>,
+L<uint|/language/nativetypes#index-entry-uint>,
+L<C<atomicint>|/type/atomicint> or
+L<int64|/language/nativetypes#index-entry-int64> candidates.
+
+They cannot be bound either; trying to do C<my num $numillo := 3.5> will
+raise the exception C<Cannot bind to natively typed variable
+'$variable-name'; use assignment instead>.
+
+X<|Types,int @> X<|Types,num @> X<|Types,str @>
+Native types can also be composite.
+
+    my int @intillos = ^10_000_000;
+    say [+] @intillos; # OUTPUT: «49999995000000␤»
+
+X<|Language,native array>
+In this case, I<native>ness extends to the composite type, which is called
+C<array>
+
+     my num @many-pi  = ^8 »*» π ; say @many-pi.^name;  # OUTPUT: «array[num]␤»
+
+Native C<array>s behave as L<C<Iterable>|/type/Iterable> and
+L<C<Positional>|/type/Positional>, but they are not a subclass of L<C<List>|/type/List>; thus,
+they behave similarly to L<C<Array>|/type/Array>s; for instance, they can be
+shaped:
+
+=begin code
+my str @letter-pairs[10] = 'a'..'j' Z~ 'A'..'J';
+say @letter-pairs.raku;
+# OUTPUT: «array[str].new(:shape(10,), ["aA", "bB", "cC", "dD", "eE", "fF", "gG", "hH", "iI", "jJ"])␤»
+=end code
+
+Native arrays of C<str> can only be used from version 6.d.
+
+These native types can also be used as attributes in classes, and as such they
+can be used as bound targets, for instance in submethods like C<BUILD>:
+
+=for code
+class Foo {
+    has num $.numillo;
+    submethod BUILD( :$!numillo = 3.5e0 ) {}
+};
+my $foo = Foo.new;
+say $foo.raku; # OUTPUT: «Foo.new(numillo => 3.5e0)␤»
+
+
+X<|Types,int8>X<|Types,int16>X<|Types,int32>X<|Types,int64>X<|Types,uint8>X<|Types,uint16>X<|Types,uint32>X<|Types,uint64>
+X<|Types,num32>X<|Types,num64>X<|Types,byte>
+=head1 Types with native representation and size
+
+What has been mentioned about types with native representation also applies
+here; they will be auto-boxed to Raku types and you will not be able to bind
+to them. However, these types, which are listed in the table below, have the
+characteristic of being usable in
+L<NativeCall|/language/nativecall#Passing_and_returning_values> functions.
+
+=begin table
+    int8           (int8_t in C)
+    int16          (int16_t in C)
+    int32          (int32_t in C)
+    int64          (int64_t in C)
+    byte, uint8    (uint8_t in C)
+    uint16         (uint16_t in C)
+    uint32         (uint32_t in C)
+    uint64         (uint64_t in C)
+    num32          (float in C)
+    num64          (double in C)
+=end table
+
+These types have a fixed size representation which is independent of the
+platform, and thus can be used safely for those native calls. Nothing prevents
+us from using them in any other environment, if we so wish. In the same way as
+the types above, this size will have to be taken into account when assigning
+values to variables of this type:
+
+    my byte $intillo = 257;
+    say $intillo; # OUTPUT: «1␤»
+
+Since C<byte> is able to hold only 8 bits, it will I<wrap over> and assign the
+result of the original value modulo 256, which is what is shown.
+
+The main difference between types with declared native size and those without is
+the use of X<is nativesize|Traits,is nativesize> in their declaration. For instance, C<int8> is
+declared in this way:
+
+    my native int8 is repr('P6int') is Int is nativesize(8) { }
+
+Indicating that it will use, besides an integer representation (C<P6int>), a
+native size of only 8 bits. This trait, however, is not intended to be used in
+your programs since it is not part of the Raku specification.
+
+X<|Types,void type (NativeCall)>
+=head1 The C<void> type
+
+The native C<void> type corresponds to the C namesake type; being a
+valid type, you can use it in expressions:
+
+     use NativeCall;
+     my void $nothing;
+     say $nothing.raku; # OUTPUT: «NativeCall::Types::void␤»
+
+In practice, it is an C<Uninstantiable> type that can rarely be used by itself,
+and in fact it is
+L<explicitly forbidden in C<return> types|/language/nativecall#Passing_and_returning_values>.
+However, it is
+generally found in typed pointers representing the equivalent to the C<void *>
+pointer in C.
+
+=begin code :preamble<use NativeCall;>
+sub malloc( int32 $size --> Pointer[void] ) is native { * };
+my Pointer[void] $for-malloc = malloc( 32 );
+say $for-malloc.raku;
+=end code
+
+As the example shows, it's represented by a parameterized
+L<C<Pointer> role|/language/nativecall#index-entry-Pointer>,
+using as parameter whatever the original pointer is pointing to (in this
+case, C<void>). This role represents native pointers, and can be used
+wherever they need to be represented in a Raku program.
+
+You can also L<nativecast|/routine/nativecast> L<C<Blob>|/type/Blob>s to this kind
+of pointer in case you need to work with them in native functions that use the
+type
+
+=begin code
+use NativeCall;
+my Pointer[void] $native = nativecast(Pointer[void], Blob.new(0x22, 0x33));
+=end code
+
+However, outside that, the functionality it offers is quite limited, since
+pointers to void cannot be dereferenced:
+
+=begin code
+use NativeCall;
+my Pointer[void] $native = nativecast(Pointer[void], Buf.new(0x22, 0x33));
+say $native.deref; # ERROR OUTPUT: «Internal error: unhandled target type␤»
+=end code
+
+
+=head1 I<Atomic> types
+
+In this context, I<atomic> refers to safe operation under threading. Raku
+provides a type, L<C<atomicint>|/type/atomicint>, and
+L<some operations|/type/atomicint#Routines> which, together, guarantee this.
+Please check
+L<the atomic operations section on the Numerics page|/language/numerics#Atomic_operations>
+for more information on this.
+
+=head1 Rakudo specific native types
+
+The types described in this section are Rakudo specific, so they are not
+guaranteed to be in other implementations or remain the same in future versions.
+
+=begin table
+long       (long in C)
+longlong   (longlong in C)
+ulong      (long and unsigned in C)
+ulonglong  (longlong and unsigned in C)
+size_t     (size_t and unsigned in C)
+ssize_t    (size_t in C)
+bool       (bool in C)
+=end table
+
+You can use them in the same way they would be used in native C:
+
+=begin code
+use NativeCall;
+
+my $just-an-array = CArray[int32].new( 1, 2, 3, 4, 5 );
+
+loop ( my size_t $i = 0; $i < $just-an-array.elems; $i++ ) {
+    say $just-an-array[$i];
+}
+=end code
+
+Which would print the five elements of the array, as it should be expected.
+
+=end pod

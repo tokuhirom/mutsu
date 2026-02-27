@@ -1,0 +1,433 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Attribute
+
+=SUBTITLE Member variable
+
+    class Attribute { }
+
+In Raku lingo, an I<attribute> refers to a per-instance/object storage slot.
+An C<Attribute> is used to talk about classes' and roles' attributes at the
+metalevel.
+
+C<Attribute> is typically useful when working with the L<MOP|/language/mop>.
+For instance, the attributes of any type that supports them can be
+introspected using the C<attributes> metamethod, which returns a list of
+C<Attribute> instances. Using these, we can inspect various properties of
+a type's attributes, such as their names:
+=begin code
+class WithAttributes {
+    has $.attribute;
+    has $.attribute-two-electric-boogaloo;
+    has $.yet-another-attribute;
+}
+.say for WithAttributes.^attributes(:local).map(*.name);
+# OUTPUT:
+# $!attribute
+# $!attribute-two-electric-boogaloo
+# $!yet-another-attribute
+=end code
+
+Because of C<Attribute>, a type containing attributes, such as this:
+
+=for code
+class WithAttribute {
+    has $.attribute;
+}
+
+Is not something only the compiler knows how to generate. This class in
+particular can be generated manually like so:
+
+=for code :solo
+BEGIN {
+    constant WithAttribute = Metamodel::ClassHOW.new_type: :name<WithAttribute>;
+    WithAttribute.^add_attribute: Attribute.new:
+        :name<$!attribute>, :type(Any), :package(WithAttribute),
+        :1has_accessor;
+    WithAttribute.^compose;
+}
+
+=head1 Traits
+
+=head2 X<trait is default|Traits,is default>
+
+An attribute that is assigned L<C<Nil>|/type/Nil> will revert to its default value
+set with the trait C<is default>. In the case of arrays or associatives, the
+argument of C<is default> will set the default item value or hash value.
+
+    class C {
+        has $.a is default(42) is rw = 666
+    }
+    my $c = C.new;
+    say $c;
+    $c.a = Nil;
+    say $c;
+    # OUTPUT: «C.new(a => 666)␤C.new(a => 42)␤»
+    class Foo {
+        has @.bar is default(42) is rw
+    };
+    my $foo = Foo.new( bar => <a b c> );
+    $foo.bar =Nil;
+    say $foo; # OUTPUT: «Foo.new(bar => [42])␤»
+
+=head2 X<trait is required|Traits,is required>
+
+    multi trait_mod:<is> (Attribute $attr, :$required!)
+
+The trait C<is required> will mark the attribute as to be filled with a value
+when the object is instantiated. Failing to do so will result in a runtime
+error.
+
+    class C {
+        has $.a is required
+    }
+    my $c = C.new;
+    CATCH{ default { say .^name, ': ', .Str } }
+    # OUTPUT: «X::Attribute::Required: The attribute '$!a' is required, but you did not provide a value for it.␤»
+
+This trait also allows attributes to be typed with types that have a
+C<:D> smiley without giving them a default value:
+
+    class Power {
+        has Numeric:D $.base     is required;
+        has Numeric:D $.exponent is required;
+        multi method Numeric(::?CLASS:D: --> Numeric:D) {
+            $!base ** $!exponent
+        }
+    }
+
+B<Available as of 6.d language version> (early implementation exists in Rakudo
+compiler 2018.08+): You can specify a reason why the attribute is required:
+
+=begin code
+class D {
+    has $.a is required("it is a good idea");
+}
+my $d = D.new;
+CATCH{ default { say .^name, ': ', .Str } }
+# OUTPUT: «X::Attribute::Required: The attribute '$!a' is required because it is a good idea,␤but you did not provide a value for it.␤»
+=end code
+
+C<is required> doesn't just affect the default constructor, it checks for the
+attribute at a lower level, so it will work for custom constructors written
+using L<bless|/routine/bless>.
+
+=head2 X<trait is DEPRECATED|Traits,is DEPRECATED>
+
+    multi trait_mod:<is>(Attribute:D $r, :$DEPRECATED!)
+
+Marks an attribute as deprecated, optionally with a message what to use instead.
+
+    class C {
+        has $.foo is DEPRECATED("'bar'");
+    }
+    my $c = C.new( foo => 42 );  # doesn't trigger with initialization (yet)
+    say $c.foo;                  # does trigger on usage
+
+B<After> the program is finished, this will show something like this on
+STDERR:
+
+    # Saw 1 occurrence of deprecated code.
+    # =====================================
+    # Method foo (from C) seen at:
+    # script.raku, line 5
+    # Please use 'bar' instead.
+
+=head2 X<trait is rw|Traits,is rw>
+
+    multi trait_mod:<is> (Attribute:D $attr, :$rw!)
+
+Marks an attribute as read/write as opposed to the default C<readonly>.  The
+default accessor for the attribute will return a writable value.
+
+   class Boo {
+      has $.bar is rw;
+      has $.baz;
+   };
+
+   my $boo = Boo.new;
+   $boo.bar = 42; # works
+   $boo.baz = 42;
+   CATCH { default { put .^name, ': ', .Str } };
+   # OUTPUT: «X::Assignment::RO: Cannot modify an immutable Any␤»
+
+=head2 X<trait is readonly|Traits,is readonly>
+
+    multi trait_mod:<is> (Attribute:D $attr, :readonly($)!)
+
+Marks as C<readonly> an attribute of a class that has the C<is rw> trait.
+
+    =begin code :skip-test<illustrates error>
+    class Thing is rw {
+        has $.form;
+        has $.matter is readonly;
+    };
+
+    my $t = Thing.new(matter => "copper", form => "cubic");
+    $t.form = "round";   # OK, form is rw
+    $t.matter = "iron";  # not OK, matter is readonly
+    # OUTPUT: «Cannot modify an immutable Str (copper)␤...»
+    =end code
+
+The attributes of classes without the C<is rw> trait are already readonly by default.
+Thus, in classes without the C<is rw> trait, the attribute trait C<is readonly> is redundant.
+
+=head2 X<trait is built|Traits,is built>
+
+    multi trait_mod:<is>(Attribute:D $a, :$built!)
+
+By default, this trait allows setting up a I«private attribute» during
+object construction via C«.new». The same trait can be used to prevent
+setting up a I«public attribute» via C«.new» by passing it the Boolean
+value C«False». Setting up an attribute with its value is ordinarily
+handled by assigning the value, but if C<:bind> is passed, then it will
+be bound instead:
+
+    class Foo {
+        has $!bar is built; # same as `is built(True)`
+        has $.baz is built(False);
+        has $!qux is built(:bind);
+
+        method bar(::?CLASS:D:) { $!bar }
+        method qux(::?CLASS:D:) { $!qux }
+    }
+
+    my Foo:D $foo .= new: :bar[], :baz[], :qux[];
+    say $foo.bar.raku; # OUTPUT: «$[]␤»
+    say $foo.baz.raku; # OUTPUT: «Any␤»
+    say $foo.qux.raku; # OUTPUT: «[]␤»
+
+The C<built> trait also allows named arguments to be specified.  Currently
+the C<:bind> named argument can be specified.  In that case, any (default)
+value will be B<bound> to the attribute, rather than assigned.  This allows
+for specifying a L<C<Proxy>|/type/Proxy> to an attribute:
+
+    class Foo {
+        has $!foo is built(:bind) = Proxy.new: :STORE{...}, :FETCH{...}
+    }
+
+Available as of the 2020.01 release of the Rakudo compiler.
+
+=head1 Methods
+
+=head2 method new
+
+=begin code :method
+method new(
+    Attribute:_:
+    :$name!,
+    :$type!,
+    :$package!,
+    :$inlined = 0,
+    :$has_accessor = 0,
+    :$is_built = $has_accessor,
+    :$is_bound = 0,
+    :$positional_delegate = 0,
+    :$associative_delegate = 0,
+    *%other
+)
+=end code
+
+Creates a new attribute. The following named arguments are required:
+- C<$name> contains the attribute's name, which should always be a
+
+=head2 method name
+
+    method name(Attribute:D: --> Str:D)
+
+Returns the name of the attribute.  Note that this is always the private name,
+so if an attribute is declared as C<has $.a>, the name returned is C<$!a>.
+
+    class Foo {
+        has @!bar;
+    }
+    my $a = Foo.^attributes(:local)[0];
+    say $a.name;            # OUTPUT: «@!bar␤»
+
+=head2 method package
+
+    method package()
+
+Returns the package (class/grammar/role) to which this attribute belongs.
+
+    class Boo {
+        has @!baz;
+    }
+    my $a = Boo.^attributes(:local)[0];
+    say $a.package;         # OUTPUT: «(Boo)␤»
+
+=head2 method has_accessor
+
+    method has_accessor(Attribute:D: --> Bool:D)
+
+Returns C<True> if the attribute has a public accessor method.
+
+    class Container {
+        has $!private;
+        has $.public;
+    }
+    my $private = Container.^attributes(:local)[0];
+    my $public = Container.^attributes(:local)[1];
+    say $private.has_accessor; # OUTPUT: «False␤»
+    say $public.has_accessor;  # OUTPUT: «True␤»
+
+=head2 method rw
+
+    method rw(Attribute:D: --> Bool:D)
+
+Returns C<True> for attributes that have the "is rw" trait applied to them.
+
+    class Library {
+        has $.address; # Read-only value
+        has @.new-books is rw;
+    }
+    my $addr = Library.^attributes(:local)[0];
+    my $new-books = Library.^attributes(:local)[1];
+    say $addr.rw;      # OUTPUT: «False␤»
+    say $new-books.rw; # OUTPUT: «True␤»
+
+=head2 method readonly
+
+    method readonly(Attribute:D: --> Bool:D)
+
+Returns C<True> for readonly attributes, which is the default, or C<False> for
+attributes marked as C<is rw>.
+
+    class Library {
+        has $.address; # Read-only value
+        has @.new-books is rw;
+    }
+    my $addr = Library.^attributes(:local)[0];
+    my $new-books = Library.^attributes(:local)[1];
+    say $addr.readonly;      # OUTPUT: «True␤»
+    say $new-books.readonly; # OUTPUT: «False␤»
+
+=head2 method required
+
+    method required(Attribute:D: --> Any:D)
+
+Returns C<1> for attributes that have the "is required" trait applied, or L<C<Mu>|/type/Mu>
+if the attribute did not have that trait applied.  If the "is required" trait
+is applied with a string, then that string will be returned instead of C<1>.
+
+    class Library {
+        has $.address is required;
+        has @.new-books is required("we always need more books");
+    }
+    my $addr = Library.^attributes(:local)[0];
+    my $new-books = Library.^attributes(:local)[1];
+    say $addr.required;      # OUTPUT: «1␤»
+    say $new-books.readonly; # OUTPUT: «"we always need more books"␤»
+
+=head2 method type
+
+    method type(Attribute:D: --> Mu)
+
+Returns the type constraint of the attribute.
+
+    class TypeHouse {
+        has Int @.array;
+        has $!scalar;
+        has @.mystery;
+    }
+    my @types = TypeHouse.^attributes(:local)[0..2];
+    for 0..2 { say @types[$_].type }
+    # OUTPUT: «(Positional[Int])
+    # (Mu)
+    # (Positional)␤»
+
+=head2 method get_value
+
+    method get_value(Mu $obj)
+
+Returns the value stored in this attribute of object C<$obj>.
+
+    class Violated {
+        has $!private-thing = 5;
+    }
+    my $private = Violated.^attributes(:local)[0];
+    say $private.get_value(Violated.new); # OUTPUT: «5␤»
+
+Note that this method violates encapsulation of the object, and should be
+used with care.
+
+=head2 method set_value
+
+    method set_value(Mu $obj, Mu \new_val)
+
+Binds the value C<new_val> to this attribute of object C<$obj>.
+
+    class A {
+        has $!a = 5;
+        method speak() { say $!a; }
+    }
+    my $attr = A.^attributes(:local)[0];
+    my $a = A.new;
+    $a.speak; # OUTPUT: «5␤»
+    $attr.set_value($a, 42);
+    $a.speak; # OUTPUT: «42␤»
+
+Note that this method violates encapsulation of the object, and should be
+used with care.  Here be dragons.
+
+=head2 method gist
+
+    multi method gist(Attribute:D:)
+
+Returns the name of the type followed by the name of the attribute.
+
+=for code
+class Hero {
+    has @!inventory;
+    has Str $.name;
+    submethod BUILD( :$name, :@inventory ) {
+        $!name = $name;
+        @!inventory = @inventory
+    }
+}
+say Hero.^attributes(:local)[0]; # OUTPUT: «Positional @!inventory␤»
+
+Since say implicitly calls C<.gist>, that is what produces the output here.
+
+=head2 method is_built
+
+    method is_built()
+
+Returns C<True> if the attribute had the L<C<is built>|#trait_is_built>
+trait applied to it, otherwise returns C<False>.
+
+=head2 method is_bound
+
+    method is_bound()
+
+Returns C<True> if the attribute had the L<C<is built>|#trait_is_built>
+trait applied to it with C<:bind> as an argument, otherwise returns
+C<False>.
+
+=head1 Optional introspection
+
+=head2 DEPRECATED
+
+If an attribute is marked as C<DEPRECATED>, then calling the C<DEPRECATED>
+method is possible and will return C<"something else"> (if no specific reason
+was specified) or the string that was specified with the C<DEPRECATED> trait.
+
+If an attribute is B<not> marked as DEPRECATED, one B<cannot> call the
+C<DEPRECATED> method.  Therefore, the C<.?method> syntax should be used.
+
+    class Hangout {
+        has $.table;
+        has $.bar is DEPRECATED("the patio");
+    }
+    my $attr-table = Hangout.^attributes(:local)[0];
+    my $attr-bar = Hangout.^attributes(:local)[1];
+    with $attr-table.?DEPRECATED -> $text {     # does not trigger
+        say "Table is deprecated with '$text'";
+        # OUTPUT:
+    }
+    with $attr-bar.?DEPRECATED -> $text {
+        say "Bar is deprecated with '$text'";
+        # OUTPUT: «Bar is deprecated with 'the patio'"␤»
+    }
+
+=end pod

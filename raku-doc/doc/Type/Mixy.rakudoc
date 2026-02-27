@@ -1,0 +1,47 @@
+=begin pod :kind("Type") :subkind("role") :category("composite")
+
+=TITLE role Mixy
+
+=SUBTITLE Collection of distinct objects with Real weights
+
+    role Mixy does Baggy { }
+
+A role for collections of weighted values. See L<C<Mix>|/type/Mix> and L<C<MixHash>|/type/MixHash>.
+C<Mixy> objects differ from L<C<Baggy>|/type/Baggy> objects in that the weights of
+C<Mixy> are L<C<Real>|/type/Real>s rather than L<C<Int>|/type/Int>s.
+
+=head1 Methods
+
+=head2 method roll
+
+    method roll($count = 1)
+
+Similar to a L<C<Bag>|/type/Bag>.roll, but with L<C<Real>|/type/Real> weights rather than integral
+ones.
+
+=head2 method pick
+
+    method pick($?)
+
+Throws an exception. The feature is not supported on the type, since there's no
+clear value to subtract from non-integral weights, to make it work.
+
+=head2 method grab
+
+    method grab($?)
+
+Throws an exception. The feature is not supported on the type, since there's no
+clear value to subtract from non-integral weights, to make it work.
+
+=head2 method kxxv
+
+    method kxxv()
+
+Throws an exception. The feature is not supported on the type, since there's no
+clear value to subtract from non-integral weights, to make it work.
+
+=head1 See Also
+
+L<Sets, Bags, and Mixes|/language/setbagmix>
+
+=end pod

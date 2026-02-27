@@ -1,0 +1,36 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Attribute::Package
+
+=SUBTITLE Compilation error due to declaring an attribute in an ineligible package
+
+    class X::Attribute::Package does X::Comp { }
+
+Compile time error, thrown when the compiler encounters an attribute
+declaration inside a package that does not support attributes.
+
+For example
+
+=for code :skip-test<compile time error>
+module A { has $.x }
+
+dies with
+
+=for code :lang<text>
+A module cannot have attributes, but you tried to declare '$.x'
+
+=head1 Methods
+
+=head2 method name
+
+    method name(--> Str:D)
+
+Returns the name of the attribute that triggered this error.
+
+=head2 method package-kind
+
+    method package-kind(--> Str:D)
+
+Returns the kind of package (package, module) that doesn't support attributes.
+
+=end pod

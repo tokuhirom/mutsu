@@ -1,0 +1,1551 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Independent routines
+
+=SUBTITLE Routines not defined within any class or role.
+
+These routines are defined in different files along with one or several other
+classes, but are not actually attached to any particular class or role.
+
+=head2 routine EVAL
+
+=begin code :method
+proto EVAL($code where Blob|Cool|Callable, Str() :$lang = 'Raku',
+                PseudoStash :$context, Str() :$filename, Bool() :$check, *%_)
+=end code
+=begin code :method
+multi EVAL($code, Str :$lang where { ($lang // '') eq 'Perl5' },
+                PseudoStash :$context, Str() :$filename, :$check)
+=end code
+
+This routine executes at runtime a fragment of code, C<$code>, of a given language,
+C<$lang>, which defaults to C<Raku>.
+
+It coerces L<C<Cool>|/type/Cool> C<$code> to L<C<Str>|/type/Str>. If
+C<$code> is a L<C<Blob>|/type/Blob>, it'll be processed using the same encoding as
+the C<$lang> compiler would: for C<Raku> C<$lang>, uses C<utf-8>; for C<Perl5>,
+processes using the same rules as Perl.
+
+This works as-is with a literal string parameter. More complex input,
+such as a variable or string with embedded code, is illegal by default.
+This can be overridden in any of several ways:
+
+    use MONKEY-SEE-NO-EVAL; # Or...
+    use MONKEY;             # shortcut that turns on all MONKEY pragmas, or...
+    use Test;               # a module that activates MONKEY-SEE-NO-EVAL.
+
+    my $init = 0;
+    my $diff = 10;
+    my Str $changer = '$init += ' ~ $diff; # contains a Str object with value '$init += 10'
+    # any of the above allows:
+    EVAL $changer;
+    EVAL $changer;
+    say $init;                         # OUTPUT: «20␤»
+
+In case the C<MONKEY-SEE-NO-EVAL> pragma is not activated, the compiler will
+complain with C<EVAL is a very dangerous function!!!>. And it is
+essentially right, since that will run arbitrary code with the same permissions
+as the program. You should take care of cleaning the code that is going to pass
+through EVAL if you activate the C<MONKEY-SEE-NO-EVAL> pragma.
+
+Please note that you can interpolate to create routine names using
+quotation, as can be seen in
+L<this example|/language/quoting#index-entry-%26_(interpolation)>
+or
+L<other ways to interpolate to create identifier names|/language/syntax#Identifiers>.
+This only works, however, for already declared functions and other
+objects and is thus safer to use.
+
+Symbols in the current lexical scope are visible to code in an C<EVAL>.
+
+    my $answer = 42;
+    EVAL 'say $answer;';    # OUTPUT: «42␤»
+
+However, since the set of symbols in a lexical scope is immutable after
+compile time, an C<EVAL> can never introduce symbols into the surrounding
+scope.
+
+=for code :skip-test<compile time error>
+EVAL 'my $lives = 9'; say $lives;   # error, $lives not declared
+
+Furthermore, the C<EVAL> is evaluated in the current package:
+
+    module M {
+        EVAL 'our $answer = 42'
+    }
+    say $M::answer;         # OUTPUT: «42␤»
+
+And also in the current language, meaning any added syntax is available:
+
+    sub infix:<mean>(*@a) is assoc<list> {
+        @a.sum / @a.elems
+    }
+    EVAL 'say 2 mean 6 mean 4';     # OUTPUT: «4␤»
+
+An C<EVAL> statement evaluates to the result of the last statement:
+
+=begin code
+sub infix:<mean>(*@a) is assoc<list> {
+    @a.sum / @a.elems
+}
+say EVAL 'say 1; 2 mean 6 mean 4';         # OUTPUT: «1␤4␤»
+=end code
+
+C<EVAL> is also a gateway for executing code in other languages:
+
+=for code
+EVAL "use v5.20; say 'Hello from perl!'", :lang<Perl5>;
+
+You need to have L<C<Inline::Perl5>|https://github.com/niner/Inline-Perl5> for
+this to work correctly.
+
+More languages may be supported with additional
+modules which may be found from the
+L<Raku Modules Directory|https://raku.land/?q=inline>.
+
+If the optional  C<$filename> parameter is given, the
+L«C<$?FILE>|/language/variables#index-entry-$%3FFILE» variable is set to
+its value. Otherwise C<$?FILE> is set to a unique and generated file name.
+
+=for code
+use MONKEY-SEE-NO-EVAL;
+EVAL 'say $?FILE';                              # OUTPUT: «/tmp/EVAL_0␤»
+EVAL 'say $?FILE', filename => '/my-eval-code'; # OUTPUT: «/my-eval-code␤»
+
+If the optional C<$check> parameter is C<True>, C<$code>
+is processed by the C<$lang> compiler but is not actually
+run.  For C<Raku>, L«C<BEGIN>|/language/phasers#BEGIN», and
+L«C<CHECK>|/language/phasers#CHECK» blocks are run. The C<EVAL> routine
+then returns L<C<Nil>|/type/Nil> if compilation was successful, otherwise an exception
+is thrown.
+
+=head2 sub EVALFILE
+
+    sub EVALFILE($filename where Blob|Cool, :$lang = 'Raku', :$check)
+
+Slurps the specified file and evaluates it. Behaves the same way as
+C<EVAL> with regard to L<C<Blob>|/type/Blob> decoding, scoping, the C<$lang>
+parameter and the C<$check> parameter. Evaluates to the value produced
+by the final statement in the file when C<$check> is not C<True>.
+
+=for code
+EVALFILE "foo.raku";
+
+=head2 sub repl
+
+I<Note>: C<repl> was introduced in release 2021.06 of the Rakudo compiler.
+
+    sub repl()
+
+Pauses execution and enters a L<REPL|/language/REPL> (read-eval-print loop) in the current
+context.  This REPL is exactly like the one created when you run C<raku>
+L<without any arguments|/programs/04-running-raku#DESCRIPTION> except that
+you can access/modify the program's current context (such as lexical
+variables).
+
+For example, if you run this code:
+
+=begin code
+my $name = "Alice";
+
+say "Hello, $name";
+
+repl();
+
+say "Goodbye, $name"
+=end code
+
+then you'll get the output C<Hello, Alice> and then enter a REPL session
+(I<before> any output with "goodbye" is printed).  Your REPL session could
+go as follows:
+
+
+    =begin code :lang<shell>
+    Type 'exit' to leave
+    [0] > $name
+    Alice
+    [1] > $name = "Bob"
+    Bob
+    [2] > exit
+    =end code
+
+After exiting the REPL session, Raku will resume running the program;
+during this run, any changes you made in the REPL session will still be
+in effect.  Thus, after the session above, you'd get the output
+C<Goodbye, Bob> rather than C<Goodbye, Alice> as you would have without
+the REPL session.
+
+=head2 sub get
+
+    multi get  (IO::Handle:D $fh = $*ARGFILES) { $fh.get  }
+
+This routine is a wrapper for the L<method of the same name in C<IO::Handle>|/type/IO::Handle#routine_get>.
+If no C<Handle> is specified, defaults to L<C<$*ARGFILES>|/language/variables#$*ARGFILES>.
+
+=head2 sub getc
+
+    multi getc  (IO::Handle:D $fh = $*ARGFILES) { $fh.getc  }
+
+This routine is a wrapper for the L<method of the same name in C<IO::Handle>|/type/IO::Handle#routine_getc>>.
+If no C<Handle> is specified, defaults to L<C<$*ARGFILES>|/language/variables#$*ARGFILES>.
+
+=head2 sub mkdir
+
+    sub    mkdir(IO() $path, Int() $mode = 0o777 --> IO::Path:D)
+
+Creates a new directory; see L«C<mode>|/routine/mode» for explanation and
+valid values for C<$mode>. Returns the L<C<IO::Path>|/type/IO::Path> object pointing to
+the newly created directory on success;
+L<fails|/routine/fail> with L<C<X::IO::Mkdir>|/type/X::IO::Mkdir> if directory cannot be created.
+
+Also creates parent directories, as needed (similar to *nix utility
+C<mkdir> with C<-p> option); that is, C<mkdir "foo/bar/ber/meow"> will
+create C<foo>, C<foo/bar>, and C<foo/bar/ber> directories if they do not
+exist, as well as C<foo/bar/ber/meow>.
+
+=head2 sub chdir
+
+    sub chdir(IO() $path, :$d = True, :$r, :$w, :$x --> IO::Path:D)
+
+Changes value of C<$*CWD> variable to the provided C<$path>, optionally ensuring
+the new path passes several file tests. B<NOTE:> that this routine does I<NOT>
+alter the process's current directory (see
+L«C<&*chdir>|/routine/&*chdir»).
+
+Returns L«C<IO::Path>|/type/IO::Path»
+representing new C<$*CWD> on success. On failure, returns
+L«C<Failure>|/type/Failure» and leaves C<$*CWD> untouched.
+The C<$path> can be any object with an IO method that returns an
+L«C<IO::Path>|/type/IO::Path» object. The available file tests are:
+
+=item C<:d> — check L«C<.d>|/routine/d» returns C<True>
+
+=item C<:r> — check L«C<.r>|/routine/r» returns C<True>
+
+=item C<:w> — check L«C<.w>|/routine/w» returns C<True>
+
+=item C<:x> — check L«C<.x>|/routine/x» returns C<True>
+
+By default, only C<:d> test is performed.
+
+=for code
+chdir         '/tmp'; # change $*CWD to '/tmp' and check its .d is True
+chdir :r, :w, '/tmp'; # … check its .r and .w are True
+chdir '/not-there';   # returns Failure
+
+Note that the following construct is a mistake:
+
+=for code
+# WRONG! DO NOT DO THIS!
+my $*CWD = chdir '/tmp/';
+
+Use L«C<indir>|/routine/indir» instead.
+
+=head2 sub &*chdir
+
+=for code
+PROCESS::<&chdir> = sub (IO() $path --> IO::Path:D) { }
+
+Changes value of C<$*CWD> variable to the provided C<$path> and sets
+the process's current directory to the value of
+L«C<$path.absolute>|/routine/absolute». B<NOTE:> that in most cases,
+you want to use L«C<chdir>|/routine/chdir» routine instead.
+
+Returns an L«C<IO::Path>|/type/IO::Path»
+representing the new C<$*CWD> on success. On failure, returns
+L«C<Failure>|/type/Failure» and leaves C<$*CWD> untouched.
+The C<$path> can be any object with an IO method that returns an
+L«C<IO::Path>|/type/IO::Path» object.
+
+Note that unlike regular L«C<chdir>|/routine/chdir», there are no arguments
+to specify which file tests to perform.
+
+=for code
+&*chdir('/tmp');  # change $*CWD and process's current directory to '/tmp'
+&*chdir('/not-there'); # returns Failure
+
+Note that the following construct is a mistake:
+
+=for code
+# WRONG! DO NOT DO THIS!
+my $*CWD = &*chdir('/tmp');
+
+Use the following, instead; or see L«C<indir>|/routine/indir» if
+you do not need to change process's current directory:
+
+=for code
+temp $*CWD;
+&*chdir('/tmp');
+
+=head2 sub chmod
+
+    sub chmod(Int() $mode, *@filenames --> List)
+
+Coerces all C<@filenames> to L«C<IO::Path>|/type/IO::Path» and calls
+L«C<IO::Path.chmod>|/type/IO::Path#method_chmod» with C<$mode> on them.
+Returns a L«C<List>|/type/List» containing a subset of C<@filenames> for which
+C<chmod> was successfully executed.
+
+    chmod 0o755, <myfile1  myfile2>; # make two files executable by the owner
+
+=head2 sub indir
+
+    sub indir(IO() $path, &code, :$d = True, :$r, :$w, :$x)
+
+Takes L«C<Callable>|/type/Callable» C<&code> and executes it after locally (to
+C<&code>) changing C<$*CWD> variable to an L<C<IO::Path>|/type/IO::Path> object based on C<$path>,
+optionally ensuring the new path passes several file tests. If C<$path> is
+relative, it will be turned into an absolute path, even if an L<C<IO::Path>|/type/IO::Path>
+object was given. B<NOTE:> that this routine does I<NOT> alter the process's
+current directory (see L«C<&*chdir>|/routine/&*chdir»). The C<$*CWD>
+outside of the C<&code> is not affected, even if C<&code> explicitly assigns
+a new value to C<$*CWD>.
+
+Returns the value returned by the C<&code> call on success. On failure to
+successfully change C<$*CWD>, returns L«C<Failure>|/type/Failure».
+B<WARNING:> keep in mind that lazily evaluated things might end up NOT
+having the C<$*CWD> set by C<indir> in their dynamic scope by the time
+they're actually evaluated. Either ensure the generators have their
+C<$*CWD> set or L<eagerly evaluate|/routine/eager> them before returning
+the results from C<indir>:
+
+    say indir("/tmp", {
+        gather { take ".".IO }
+    })».CWD; # OUTPUT: «(/home/camelia)␤»
+
+    say indir("/tmp", {
+        eager gather { take ".".IO }
+    })».CWD; # OUTPUT: «(/tmp)␤»
+
+    say indir("/tmp", {
+        my $cwd = $*CWD;
+        gather { temp $*CWD = $cwd; take ".".IO }
+    })».CWD; # OUTPUT: «(/tmp)␤»
+
+The routine's C<$path> argument can be any object with an IO method that
+returns an L«C<IO::Path>|/type/IO::Path» object. The available file
+tests are:
+
+=item C<:d> — check L«C<.d>|/routine/d» returns C<True>
+
+=item C<:r> — check L«C<.r>|/routine/d» returns C<True>
+
+=item C<:w> — check L«C<.w>|/routine/d» returns C<True>
+
+=item C<:x> — check L«C<.x>|/routine/d» returns C<True>
+
+By default, only C<:d> test is performed.
+
+    say $*CWD;                   # OUTPUT: «"/home/camelia".IO␤»
+    indir '/tmp', { say $*CWD }; # OUTPUT: «"/tmp".IO␤»
+    say $*CWD;                   # OUTPUT: «"/home/camelia".IO␤»
+
+    indir '/not-there', {;};     # returns Failure; path does not exist
+
+=head2 sub print
+
+    multi print(**@args --> True)
+    multi print(Junction:D --> True)
+
+Prints the given text on standard output (the
+L«C<$*OUT>|/language/variables#index-entry-%24%2AOUT» filehandle), coercing
+non-L<C<Str>|/type/Str> objects to L<C<Str>|/type/Str> by calling L«C<.Str>
+method|/routine/Str». L<C<Junction>|/type/Junction> arguments
+L<autothread|/language/glossary#Autothreading> and the order of
+printed strings is not guaranteed.
+
+    print "Hi there!\n";       # OUTPUT: «Hi there!␤»
+    print "Hi there!";         # OUTPUT: «Hi there!»
+    print [1, 2, 3];           # OUTPUT: «1 2 3»
+    print "Hello" | "Goodbye"; # OUTPUT: «HelloGoodbye»
+
+To print text and include the trailing newline, use
+L«C<put>|/type/independent-routines#sub_put».
+
+=head2 sub put
+
+    multi put()
+    multi put(**@args --> True)
+    multi put(Junction:D --> True)
+    multi put(Str:D \x)
+    multi put(\x)
+
+Same as L«C<print>|/type/independent-routines#sub_print», except it uses
+L«C<print-nl>|/routine/print-nl» (which prints a L<newline|/language/newline>,
+by default) at the end. L<C<Junction>|/type/Junction> arguments
+L<autothread|/language/glossary#Autothreading> and the order of
+printed strings is not guaranteed.
+
+    put "Hi there!\n";   # OUTPUT: «Hi there!␤␤»
+    put "Hi there!";     # OUTPUT: «Hi there!␤»
+    put [1, 2, 3];       # OUTPUT: «1 2 3␤»
+    put "Hello" | "Goodbye"; # OUTPUT: «Hello␤Goodbye␤»
+
+By itself, C<put()> will print a new line
+
+    put "Hey"; put(); put("Hey"); # OUTPUT: «Hey␤␤Hey␤»
+
+but please note that we have used parentheses after C<put>. Without these
+parentheses, it will throw an exception (with version 6.d and after). It will
+also raise an exception if it's used that way before C<for>; use the method form
+C<.put> instead.
+
+    .put for <1 2 3>;             # OUTPUT: «1␤2␤3␤»
+
+=head2 sub say
+
+    multi say(**@args --> True)
+
+Prints the "gist" of given objects; it will always invoke C<.gist> in the
+case the object is a subclass of L<C<Str>|/type/Str>. Same as
+L«C<put>|/type/independent-routines#sub_put»,
+except it uses L«C<.gist>|/routine/gist» method to obtain string
+representation of the object; as in the case of C<put>, it will also
+autothread for L<C<Junction>|/type/Junction>s.
+
+B<NOTE:> the L«C<.gist>|/routine/gist» method of some objects, such as
+L<Lists|/type/List#method_gist>, returns only B<partial> information
+about the object (hence the "gist"). If you mean to print textual
+information, you most likely want to use L«C<put>|/type/independent-routines#sub_put»
+instead.
+
+    say Range;        # OUTPUT: «(Range)␤»
+    say class Foo {}; # OUTPUT: «(Foo)␤»
+    say 'I ♥ Raku';   # OUTPUT: «I ♥ Raku␤»
+    say 1..Inf;       # OUTPUT: «1..Inf␤»
+
+=head2 routine note
+
+    method note(Mu: -->Bool:D)
+    multi  note(            --> Bool:D)
+    multi  note(Str:D $note --> Bool:D)
+    multi  note(**@args     --> Bool:D)
+
+Like L«C<say>|/routine/say» (in the sense it will invoke the C<.gist> method
+of the printed object), except it prints output to
+L«C<$*ERR>|/language/variables#index-entry-%24%2AERR» handle (C<STDERR>).
+If no arguments are given to subroutine forms, will use string C<"Noted">.
+
+=begin code
+note;       # STDERR OUTPUT: «Noted␤»
+note 'foo'; # STDERR OUTPUT: «foo␤»
+note 1..*;  # STDERR OUTPUT: «1..Inf␤»
+=end code
+
+This command will also autothread on L<C<Junction>|/type/Junction>s, and is guaranteed to call
+C<gist> on the object if it's a subclass of L<C<Str>|/type/Str>.
+
+=head2 sub prompt
+
+    multi prompt()
+    multi prompt($msg)
+
+L<Prints|/routine/print> C<$msg> to C<$*OUT> handle if C<$msg> was provided,
+then L<gets|/routine/get> a line of input from C<$*IN> handle. By default, this
+is equivalent to printing C<$msg> to
+L<STDOUT|https://en.wikipedia.org/wiki/Standard_streams#Standard_output_.28stdout.29>,
+reading a line from
+L<STDIN|https://en.wikipedia.org/wiki/Standard_streams#Standard_input_.28stdin.29>,
+removing the trailing new line, and returning the resultant string. As of Rakudo
+2018.08, C<prompt> will create L<allomorphs|/language/numerics#Allomorphs> for
+numeric values, equivalent to calling C<val prompt>.
+
+=for code
+my $name = prompt "What's your name? ";
+say "Hi, $name! Nice to meet you!";
+my $age = prompt("Say your age (number)");
+my Int $years = $age;
+my Str $age-badge = $age;
+
+In the code above, C<$age> will be duck-typed to the allomorph L<C<IntStr>|/type/IntStr> if it's
+entered correctly as a number.
+
+=head2 sub open
+
+    multi open(IO() $path, |args --> IO::Handle:D)
+
+Creates L<a handle|/type/IO::Handle> with the given C<$path>, and calls
+L«C<IO::Handle.open>|/type/IO::Handle#method_open», passing any of the
+remaining arguments to it. Note that L<C<IO::Path>|/type/IO::Path> type provides numerous
+methods for reading and writing from files, so in many common cases you
+do not need to C<open> files or deal with L<C<IO::Handle>|/type/IO::Handle> type directly.
+
+=begin code
+my $fh = open :w, '/tmp/some-file.txt';
+$fh.say: 'I ♥ writing Raku code';
+$fh.close;
+
+$fh = open '/tmp/some-file.txt';
+print $fh.readchars: 4;
+$fh.seek: 7, SeekFromCurrent;
+say $fh.readchars: 4;
+$fh.close;
+
+# OUTPUT: «I ♥ Raku␤»
+=end code
+
+=head2 sub slurp
+
+    multi slurp(IO::Handle:D $fh = $*ARGFILES, |c)
+    multi slurp(IO() $path, |c)
+
+Slurps the contents of the entire file into a L<C<Str>|/type/Str> (or L<C<Buf>|/type/Buf> if
+C<:bin>). Accepts C<:bin> and C<:enc> optional named parameters, with
+the same meaning as L<open()|/routine/open>; possible encodings are the
+same as in all the other L<C<IO>|/type/IO> methods and are listed in
+L<C<encoding>|/type/IO::Handle#method_encoding> routine.  The routine
+will C<fail> if the file does not exist, or is a directory. Without any
+arguments, sub C<slurp> operates on C<$*ARGFILES>, which defaults to
+C<$*IN> in the absence of any filenames.
+
+=begin code
+# read entire file as (Unicode) Str
+my $text_contents   = slurp "path/to/file";
+
+# read entire file as Latin1 Str
+my $text_contents   = slurp "path/to/file", enc => "latin1";
+
+# read entire file as Buf
+my $binary_contents = slurp "path/to/file", :bin;
+=end code
+
+=head2 sub spurt
+
+    multi spurt(IO() $path, |c)
+
+The C<$path> can be any object with an IO method that returns an
+L«C<IO::Path>|/type/IO::Path» object. Calls L«C<IO::Path.spurt>|/routine/spurt»
+on the C<$path>, forwarding any of the remaining arguments.
+
+=head3 Options
+
+=item :enc
+
+The encoding with which the contents will be written.
+
+=item :append
+
+Boolean indicating whether to append to a (potentially) existing file.  If
+the file did not exist yet, it will be created.  Defaults to C<False>.
+
+=item :createonly
+
+Boolean indicating whether to fail if the file already exists.  Defaults to
+C<False>.
+
+=head3 Examples
+
+=begin code
+# write directly to a file
+spurt 'path/to/file', 'default text, directly written';
+
+# write directly with a non-Unicode encoding
+spurt 'path/to/latin1_file', 'latin1 text: äöüß', :enc<latin1>;
+
+spurt 'file-that-already-exists', 'some text';           # overwrite file's contents:
+spurt 'file-that-already-exists', ' new text', :append;  # append to file's contents:
+say slurp 'file-that-already-exists';                    # OUTPUT: «some text new text␤»
+
+# fail when writing to a pre-existing file
+spurt 'file-that-already-exists', 'new text', :createonly;
+# OUTPUT: «Failed to open file /home/camelia/file-that-already-exists: file already exists …»
+=end code
+
+    multi spurt(IO() $path)
+
+As of the 2020.12 release of the Rakudo compiler, it is also possible
+to call the C<spurt> subroutine without any data.  This will either
+create an empty file, or will truncate any existing file at the given
+path.
+
+=begin code
+# create an empty file / truncate a file
+spurt 'path/to/file';
+=end code
+
+=head2 sub run
+
+=for code :method
+sub run(
+    *@args ($, *@),
+    :$in = '-',
+    :$out = '-',
+    :$err = '-',
+    Bool :$bin = False,
+    Bool :$chomp = True,
+    Bool :$merge = False,
+    Str:D :$enc = 'UTF-8',
+    Str:D :$nl = "\n",
+    :$cwd = $*CWD,
+    Hash() :$env = %*ENV,
+    :$arg0,
+    :$win-verbatim-args = False
+--> Proc:D)
+
+Runs an external command I<without involving a shell> and returns a
+L<C<Proc>|/type/Proc> object. By default, the external command will print to
+standard output and error, and read from standard input.
+
+    run 'touch', '--', '*.txt'; # Create a file named “*.txt”
+
+    run <rm -- *.txt>; # Another way to use run, using word quoting for the
+                       # arguments
+
+If you want to pass some variables you can still use C«< >», but try
+to avoid using C<« »> as it will do word splitting if you forget to
+quote variables:
+
+=begin code
+my $file = ‘--my arbitrary filename’;
+run ‘touch’, ‘--’, $file;  # RIGHT
+run <touch -->, $file;     # RIGHT
+
+run «touch -- "$file"»;    # RIGHT but WRONG if you forget quotes
+run «touch -- $file»;      # WRONG; touches ‘--my’, ‘arbitrary’ and ‘filename’
+run ‘touch’, $file;        # WRONG; error from `touch`
+run «touch "$file"»;       # WRONG; error from `touch`
+=end code
+
+Note that C<--> is required for many programs to disambiguate between
+command-line arguments and
+L<filenames that begin with hyphens|https://mywiki.wooledge.org/BashPitfalls#Filenames_with_leading_dashes>.
+
+A sunk L<C<Proc>|/type/Proc> object for a process that L<exited|/routine/exitcode>
+unsuccessfully will throw an L<C<Exception>|/type/Exception>. If you wish to ignore the
+exceptions, and return a L<C<Proc>|/type/Proc> you can introspect, use L<run|/routine/run> in non-sink context:
+
+    run 'false';     # SUNK! Will throw an Exception
+    run('false').so; # OK. Evaluates Proc in Bool context; no sinking. Ignore returned Proc
+    my $a = run('false'); # Can call methods on the Proc in $a.
+
+If you want to capture standard output or error instead of having it printed
+directly you can use the C<:out> or C<:err> arguments, which will make them
+available using their respective methods: L<C<Proc.out>|/type/Proc> and
+L<C<Proc.err>|/type/Proc>.
+
+    my $proc = run 'echo', 'Raku is Great!', :out, :err;
+    $proc.out.slurp(:close).say; # OUTPUT: «Raku is Great!␤»
+    $proc.err.slurp(:close).say; # OUTPUT: «␤»
+
+You can use these arguments to redirect them to a filehandle, thus
+creating a kind of I<pipe>:
+
+    my $ls-alt-handle = open :w, '/tmp/cur-dir-ls-alt.txt';
+    my $proc = run "ls", "-alt", :out($ls-alt-handle);
+    # (The file will contain the output of the ls -alt command)
+
+These argument are quite flexible and admit, for instance, handles to
+redirect them. See L<C<Proc>|/type/Proc> and
+L<C<Proc::Async>|/type/Proc::Async> for more details.
+
+See also L<C<new>|/type/Proc#routine_new> and L<C<spawn>|/type/Proc#method_spawn>
+for more examples and explanation of all arguments.
+
+=head2 sub shell
+
+=begin code
+multi shell($cmd, :$in = '-', :$out = '-', :$err = '-',
+                Bool :$bin, Bool :$chomp = True, Bool :$merge,
+                Str :$enc, Str:D :$nl = "\n", :$cwd = $*CWD, :$env)
+=end code
+
+Runs a command through the system shell, which defaults to C<%*ENV<ComSpec> /c>
+in Windows, C</bin/sh -c> otherwise. All shell metacharacters are interpreted by
+the shell, including pipes, redirects, environment variable substitutions and so
+on. Shell escapes are a severe security concern and can cause confusion with
+unusual file names. Use L<run|#sub_run> if you want to be safe.
+
+The return value is of L<type Proc|/type/Proc>.
+
+    shell 'ls -lR | gzip -9 > ls-lR.gz';
+
+See L<C<Proc>|/type/Proc#method_shell> for more details, for example on how to
+capture output.
+
+=head2 routine unpolar
+
+    method unpolar(Real $angle)
+    multi  unpolar(Real $mag, Real $angle)
+
+Returns a L<C<Complex>|/type/Complex> with the coordinates corresponding to the angle in
+radians and magnitude corresponding to the object value or C<$mag> in
+the case it's being used as a C<sub>
+
+    say 1.unpolar(⅓*pi);
+    # OUTPUT: «0.5000000000000001+0.8660254037844386i␤»
+
+=head2 routine printf
+
+     multi printf(Cool:D $format, *@args)
+
+Produces output according to a format.  The format used is the invocant
+(if called in method form) or the first argument (if called as a routine).
+The rest of the arguments will be substituted in the format following
+the format conventions.  See L<sprintf|/routine/sprintf> for details on
+acceptable format directives.
+
+    "%s is %s".printf("þor", "mighty");    # OUTPUT: «þor is mighty»
+    printf( "%s is %s", "þor", "mighty");  # OUTPUT: «þor is mighty»
+
+On L<C<Junction>|/type/Junction>s, it will also autothread, without a guaranteed order.
+
+    printf( "%.2f ", ⅓ | ¼ | ¾ ); # OUTPUT: «0.33 0.25 0.75 »
+
+=head2 routine sprintf
+
+    multi sprintf(Cool:D $format, *@args)
+
+Returns a string according to a format as described below.  The format
+used is the invocant (if called in method form) or the first argument
+(if called as a routine).
+
+    sprintf( "%s the %d%s", "þor", 1, "st").put; # OUTPUT: «þor the 1st␤»
+    sprintf( "%s is %s", "þor", "mighty").put;   # OUTPUT: «þor is mighty␤»
+    "%s's weight is %.2f %s".sprintf( "Mjölnir", 3.3392, "kg").put;
+    # OUTPUT: «Mjölnir's weight is 3.34 kg␤»
+    # OUTPUT: «Mjölnir's weight is 3.34 kg␤»
+
+This function is mostly identical to the C library's C<sprintf> and C<printf>
+functions.  The only difference between the two functions is that C<sprintf>
+returns a string while the C<printf> function writes to a filehandle. C<sprintf>
+returns a L<C<Str>|/type/Str>, not a literal.
+
+The C<$format> is scanned for C<%> characters. Any C<%> introduces a
+format token. Directives guide the use (if any) of the arguments. When
+a directive other than C<%> is used, it indicates how the next
+argument passed is to be formatted into the string to be
+created. I<Parameter indexes> may also be used in the format
+tokens. They take the form C<N$> and are explained in more detail
+below.
+
+The C<$format> may be defined enclosed in single or double quotes. The
+double-quoted C<$format> string is interpolated before being scanned
+and any embedded string whose interpolated value contains a C<%>
+character will cause an exception. For example:
+
+=begin code
+my $prod = "Ab-%x-42";
+my $cost = "30";
+sprintf("Product $prod; cost: \$%d", $cost).put;
+# OUTPUT: «Your printf-style directives specify 2 arguments, but 1 argument was supplied␤»
+          «  in block <unit> at <unknown file> line 1␤»
+=end code
+
+When handling unknown input you should avoid using such syntax by
+putting all variables in the C<*@args> array and have one C<%> for each
+in C<$format>. If you need to include a C<$> symbol in the format
+string (even as a I<parameter index>) either escape it or use the
+single-quoted form.  For example, either of the following forms works
+without error:
+
+=begin code
+sprintf("2 x \$20 = \$%d", 2*20).put; # OUTPUT: «2 x $20 = $40␤»
+sprintf('2 x $20 = $%d', 2*20).put;   # OUTPUT: «2 x $20 = $40␤»
+=end code
+
+In summary, unless you need something very special, you will have
+fewer unexpected problems by using the single-quoted format string and
+not using interpolated strings inside the format string.
+
+N<The information below is for a fully functioning C<sprintf> implementation
+which hasn't been achieved yet. Formats or features not yet implemented are
+marked NYI.>
+
+=head3 Directives
+
+=begin table
+
+ % |  a literal percent sign
+ c |  a character with the given codepoint
+ s |  a string
+ d |  a signed integer, in decimal
+ u |  an unsigned integer, in decimal
+ o |  an unsigned integer, in octal
+ x |  an unsigned integer, in hexadecimal
+ e |  a floating-point number, in scientific notation
+ f |  a floating-point number, in fixed decimal notation
+ g |  a floating-point number, in %e or %f notation
+ X |  like x, but using uppercase letters
+ E |  like e, but using an uppercase "E"
+ G |  like g, but with an uppercase "E" (if applicable)
+ b |  an unsigned integer, in binary
+
+=end table
+
+Compatibility:
+
+=begin table
+
+ i |  a synonym for %d
+ D |  a synonym for %ld
+ U |  a synonym for %lu
+ O |  a synonym for %lo
+ F |  a synonym for %f
+
+=end table
+
+=head3 Modifiers
+
+Modifiers change the meaning of format directives, but are largely
+no-ops (the semantics are still being determined).
+
+=begin table
+
+     | h  | interpret integer as native "short"     (typically int16)
+ NYI | l  | interpret integer as native "long"      (typically int32 or int64)
+ NYI | ll | interpret integer as native "long long" (typically int64)
+ NYI | L  | interpret integer as native "long long" (typically uint64)
+ NYI | q  | interpret integer as native "quads" (typically int64 or larger)
+
+=end table
+
+Between the C<%> and the format letter, you may specify several
+additional attributes controlling the interpretation of the format. In
+order, these are:
+
+=head3 NYI Format parameter index using the '$' symbol
+
+An explicit format parameter index (ranging from 1 to N args)
+before the directive, such as C<%2$d>. By default, C<sprintf> will
+format the next unused argument in the list, but the parameter index
+allows you to take the arguments out of order (note single quotes
+are required unless you escape the C<$>):
+
+=head4 Without index:
+
+=begin code
+sprintf '%d %d', 12, 34;      # OUTPUT: «12 34␤»
+sprintf '%d %d %d', 1, 2, 3;  # OUTPUT: «1 2 3␤»
+=end code
+
+=head4 NYI With index:
+
+The first example works as we expect it to when we index all
+directives.
+
+=begin code
+sprintf '%2$d %1$d', 12, 34;      # OUTPUT: «34 12␤»
+=end code
+
+But notice the effect when mixing indexed and non-indexed directives
+in the second example (be careful what you ask for). The second,
+non-indexed directive gets the first argument, but it is also
+specifically requested in the last directive:
+
+=begin code
+sprintf '%3$d %d %1$d', 1, 2, 3;  # OUTPUT: «3 1 1␤»
+=end code
+
+=head3 Flags
+
+One or more of:
+
+=begin table
+   space |  prefix non-negative number with a space
+----------------------------------------------------------------
+  \+     |  prefix non-negative number with a plus sign
+----------------------------------------------------------------
+   -     |  left-justify within the field
+----------------------------------------------------------------
+   0     |  use leading zeros, not spaces, for required padding
+----------------------------------------------------------------
+   #     |  ensure the leading "0" for any octal,
+         |  prefix non-zero hexadecimal with "0x" or "0X",
+         |  prefix non-zero binary with "0b" or "0B"
+----------------------------------------------------------------
+   v     |  NYI vector flag (used only with directive "d"), see description below
+=end table
+
+For example:
+
+  sprintf '<% d>',  12;   # OUTPUT: «< 12>␤»
+  sprintf '<% d>',   0;   # OUTPUT: «< 0>"»
+  sprintf '<% d>', -12;   # OUTPUT: «<-12>␤»
+  sprintf '<%+d>',  12;   # OUTPUT: «<+12>␤»
+  sprintf '<%+d>',   0;   # OUTPUT: «<+0>"»
+  sprintf '<%+d>', -12;   # OUTPUT: «<-12>␤»
+  sprintf '<%6s>',  12;   # OUTPUT: «<    12>␤»
+  sprintf '<%-6s>', 12;   # OUTPUT: «<12    >␤»
+  sprintf '<%06s>', 12;   # OUTPUT: «<000012>␤»
+  sprintf '<%#o>',  12;   # OUTPUT: «<014>␤»
+  sprintf '<%#x>',  12;   # OUTPUT: «<0xc>␤»
+  sprintf '<%#X>',  12;   # OUTPUT: «<0XC>␤»
+  sprintf '<%#b>',  12;   # OUTPUT: «<0b1100>␤»
+  sprintf '<%#B>',  12;   # OUTPUT: «<0B1100>␤»
+
+When a space and a plus sign are given as the flags at once, the space
+is ignored:
+
+  sprintf '<%+ d>', 12;   # OUTPUT: «<+12>␤»
+  sprintf '<% +d>', 12;   # OUTPUT: «<+12>␤»
+
+When the C<#> flag and a precision are given in the C<%o> conversion, the
+necessary number of 0s is added at the beginning. If the value of the number is
+C<0> and the precision is 0, it will output nothing; precision 0 or smaller than
+the actual number of elements will return the number with 0 to the left:
+
+  say sprintf '<%#.5o>', 0o12;     # OUTPUT: «<00012>␤»
+  say sprintf '<%#.5o>', 0o12345;  # OUTPUT: «<012345>␤»
+  say sprintf '<%#.0o>', 0;        # OUTPUT: «<>␤» zero precision and value 0
+                                   #               results in no output!
+  say sprintf '<%#.0o>', 0o1       # OUTPUT: «<01>␤»
+
+=head3 Vector flag 'v'
+
+This special flag (C<v>, followed by directive C<d>) tells Raku to
+interpret the supplied string as a vector of integers, one for each
+character in the string (the `ord` routine is used for the conversion
+to an integer). Raku applies the format to each integer in turn, then
+joins the resulting strings with a separator (a dot C<'.'>, by
+default). This can be useful for displaying ordinal values of
+characters in arbitrary strings:
+
+=begin code
+NYI sprintf "%vd", "AB\x[100]";           # OUTPUT: «65.66.256␤»
+=end code
+
+You can also explicitly specify the argument number to use for the
+separator string by using an asterisk with a parameter index (e.g.,
+C<*2$v>); for example:
+
+=begin code :skip-test<not yet implemented>
+NYI sprintf '%*4$vX %*4$vX %*4$vX',       # 3 IPv6 addresses
+        @addr[1..3], ":";
+=end code
+
+=head3 Width (minimum)
+
+Arguments are usually formatted by default to be only as wide as required to
+display the given value. You specify a minimum width that can override the default width by putting a
+number here, or get the desired width from the next argument (with C<*> ) or
+from a specified argument (e.g., with C<*2$>):
+
+=begin code :skip-test<partly not yet implemented>
+ sprintf "<%s>", "a";           # OUTPUT: «<a>␤»
+ sprintf "<%6s>", "a";          # OUTPUT: «<     a>␤»
+ sprintf "<%*s>", 6, "a";       # OUTPUT: «<     a>␤»
+ NYI sprintf '<%*2$s>', "a", 6; # OUTPUT: «<     a>␤»
+ sprintf "<%2s>", "long";       # OUTPUT: «<long>␤»   (does not truncate)
+=end code
+
+In all cases, the specified width will be increased as necessary to accommodate the given integral numerical value or string.
+If a field width obtained through C<*> is negative, it has the same
+effect as the C<-> flag: left-justification.
+
+=head3 Precision, or maximum width
+
+You can specify a precision (for numeric conversions) or a maximum
+width (for string conversions) by specifying a C<.> followed by a
+number. For floating-point formats, except C<g> and C<G>, this
+specifies how many places right of the decimal point to show (the
+default being 6). For example:
+
+  # These examples are subject to system-specific variation.
+  sprintf '<%f>', 1;    # OUTPUT: «"<1.000000>"␤»
+  sprintf '<%.1f>', 1;  # OUTPUT: «"<1.0>"␤»
+  sprintf '<%.0f>', 1;  # OUTPUT: «"<1>"␤»
+  sprintf '<%e>', 10;   # OUTPUT: «"<1.000000e+01>"␤»
+  sprintf '<%.1e>', 10; # OUTPUT: «"<1.0e+01>"␤»
+
+For "g" and "G", this specifies the maximum number of digits to show,
+including those prior to the decimal point and those after it; for
+example:
+
+  # These examples are subject to system-specific variation.
+  sprintf '<%g>', 1;        # OUTPUT: «<1>␤»
+  sprintf '<%.10g>', 1;     # OUTPUT: «<1>␤»
+  sprintf '<%g>', 100;      # OUTPUT: «<100>␤»
+  sprintf '<%.1g>', 100;    # OUTPUT: «<1e+02>␤»
+  sprintf '<%.2g>', 100.01; # OUTPUT: «<1e+02>␤»
+  sprintf '<%.5g>', 100.01; # OUTPUT: «<100.01>␤»
+  sprintf '<%.4g>', 100.01; # OUTPUT: «<100>␤»
+
+For integer conversions, specifying a precision implies the
+output of the number itself should be zero-padded to this width (where
+the C<0> flag is ignored):
+
+(Note that this feature currently works for unsigned integer conversions, but
+not for signed integer.)
+
+  =begin code
+  sprintf '<%.6d>', 1;         # OUTPUT: «<000001>␤»
+  NYI sprintf '<%+.6d>', 1;    # OUTPUT: «<+000001>␤»
+  NYI sprintf '<%-10.6d>', 1;  # OUTPUT: «<000001    >␤»
+  sprintf '<%10.6d>', 1;       # OUTPUT: «<    000001>␤»
+  NYI sprintf '<%010.6d>', 1;  # OUTPUT: «<    000001>␤»
+  NYI sprintf '<%+10.6d>', 1;  # OUTPUT: «<   +000001>␤»
+  sprintf '<%.6x>', 1;         # OUTPUT: «<000001>␤»
+  sprintf '<%#.6x>', 1;        # OUTPUT: «<0x000001>␤»
+  sprintf '<%-10.6x>', 1;      # OUTPUT: «<000001    >␤»
+  sprintf '<%10.6x>', 1;       # OUTPUT: «<    000001>␤»
+  sprintf '<%010.6x>', 1;      # OUTPUT: «<    000001>␤»
+  sprintf '<%#10.6x>', 1;      # OUTPUT: «<  0x000001>␤»
+  =end code
+
+For string conversions, specifying a precision truncates the string to
+fit the specified width:
+
+  sprintf '<%.5s>', "truncated";   # OUTPUT: «<trunc>␤»
+  sprintf '<%10.5s>', "truncated"; # OUTPUT: «<     trunc>␤»
+
+You can also get the precision from the next argument using C<.*>, or
+from a specified argument (e.g., with C<.*2$>):
+
+  =begin code
+  sprintf '<%.6x>', 1;           # OUTPUT: «<000001>␤»
+  sprintf '<%.*x>', 6, 1;        # OUTPUT: «<000001>␤»
+  NYI sprintf '<%.*2$x>', 1, 6;  # OUTPUT: «<000001>␤»
+  NYI sprintf '<%6.*2$x>', 1, 4; # OUTPUT: «<  0001>␤»
+  =end code
+
+If a precision obtained through C<*> is negative, it counts as having
+no precision at all:
+
+  sprintf '<%.*s>',  7, "string";   # OUTPUT: «<string>␤»
+  sprintf '<%.*s>',  3, "string";   # OUTPUT: «<str>␤»
+  sprintf '<%.*s>',  0, "string";   # OUTPUT: «<>␤»
+  sprintf '<%.*s>', -1, "string";   # OUTPUT: «<string>␤»
+  sprintf '<%.*d>',  1, 0;          # OUTPUT: «<0>␤»
+  sprintf '<%.*d>',  0, 0;          # OUTPUT: «<>␤»
+  sprintf '<%.*d>', -1, 0;          # OUTPUT: «<0>␤»
+
+=head3 Size
+
+For numeric conversions, you can specify the size to interpret the
+number as using C<l>, C<h>, C<V>, C<q>, C<L>, or C<ll>. For integer
+conversions (C<d> C<u> C<o> C<x> C<X> C<b> C<i> C<D> C<U> C<O>),
+numbers are usually assumed to be whatever the default integer size is
+on your platform (usually 32 or 64 bits), but you can override this to
+use instead one of the standard C types, as supported by the compiler
+used to build Raku:
+
+(Note: None of the following have been implemented.)
+
+=begin table
+
+   hh          | interpret integer as C type "char" or "unsigned char"
+   h           | interpret integer as C type "short" or "unsigned short"
+   j           | interpret integer as C type "intmax_t", only with a C99 compiler (unportable)
+   l           | interpret integer as C type "long" or "unsigned long"
+   q, L, or ll | interpret integer as C type "long long", "unsigned long long", or "quad" (typically 64-bit integers)
+   t           | interpret integer as C type "ptrdiff_t"
+   z           | interpret integer as C type "size_t"
+=end table
+
+=head3 Order of arguments
+
+Normally, C<sprintf> takes the next unused argument as the value to
+format for each format specification. If the format specification uses
+C<*> to require additional arguments, these are consumed from the
+argument list in the order they appear in the format specification
+before the value to format. Where an argument is specified by an
+explicit index, this does not affect the normal order for the
+arguments, even when the explicitly specified index would have been
+the next argument.
+
+So:
+
+   my $a = 5; my $b = 2; my $c = 'net';
+   sprintf "<%*.*s>", $a, $b, $c; # OUTPUT: «<   ne>␤»
+
+uses C<$a> for the width, C<$b> for the precision, and C<$c> as the value to
+format; while:
+
+=for code :skip-test<not yet implemented>
+NYI sprintf '<%*1$.*s>', $a, $b;
+
+would use C<$a> for the width and precision and C<$b> as the value to format.
+
+Here are some more examples; be aware that when using an explicit
+index, the C<$> will need escaping if the format string is double-quoted:
+
+=for code
+sprintf "%2\$d %d\n",      12, 34;         # OUTPUT: «34 12␤␤»
+sprintf "%2\$d %d %d\n",   12, 34;         # OUTPUT: «34 12 34␤␤»
+sprintf "%3\$d %d %d\n",   12, 34, 56;     # OUTPUT: «56 12 34␤␤»
+NYI sprintf "%2\$*3\$d %d\n",  12, 34,  3; # OUTPUT: « 34 12␤␤»
+NYI sprintf "%*1\$.*f\n",       4,  5, 10; # OUTPUT: «5.0000␤␤»
+
+Other examples:
+
+=for code
+NYI sprintf "%ld a big number", 4294967295;
+NYI sprintf "%%lld a bigger number", 4294967296;
+sprintf('%c', 97);                  # OUTPUT: «a␤»
+sprintf("%.2f", 1.969);             # OUTPUT: «1.97␤»
+sprintf("%+.3f", 3.141592);         # OUTPUT: «+3.142␤»
+sprintf('%2$d %1$d', 12, 34);       # OUTPUT: «34 12␤»
+sprintf("%x", 255);                 # OUTPUT: «ff␤»
+
+Special case: C«sprintf("<b>%s</b>\n", "Raku")» will not work, but
+one of the following will:
+
+=for code
+sprintf Q:b "<b>%s</b>\n",  "Raku"; # OUTPUT: «<b>Raku</b>␤␤»
+sprintf     "<b>\%s</b>\n", "Raku"; # OUTPUT: «<b>Raku</b>␤␤»
+sprintf     "<b>%s\</b>\n", "Raku"; # OUTPUT: «<b>Raku</b>␤␤»
+
+=head2 sub flat
+
+    multi flat(**@list)
+    multi flat(Iterable \a)
+
+Constructs a list which contains any arguments provided, and returns the result
+of calling the C<.flat> method (L<inherited from C<Any>|/type/Any#method_flat>)
+on that list or L<C<Iterable>|/type/Iterable>:
+
+    say flat 1, (2, (3, 4), $(5, 6)); # OUTPUT: «(1 2 3 4 (5 6))␤»
+
+=head2 routine unique
+
+    multi unique(+values, |c)
+
+Returns a sequence of B<unique> values from the invocant/argument list, such
+that only the first occurrence of each duplicated value remains in the
+result list. C<unique> uses the semantics of the L<===|/routine/===> operator to decide
+whether two objects are the same, unless the optional C<:with> parameter is
+specified with another comparator. The order of the original list is preserved
+even as duplicates are removed.
+
+Examples:
+
+    say <a a b b b c c>.unique;   # OUTPUT: «(a b c)␤»
+    say <a b b c c b a>.unique;   # OUTPUT: «(a b c)␤»
+
+(Use L<squish|/routine/squish> instead if you know the input is sorted such that identical
+objects are adjacent.)
+
+The optional C<:as> parameter allows you to normalize/canonicalize the elements
+before unique-ing. The values are transformed for the purposes of comparison,
+but it's still the original values that make it to the result list; however,
+only the first occurrence will show up in that list:
+
+Example:
+
+    say <a A B b c b C>.unique(:as(&lc))      # OUTPUT: «(a B c)␤»
+
+One can also specify the comparator with the optional C<:with> parameter.  For
+instance if one wants a list of unique hashes, one could use the C<eqv>
+comparator.
+
+Example:
+
+    my @list = %(a => 42), %(b => 13), %(a => 42);
+    say @list.unique(:with(&[eqv]))           # OUTPUT: «({a => 42} {b => 13})␤»
+
+B<Note:> since C<:with> L<C<Callable>|/type/Callable> has to be tried with all the
+items in the list, this makes C<unique> follow a path with much higher
+algorithmic complexity. You should try to use the C<:as> argument instead,
+whenever possible.
+
+=head2 routine repeated
+
+    multi repeated(+values, |c)
+
+This returns a sequence of B<repeated> values from the invocant/argument list.
+It takes the same parameters as L<unique|/routine/unique>, but instead of passing through any
+elements when they're first seen, they're only passed through as soon as they're
+seen for the second time (or more).
+
+Examples:
+
+    say <a a b b b c c>.repeated;                   # OUTPUT: «(a b b c)␤»
+    say <a b b c c b a>.repeated;                   # OUTPUT: «(b c b a)␤»
+    say <a A B b c b C>.repeated(:as(&lc));         # OUTPUT: «(A b b C)␤»
+
+    my @list = %(a => 42), %(b => 13), %(a => 42);
+    say @list.repeated(:with(&[eqv]))               # OUTPUT: «({a => 42})␤»
+
+As in the case of L<C<unique>|/type/Any#method_unique> the associative argument
+C<:as> takes a Callable that normalizes the element before comparison, and
+C<:with> takes the equality comparison function that is going to be used.
+
+=head2 routine squish
+
+    sub squish( +values, |c)
+
+Returns a sequence of values from the invocant/argument list where runs of one
+or more values are replaced with only the first instance. Like L<C<unique>|/routine/unique>,
+C<squish> uses the semantics of the L<===|/routine/===> operator to decide whether two
+objects are the same. Unlike L<C<unique>|/routine/unique>, this function only removes adjacent
+duplicates; identical values further apart are still kept. The order of the
+original list is preserved even as duplicates are removed.
+
+Examples:
+
+    say <a a b b b c c>.squish; # OUTPUT: «(a b c)␤»
+    say <a b b c c b a>.squish; # OUTPUT: «(a b c b a)␤»
+
+The optional C<:as> parameter, just like with L<C<unique>|/routine/unique>, allows values to be
+temporarily transformed before comparison.
+
+The optional C<:with> parameter is used to set an appropriate comparison
+operator:
+
+    say [42, "42"].squish;                      # OUTPUT: «(42 42)␤»
+    # Note that the second item in the result is still Str
+    say [42, "42"].squish(with => &infix:<eq>); # OUTPUT: «(42)␤»
+    # The resulting item is Int
+
+=head2 sub sleep
+
+    sub sleep($seconds = Inf --> Nil)
+
+Attempt to sleep for the given number of C<$seconds>.  Returns L<C<Nil>|/type/Nil> on
+completion.  Accepts L<C<Int>|/type/Int>, L<C<Num>|/type/Num>, L<C<Rat>|/type/Rat>, or L<C<Duration>|/type/Duration> types as an
+argument since all of these also do L<C<Real>|/type/Real>.
+
+=for code
+sleep 5;                # Int
+sleep 5.2;              # Num
+sleep (5/2);            # Rat
+sleep (now - now + 5);  # Duration
+
+It is thus possible to sleep for a non-integer amount of time.  For
+instance, the following code shows that C<sleep (5/2)> sleeps for 2.5
+seconds and C<sleep 5.2> sleeps for 5.2 seconds:
+
+    my $before = now;
+    sleep (5/2);
+    my $after = now;
+    say $after-$before;  # OUTPUT: «2.502411561␤»
+
+    $before = now;
+    sleep 5.2;
+    $after = now;
+    say $after-$before;  # OUTPUT: «5.20156987␤»
+
+=head2 sub sleep-timer
+
+    sub sleep-timer(Real() $seconds = Inf --> Duration:D)
+
+This function is implemented like C<sleep>, but unlike the former it does
+return a L<C<Duration>|/type/Duration> instance with the number of seconds the system did not
+sleep.
+
+In particular, the returned L<C<Duration>|/type/Duration> will handle the number of seconds remaining
+when the process has been awakened by some external event (e.g., Virtual Machine
+or Operating System events).
+Under normal condition, when sleep is not interrupted, the returned L<C<Duration>|/type/Duration>
+has a value of C<0>, meaning no extra seconds remained to sleep.
+Therefore, in normal situations:
+
+    say sleep-timer 3.14;  # OUTPUT: «0␤»
+
+The same result applies to edge cases, when a negative or zero time to sleep
+is passed as argument:
+
+=begin code
+say sleep-timer -2; # OUTPUT: 0
+say sleep-timer 0;  # OUTPUT: 0
+=end code
+
+See also L<sleep-until|/routine/sleep-until>.
+
+=head2 sub sleep-until
+
+    sub sleep-until(Instant $until --> Bool)
+
+Works similar to C<sleep> but checks the current time and keeps sleeping
+until the required instant in the future has been reached.
+It uses internally the C<sleep-timer> method in a loop to ensure that,
+if accidentally woken up early, it will wait again for the specified
+amount of time remaining to reach the specified instant.
+goes back to sleep
+
+Returns C<True> if the L<C<Instant>|/type/Instant> in the future has been achieved (either
+by mean of sleeping or because it is right now), C<False> in the case
+an L<C<Instant>|/type/Instant> in the past has been specified.
+
+To sleep until 10 seconds into the future, one could write something like this:
+
+    say sleep-until now+10;   # OUTPUT: «True␤»
+
+Trying to sleep until a time in the past doesn't work:
+
+    my $instant = now - 5;
+    say sleep-until $instant; # OUTPUT: «False␤»
+
+However if we put the instant sufficiently far in the future, the sleep
+should run:
+
+=for code
+my $instant = now + 30;
+# assuming the two commands are run within 30 seconds of one another...
+say sleep-until $instant; # OUTPUT: «True␤»
+
+To specify an exact instant in the future, first create a L<C<DateTime>|/type/DateTime> at the
+appropriate point in time, and cast to an L<C<Instant>|/type/Instant>.
+
+=for code
+my $instant = DateTime.new(
+    year => 2023,
+    month => 9,
+    day => 1,
+    hour => 22,
+    minute => 5);
+say sleep-until $instant.Instant; # OUTPUT: «True␤» (eventually...)
+
+This could be used as a primitive kind of alarm clock.  For instance, say
+you need to get up at 7am on the 4th of September 2015, but for some reason
+your usual alarm clock is broken and you only have your laptop.  You can
+specify the time to get up (being careful about timezones, since
+C<DateTime.new> uses UTC by default) as an L<C<Instant>|/type/Instant> and pass this to
+C<sleep-until>, after which you can play an mp3 file to wake you up instead
+of your normal alarm clock.  This scenario looks roughly like this:
+
+=for code
+# DateTime.new uses UTC by default, so get timezone from current time
+my $timezone = DateTime.now.timezone;
+my $instant = DateTime.new(
+    year => 2015,
+    month => 9,
+    day => 4,
+    hour => 7,
+    minute => 0,
+    timezone => $timezone
+).Instant;
+sleep-until $instant;
+qqx{mplayer wake-me-up.mp3};
+
+=head2 sub emit
+
+    sub emit(\value --> Nil)
+
+If used outside any supply or react block, throws an exception C<emit without
+supply or react>. Within a L<C<Supply>|/type/Supply> block, it will add a message to the stream.
+
+=begin code
+my $supply = supply {
+  for 1 .. 10 {
+      emit($_);
+  }
+}
+$supply.tap( -> $v { say "First : $v" });
+=end code
+
+C<emit> is implemented as a L<control exception|/language/phasers#CONTROL> and
+can therefore be used by something called from the C<supply> block that it
+refers to.
+
+See also L<the page for C<emit> methods|/routine/emit>.
+
+=head2 sub undefine
+
+    multi undefine(Mu    \x)
+    multi undefine(Array \x)
+    multi undefine(Hash  \x)
+
+B<DEPRECATED> in 6.d language version and will be removed in 6.e. For
+L<C<Array>|/type/Array> and L<C<Hash>|/type/Hash>, it will become equivalent to
+assigning L<C<Empty>|/type/Slip#constant_Empty>; for everything else,
+equivalent to assigning L<C<Nil>|/type/Nil> or C<Empty> in the case of arrays or
+hashes, whose use is advised.
+
+=head1 Array manipulation
+
+Routines that manipulate arrays and other mutable collections.
+
+=head2 sub pop
+
+    multi pop(@a) is raw
+
+Calls method C<pop> on the L<C<Positional>|/type/Positional> argument. That method is supposed to
+remove and return the last element, or return a L<C<Failure>|/type/Failure>
+wrapping an L<C<X::Cannot::Empty>|/type/X::Cannot::Empty> if the collection is
+empty.
+
+See the documentation of the L<C<Array> method|/routine/pop#(Array)_method_pop>
+for an example.
+
+=head2 sub shift
+
+    multi shift(@a) is raw
+
+Calls method C<shift> on the L<C<Positional>|/type/Positional> argument. That method, on
+a mutable collection that actually implements it (such as an
+L<C<Array>|/routine/shift#(Array)_method_shift> or a
+L<C<Buf>|/type/Buf#method_shift>), is supposed to remove
+and return the first element, or return a L<C<Failure>|/type/Failure> if the
+collection is empty.
+
+Example:
+
+    say shift [1,2]; # OUTPUT: «1␤»
+
+=for code
+my @a of Int = [1];
+say shift @a; # OUTPUT: «1␤»
+say shift @a; # ERROR: «Cannot shift from an empty Array[Int]␤»
+
+=head2 sub push
+
+    multi push(\a, **@b is raw)
+    multi push(\a, \b)
+
+Calls method C<push> on the first argument, passing the remaining arguments.
+Method C<push> is supposed to add the provided values to the end of the
+collection or parts thereof. See the documentation of the
+L<C<Hash> method|/routine/push#(Hash)_method_push> for an example where
+indirection via this subroutine can be helpful.
+
+The C<push> method is supposed to flatten all arguments of type L<C<Slip>|/type/Slip>.
+Therefore, if you want to implement a conforming method for a new collection
+type, it should behave as if its signature was just:
+
+    multi method push(::?CLASS:D: **@values is raw --> ::?CLASS:D)
+
+Autovivification to an instance of the new type is L<provided by the default
+base class|/routine/append#(Any)_method_append> if the new type implements the
+L<C<Positional>|/type/Positional> role. If the new type is not L<C<Positional>|/type/Positional>, autovivification can
+be supported by adding a multi method with a signature like
+
+    multi method push(::?CLASS:U: **@values is raw --> ::?CLASS:D)
+
+=head2 sub append
+
+    multi append(\a, **@b is raw)
+    multi append(\a, \b)
+
+Calls method C<append> on the first argument, passing the remaining arguments.
+Method C<append> is supposed to add the provided values to the end of the
+collection or parts thereof. Unlike method C<push>, method C<append> should
+follow the L<single argument rule|/language/functions#Slurpy_conventions>. So
+if you want to implement a conforming method C<append> for a new collection
+type, it should behave as if its signature was just:
+
+    multi method append(::?CLASS:D: +values --> ::?CLASS:D)
+
+Similar to L<routine C<push>|/routine/push#(Independent_routines)_sub_push>, you
+may need to add a multi method if you want to support autovivification:
+
+    multi method append(::?CLASS:U: +values --> ::?CLASS:D)
+
+The subroutine form of C<append> can be helpful when appending to the values of
+a L<C<Hash>|/type/Hash>. Whereas L<method C<append>|/routine/append#(Hash)_method_append> will
+silently ignore literal pairs that are interpreted as named arguments, the
+subroutine will throw:
+
+    my %h = i => 0;
+    append %h, i => (1, 42);
+    CATCH { default { put .message } };
+    # OUTPUT: «Unexpected named argument 'i' passed␤»
+
+=head1 Control routines
+
+Routines that change the flow of the program, maybe returning a value.
+
+=head2 sub exit
+
+    multi exit()
+    multi exit(Int(Any) $status)
+
+Exits the current process with return code C<$status> or zero if no
+value has been specified. The exit value (C<$status>), when different
+from zero, has to be opportunely evaluated from the process that catches
+it (e.g., a shell); it is the only way to return an exit code different
+from zero from a L<Main|/routine/MAIN>.
+
+C<exit> prevents the L<LEAVE|/language/phasers#LEAVE> phaser to be
+executed, but it will run the code in the
+L<C<&*EXIT>|/language/variables#index-entry-%26*EXIT> variable.
+
+C<exit> should be used as last resort only to signal the parent process
+about an exit code different from zero, and not to terminate
+exceptionally a method or a sub: use L<exceptions|/language/exceptions>
+instead.
+
+The first call of C<exit> in a process sets the return code, regardless
+of any subsequent calls to C<exit> in the same, or any other thread.
+
+=head2 sub done
+
+    sub done(--> Nil)
+
+If used outside any supply or react block, throws an exception C<done without
+supply or react>. Within a L<C<Supply>|/type/Supply> block, it will signal that
+the supply will not emit further values, and leaves the supply block. See also
+L<documentation on method C<done>|/routine/done>.
+
+C<done> is implemented as a L<control exception|/language/phasers#CONTROL> and
+can therefore be used by something called from the C<supply> or C<react> block
+that it refers to.
+
+=for code
+my $supply = supply {
+    for 1 .. 3 {
+        emit($_);
+    }
+    done;
+    say "never reached";
+}
+$supply.tap( -> $v { say "Second : $v" }, done => { say "No more" });
+# OUTPUT: «Second : 1␤Second : 2␤Second : 3␤No More␤»
+
+The block passed to the C<done> named argument when tapping the supply will be
+run when C<done> is called within the C<supply> block. Similarly, C<whenever>
+blocks that were used to tap the supply will have any C<LAST> phasers called.
+
+As of the 2021.06 release of the Rakudo compiler, it is also possible to
+supply a value with C<done>:
+
+    sub done($value --> Nil)
+
+The specified value will first be C<emit>ted before an argumentless
+C<done> will be called.
+
+=for code
+my $supply = supply {
+    for 1 .. 3 {
+        emit($_);
+    }
+    done 42;  # same as: emit 42; done
+}
+$supply.tap: -> $v { say "Val: $v" }, done => { say "No more" }
+# OUTPUT: OUTPUT: «Val: 1␤Val: 2␤Val: 3␤Val: 42␤No More␤»
+
+=head2 sub lastcall
+
+    sub lastcall(--> True)
+
+Truncates the current dispatch chain, which means any calls to
+C<nextsame>, C<callsame>, C<nextwith>, and C<callwith> will not
+find any of the next candidates. Note that since C<samewith>
+restarts the dispatch from the start, it's not affected by the
+truncation of current chain with C<lastcall>.
+
+Consider example below. C<foo(6)> uses C<nextsame>
+when C<lastcall> hasn't been called, and so it reaches the L<C<Any>|/type/Any>
+candidate. C<foo(2)> calls C<nextsame> as well, but since
+C<lastcall> was called first, the dispatch chain was truncated and
+the L<C<Any>|/type/Any> candidate was not reached. The last call, C<foo(1)>,
+calls C<lastcall> too, however, it then uses C<samewith>, which
+isn't affected by it, and so the dispatch re-starts from scratch,
+hits the L<C<Int>|/type/Int> candidate with the new argument C<6>, and then
+proceeds to the L<C<Any>|/type/Any> candidate via C<nextsame> (which
+isn't affected by the C<lastcall> that was used before the
+C<samewith> was called):
+
+    multi foo (Int $_) {
+        say "Int: $_";
+        lastcall   when *.is-prime;
+        nextsame   when *  %% 2;
+        samewith 6 when * !%% 2;
+    }
+    multi foo (Any $x) { say "Any $x" }
+
+    foo 6; say '----';
+    foo 2; say '----';
+    foo 1;
+
+    # OUTPUT:
+    # Int: 6
+    # Any 6
+    # ----
+    # Int: 2
+    # ----
+    # Int: 1
+    # Int: 6
+    # Any 6
+
+=end pod

@@ -1,0 +1,155 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Num
+
+=SUBTITLE Floating-point number
+
+    class Num is Cool does Real { }
+
+A C<Num> object stores a floating-point number. It is immutable. On most
+platforms, it's an IEEE 754 64-bit floating point numbers, aka "double
+precision".
+
+X<|Syntax,Inf (definition)>
+X<|Syntax,∞ (definition)>
+=head2 Inf
+
+The value C<Inf> is an instance of C<Num> and represents value that's too large
+to represent in 64-bit double-precision floating point number (roughly, above
+C<1.7976931348623158e308> for positive C<Inf> and below
+C<-1.7976931348623157e308> for negative C<Inf>) as well as returned from certain
+operations as defined by the
+L<IEEE 754-2008 standard|https://ieeexplore.ieee.org/document/4610935>.
+
+    say 2e300 ** 2e300; # OUTPUT: «Inf␤»
+    say (-1/0).Num;     # OUTPUT: «-Inf␤»
+
+The C<∞> C<U+221E> Unicode character can be used instead of
+the word C<Inf> and can be handy when C<Inf> would otherwise require an
+L<unspace|/language/syntax#Unspace>, such as when writing L<C<Complex>|/type/Complex> numbers:
+
+    say Inf+Inf\i; # Backslash (unspace) before `i` required
+    say ∞+∞i;      # No backslash is needed
+
+Note that there are just two infinities (positive and negative), so even if an
+operation that would instinctively give a "larger" infinity is performed, the
+result in still an infinity of the original magnitude. The infinities can be
+compared, operated and used as an argument as if they were simply a number
+that's too big to represent or to signify "without bounds" or limits:
+
+    say ∞²;                       # OUTPUT: «Inf␤»
+    say 42 + Inf === ∞;           # OUTPUT: «True␤»
+    say atan ∞;                   # OUTPUT: «1.5707963267949␤»
+    say -∞ < 42 < ∞;              # OUTPUT: «True␤»
+    my  $l := 1, 2, 4, 8 ... Inf; # Infinite sequence (no limits)
+
+In some cases, it's used as an implicit value to represent "all of them"
+
+    say "House of M".comb(3,Inf).join("←X→");
+    # OUTPUT: «Hou←X→se ←X→of ←X→M␤»
+
+In the example above, C<Inf> can be eliminated, since it's the default value for
+the second argument of L<C<.comb>|/type/Str#routine_comb>, used to indicate how
+many parts should be returned.
+
+Division of an infinity by another infinity results in a C<NaN>:
+
+    say ∞/∞;             # OUTPUT: «NaN␤»
+
+=head2 NaN
+
+The value X<C<NaN>|Reference,NaN (definition)> is an instance of C<Num> and represents a
+floating point not-a-number value, which is returned from some routines where
+a concrete number as the answer is not defined, but a L<C<Numeric>|/type/Numeric> value is still
+acceptable. C<NaN> is L<defined|/routine/defined> and L<boolifies|/routine/Bool>
+to C<True>, but is I<not> numerically equal to any value (including itself).
+
+    say cos ∞;     # OUTPUT: «NaN␤»
+    say (0/0).Num; # OUTPUT: «NaN␤»
+
+To test for C<NaN>, use L<isNaN|/routine/isNaN> method or L<=== operator|/language/operators#infix_===>:
+
+    say (0/0).isNaN;       # OUTPUT: «True␤»
+    say (0/0).Num === NaN; # OUTPUT: «True␤»
+
+=head2 method new
+
+     multi method new()
+     multi method new($n)
+
+C<Num.new> without argument will create a C<Num> with the value C<0e0>. With an
+argument, it will be coerced to C<Num> and then returned.
+
+
+    say Num.new(⅓); # OUTPUT: «0.3333333333333333␤»
+
+=head2 method rand
+
+    method rand(Num:D: --> Num)
+
+Returns a pseudo random number between 0 and the invocant.
+
+=head2 sub srand
+
+    sub srand(Int $seed --> Int:D)
+
+Seeds the pseudo random number generator used by L<Num.rand|#method_rand> with
+the provided value. Note that C<srand> is called with a platform dependent
+value when a Raku program is started.
+
+=head2 method Capture
+
+    method Capture()
+
+Throws C<X::Cannot::Capture>.
+
+=head2 method Int
+
+    method Int(Num:D:)
+
+Converts the number to an L<C<Int>|/type/Int>. L<Fails|/routine/fail> with
+C<X::Numeric::CannotConvert> if the invocant L«is a C<NaN>|/routine/isNaN»
+or C<Inf>/C<-Inf>. No L<rounding|/routine/round> is performed.
+
+=head2 method Rat
+
+    method Rat(Num:D: Real $epsilon = 1e-6)
+
+Converts the number to a L<C<Rat>|/type/Rat> with C<$epsilon> precision. If the invocant
+is an C<Inf>, C<-Inf>, or C<NaN>, converts them to a L<C<Rat>|/type/Rat> with C<0>
+L<denominator|/routine/denominator> and C<1>, C<-1>, or C<0> L<numerator|/routine/numerator>, respectively.
+
+=head2 method FatRat
+
+    method FatRat(Num:D: Real $epsilon = 1e-6)
+
+Converts the number to a L<C<FatRat>|/type/FatRat> with the precision C<$epsilon>. If invocant
+is an C<Inf>, C<-Inf>, or C<NaN>, converts them to a L<C<FatRat>|/type/FatRat> with C<0>
+L<denominator|/routine/denominator> and C<1>, C<-1>, or C<0> L<numerator|/routine/numerator>, respectively.
+
+=head2 method Num
+
+    method Num()
+
+Returns the invocant.
+
+=head2 method Str
+
+    method Str(Int:D)
+
+Returns a string representation of the number.
+
+    say π.Str;                # OUTPUT: «3.141592653589793␤»
+
+L«C<Cool>|/type/Cool» being a parent class of C<Num>, an explicit call
+to the C<Num.Str> method is seldom needed.
+
+    say π.Str.comb == π.comb; # OUTPUT: «True␤»
+
+=head2 method Bridge
+
+    method Bridge(Num:D:)
+
+Returns the number.
+
+=end pod

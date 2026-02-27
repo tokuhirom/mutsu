@@ -1,0 +1,400 @@
+=pod
+
+    Following in the steps of other open source projects that
+    eventually take over the world, here is the partial list
+    of people who have contributed to this documentation.
+    It is sorted by name and formatted to allow easy
+    grepping and beautification by scripts.
+    The fields are: name (N), email (E), web-address (W),
+    description (D), GitHub username (U) and snail-mail
+    address (S).
+
+        Thanks,
+
+        The Raku/doc Team
+        PS: Yes, this looks remarkably like the Linux CREDITS format
+        PPS: This file is encoded in UTF-8
+
+----------
+
+N: ab5tract
+E: john.haltiwanger@gmail.com
+
+N: abcxyzp
+E: abcxyz@cpan.org
+
+N: Adrian Kreher
+E: avuserow@gmail.com
+
+N: Ahmad M. Zawawi
+E: ahmad.zawawi@gmail.com
+
+N: Akim Demaille
+E: akim@lrde.epita.fr
+
+N: Alex Chen
+U: TisonKun
+U: W4anD0eR96
+E: wander4096@gmail.com
+
+N: Alexander Moquin
+E: alexmoquin@gmail.com
+
+N: andreoss
+E: andreoss@sdf.org
+
+N: Andrew Egeler
+E: andrew@egeler.us
+
+N: Ben Noordhuis
+E: info@bnoordhuis.nl
+
+N: Ben Tyler
+E: benjamin.tyler@gmail.com
+
+N: Brent Laabs
+E: bslaabs@gmail.com
+
+N: Brian Duggan
+U: bduggan
+E: bduggan@matatu.org
+
+N: Brock Wilcox
+E: awwaiid@thelackthereof.org
+
+N: Bruce Gray
+E: bruce.gray@acm.org
+
+N: Calvin Schwenzfeier
+E: cschwenz@users.noreply.github.com
+
+N: Carl Hayter
+E: hayter@usc.edu
+
+N: Carl Mäsak
+E: cmasak@gmail.com
+
+N: Carlin
+E: carbin@users.noreply.github.com
+
+N: Chloé Kekoa
+E: rightfold+ck@gmail.com
+W: foldr.nl
+U: chloekek
+
+N: Christopher Bottoms
+E: molecules@users.noreply.github.com
+
+N: Cole Keirsey
+E: ckeirsey2@gmail.com
+
+N: cygx
+E: cygx@users.noreply.github.com
+
+N: Cédric Vincent
+E: cedric@reproducible.io
+
+N: Daniel Green
+U: MasterDuke17
+E: ddgreen@gmail.com
+
+N: David Farrell
+E: davidnmfarrell@gmail.com
+
+N: David H. Adler
+E: dha@pobox.com
+
+N: David M. Cawthon
+E: dmc00@fastmail.com
+
+N: David Simon Schultz
+U: schultzdavid
+E: dss@noreply.codeberg.org
+
+N: Dmitriy Olshevskiy
+E: olshevskiy87@bk.ru
+
+N: Edwin Steiner
+E: edwin.steiner@gmx.net
+
+N: Elizabeth Mattijsen
+U: lizmat
+E: liz@wenzperl.nl
+
+N: Eric Forste
+U: arkiuat
+E: arkiuat@mm.st
+
+N: ennio
+E: scriplit@yahoo.com
+
+N: Felix Herrmann
+E: felix@herrmann-koenigsberg.de
+
+N: Florian Helmberger
+E: fh@25th-floor.com
+
+N: Gabor Szabo
+E: gabor@szabgab.com
+
+N: Geoffrey Broadwell
+E: geoff@broadwell.org
+
+N: GlitchMr
+E: glitchmr@myopera.com
+
+N: Graham Todd
+E: info@opendevelopment.net
+
+N: Heiko Jansen
+E: heiko_jansen@web.de
+
+N: Ilmari Vacklin
+E: ilmari.vacklin@reaktor.fi
+
+N: isBEKaml
+E: nastavs@gmail.com
+
+N: Jeremy Studer
+E: studerj1.mail@gmail.com
+
+N: Jimmy Zhuo
+E: zhuomingliang@yahoo.com.cn
+
+N: JJ Merelo
+N: Juan Julián Merelo Guervós
+E: jjmerelo@gmail.com
+U: JJ
+
+N: Joelle Maslak
+E: jmaslak@antelope.net
+U: jmaslak
+
+N: John Gabriele
+E: jgabriele@fastmail.fm
+
+N: Joji Antony
+E: simula67@gmail.com
+
+N: Jonathan Scott Duff
+E: duff@pobox.com
+
+N: Jonathan Stowe
+E: jns+git@gellyfish.co.uk
+
+N: Jonathan Worthington
+E: jnthn@jnthn.net
+
+N: Justin DeVuyst
+E: justin@devuyst.com
+
+N: Kamil Kułaga
+E: teodozjan@gmail.com
+
+N: Karl Yerkes
+E: karl.yerkes@gmail.com
+
+N: Klaus Brüssel
+E: trixium@web.de
+
+N: Konrad Borowski
+E: glitchmr@myopera.com
+
+N: LLFourn
+E: LLFourn@users.noreply.github.com
+
+N: Lloyd Fournier
+E: LLFourn@users.noreply.github.com
+
+N: Luca Ferrari
+E: fluca1978@gmail.com
+W: https://fluca1978.github.io
+U: fluca1978
+
+N: lue
+E: rnddim@gmail.com
+
+N: lumimies
+E: lumimies@gmail.com
+
+N: Marcel Timmerman
+E: mt1957@gmail.com
+
+N: Matthew
+E: rnddim@gmail.com
+
+N: Matthias Krull
+E: m.krull@uninets.eu
+
+N: mdinger
+E: mdinger.bugzilla@gmail.com
+
+N: Mike Francis
+E: ungrim97@gmail.com
+
+N: Moray Jones
+E: github@mrjones.co.uk
+
+N: Moritz Lenz
+E: moritz@faui2k3.org
+U: moritz
+U: moritz_
+D: Initial p6doc development, documentation
+
+N: Mouq
+E: alexmoquin@gmail.com
+
+N: muraiki
+E: muraiki@users.noreply.github.com
+
+N: Nami-Doc
+E: vendethiel@hotmail.fr
+
+N: Nathan Brown
+E: nbrown04@gmail.com
+
+N: Nick Logan
+E: nlogan@gmail.com
+
+N: niner
+E: nine@detonation.org
+
+N: Noel Maddy
+E: zhtwnpanta@gmail.com
+
+N: Nova Patch
+E: patch@cpan.org
+
+N: Patrick R. Michaud
+U: pmichaud
+D: Perl 6 (Rakudo Perl) lead developer
+E: pmichaud@pobox.com
+
+N: Paul Cochrane
+E: paul@liekut.de
+
+N: Pawel Pabian
+E: bbkr@post.pl
+
+N: Philippe Bruhat (BooK)
+E: book@cpan.org
+
+N: Prog Rammer
+E: prammer1@gmail.com
+
+N: raiph
+E: ralphdjmellor@gmail.com
+
+N: raydiak
+E: raydiak@cyberuniverses.com
+
+N: Ricardo Signes
+E: rjbs@users.noreply.github.com
+
+N: Rob Hoelz
+E: rob@hoelz.ro
+
+N: Ronald Schmidt
+E: ronaldxs@software-path.com
+
+N: ronaldxs
+E: ronaldxs@software-path.com
+
+N: Salve J. Nilsen
+E: sjn@cpan.org
+
+N: Sam S
+E: smls75@gmail.com
+
+N: sergot
+E: filip@sergot.pl
+
+N: Sgeo
+E: sgeoster@gmail.com
+
+N: ShimmerFairy
+E: rnddim@gmail.com
+
+N: Sizhe Zhao
+E: prc.zhao@outlook.com
+U: Prince213
+
+N: skids
+E: bri@abrij.org
+
+N: smls
+E: smls75@gmail.com
+
+N: Stefan Seifert
+E: nine@detonation.org
+
+N: Sterling Hanenkamp
+E: sterling@hanenkamp.com
+
+N: Steve Mynott
+E: steve.mynott@gmail.com
+
+N: Stéphane Payrard
+E: cognominal@gmail.com
+
+N: Tadeusz Sośnierz
+E: tadzikes@gmail.com
+
+N: Tim Nelson
+E: wayland@wayland.id.au
+
+N: Tim Smith
+E: tim.dolores@gmail.com
+
+N: timo
+E: timonator@perpetuum-immobile.de
+
+N: Timo Paulssen
+E: timonator@perpetuum-immobile.de
+
+N: TimToady
+E: larry@wall.org
+
+N: Tobias Leich
+E: email@froggs.de
+
+N: Tokuhiro Matsuno
+E: tokuhirom@gmail.com
+
+N: Tom Browder
+E: tom.browder@gmail.com
+U: tbrowder
+
+N: Trey Harris
+E: treyharris@gmail.com
+
+N: Claudio Ramirez
+E: pub.claudio@gmail.com
+
+N: ugexe
+E: nlogan@gmail.com
+
+N: usev6
+E: use_v6@aglaz.de
+
+N: ven
+E: vendethiel@hotmail.fr
+
+N: VZ
+E: vz-github@zeitlins.org
+
+N: Wenzel P. P. Peppmeyer
+U: gfldex
+E: wenzel.peppmeyer@gmx.de
+
+N: Will Coleda
+N: Coke
+E: will@coleda.com
+
+N: Xtreak
+E: tirkarthi@users.noreply.github.com
+
+N: Zoffix Znet
+E: cpan@zoffix.com
+
+=cut

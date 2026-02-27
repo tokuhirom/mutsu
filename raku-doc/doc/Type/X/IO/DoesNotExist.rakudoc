@@ -1,0 +1,27 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::IO::DoesNotExist
+
+=SUBTITLE Error while doing file tests on a non existing path
+
+=for code :skip-test<compile time error>
+class X::IO::DoesNotExist does X::IO is Exception { }
+
+Thrown when doing file test operations on a non existing path.
+
+A typical error message is
+
+=for code :lang<text>
+Failed to find 'euler-5.raku' while trying to do '.f'
+
+=head1 Methods
+
+=head2 method path
+
+Returns the path that was passed to the failed call.
+
+=head2 method trying
+
+Returns a string describing the failed operation.
+
+=end pod

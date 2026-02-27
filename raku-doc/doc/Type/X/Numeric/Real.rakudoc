@@ -1,0 +1,39 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Numeric::Real
+
+=SUBTITLE Error while trying to coerce a number to a Real type
+
+    class X::Numeric::Real is Exception { }
+
+Occurs when an attempt to coerce a L<C<Numeric>|/type/Numeric> to a
+L<C<Real>|/type/Real>, L<C<Num>|/type/Num>, L<C<Int>|/type/Int> or
+L<C<Rat>|/type/Rat> fails (due to a number with a nonzero imaginary part, for instance).
+
+For example
+
+    say (1+2i).Int;
+    CATCH { default { put .^name, ': ', .Str } };
+    # OUTPUT: «X::Numeric::Real: Can not convert 1+2i to Int: imaginary part not zero␤»
+
+=head1 Methods
+
+=head2 method source
+
+    method source(--> Numeric:D)
+
+Returns the number that failed to coerce to L<C<Real>|/type/Real>.
+
+=head2 method target
+
+    method target()
+
+Returns the type to which the coercion was attempted.
+
+=head2 method reason
+
+    method reason(--> Str:D)
+
+Returns the reason that the conversion failed.
+
+=end pod

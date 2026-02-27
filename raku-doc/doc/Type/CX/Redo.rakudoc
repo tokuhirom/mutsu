@@ -1,0 +1,20 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE role CX::Redo
+
+=SUBTITLE Redo control exception
+
+    class CX::Redo does X::Control { }
+
+A L<control exception|/language/exceptions#Control_exceptions> thrown when
+C<redo> is called.
+
+=head1 Methods
+
+=head2 method message
+
+    method message()
+
+Returns C<'<redo control exception>'>.
+
+=end pod

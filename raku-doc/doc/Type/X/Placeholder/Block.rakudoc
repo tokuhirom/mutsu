@@ -1,0 +1,28 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Placeholder::Block
+
+=SUBTITLE Compilation error due to a placeholder in an ineligible block
+
+    class X::Placeholder::Block does X::Comp {}
+
+Thrown when a placeholder variable is used in a block that does not allow a
+signature.
+
+For example
+
+=for code :skip-test<compile time error>
+class A { $^foo }
+
+dies with
+
+=for code :lang<text>
+Placeholder variable $^foo may not be used here because the surrounding block takes no signature
+
+=head1 Methods
+
+=head2 method placeholder
+
+Returns the name of the (first) illegally used placeholder.
+
+=end pod

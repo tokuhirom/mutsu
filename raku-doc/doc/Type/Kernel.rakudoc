@@ -1,0 +1,113 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Kernel
+
+=SUBTITLE Kernel related information
+
+    class Kernel does Systemic { }
+
+Built-in class for providing kernel related information.  Usually accessed
+through the L«C<$*KERNEL>|/language/variables#Dynamic_variables» dynamic
+variable.
+
+=head1 Methods
+
+=head2 method arch
+
+    method arch
+
+Instance method returning the "arch" (as in "architecture") information of the
+Kernel object.  Dies if the "arch" could not be established.
+
+=head2 method archname
+
+    method archname
+
+Instance method returning the concatenation of L<hardware|/routine/hardware> and
+L<name|/routine/name>.
+
+=head2 method bits
+
+    method bits
+
+Instance method returning the number of bits used in the architecture of the
+processor.  Usually B<32> or B<64>.
+
+=head2 method cpu-cores
+
+    method cpu-cores(--> Int)
+
+Instance / Class method returning the number of CPU cores that are available.
+
+    say $*KERNEL.cpu-cores; # OUTPUT: «8␤»
+
+=head2 method cpu-usage
+
+    method cpu-usage(--> Int)
+
+Instance / Class method returning the amount of CPU uses since the start of
+the program (in microseconds).
+
+=head2 method free-memory
+
+    method free-memory(--> Int)
+
+Instance / Class method returning the available memory on the system. When
+using the JVM, this returns the available memory to the JVM instead. This
+method is only available in release v2019.06 and later.
+
+=head2 method total-memory
+
+    method total-memory(--> Int)
+
+Instance / Class method returning the total memory available to the system.
+When using the JVM, this returns the total memory available to the JVM instead.
+This method is only available in release v2019.06 and later.
+
+=head2 method endian
+
+    method endian(--> Endian:D)
+
+Class method that returns the L<C<Endian>|/type/Endian> object associated with
+the kernel architecture (either C<LittleEndian> or C<BigEndian>).
+
+=head2 method hardware
+
+    method hardware
+
+Instance method returning the hardware information of the Kernel object.  Dies
+if the hardware information could not be established.
+
+    say $*KERNEL.hardware; # OUTPUT: «x86_64␤»
+
+=head2 method hostname
+
+    method hostname
+
+Instance method returning the hostname of the Kernel object.
+
+=head2 method release
+
+    method release
+
+Instance method returning the release information of the Kernel object.  Dies
+if the release information could not be established.
+
+=head2 method signal
+
+    multi method signal(Kernel:D: Str:D $signal --> Int:D)
+    multi method signal(Kernel:D: Signal:D \signal --> Int:D)
+    multi method signal(Kernel:D: Int:D \signal --> Int:D)
+
+Instance method returning the C<Signal> numeric code for a given name for the
+Kernel object.
+
+    say $*KERNEL.signal("INT"); # OUTPUT: «2␤»
+
+=head2 method signals
+
+Instance method returning a list of C<Signal>s that are supported by the
+kernel represented by the Kernel object.
+
+
+=end pod

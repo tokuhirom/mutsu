@@ -1,0 +1,67 @@
+=begin pod :kind("Language") :subkind("Language") :category("reference")
+
+=TITLE Community
+
+=SUBTITLE Information about the people working on and using Raku
+
+=head1 Overview
+
+"Perl 5 was my rewrite of Perl.  I want Perl 6 to be the community's rewrite
+of Perl and of the community." - Larry Wall (circa 2000)
+
+"I am in favor of this change [a community driven renaming from Perl 6 to Raku], because it reflects an ancient wisdom:
+'No one sews a patch of unshrunk cloth on an old garment, for the patch will pull away from
+the garment, making the tear worse. Neither do people pour new wine into old wineskins.
+If they do, the skins will burst; the wine will run out and the wineskins will be ruined.
+No, they pour new wine into new wineskins, and both are preserved.'" - Larry Wall
+(L<2019|https://github.com/Raku/problem-solving/pull/89#pullrequestreview-300789072>)
+
+=head1 The Raku community
+
+=head2 Online communities
+
+L<IRC|/language/glossary#IRC> communication has played an integral role in the Raku community for more than a decade. There are various channels for Raku-related activities on C<libera.chat>. There are several L<bots|/language/glossary#Bot> to make IRC activity more convenient and fun. You can read about IRC content L<here|https://raku.org/community/> in greater details.
+
+L<The Raku Discord server|https://discord.gg/VzYpdQ6> serves a similar purpose. Thanks to the bridges written by fellow Raku members, it integrates well with the main IRC channels.
+
+L<StackOverflow|https://stackoverflow.com/questions/tagged/raku> is also a great
+resource for asking questions and helping others with their Raku problems and
+challenges.
+
+More resources can be found in the
+L<raku.org community page|https://raku.org/community/>.
+
+=head2 Offline communities
+
+Raku is also a common topic at
+L<Perl conferences|https://www.perl.org/events.html> and
+L<Perl Monger meetings|https://www.pm.org/>.
+If you prefer in-person meetings, these are warmly recommended!
+
+=head2 Other resources
+
+L<Camelia|https://raku.org/>, the multi-color butterfly with P 6 in her wings, is the symbol of this diverse and welcoming community.
+
+=head1 Rakudo Weekly
+
+Elizabeth Mattijsen usually posts in L<the "Rakudo Weekly" blog|https://rakudoweekly.blog/>, a summary of Raku posts, tweets, comments and other interesting tidbits.
+If you want a single resource to know what is going on in the Raku community now, this is your best resource.
+
+Historical articles (pre name change) can be found archived on
+L<the "Perl 6 Weekly" blog|https://p6weekly.wordpress.com/>.
+
+=head1 Raku Advent calendar
+
+The Raku community publishes every December an
+L<Advent Calendar|https://raku-advent.blog/>, with Raku tutorials every day until
+Christmas. Previous calendars (pre name change) are
+L<still available|https://perl6advent.wordpress.com/> and relevant.
+
+Organization and assignment of days is done through the different Raku channels and the
+L<Raku/advent|https://github.com/Raku/advent> repository. If you want to
+participate, its organization starts by the end of October, so check out
+the channels above to keep up to date.
+
+=comment HOW TO WRITE: One topic/point/idea per sentence, one sentence per line - to make diffs & translation easier.
+
+=end pod

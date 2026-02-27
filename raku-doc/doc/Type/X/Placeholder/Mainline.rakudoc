@@ -1,0 +1,31 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Placeholder::Mainline
+
+=SUBTITLE Compilation error due to a placeholder in the mainline
+
+    class X::Placeholder::Mainline is X::Placeholder::Block { }
+
+Thrown when a placeholder variable is used in the mainline, i.e. outside of
+any explicit block.
+
+For example
+
+=for code :skip-test<compile time error>
+$^x;
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+Cannot use placeholder parameter $^x outside of a sub or block
+
+Note that this error can also occur when you think something is a block,
+but it really is a L«postcircumfix:<{ }>|/routine/{ }», for example
+
+=for code :skip-test<compile time error>
+my %h;
+say %h{ $^x };
+#     ^^^^^^^  not a block, so $^x is part of the mainline
+
+=end pod

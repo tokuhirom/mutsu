@@ -1,0 +1,17 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Pod::Defn
+
+=SUBTITLE Pod definition list
+
+    class Pod::Defn is Pod::Block { }
+
+Class for definition lists in a Pod document.
+
+=head1 Methods
+
+=head2 method term
+
+    method term(--> Mu)
+
+=end pod

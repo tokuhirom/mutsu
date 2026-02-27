@@ -1,0 +1,535 @@
+=begin pod :kind("Type") :subkind("class") :category("composite")
+
+=TITLE class Hash
+
+=SUBTITLE Mapping from strings to itemized values
+
+    class Hash is Map { }
+
+A C<Hash> is a mutable L<C<Map>|/type/Map>; it implements L<C<Associative>|/type/Associative> through
+its inheritance of L<C<Map>|/type/Map> and as such provides support for looking up values
+using keys, providing support for L<associative
+subscripting|/language/subscripts#Methods_to_implement_for_associative_subscripting>.
+
+C<Hash> is the default type for variables with the C<%> sigil.
+
+Hashes are mutable mappings from keys to values, known in other programming languages
+as I<dict>s (Python), I<object>s (Javascript) or I<Hash Map>s (Java).
+
+Basic usage:
+
+    # initialization with pairs:
+    my %capitals = Spain => 'Madrid', 'United States' => 'Washington DC';
+
+    # adding another pair:
+    %capitals{'Zimbabwe'} = 'Harare';
+
+    # accessing a value by key:
+    my $country = 'Spain';
+    say "The capital of $country is %capitals{$country}";
+
+    # getting all keys:
+    say "I know the capitals of these countries: ", %capitals.keys.sort.join(', ');
+
+    # check if a key is in a hash:
+    if %capitals{'Europe'}:exists {
+        # not executed
+    }
+
+    # iterating over keys and values (unordered):
+    for %capitals.kv -> $country, $capital {
+        say "$capital is the capital of $country";
+    }
+
+Although the order of the hashes is guaranteed to be random in every single
+call, still successive calls to C<.keys> and C<.values> are guaranteed to return
+them in the same order:
+
+    my %orig = :1a, :2b; my %new = :5b, :6c;
+    %orig{ %new.keys } = %new.values;
+    say %orig.raku; # OUTPUT: «{:a(1), :b(5), :c(6)}␤»
+
+In this case, C<b> will always be associated to 5 and C<c> to 6; even if two
+successive calls to C<keys> will return them in different order. Successive
+calls to any of them separately and repeatedly will always return the same order
+in any program invocation.
+
+Please see the section on L<hash literals|/language/syntax#Hash_literals> for
+different ways to declare a hash. Additionally, they can be declared using curly
+braces as long as these rules are followed:
+
+=item Empty curly braces will always declare an empty hash.
+=item A reference to $_ (even implicit) will instead declare a block.
+=item A L<C<Pair>|/type/Pair> or variable with C<%> as the first element will declare a hash.
+
+=for code
+given 3 { say WHAT {3 => 4, :b}  };     # OUTPUT: «(Hash)␤»
+given 3 { say WHAT {3 => 4, :b($_)} };  # OUTPUT: «(Block)␤»
+given 3 { say WHAT {3 => 4, :b(.Num)} };# OUTPUT: «(Block)␤»
+say { 'a',:b(3), 'c' }.^name;           # OUTPUT: «Block␤»
+
+The next-to-last two cases are examples of the generation of L<C<Block>|/type/Block>s in the
+presence of the topic variable C<$_>. The last case does not meet the third
+criterion for generating a hash, and thus generates a L<C<Block>|/type/Block>.
+
+A % in front of parentheses or square brackets will generate a C<Hash> as long as
+the elements can be paired.
+
+    say %( 'a', 3, :b(3), 'c', 3 ).^name; # OUTPUT: «Hash␤»
+
+Elements in this hash can be paired both sides of the Pair C<:b(3)>.
+
+    say %(«a b c 1 2 3»).^name;           # OUTPUT: «Hash␤»
+
+An empty hash can be initialized either with empty curly braces or, since 6.d, C<%()>.
+
+    say %().^name; # OUTPUT: «Hash␤»
+    say {}.^name;  # OUTPUT: «Hash␤»
+
+Hashes can be parameterized with types. You can change the type of the keys like this:
+
+    my %next-prime{Int} = 2 => 3, 3 => 5, 5 => 7, 7 => 11, 11 => 13;
+
+The type of the values defaults to L<C<Mu>|/type/Mu>, but you can constrain it to other types:
+
+    my Array %lists;
+
+You can combine these two features:
+
+    my Array %next-primes{Int} = 2 => [3, 5], 11 => [13, 17];
+
+=head1 Methods
+
+=head2 method classify-list
+
+    multi method classify-list(&mapper, *@list, :&as --> Hash:D)
+    multi method classify-list(%mapper, *@list, :&as --> Hash:D)
+    multi method classify-list(@mapper, *@list, :&as --> Hash:D)
+
+Populates a C<Hash> by classifying the possibly-empty C<@list> of
+values using the given C<mapper>, optionally altering the values using the
+C<:&as> L«C<Callable>|/type/Callable». The C<@list> cannot be lazy.
+
+The mapper can be a L«C<Callable>|/type/Callable» that takes a single argument,
+an L«C<Associative>|/type/Associative», or an L«C<Iterable>|/type/Iterable»;
+this L<C<Callable>|/type/Callable> is guaranteed to be called only once per item.
+With L«C<Associative>|/type/Associative» and an L«C<Iterable>|/type/Iterable»
+mappers, the values in the C<@list> represent the key and index of the mapper's
+value respectively. A L«C<Callable>|/type/Callable» mapper will be executed
+once per each item in the C<@list>, with that item as the argument and its
+return value will be used as the mapper's value.
+
+=head3 Simple classification
+
+In simple classification mode, each mapper's value is any non-L<C<Iterable>|/type/Iterable> and
+represents a key to classify C<@list>'s item under:
+
+=begin code
+say % .classify-list: { $_ %% 2 ?? 'even' !! 'odd' }, ^10;
+# OUTPUT: «{even => [0 2 4 6 8], odd => [1 3 5 7 9]}␤»
+
+my @mapper = <zero one two three four five>;
+my %hash = foo => 'bar';
+say %hash.classify-list: @mapper, 1, 2, 3, 4, 4;
+# OUTPUT: «{foo => bar, four => [4 4], one => [1], three => [3], two => [2]}␤»
+=end code
+
+The mapper's value is used as the key of the C<Hash> to
+which the C<@list>'s item will be L«C<push>ed|/routine/push». See
+L«C<.categorize-list>|/routine/categorize-list» if you wish to classify an item
+into multiple categories at once.
+
+=head3 Multi-level classification
+
+In multi-level classification mode, each mapper's value is an
+L«C<Iterable>|/type/Iterable» that represents a tree of hash keys to classify
+C<@list>'s item under:
+
+    say % .classify-list: {
+        [
+            (.is-prime ?? 'prime' !! 'non-prime'),
+            ($_ %% 2   ?? 'even'  !! 'odd'      ),
+        ]
+    }, ^10;
+    # OUTPUT:
+    # {
+    #     non-prime => {
+    #         even => [0 4 6 8],
+    #         odd  => [1 9]
+    #     },
+    #     prime => {
+    #         even => [2],
+    #         odd  => [3 5 7]
+    #     }
+    # }
+
+In the case we are using L<C<Iterable>|/type/Iterable>s and not L<C<Callable>|/type/Callable>s, each of those
+L«C<Iterable>|/type/Iterable»s must
+have the same number
+of elements, or the method will throw an exception. This restriction exists to
+avoid conflicts when the same key is a leaf of one value's classification but a
+node of another value's classification.
+
+=for code
+my @mapper = [['1a','1b','1c'],['2a','2b','2c'],['3a','3b','3c']];
+say % .classify-list: @mapper, 1,2,1,1,2,0;
+# OUTPUT: «{1a => {1b => {1c => [0]}}, 2a => {2b => {2c => [1 1 1]}}, 3a => {3b => {3c => [2 2]}}}␤»
+
+Every element of the array represents a different level in the tree, with the
+elements of the list that is being mapped used as index, and the elements of
+the mapper array used as keys to the different levels. So C<0> selects the
+first sub-array and then the subsequent levels are built by running over the
+rest of the elements of that sub-array.
+
+=for code
+my @mapper = [['1a','1b'],['2a','2b'],['3a','3b']];
+say % .classify-list: @mapper, 1,0,1,1,1,0,2;
+# OUTPUT: «{1a => {1b => [0 0]}, 2a => {2b => [1 1 1 1]}, 3a => {3b => [2]}}␤»
+
+From version 6.d, trying to use L<C<Iterable>|/type/Iterable>s of different size will throw an
+error:
+
+=for code
+my @mapper = [<1a 1b>, <2a 2b 2fail>];
+say % .classify-list: @mapper, 1,0,1,1,1,0;
+# OUTPUT: «mapper on classify-list computed to an item with different number
+# of elements in it than previous items, which cannot be used because all
+# values need to have the same number of elements. Mixed-level classification
+# is not supported.␤  in block <unit>…»
+
+=head3 C<:&as> value modifier
+
+If C<:&as> L«C<Callable>|/type/Callable» argument is specified, it will be
+called once per each item of C<@list>, with the value as the argument, and
+its return value will be used instead of the original C<@list>'s item:
+
+    say % .classify-list: :as{"Value is $_"}, { $_ %% 2 ?? 'even' !! 'odd' }, ^5;
+    # OUTPUT (slightly altered manually, for clarity):
+    # {
+    #     even => ['Value is 0', 'Value is 2', 'Value is 4'],
+    #     odd  => ['Value is 1', 'Value is 3']
+    # }
+
+=head2 method categorize-list
+
+    multi method categorize-list(&mapper, *@list, :&as --> Hash:D)
+    multi method categorize-list(%mapper, *@list, :&as --> Hash:D)
+    multi method categorize-list(@mapper, *@list, :&as --> Hash:D)
+
+Populates a C<Hash> by classifying the
+possibly-empty C<@list> of values using the given C<mapper>, optionally
+altering the values using the C<:&as> L«C<Callable>|/type/Callable». The
+C<@list> cannot be lazy.
+
+The mapper can be a L«C<Callable>|/type/Callable» that takes a single argument,
+an L«C<Associative>|/type/Associative», or an L«C<Iterable>|/type/Iterable».
+With L«C<Associative>|/type/Associative» and an L«C<Iterable>|/type/Iterable»
+mappers, the values in the C<@list> represent the key and index of the mapper's
+value respectively. A L«C<Callable>|/type/Callable» mapper will be executed
+once per each item in the C<@list>, with that item as the argument and its
+return value will be used as the mapper's value.
+
+=head3 Simple categorization
+
+The mapper's value is expected to be a possibly empty list of
+non-L«C<Iterable>|/type/Iterable»s that represent categories to place the value
+into:
+
+    say % .categorize-list: {
+        gather {
+            take 'prime'   if .is-prime;
+            take 'largish' if $_ > 5;
+            take $_ %% 2 ?? 'even' !! 'odd';
+        }
+    }, ^10;
+
+    # OUTPUT:
+    # {
+    #     prime   => [2 3 5 7]
+    #     even    => [0 2 4 6 8],
+    #     odd     => [1 3 5 7 9],
+    #     largish => [6 7 8 9],
+    # }
+
+Notice how some items, e.g. C<6> and C<7>, are present in several categories.
+
+=head3 Multi-level categorization
+
+In multi-level categorization, the categories produced by the mapper are
+L<Iterables|/type/Iterable> and categorization combines features
+of L<classify|/routine/classify>, by producing nested hashes of classifications
+for each category.
+
+    say % .categorize-list: {
+        [
+            $_ > 5    ?? 'largish' !! 'smallish',
+            .is-prime ?? 'prime'   !! 'non-prime',
+        ],
+    }, ^10;
+
+    # OUTPUT:
+    # {
+    #     largish => {
+    #         non-prime => [6 8 9],
+    #         prime     => [7]
+    #     },
+    #     smallish => {
+    #         non-prime => [0 1 4],
+    #         prime     => [2 3 5]
+    #     }
+    # }
+
+The mapper in the snippet above produces a single-item list (note the
+significant
+trailing comma) with a two-item L<C<Array>|/type/Array> in it. The first item in that array
+indicates the first level of classification: the C<largish>/C<smallish>
+categories the routine produces. The second item in that array indicates
+further levels of classification, in our case the classification into
+C<prime>/C<non-prime> inside of each category.
+
+B<NOTE:> every L«C<Iterable>|/type/Iterable»s category
+must have the same number of elements, or the method will throw an exception.
+This restriction exists to avoid conflicts when the same key is a
+leaf of one value's classification but a node of another value's classification.
+
+=head3 C<:&as> value modifier
+
+If C<:&as> L«C<Callable>|/type/Callable» argument is specified, it will be
+called once per each item of C<@list>, with the value as the argument, and
+its return value will be used instead of the original C<@list>'s item:
+
+    say % .categorize-list: :as{"Value is $_"}, { $_ %% 2 ?? 'even' !! 'odd' }, ^5;
+    # OUTPUT (slightly altered manually, for clarity):
+    # {
+    #     even => ['Value is 0', 'Value is 2', 'Value is 4'],
+    #     odd  => ['Value is 1', 'Value is 3']
+    # }
+
+=head2 method push
+
+    method push(Hash:D: +new)
+
+Adds the C<new> elements to the hash with the same semantics as hash
+assignment, but with three exceptions:
+
+=item The hash isn't emptied first, i.e. old pairs are not deleted.
+
+=item If a key already exists in the hash, and the corresponding value is an
+L<C<Array>|/type/Array>, the new value is pushed onto the array (instead of replacing it).
+
+=item If a key already exists in the hash, and the corresponding value is not
+an L<C<Array>|/type/Array>, old and new value are both placed into an array in the place
+of the old value.
+
+Example:
+
+    my %h  = a => 1;
+    %h.push: (a => 1);              # a => [1,1]
+    %h.push: (a => 1) xx 3 ;        # a => [1,1,1,1,1]
+    %h.push: (b => 3);              # a => [1,1,1,1,1], b => 3
+    %h.push('c' => 4);              # a => [1,1,1,1,1], b => 3, c => 4
+    push %h, 'd' => 5;              # a => [1,1,1,1,1], b => 3, c => 4, d => 5
+
+Please note that literal pairs in the argument list may be interpreted as
+L<named arguments|/type/Capture> and as such won't end up in the C<Hash>:
+
+    my %h .= push(e => 6);
+    say %h.raku; # OUTPUT: «{}␤»
+
+Use the corresponding L<subroutine|/type/independent-routines#sub_push> to
+catch this kind of mistake:
+
+    push my %h, f => 7;
+    CATCH { default { put .message } };
+    # OUTPUT: «Unexpected named argument 'f' passed␤»
+
+Also note that push can be used as a replacement for assignment during hash
+initialization very useful ways. Take for instance the case of an inverted
+index:
+
+    my %wc = 'hash' => 323, 'pair' => 322, 'pipe' => 323;
+    (my %inv).push: %wc.invert;
+    say %inv;                     # OUTPUT: «{322 => pair, 323 => [pipe hash]}␤»
+
+Note that such an initialization could also be written as
+
+    my %wc = 'hash' => 323, 'pair' => 322, 'pipe' => 323;
+    my %inv .= push: %wc.invert;
+
+B<Note:> Compared to L«C<append>|/routine/append», C<push> will add the given
+value as is, whereas C<append> will L«C<slip>|/routine/slip» it in:
+
+    my %ha = :a[42, ]; %ha.push: "a" => <a b c a>;
+    say %ha; # OUTPUT: «{a => [42 (a b c a)]}␤»
+
+    my %hb = :a[42, ]; %hb.append: "a" => <a b c a>;
+    say %hb; # OUTPUT: «{a => [42 a b c a]}␤»
+
+=head2 method append
+
+    method append(+@values)
+
+Append the provided Pairs or even sized list to the Hash. If a key already
+exists, turn the existing value into an L<C<Array>|/type/Array> and push new value
+onto that L<C<Array>|/type/Array>. Please note that you can't mix even sized lists and lists
+of Pairs. Also, bare L<C<Pair>|/type/Pair>s or colon pairs will be treated as L<named
+arguments|/language/signatures#Positional_vs._named_arguments> to C<.append>.
+
+    my %h = a => 1;
+    %h.append('b', 2, 'c', 3);
+    %h.append( %(d => 4) );
+    say %h;
+    # OUTPUT: «{a => 1, b => 2, c => 3, d => 4}␤»
+    %h.append('a', 2);
+    # OUTPUT: «{a => [1 2], b => 2, c => 3, d => 4}␤»
+
+B<Note:> Compared to L«C<push>|/routine/push», C<append> will
+L«C<slip>|/routine/slip» in the given value, whereas C<push> will add it as
+is:
+
+    my %hb = :a[42, ]; %hb.append: "a" => <a b c a>;
+    say %hb; # OUTPUT: «{a => [42 a b c a]}␤»
+
+    my %ha = :a[42, ]; %ha.push: "a" => <a b c a>;
+    say %ha; # OUTPUT: «{a => [42 (a b c a)]}␤»
+
+=head2 method default
+
+    method default(Hash:D:)
+
+Returns the default value of the invocant, i.e. the value which is returned when
+a non existing key is used to access an element in the C<Hash>. Unless the
+C<Hash> is declared as having a default value by using the
+L<is default|/type/Variable#trait_is_default> trait the method returns the type object
+C<(Any)>.
+
+    my %h1 = 'apples' => 3, 'oranges' => 7;
+    say %h1.default;                                       # OUTPUT: «(Any)␤»
+    say %h1{'bananas'};                                    # OUTPUT: «(Any)␤»
+
+    my %h2 is default(1) = 'apples' => 3, 'oranges' => 7;
+    say %h2.default;                                       # OUTPUT: «1␤»
+    say %h2{'apples'} + %h2{'bananas'};                    # OUTPUT: «4␤»
+
+=head2 method keyof
+
+    method keyof()
+
+Returns the type constraint for the keys of the invocant. For
+normal hashes the method returns the coercion type C<(Str(Any))>
+while for L<non-string keys|/language/hashmap#Non-string_keys_(object_hash)>
+hashes the type used in the declaration of the C<Hash> is returned.
+
+    my %h1 = 'apples' => 3, 'oranges' => 7;  # (no key type specified)
+    say %h1.keyof;                           # OUTPUT: «(Str(Any))␤»
+
+    my %h2{Str} = 'oranges' => 7;            # (keys must be of type Str)
+    say %h2.keyof;                           # OUTPUT: «(Str)␤»
+    %h2{3} = 'apples';                       # throws exception
+    CATCH { default { put .^name, ': ', .Str } };
+    # OUTPUT: «X::TypeCheck::Binding: Type check failed in binding to key; expected Str but got Int (3)␤»
+
+    my %h3{Int};                             # (this time, keys must be of type Int)
+    %h3{42} = 4096;
+    say %h3.keyof;                           # OUTPUT: «(Int)␤»
+
+=head2 method of
+
+    method of(Hash:D:)
+
+Returns the type constraint for the values of the invocant. By default,
+i.e., if no type constraint is given during declaration, the method
+returns C<(Mu)>.
+
+    my %h1 = 'apples' => 3, 'oranges' => 7;  # (no type constraint specified)
+    say %h1.of;                              # OUTPUT: «(Mu)␤»
+
+    my Int %h2 = 'oranges' => 7;             # (values must be of type Int)
+    say %h2.of;                              # OUTPUT: «(Int)␤»
+
+=head2 routine dynamic
+
+    method dynamic(--> Bool:D)
+
+Returns C<True> if the invocant has been declared with the
+L<is dynamic|/routine/is dynamic> trait.
+
+    my %a;
+    say %a.dynamic;                          # OUTPUT: «False␤»
+
+    my %b is dynamic;
+    say %b.dynamic;                          # OUTPUT: «True␤»
+
+If you declare a variable with the C<*> twigil C<is dynamic> is implied.
+
+    my %*b;
+    say %*b.dynamic;                         # OUTPUT: «True␤»
+
+Note that in the L<C<Scalar>|/type/Scalar> case you have to use the C<VAR> method
+in order to get correct information.
+
+    my $s is dynamic = %('apples' => 5);
+    say $s.dynamic;                   # OUTPUT: «False␤»  (wrong, don't do this)
+    say $s.VAR.dynamic;               # OUTPUT: «True␤»   (correct approach)
+
+=head1 Subscript Adverbs
+
+Some methods are implemented as adverbs on subscripts
+(consult the L<operators|/language/operators#postcircumfix_{_}> documentation
+for more information).
+
+=head2 C<:exists>
+
+The adverb C<:exists> returns C<Bool::True> if a key exists in the Hash. If more
+than one key is supplied it returns a L<C<List>|/type/List> of L<C<Bool>|/type/Bool>.
+
+    my %h = a => 1, b => 2;
+    say %h<a>:exists;   # OUTPUT: «True␤»
+    say %h<a b>:exists; # OUTPUT: «(True True)␤»
+
+=head2 C<:delete>
+
+Use C<:delete> to remove a L<C<Pair>|/type/Pair> from the C<Hash>.  In addition, the value
+is always returned but the removal only happens if delete is true.
+
+    my %h = a => 1;
+    say %h;         # OUTPUT: «{a => 1}␤»
+    say %h.elems;   # OUTPUT: «1␤»
+
+    %h<a>:delete;
+    say %h;         # OUTPUT: «{}␤»
+    say %h.elems;   # OUTPUT: «0␤»
+
+=head2 C<:p>
+
+The adverb C<:p> returns a L<C<Pair>|/type/Pair> or a List of L<C<Pair>|/type/Pair> instead of just the
+value.
+
+    my %h = a => 1, b => 2;
+    say %h<a>:p;    # OUTPUT: «a => 1␤»
+    say %h<a b>:p;  # OUTPUT: «(a => 1 b=> 2)␤»
+
+=head2 C<:v> and C<:k>
+
+The adverbs C<:v> and C<:k> return the key or value or a list thereof.
+
+    my %h = a => 1, b => 2;
+    say %h<a>:k;    # OUTPUT: «a␤»
+    say %h<a b>:k;  # OUTPUT: «(a b)␤»
+
+The adverb C<:kv> returns a list of keys and values.
+
+    my %h = a => 1, b => 2, c => 3;
+    say %h<a c>:kv;  # OUTPUT: «(a 1 c 3)␤»
+
+You can also use the adverbs without knowing anything about the hash by using
+empty angle brackets in which case all the keys and values will be listed:
+
+    my %h1 = a => 1;
+    my %h2 = a => 1, b => 2;
+    say %h1<>:k; # OUTPUT: «(a)␤»
+    say %h1<>:v; # OUTPUT: «(1)␤»
+    say %h2<>:k; # OUTPUT: «(a b)␤»
+    say %h2<>:v; # OUTPUT: «(1 2)␤»
+
+=end pod

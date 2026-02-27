@@ -1,0 +1,333 @@
+=begin pod :kind("Type") :subkind("role") :category("basic")
+
+=TITLE role Dateish
+
+=SUBTITLE Object that can be treated as a date
+
+    role Dateish { ... }
+
+Both L<C<Date>|/type/Date> and L<C<DateTime>|/type/DateTime> support accessing of the
+year, month and day-of-month represented in the object, as well as related
+functionality such as calculating the day of the week.
+
+=head1 Methods
+
+=head2 method year
+
+    method year(Date:D: --> Int:D)
+
+Returns the year of the date.
+
+    say Date.new('2015-12-31').year;                                  # OUTPUT: «2015␤»
+    say DateTime.new(date => Date.new('2015-12-24'), hour => 1).year; # OUTPUT: «2015␤»
+
+=head2 method month
+
+    method month(Date:D: --> Int:D)
+
+Returns the month of the date (1..12).
+
+    say Date.new('2015-12-31').month;                                  # OUTPUT: «12␤»
+    say DateTime.new(date => Date.new('2015-12-24'), hour => 1).month; # OUTPUT: «12␤»
+
+=head2 method day
+
+    method day(Date:D: --> Int:D)
+
+Returns the day of the month of the date (1..31).
+
+    say Date.new('2015-12-31').day;                                  # OUTPUT: «31␤»
+    say DateTime.new(date => Date.new('2015-12-24'), hour => 1).day; # OUTPUT: «24␤»
+
+=head2 method formatter
+
+    method formatter(Dateish:D:)
+
+Returns the formatting function which is used for conversion to
+L<C<Str>|/type/Str>. If none was provided at object construction, a
+default formatter is used.  In that case the method will return a
+Callable type object.
+
+The formatting function is called by
+L<DateTime method Str|/type/DateTime#method_Str> with the
+invocant as its only argument.
+
+    my $dt = Date.new('2015-12-31');  # (no formatter specified)
+    say $dt.formatter.^name;          # OUTPUT: «Callable␤»
+    my $us-format = sub ($self) { sprintf "%02d/%02d/%04d", .month, .day, .year given $self; };
+    $dt = Date.new('2015-12-31', formatter => $us-format);
+    say $dt.formatter.^name;           # OUTPUT: «Sub␤»
+    say $dt;                          # OUTPUT: «12/31/2015␤»
+
+=head2 method is-leap-year
+
+    method is-leap-year(Dateish:D: --> Bool:D)
+
+Returns C<True> if the year of the Dateish object is a leap year.
+
+    say DateTime.new(:year<2016>).is-leap-year; # OUTPUT: «True␤»
+    say Date.new("1900-01-01").is-leap-year;    # OUTPUT: «False␤»
+
+=head2 method day-of-month
+
+    method day-of-month(Date:D: --> Int:D)
+
+Returns the day of the month of the date (1..31). Synonymous to the C<day>
+method.
+
+    say Date.new('2015-12-31').day-of-month;                                  # OUTPUT: «31␤»
+    say DateTime.new(date => Date.new('2015-12-24'), hour => 1).day-of-month; # OUTPUT: «24␤»
+
+=head2 method day-of-week
+
+    method day-of-week(Date:D: --> Int:D)
+
+Returns the day of the week, where 1 is Monday, 2 is Tuesday and Sunday is 7.
+
+    say Date.new('2015-12-31').day-of-week;                                  # OUTPUT: «4␤»
+    say DateTime.new(date => Date.new('2015-12-24'), hour => 1).day-of-week; # OUTPUT: «4␤»
+
+=head2 method day-of-year
+
+    method day-of-year(Date:D: --> Int:D)
+
+Returns the day of the year (1..366).
+
+    say Date.new('2015-12-31').day-of-year;                                  # OUTPUT: «365␤»
+    say DateTime.new(date => Date.new('2015-03-24'), hour => 1).day-of-year; # OUTPUT: «83␤»
+
+=head2 method days-in-year
+
+    method days-in-year(Dateish:D: --> Int:D)
+
+Returns the number of days in the year represented by the Dateish object:
+
+    say Date.new("2016-01-02").days-in-year;               # OUTPUT: «366␤»
+    say DateTime.new(:year<2100>, :month<2>).days-in-year; # OUTPUT: «365␤»
+
+Available as of the 2022.12 release of the Rakudo compiler.
+
+=head2 method days-in-month
+
+    method days-in-month(Dateish:D: --> Int:D)
+
+Returns the number of days in the month represented by the Dateish object:
+
+    say Date.new("2016-01-02").days-in-month;                # OUTPUT: «31␤»
+    say DateTime.new(:year<10000>, :month<2>).days-in-month; # OUTPUT: «29␤»
+
+=head2 method week
+
+    method week()
+
+Returns a list of two integers: the year, and the week number. This is because
+at the start or end of a year, the week may actually belong to the other year.
+
+    my ($year, $week) = Date.new("2014-12-31").week;
+    say $year;                       # OUTPUT: «2015␤»
+    say $week;                       # OUTPUT: «1␤»
+    say Date.new('2015-01-31').week; # OUTPUT: «(2015 5)␤»
+
+=head2 method week-number
+
+    method week-number(Date:D: --> Int:D)
+
+Returns the week number (1..53) of the date specified by the invocant. The first
+week of the year is defined by ISO as the one which contains the fourth day of
+January. Thus, dates early in January often end up in the last week of the prior
+year, and similarly, the final few days of December may be placed in the first
+week of the next year.
+
+    say Date.new("2014-12-31").week-number;   # OUTPUT: «1␤»  (first week of 2015)
+    say Date.new("2016-01-02").week-number;   # OUTPUT: «53␤» (last week of 2015)
+
+=head2 method week-year
+
+    method week-year(Date:D: --> Int:D)
+
+Returns the week year of the date specified by the invocant. Normally C<week-year>
+is equal to C<Date.year>. Note however that dates early in January often end up in
+the last week of the prior year, and similarly, the final few days of December
+may be placed in the first week of the next year.
+
+    say Date.new("2015-11-15").week-year;   # OUTPUT: «2015␤»
+    say Date.new("2014-12-31").week-year;   # OUTPUT: «2015␤» (date belongs to the first week of 2015)
+    say Date.new("2016-01-02").week-year;   # OUTPUT: «2015␤» (date belongs to the last week of 2015)
+
+=head2 method weekday-of-month
+
+    method weekday-of-month(Date:D: --> Int:D)
+
+Returns a number (1..5) indicating the number of times a particular day-of-week
+has occurred so far during that month, the day itself included.
+
+    say Date.new("2003-06-09").weekday-of-month;  # OUTPUT: «2␤»  (second Monday of the month)
+
+=head2 method yyyy-mm-dd
+
+=for code :ok-test<dd>
+method yyyy-mm-dd(str $sep = "-" --> Str:D)
+
+Returns the date in C<YYYY-MM-DD> format (L<ISO 8601|https://en.wikipedia.org/wiki/ISO_8601>).
+The optional positional argument C<$sep>, which defaults to C«-», is a one-character
+separator placed between the different parts of the date.
+
+=begin code :ok-test<dd>
+say Date.new("2015-11-15").yyyy-mm-dd;   # OUTPUT: «2015-11-15␤»
+say DateTime.new(1470853583).yyyy-mm-dd; # OUTPUT: «2016-08-10␤»
+say Date.today.yyyy-mm-dd("/");          # OUTPUT: «2020/03/14␤»
+=end code
+
+=head2 method mm-dd-yyyy
+
+=for code :ok-test<dd>
+method mm-dd-yyyy(str $sep = "-" --> Str:D)
+
+Returns the date in C<MM-DD-YYYY> format (L<Gregorian, month-day-year (MDY)|https://en.wikipedia.org/wiki/Calendar_date>).
+The optional positional argument C<$sep>, which defaults to C«-», is a one-character
+separator placed between the different parts of the date.
+
+=begin code :ok-test<dd>
+say Date.new("2015-11-15").mm-dd-yyyy;   # OUTPUT: «11-15-2015␤»
+say DateTime.new(1470853583).mm-dd-yyyy; # OUTPUT: «08-10-2016␤»
+say Date.today.mm-dd-yyyy("/");          # OUTPUT: «03/14/2020␤»
+=end code
+
+=head2 method dd-mm-yyyy
+
+=for code :ok-test<dd>
+method dd-mm-yyyy(str $sep = "-" --> Str:D)
+
+Returns the date in C<DD-MM-YYYY> format (L<Gregorian, day-month-year (DMY)|https://en.wikipedia.org/wiki/Calendar_date>).
+The optional positional argument C<$sep>, which defaults to C«-», is a one-character
+separator placed between the different parts of the date.
+
+=begin code :ok-test<dd>
+say Date.new("2015-11-15").dd-mm-yyyy;    # OUTPUT: «15-11-2015␤»
+say DateTime.new(1470853583).dd-mm-yyyy;  # OUTPUT: «10-08-2016␤»
+say Date.today.dd-mm-yyyy("/");           # OUTPUT: «14/03/2020␤»
+=end code
+
+=head2 method daycount
+
+    method daycount(Dateish:D: --> Int:D)
+
+Returns the number of days from the epoch Nov. 17, 1858, to the
+day of the invocant. The daycount returned by this method is the
+integral part of the L<Modified Julian Day|https://en.wikipedia.org/wiki/Julian_day> (MJD)
+which is used routinely by astronomers, geodesists, scientists,
+and others. The MJD convention is designed to facilitate simplified
+chronological calculations. The fractional part of the MJD
+consists of the hours, minutes, and seconds of the using DateTime
+object converted to the equivalent fraction of 24 hours.
+Those two values added define the MJD of that instant.
+
+
+    say Date.new('1995-09-27').daycount;    # OUTPUT: «49987␤»
+
+=head2 method IO
+
+    method IO(Dateish:D: --> IO::Path:D)
+
+Returns an L<C<IO::Path>|/type/IO::Path> object representing the stringified
+value of the Dateish object:
+
+    Date.today.IO.say;   # OUTPUT: «"2016-10-03".IO␤»
+    DateTime.now.IO.say; # OUTPUT: «"2016-10-03T11:14:47.977994-04:00".IO␤»
+
+B<PORTABILITY NOTE:> some operating systems (e.g. Windows) do not permit
+colons (C<:>) in filenames, which would be present in L<C<IO::Path>|/type/IO::Path> created from a
+L<C<DateTime>|/type/DateTime> object.
+
+=head2 method earlier
+
+    multi method earlier(Dateish:D: *%unit)
+    multi method earlier(Dateish:D: @pairs)
+
+Returns an object based on the current one, but with a date delta
+towards the past applied. Unless the given unit is C<second> or C<seconds>, the
+given value will be converted to an L<C<Int>|/type/Int>. See L<C<.later>|/type/Dateish#method_later> for
+usage. It will generally be used through classes that implement this role,
+L<C<Date>|/type/Date> or L<C<DateTime>|/type/DateTime>
+
+    my $d = Date.new('2015-02-27');
+    say $d.earlier(month => 5).earlier(:2days);  # OUTPUT: «2014-09-25␤»
+    my $d = DateTime.new(date => Date.new('2015-02-27'));
+    say $d.earlier(month => 1).earlier(:2days);  # OUTPUT: «2015-01-25T00:00:00Z␤»
+
+If the resultant time has value C<60> for seconds, yet no leap second
+actually exists for that time, seconds will be set to C<59>:
+
+    say DateTime.new('2008-12-31T23:59:60Z').earlier: :1day;
+    # OUTPUT: «2008-12-30T23:59:59Z␤»
+
+Negative offsets are allowed, though L<later|/routine/later> is more idiomatic for that.
+
+If you need to use more than one unit, you will need to build them into a
+L<C<List>|/type/List> of L<C<Pair>|/type/Pair>s to use the second form of the method:
+
+=for code
+say Date.new('2021-03-31').earlier(  ( year => 3, month => 2, day => 8 ) ); # OUTPUT: «2018-01-23␤»
+
+This feature was introduced in release 2021.02 of the Rakudo compiler.
+
+=head2 method later
+
+    multi method later(DateTime:D: *%unit)
+
+Returns an object based on the current one (belonging to any class that mixes
+this role in), but with a
+time delta
+applied. The time delta can be passed as a named argument where the argument
+name is the unit.
+
+Unless the given unit is C<second> or C<seconds>, the given value will be
+converted to an L<C<Int>|/type/Int>.
+
+Allowed units are C<second>, C<seconds>, C<minute>, C<minutes>, C<hour>,
+C<hours>, C<day>, C<days>, C<week>, C<weeks>, C<month>, C<months>, C<year>,
+C<years>. Please note that the plural forms can only be used with
+the C<later> and C<earlier> methods.
+
+The C<:2nd> form of colonpairs can be used as a compact and self-documenting
+way of specifying the delta:
+
+    say DateTime.new('2015-12-24T12:23:00Z').later(:2years);
+    # OUTPUT: «2017-12-24T12:23:00Z␤»
+
+Since addition of several different time units is not commutative, only one
+unit may be passed (and the first multi will be used).
+
+    my $d = DateTime.new(date => Date.new('2015-02-27'));
+    say $d.later(month => 1).later(:2days);  # OUTPUT: «2015-03-29T00:00:00Z␤»
+    say $d.later(days => 2).later(:1month);  # OUTPUT: «2015-04-01T00:00:00Z␤»
+    say $d.later(days => 2).later(:month);   # same, as +True === 1
+
+You can also (since release 2021.02 of the Rakudo compiler) pass several units
+at the same time, but you will have to join them in a L<C<List>|/type/List> to activate the
+second form:
+
+=for code
+say DateTime.new(date => Date.new('2015-02-27')).later( (:1month, :2days) )
+# OUTPUT: «2015-03-29T00:00:00Z␤»
+
+If the resultant time has value C<60> for seconds, yet no leap second
+actually exists for that time, seconds will be set to C<59>:
+
+    say DateTime.new('2008-12-31T23:59:60Z').later: :1day;
+    # OUTPUT: «2009-01-01T23:59:59Z␤»
+
+Negative offsets are allowed, though L<earlier|/routine/earlier> is more
+idiomatic for that.
+
+Objects of type L<C<Date>|/type/Date> will behave in the same way:
+
+=begin code
+my $d = Date.new('2015-02-27');
+say $d.later(month => 1).later(:2days);  # OUTPUT: «2015-03-29␤»
+say $d.later(days => 2).later(:1month);  # OUTPUT: «2015-04-01␤»
+say $d.later(days => 2).later(:month);   # same, as +True === 1
+=end code
+
+
+=end pod

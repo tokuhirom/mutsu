@@ -1,0 +1,27 @@
+#!/usr/bin/env raku
+
+use Test;
+use Doc::TypeGraph;
+
+use Telemetry; # pull in optional classes we can test
+
+my $t = Doc::TypeGraph.new-from-file('type-graph.txt');
+
+for $t.sorted -> $type {
+    next if $type.name.index('Metamodel').defined || $type.name eq 'PROCESS';
+    next if $type.packagetype eq 'role'|'module';
+    # these types does not support mro => whitelisted
+    next if $type.name eq any(<Failure MOP Routine::WrapHandle Encoding UInt>);
+    try {
+        my $expected = ~$type.mro;
+        my $got = ~::($type).^mro.map: *.^name;
+        is $got, $expected, $type;
+        CATCH {
+            default {
+                flunk "Trouble with $type: $_";
+            }
+        }
+    }
+}
+
+done-testing;

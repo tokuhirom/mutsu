@@ -1,0 +1,1367 @@
+=encoding utf8
+
+=head1 TITLE
+
+DRAFT: Synopsis 32: Setting Library - Exceptions
+
+=head1 VERSION
+
+    Created: 26 Feb 2009
+
+    Last Modified: 28 Dec 2013
+    Version: 27
+
+The document is a draft.
+
+=head1 Roles and Classes
+
+All built-in exceptions save for the base class C<Exception> live in the
+C<X::> namespace.
+
+Generally error classes are supposed to provide the objects involved with the
+error, and only convert them to a string form when producing the error
+message. This does not apply to compile errors that involve types which have
+not been fully composed yet; in that case just the name of the incomplete
+type is included in the exception object.
+
+Names of error classes should describe the problem in some way, or at least
+mention the operation that went wrong. If an error can only occur in relation
+to a certain type, the error types should be under C<X::ThatType::>.
+
+=head2 Exception
+
+All built-in exceptions inherit from C<Exception>, which provides some basic
+behavior: storing a backtrace and providing an interface for the backtrace
+printer.
+
+    class Exception {
+        has $.backtrace;
+        method message() { ... } # an actual stub
+        method gist { "$.message\n$.backtrace" }
+        method throw() { }
+        method fail()  { }
+        method resumable() { }
+        method resume() { }
+    }
+
+All direct subclasses are supposed to override method C<message>.
+
+=head2 X::OS
+
+    role X::OS { has $.os-error }
+
+for all errors that are triggered by some error reported by the operating
+system (failed IO, system calls, fork, memory allocation).
+
+=head2 X::IO
+
+    role X::IO does X::OS { }
+
+For IO related errors
+
+
+=head3 X::IO::Rename
+
+Thrown when a file rename fails. TODO: maybe unify with X::IO::Copy?
+
+    my class X::IO::Rename does X::IO is Exception {
+        has $.from;
+        has $.to;
+        method message() {
+            "Failed to rename '$.from' to '$.to': $.os-error"
+        }
+    }
+
+=head3 X::IO::Copy
+
+Thrown when a file copy operation fails
+
+    my class X::IO::Copy does X::IO is Exception {
+        has $.from;
+        has $.to;
+        method message() {
+            "Failed to copy '$.from' to '$.to': $.os-error"
+        }
+    }
+
+=head3 X::IO::Mkdir
+
+Thrown when an C<mkdir> operation fails.
+
+    my class X::IO::Mkdir does X::IO is Exception {
+        has $.path;
+        has $.mode;
+        method message() {
+            "Failed to create directory '$.path' with mode '0o{$.mode.fmt("%03o")}': $.os-error"
+        }
+    }
+
+=head3 X::IO::Chdir
+
+Thrown when a C<chdir> fails
+
+    my class X::IO::Chdir does X::IO is Exception {
+        has $.path;
+        method message() {
+            "Failed to change the working directory to '$.path': $.os-error"
+        }
+    }
+
+=head3 X::IO::Dir
+
+Thrown when a C<dir()> fails
+
+    my class X::IO::Dir does X::IO is Exception {
+        has $.path;
+        method message() {
+            "Failed to get the directory contents of '$.path': $.os-error"
+        }
+    }
+
+=head3 X::IO::Cwd
+
+Thrown when unable to determine the current directory.
+
+    my class X::IO::Cwd does X::IO is Exception {
+        method message() {
+            "Failed to get the working directory: $.os-error"
+        }
+    }
+
+=head3 X::IO::Rmdir
+
+Thrown when C<rmdir> fails.
+
+    my class X::IO::Rmdir does X::IO is Exception {
+        has $.path;
+        method message() {
+            "Failed to remove the directory '$.path': $.os-error"
+        }
+    }
+
+=head3 X::IO::Unlink
+
+Thrown when C<unlink> fails.
+
+    my class X::IO::Unlink does X::IO is Exception {
+        has $.path;
+        method message() {
+            "Failed to remove the file '$.path': $.os-error"
+        }
+    }
+
+=head3 X::IO::Chmod
+
+Thrown when C<chmod> fails.
+
+    my class X::IO::Chmod does X::IO is Exception {
+        has $.path;
+        has $.mode;
+        method message() {
+            "Failed to set the mode of '$.path' to '0o{$.mode.fmt("%03o")}': $.os-error"
+        }
+    }
+
+=head2 X::NYI
+
+    class X::NYI is Exception {
+        has $.feature;
+        method message() { "$.feature is not yet implemented. Sorry. " }
+    }
+
+For errors that stem from incomplete implementations of the Perl 6 language.
+A full Perl 6.0 implementation should not throw such errors.
+
+=head2 X::AdHoc
+
+    class X::AdHoc is Exception {
+        has $.payload handles <Str Numeric>;
+        method message() { $.payload.Str }
+    }
+
+If you call C<&die> with non-C<Exception> arguments, what the user finds
+in his C<$!> variables is an object of type C<X::AdHoc>.
+
+So C<&die> could be written as
+
+    multi sub die(Exception $e) is hidden-from-backtrace {
+        $e.throw
+    }
+    multi sub die($payload) is hidden-from-backtrace {
+        X::AdHoc.new(:$payload).throw;
+    }
+
+
+=head2 Compile-time errors
+
+=head3 X::Comp
+
+    role X::Comp {
+        has $.filename;
+        has $.line;
+        has $.column;
+    }
+
+For errors that arise from compiling code. Note that in this case the
+backtrace shows how the
+compilation was triggered (through C<use SomeModule;>, C<EVAL>s etc.).
+The actual location of the error does not appear in the backtrace, but
+rather in the attributes defined in this role.
+
+For exceptions that can occur both at run time and at compile time, the base
+exception type should not do C<X::Comp>, but it should be mixed in into
+the exception object when thrown at compile time.
+
+=head3 X::Placeholder::Block
+
+Thrown when a placeholder variable is used in a block that does not allow a
+signature (for example C<class A { $^foo }>.
+
+    my class X::Placeholder::Block does X::Comp {
+        has $.placeholder;
+        method message() {
+            "Placeholder variable $.placeholder may not be used here because the surrounding block takes no signature";
+        }
+    }
+
+=head3 X::Placeholder::Mainline
+
+Thrown when a placeholder variable is used in the mainline, ie outside of any
+explicit block.
+
+    my class X::Placeholder::Mainline is X::Placeholder::Block {
+        method message() {
+            "Cannot use placeholder parameter $.placeholder in the mainline"
+        }
+    }
+
+=head3 X::Redeclaration
+
+Thrown when a symbol is redeclared
+
+    my class X::Redeclaration does X::Comp {
+        has $.symbol;
+        has $.postfix = '';
+        has $.what    = 'symbol';
+        method message() {
+            "Redeclaration of $.what $.symbol$.postfix";
+        }
+    }
+
+=head3 X::Undeclared
+
+Occurs when a symbol is being referenced that needs to be declared, but isn't.
+
+    my class X::Undeclared does X::Comp {
+        has $.what = 'Variable';
+        has $.symbol;
+        method message() {
+            "$.what $.symbol is not declared";
+        }
+    }
+
+=head3 X::Attribute::Undeclared
+
+Thrown when an undeclared attribute is being referenced.
+
+    my class X::Attribute::Undeclared is X::Undeclared {
+        has $.package-kind;
+        has $.package-name;
+        method message() {
+            "Attribute $.name not declared in $.package-kind $.package-name";
+        }
+    }
+
+=head3 X::Phaser::Multiple
+
+Thrown when multiple phasers of the same type occur in a block, but only one
+is allowed (for example C<CATCH> or C<CONTROL>).
+
+    my class X::Phaser::Multiple does X::Comp {
+        has $.block;
+        method message() { "Only one $.block block is allowed" }
+    }
+
+=head3 X::Parameter::Default
+
+Thrown when a parameter has a default, but isn't allowed to have one, for
+example on mandatory parameters.
+
+    my class X::Parameter::Default does X::Comp {
+        has $.how;
+        has $.parameter;
+        method message() {
+            $.parameter
+                ?? "Cannot put default on $.how parameter $.parameter"
+                !! "Cannot put default on anonymous $.how parameter";
+        }
+    }
+
+
+=head3 X::Parameter::Placeholder
+
+Thrown when the user tries to use a placeholder as a formal parameter.
+(Usually C<:$foo> misspelled as C<$:foo>).
+
+    my class X::Parameter::Placeholder does X::Comp {
+        has $.parameter;
+        has $.right;
+        method message() {
+            "In signature parameter, placeholder variables like $.parameter are illegal\n"
+            ~ "you probably meant a named parameter: '$.right'";
+        }
+    }
+
+=head3 X::Parameter::Twigil
+
+Thrown when an illegal twigil is used in a formal parameter.
+
+    my class X::Parameter::Twigil does X::Comp {
+        has $.parameter;
+        has $.twigil;
+        method message() {
+            "In signature parameter $.parameter, it is illegal to use the $.twigil twigil";
+        }
+    }
+
+=head3 X::Parameter::MultipleTypeConstraints
+
+Thrown for multiple prefix type constraints like C<Int Str $x>.
+
+    my class X::Parameter::MultipleTypeConstraints does X::Comp {
+        has $.parameter;
+        method message() {
+            qq[{"Parameter $.parameter" || 'A parameter'} may only have one prefix type constraint];
+        }
+    }
+
+=head3 X::Parameter::WrongOrder
+
+Thrown when parameters are listed in a signature in the wrong order (for
+example optional before mandatory parameters).
+
+    my class X::Parameter::WrongOrder does X::Comp {
+        has $.misplaced;
+        has $.parameter;
+        has $.after;
+        method message() {
+            "Cannot put $.misplaced parameter $.parameter after $.after parameters";
+        }
+    }
+
+=head3 X::Signature::NameClash
+
+Thrown when multiple named parameters have the same name.
+
+    my class X::Signature::NameClash does X::Comp {
+        has $.name;
+        method message() {
+            "Name $.name used for more than one named parameter";
+        }
+    }
+
+=head3 X::Method::Private::Permission
+
+Thrown when attempting to call a private method outside the current class or
+role without a fitting trust relation.
+
+    my class X::Method::Private::Permission does X::Comp {
+        has $.method;
+        has $.source-package;
+        has $.calling-package;
+        method message() {
+            "Cannot call private method '$.method' on package $.source-package because it does not trust $.calling-package";
+        }
+    }
+
+=head3 X::Method::Private::Unqualified
+
+Thrown when attempting to call a method on something else than C<self> without
+fully qualifying the class.
+
+    my class X::Method::Private::Unqualified does X::Comp {
+        has $.method;
+        method message() {
+            "Private method call to $.method must be fully qualified with the package containing the method";
+        }
+    }
+
+
+=head3 X::Bind::NativeType
+
+Thrown when trying to bind to a natively typed variable
+TODO: inherit from X::Bind?
+
+    my class X::Bind::NativeType does X::Comp {
+        has $.name;
+        method message() {
+            "Cannot bind to natively typed variable '$.name'; use assignment instead'
+        }
+    }
+
+=head3 X::Attribute::Package
+
+Thrown when trying to declare an attribute inside a package which doesn't
+support attributes.
+
+    my class X::Attribute::Package does X::Comp {
+        has $.package-kind;
+        method message() { "A $.package-kind cannot have attributes" }
+    }
+
+=head3 X::Attribute::NoPackage
+
+Thrown when an attribute is declared where it does not make sense (for example
+in the mainline)
+
+    my class X::Attribute::NoPackage does X::Comp {
+        method message() { "You cannot declare an attribute here; maybe you'd like a class or a role?" }
+    }
+
+=head3 X::Value::Dynamic
+
+Thrown when a value must be known at compile time, but is not.
+
+    my class X::Value::Dynamic does X::Comp {
+        has $.what;
+        method message() { "$.what value must be known at compile time" }
+    }
+
+=head3 X::Declaration::Scope
+
+Thrown when a declaration does not harmonize with the declared scope (for
+example C<has sub foo() { }>.
+
+    my class X::Declaration::Scope does X::Comp {
+        has $.scope;
+        has $.declaration;
+        method message() { "Cannot use '$.scope' with $.declaration declaration" }
+    }
+
+=head3 X::Declaration::Scope::Multi
+
+Thrown when a multi is declared with an incompatible scope, for example C<our
+multi sub>.
+
+    my class X::Declaration::Scope::Multi is X::Declaration::Scope {
+        method message() {
+            "Cannot use '$.scope' with individual multi candidates. Please declare an {$.scope}-scoped proto instead";
+        }
+    }
+
+=head3 X::Anon::Multi
+
+Thrown when an anonymous multi is being declared.
+
+    my class X::Anon::Multi does X::Comp {
+        has $.multiness;
+        has $.routine-type = 'routine';
+        method message() { "Cannot put $.multiness on anonymous $.routine-type" }
+    }
+
+=head3 X::Anon::Augment
+
+Thrown when trying to augment an anonymous package.
+
+    my class X::Anon::Augment does X::Comp {
+        has $.package-kind;
+        method message() { "Cannot augment anonymous $.package-kind" }
+    }
+
+=head3 X::Augment::NoSuchType
+
+Thrown when trying to augment a type which doesn't exist.
+
+    my class X::Augment::NoSuchType does X::Comp {
+        has $.package-kind;
+        has $.package;
+        method message() { "You tried to augment $.package-kind $.package, but it does not exist" }
+    }
+
+=head3 X::Package::Stubbed
+
+Thrown at C<CHECK> time when there are packages stubbed but not later defined.
+
+    my class X::Package::Stubbed does X::Comp {
+        has @.packages;
+        # TODO: suppress display of line number
+        method message() {
+            "The following packages were stubbed but not defined:\n    "
+            ~ @.packages.join("\n    ");
+        }
+    }
+
+=head3 X::Inheritance::Unsupported
+
+Thrown when trying to inherit from a type that does not support inheritance
+(like a package or an enum).
+
+    my class X::Inheritance::Unsupported does X::Comp {
+        # note that this exception is thrown before the child type object
+        # has been composed, so it's useless to carry it around. Use the
+        # name instead.
+        has $.child-typename;
+        has $.parent;
+        method message {
+            $.child-typename ~ ' cannot inherit from ' ~
+            $.parent.^name ~ ' because it is not inheritable';
+        }
+    }
+
+
+=head2 Syntax Errors
+
+Note that the distinction between general compile-time errors and syntax
+errors is somewhat blurry and arbitrary.
+
+=head3 X::Syntax
+
+    role X::Syntax does X::Comp { }
+
+Common role for all syntax errors.
+
+=head3 X::Syntax::Obsolete
+
+Thrown when obsolete (mostly Perl 5) syntax is detected.
+
+    role X::Syntax::Obsolete does X::Syntax {
+        has $.old;
+        has $.replacement; # cannot call it 'new',
+                           # would collide with constructor
+        has $.when = 'in Perl 6';
+        method message() {
+            "Unsupported use of $.old; $.when please use $.replacement";
+        }
+    }
+
+
+=head3 X::Syntax::Name::Null
+
+Thrown when a name component is empty, but shouldn't (for example C<use ::;>).
+
+    my class X::Syntax::Name::Null does X::Syntax {
+        method message() { 'Name component may not be null'; }
+    }
+
+=head3 X::Syntax::UnlessElse
+
+Thrown when an C<unless> clause is followed by an C<else> clause.
+
+    my class X::Syntax::UnlessElse does X::Syntax {
+        method message() { '"unless" does not take "else", please rewrite using "if"' }
+    }
+
+=head3 X::Syntax::Reserved
+
+Thrown when a syntax is used which is reserved for future expansion.
+
+    my class X::Syntax::Reserved does X::Syntax {
+        has $.reserved;
+        has $.instead = '';
+        method message() { "The $.reserved is reserved$.instead" }
+    }
+
+=head3 X::Syntax::P5
+
+Thrown when some piece of syntax is clearly Perl 5, not Perl 6.
+
+    my class X::Syntax::P5 does X::Syntax {
+        method message() { 'This appears to be Perl 5 code' }
+    }
+
+=head3 X::Syntax::NegatedPair
+
+Thrown when a negated pair has a value, for example C<:!foo($val)>.
+
+    my class X::Syntax::NegatedPair does X::Syntax {
+        has $.key;
+        method message() { "Argument not allowed on negated pair with keys '$.key'" }
+    }
+
+=head3 X::Syntax::Variable::Numeric
+
+Thrown on C<my $0> and the likes.
+
+    my class X::Syntax::Variable::Numeric does X::Syntax {
+        has $.what = 'variable';
+        method message() { "Cannot declare a numeric $.what" }
+    }
+
+=head3 X::Syntax::Variable::Match
+
+Thrown on C<< my $<foo> >> and the likes.
+
+    my class X::Syntax::Variable::Match does X::Syntax {
+        method message() { 'Cannot declare a match variable' }
+    }
+
+=head3 X::Syntax::Variable::Twigil
+
+Thrown on C<my $:foo> and the likes
+
+    my class X::Syntax::Variable::Twigil does X::Syntax {
+        has $.twigil;
+        has $.scope;
+        method message() { "Cannot use $.twigil twigil on $.scope variable" }
+    }
+
+=head3 X::Syntax::Variable::IndirectDeclaration
+
+Thrown on C<my $::($name);> and similar constructs.
+
+    my class X::Syntax::Variable::IndirectDeclaration does X::Syntax {
+        method message() { 'Cannot declare a variable by indirect name (use a hash instead?)' }
+    }
+
+=head3 X::Syntax::Augment::WithoutMonkeyTyping
+
+Thrown when C<augment> is used without C<use MONKEY-TYPING>.
+
+    my class X::Syntax::Augment::WithoutMonkeyTyping does X::Syntax {
+        method message() { "augment not allowed without 'use MONKEY-TYPING'" };
+    }
+
+=head3 X::Syntax::Augment::Role
+
+Thrown when trying to augment a role.
+
+    my class X::Syntax::Augment::Role does X::Syntax {
+        has $.role-name;
+        method message() { "Cannot augment role $.role-name, since roles are immutable" };
+    }
+
+=head3 X::Syntax::Placeholder
+
+Occurs when a placeholder is used in a block that already has a signature
+attached. TODO: report the placeholder variables.
+
+    my class X::Signature::Placeholder does X::Syntax {
+        method message() {
+            'Placeholder variable cannot override existing signature';
+        }
+    }
+
+=head3 X::Syntax::Comment::Embedded
+
+Thrown when C<#`> is encountered and it is not followed by an opening bracket.
+
+    my class X::Syntax::Comment::Embedded does X::Syntax {
+        method message() { "Opening bracket required for #` comment" }
+    }
+
+=head3 X::Syntax::Pod::BeginWithoutIdentifier
+
+Thrown when C<=begin> is encountered and no identifier comes after it.
+
+    my class X::Syntax::Pod::BeginWithoutIdentifier does X::Syntax does X::Pod {
+        method message() {
+            '=begin must be followed by an identifier; (did you mean "=begin pod"?)'
+        }
+    }
+
+=head3 X::Syntax::Pod::BeginWithoutEnd
+
+Thrown when C<=begin identifier> is parsed without the matching C<=end identifier>.
+
+    my class X::Syntax::Pod::BeginWithoutEnd does X::Syntax does X::Pod {
+        method message() { '=begin without matching =end' }
+    }
+
+=head3 X::Syntax::Confused
+
+The most general syntax error, if no more specific error message can be given.
+
+    my class X::Syntax::Confused does X::Syntax {
+        method message() { 'Confused' }
+    }
+
+=head3 X::Syntax::Malformed
+
+Thrown when a parsed construct is malformed.
+
+    my class X::Syntax::Malformed does X::Syntax {
+        has $.what;
+        method message() { "Malformed $.what" }
+    }
+
+=head3 X::Syntax::Missing
+
+Thrown when the previous piece of syntax requires the existence of another
+piece of syntax, and that second piece is missing.
+
+    my class X::Syntax::Missing does X::Syntax {
+        has $.what;
+        method message() { "Missing $.what" }
+    }
+
+=head3 X::Syntax::SigilWithoutName
+
+Thrown when a sigil without a following name is encountered in a place where
+this is not allowed.
+
+    my class X::Syntax::SigilWithoutName does X::Syntax {
+        method message() { 'Non-declarative sigil is missing its name' }
+    }
+
+=head3 X::Syntax::Self::WithoutObject
+
+Thrown when C<self> is referenced in a place where no invocant is available.
+
+    my class X::Syntax::Self::WithoutObject does X::Syntax {
+        method message() { "'self' used where no object is available" }
+    }
+
+=head3 X::Syntax::VirtualCall
+
+Thrown when a C<$.foo> style virtual call appears before an object is fully
+constructed, for example C<has $.a = $.b;>.
+
+    my class X::Syntax::VirtualCall does X::Syntax {
+        has $.call;
+        method message() { "Virtual call $.call may not be used on partially constructed objects" }
+    }
+
+=head3 X::Syntax::NoSelf
+
+Thrown when C<$.foo> style calls are used where no invocant is available.
+
+    my class X::Syntax::NoSelf does X::Syntax {
+        has $.variable;
+        method message() { "Variable $.variable used where no 'self' is available" }
+    }
+
+=head3 X::Syntax::Number::RadixOutOfRange
+
+Thrown when the radix of a radix number is larger not allowed, like C<< :1<1> >>
+or C<< :42<ouch> >>.
+
+    my class X::Syntax::Number::RadixOutOfRange does X::Syntax {
+        has $.radix;
+        method message() { "Radix $.radix out of range (allowed: 2..36)" }
+    }
+
+=head3 X::Syntax::Regex::Adverb
+
+Thrown when an unrecognized or illegal regex adverb is encountered (for
+example C<rx:g/a/>).
+
+    my class X::Syntax::Regex::Adverb does X::Syntax {
+        has $.adverb;
+        has $.construct;
+        method message() { "Adverb $.adverb not allowed on $.construct" }
+    }
+
+=head3 X::Syntax::Regex::SolitaryQuantifier
+
+Thrown when a stand alone quantifier in a regex is encountered (for
+example C</ * />).
+
+    my class X::Syntax::Regex::SolitaryQuantifier does X::Syntax {
+        method message { 'Quantifier quantifies nothing' }
+    }
+
+=head3 X::Syntax::Term::MissingInitializer
+
+Thrown when a backslash-variable is declared without initialization assignment.
+
+    my class X::Syntax::Term::MissingInitializer does X::Syntax {
+        method message { "Term definition requires an initializer" }
+    }
+
+=head3 X::Syntax::AddCategorial::MissingSeparator
+
+Thrown when a circumfix operator is defined without separator between opening and closing terminators.
+
+    my class X::Syntax::AddCategorial::MissingSeparator does X::Syntax {
+        has $.opname;
+        method message { "Unable to identify both starter and stopper from $.opname\nPerhaps you forgot to separate them with whitespace?" }
+    }
+
+=head3 X::Syntax::Signature::InvocantMarker
+
+Thrown when the invocant in a signature is anywhere else than after the
+first parameter.
+
+    my class X::Syntax::Signature::InvocantMarker does X::Syntax {
+        method message() {
+            "Can only use : as invocant marker in a signature after the first parameter"
+        }
+    }
+
+=head3 X::Syntax::Extension::Category
+
+Thrown when a subroutine of name C<< category:<symbol>() >> is encountered,
+and the category is not known.
+
+    my class X::Syntax::Extension::Category does X::Syntax {
+        has $.category;
+        method message() {
+            "Cannot add tokens of category '$.category'";
+        }
+    }
+
+=head3 X::Syntax::InfixInTermPosition
+
+Thrown when the parser expects a term, but finds an infix operator.
+
+    my class X::Syntax::InfixInTermPosition does X::Syntax {
+        has $.infix;
+        method message() {
+            "Preceding context expects a term, but found infix $.infix instead";
+        }
+    }
+
+=head2 X::Pod
+
+    role X::Pod { }
+
+Common role for all Pod-related errors.
+
+=head2 Dispatch errors
+
+=head3 X::Method::NotFound
+
+Thrown when the user tries to call a method that isn't there, for example
+C<1.foo>.
+
+TODO: should hold the actual invocation, not the type name. Currently that's
+due to a limit in Rakudo and Parrot.
+
+    my class X::Method::NotFound is Exception {
+        has $.method;
+        has $.typename;
+        has Bool $.private = False;
+        method message() {
+            $.private
+                ?? "No such private method '$.method' for invocant of type '$.typename'"
+                !! "No such method '$.method' for invocant of type '$.typename'";
+        }
+    }
+
+=head3 X::Method::InvalidQualifier
+
+Thrown when a method is call in the form C<$invocant.TheClass::method> if
+<$invocant> does not conform to C<TheClass>
+
+    my class X::Method::InvalidQualifier is Exception {
+        has $.method;
+        has $.invocant;
+        has $.qualifier-type;
+        method message() {
+            "Cannot dispatch to method $.method on {$.qualifier-type.^name} "
+            ~ "because it is not inherited or done by {$.invocant.^name}";
+        }
+    }
+
+=head2 X::OutOfRange
+
+General error when something (for example an array index) is out of an allowed
+range.
+
+    my class X::OutOfRange is Exception {
+        has $.what = 'Argument';
+        has $.got = '<unknown>';
+        has $.range = '<unknown>';
+        has $.comment;
+        method message() {
+            $.comment.defined
+            ?? "$.what out of range. Is: $.got, should be in $.range.gist(); $.comment"
+            !! "$.what out of range. Is: $.got, should be in $.range.gist()"
+        }
+    }
+
+=head2 X::Buf::AsStr
+
+Thrown when a C<Buf> object is used as string.
+
+    my class X::Buf::AsStr is Exception {
+        has $.method;
+        method message() {
+            "Cannot use a Buf as a string, but you called the $.method method on it";
+        }
+    }
+
+=head2 X::Buf::Pack
+
+Thrown when an unknown template/directive is encountered by C<pack> or C<unpack>.
+
+    my class X::Buf::Pack is Exception {
+        has $.directive;
+        method message() {
+            "Unrecognized directive '$.directive'";
+        }
+    }
+
+=head2 X::Buf::Pack::NonASCII
+
+Thrown when the C<A> template/directive comes across a non-ASCII character.
+
+    my class X::Buf::Pack::NonASCII is Exception {
+        has $.char;
+        method message() {
+            "non-ASCII character '$.char' while processing an 'A' template in pack";
+        }
+    }
+
+=head2 X::Bind
+
+Thrown when trying to bind to something which isn't a valid target for
+binding (except for some more special cases listed below).
+
+    my class X::Bind is Exception {
+        has $.target;
+        method message() {
+            $.target.defined
+                ?? "Cannot bind to $.target"
+                !! 'Cannot use bind operator with this left-hand side'
+        }
+    }
+
+=head2 X::Bind::Slice
+
+Thrown when trying to bind to a slice.
+TODO: inherit from X::Bind?
+
+    my class X::Bind::Slice is Exception  {
+        has $.type;
+        method message() {
+            "Cannot bind to {$.type.^name} slice";
+        }
+    }
+
+=head2 X::Bind::ZenSlice
+
+Thrown when trying to bind to a Zen slice, eg C<@a[] := (1, 2)>.
+
+    my class X::Bind::ZenSlice is X::Bind::Slice {
+        method message() {
+            "Cannot bind to {$.type.^name} zen slice";
+        }
+    }
+
+=head2 X::Does::TypeObject
+
+Thrown when trying to use infix C<does> (not the trait) on a type object.
+
+    my class X::Does::TypeObject is Exception {
+        method message() { "Cannot use 'does' operator with a type object." }
+    }
+
+=head2 X::Role::Initialization
+
+Thrown when the C<SomeRole($init)> syntax is used, but SomeRole does not have
+exactly one public attribute.
+
+    my class X::Role::Initialization is Exception {
+        method message() { 'Can only supply an initialization value for a role if it has a single public attribute' }
+    }
+
+=head2 X::Routine::Unwrap
+
+Thrown when C<&routine.unwrap> is called with an argument that is not a wrap
+handle.
+
+    my class X::Routine::Unwrap is Exception {
+        method message() { "Cannot unwrap routine: invalid wrap handle" }
+    }
+
+=head2 X::Constructor::Positional
+
+Thrown from C<Mu.new> when positional arguments are passed to it.
+
+    my class X::Constructor::Positional is Exception {
+        method message() { "Default constructor only takes named arguments" }
+    }
+
+=head2 X::Hash::Store::OddNumber
+
+Thrown when hash assignment finds a trailing hash key with a value.
+
+    my class X::Hash::Store::OddNumber is Exception {
+        method message() { "Odd number of elements found where hash expected" }
+    }
+
+=head2 X::Phaser::PrePost
+
+Thrown when the condition inside a C<PRE> or C<POST> phaser evaluate to a
+false value.
+
+    my class X::Phaser::PrePost is Exception {
+        has $.phaser = 'PRE';
+        has $.condition;
+        method message {
+            my $what = $.phaser eq 'PRE' ?? 'Precondition' !! 'Postcondition';
+            $.condition.defined
+                ?? "$what '$.condition.trim()' failed"
+                !! "$what failed";
+        }
+    }
+
+=head2 X::Str::Numeric
+
+Thrown (or wrapped in a C<Failure>) when a conversion from string to number
+fails.
+
+    my class X::Str::Numeric is Exception {
+        has $.source;
+        has $.pos;
+        has $.reason;
+        method source-indicator {
+            constant marker = chr(0x23CF);
+            join '', "in '",
+                    $.source.substr(0, $.pos),
+                    marker,
+                    $.source.substr($.pos),
+                    "' (indicated by ",
+                    marker,
+                    ")",
+                    ;
+        }
+        method message() {
+            "Cannot convert string to number: $.reason $.source-indicator";
+        }
+    }
+
+=head2 X::Str::Match::x
+
+Thrown when C<Str.match(:$x)> or C<m:x($x)//> is called with an type of C<$x>
+that is now allowed.
+
+    my class X::Str::Match::x is Exception {
+        has $.got;
+        method message() {
+            "in Str.match, got invalid value of type {$.got.^name} for :x, must be Int or Range"
+        }
+    }
+
+=head2 X::Str::Trans::IllegalKey
+
+Thrown when a Pair passed to C<Str.trans> is of a type that the trans method
+cannot work with (regexes and types derived from C<Cool> are fine).
+
+    my class X::Str::Trans::IllegalKey is Exception {
+        has $.key;
+        method message {
+            "in Str.trans, got illegal substitution key of type {$.key.^name} (should be a Regex or Str)"
+        }
+    }
+
+=head2 X::Str::Trans::InvalidArg
+
+Thrown when an argument to C<Str.trans> is not a C<Pair>.
+
+    my class X::Str::Trans::InvalidArg is Exception {
+        has $.got;
+        method message() {
+            "Only Pair objects are allowed as arguments to Str.trans, got {$.got.^name}";
+        }
+    }
+
+=head2 X::Range::InvalidArg
+
+Thrown when an argument to C<Range.new> is a C<Range>.
+
+    my class X::Range::InvalidArg is Exception {
+        has $.got;
+        method message() {
+            "{$.got.^name} objects are not valid endpoints for Ranges";
+        }
+    }
+
+=head2 X::Sequence::Deduction
+
+Exception type when the C<...> sequence operator is being called without an
+explicit closure, and the sequence cannot be deduced.
+
+    my class X::Sequence::Deduction is Exception {
+        method message() { 'Unable to deduce sequence' }
+    }
+
+=head2 X::ControlFlow
+
+Thrown when a control flow construct (such as C<next> or C<redo>) is called
+outside the dynamic scope of an enclosing construct that is supposed to catch
+them.
+
+    my class X::ControlFlow is Exception {
+        has $.illegal;   # something like 'next'
+        has $.enclosing; # ....  outside a loop
+
+        method message() { "$.illegal without $.enclosing" }
+    }
+
+=head2 X::ControlFlow::Return
+
+Thrown when a C<return> is called from outside a routine.
+
+    my class X::ControlFlow::Return is X::ControlFlow {
+        method illegal()   { 'return'  }
+        method enclosing() { 'Routine' }
+        method message()   { 'Attempt to return outside of any Routine' }
+    }
+
+=head2 X::Composition::NotComposable
+
+Thrown when trying to compose a type into a target type, but the composer type
+cannot be used for composition (roles and enums are generally OK).
+
+    my class X::Composition::NotComposable is Exception {
+        has $.target-name;
+        has $.composer;
+        method message() {
+            $.composer.^name ~ " is not composable, so $.target-name cannot compose it";
+        }
+    }
+
+=head2 X::TypeCheck
+
+Thrown when a type check fails.
+
+    my class X::TypeCheck is Exception {
+        has $.operation;
+        has $.got;
+        has $.expected;
+        method message() {
+            "Type check failed in $.operation; expected '{$.expected.^name}' but got '{$.got.^name}'";
+
+        }
+    }
+
+=head2 X::TypeCheck::Binding
+
+Thrown when the type check of a binding operation fails.
+
+TODO: figure out if we actually need that type
+
+    my class X::TypeCheck::Binding is X::TypeCheck {
+        method operation { 'binding' }
+    }
+
+=head2 X::TypeCheck::Return
+
+Thrown when a return type check fails.
+
+TODO: figure out if we actually need that type
+
+    my class X::TypeCheck::Return is X::TypeCheck {
+        method operation { 'returning' }
+        method message() {
+            "Type check failed for return value; expected '{$.expected.^name}' but got '{$.got.^name}'";
+        }
+    }
+
+=head2 X::NoDispatcher
+
+Thrown when a redispatcher like C<nextsame> is called without being in the
+dynamic scope of a call that could possible redispatch.
+
+    my class X::NoDispatcher is Exception {
+        has $.redispatcher;
+        method message() {
+            "$.redispatcher is not in the dynamic scope of a dispatcher";
+        }
+    }
+
+=head2 X::Localizer::NoContainer
+
+Thrown when C<let> or C<temp> or a similar localizer are used on a
+non-container, like C<temp 1 = 2>.
+
+    my class X::Localizer::NoContainer is Exception {
+        has $.localizer;
+        method message() {
+            "Can only use '$.localizer' on a container";
+        }
+    }
+
+=head2 X::Mixin::NotComposable
+
+Thrown when a mixin with infix C<does> or C<but> is done with a composer that
+cannot be used for mixin.
+
+    my class X::Mixin::NotComposable is Exception {
+        has $.target;
+        has $.rolish;
+        method message() {
+            "Cannot mix in non-composable type {$.rolish.^name} into object of type {$.target.^name}";
+        }
+    }
+
+=head2 X::Export::NameClash
+
+Thrown when a symbol is exported twice.
+
+    my class X::Export::NameClash is Exception {
+        has $.symbol;
+        method message() {
+            "A symbol '$.symbol' has already been exported";
+        }
+    }
+
+=head2 X::HyperOp::NonDWIM
+
+Thrown when a non-DWIMy hyperop has lists of lengths that do not match.
+
+    my class X::HyperOp::NonDWIM is Exception {
+        has &.operator;
+        has $.left-elems;
+        has $.right-elems;
+        method message() {
+            "Lists on both side of non-dwimmy hyperop of &.operator.name() are not of the same length\n"
+            ~ "left: $.left-elems elements, right: $.right-elems elements";
+        }
+    }
+
+=head2 X::Set::Coerce
+
+Thrown when C<Set($obj)> is called to coerce an object to a C<Set>, and
+C<Set> does not know how to handle an object of such type.
+
+    my class X::Set::Coerce is Exception {
+        has $.thing;
+        method message {
+            "Cannot coerce object of type {$.thing.^name} to Set. To create a one-element set, pass it to the 'set' function";
+        }
+    }
+
+=head2 X::Temporal
+
+A common exception type for all errors related to C<DateTime> or C<Date>.
+
+    my role X::Temporal is Exception { }
+
+=head2 X::Temporal::InvalidFormat
+
+Thrown when the C<Date> or C<DateTime> constructors get a string in a format
+which is not a valid date format.
+
+    my class X::Temporal::InvalidFormat is X::Temporal {
+        has $.invalid-str;
+        has $.target = 'Date';
+        has $.format;
+        method message() {
+            "Invalid $.target string '$.invalid-str'; use $.format instead";
+        }
+    }
+
+=head2 X::Temporal::Truncation
+
+Thrown when C<DateTime.truncated-to> or C<Date.truncated-to> are called in a
+way that doesn't make sense.
+
+    my class X::Temporal::Truncation is X::Temporal {
+        has $.class = 'DateTime';
+        has $.error;
+        method message() {
+            "in $.class.truncated-to: $.error";
+        }
+    }
+
+=head2 X::Eval::NoSuchLang
+
+Thrown when C<EVAL($str, :$lang)> specifies a language that the compiler does
+not know how to handle.
+
+    my class X::Eval::NoSuchLang is Exception {
+        has $.lang;
+        method message() {
+            "No compiler compiler available for language '$.lang'";
+        }
+    }
+
+=head2 X::Numeric::Real
+
+Occurs when an attempt to coerce a C<Numeric> to a C<Real>, C<Num>, C<Int> or
+C<Rat> fails (due to a number with a nonzero imaginary part, for instance).
+
+    my class X::Numeric::Real is Exception {
+        has $.source;
+        has $.target;
+        has $.reason;
+
+        method message() {
+            "Can not convert $.source to {$.target.^name}: $.reason";
+        }
+    }
+
+=head2 X::StubCode
+
+Occurs when a stub (created via C<!!!>, or C<...> with C<use fatal>) is executed.
+
+    my class X::StubCode is Exception {
+        has $.message = 'Stub code executed';
+    }
+
+=head1 Related types
+
+=head2 Failure
+
+    class Failure is Mu {
+        has Bool $.handled is rw;
+        has $.X;            # the actual exception object
+    }
+
+An unthrown exception, usually produce by C<fail()>.
+
+(Conjecture: S04 implies that all exceptions have a C<$.handled> attribute.
+Do we actually need that?)
+
+=head2 Backtrace
+
+    class Backtrace does Positional[Backtrace::Frame] {
+        method Stringy() { ... }
+        method full() { ... }
+    }
+    class Backtrace::Frame {
+        has $.file;
+        has $.line;
+        has $.code;
+        has $.subname;
+
+        method is-hidden () { ... }
+        method is-routine() { ... }
+        method is-setting() { ... }
+    }
+
+Backtrace information, typically used (but not limited to) in exceptions.
+Stringifies to
+
+    in '$<routine>' at line $<line>:$<filename>
+    in '$<routine>' at line $<line>:$<filename>
+    ...
+
+with two leading spaces on each line.
+
+The default stringification includes blocks and routines from user-space
+code, but from the setting only routines are shown [conjectural]. Routines
+can be hidden from the default backtrace stringification by apply the
+C<hidden-from-backtrace> trait:
+
+    sub my-die(*@msg) is hidden-from-backtrace { }
+
+the C<is-hidden> method in C<Backtrace::Frame> returns C<Bool::True> for routines
+with that trait.
+
+The C<full> method in C<Backtrace> provides a string representation of the
+backtrace that includes all available code objects, including hidden ones.
+
+If a code object does not have a name, C<< <anon> >> is used instead of the
+routine name.
+
+=head1 The Default Exception Printer
+
+In case an exception does not get caught by any C<CATCH> or C<CONTROL> block,
+it is caught by a default handler in the setting.
+
+This handler calls the C<.gist> method on the exception, prints the result,
+and terminates the program. The exit code is determined as
+C<$exception.?exit-code // 1>.
+
+=head1 AUTHORS
+
+    Moritz Lenz <moritz@faui2k.org>
+
+Authors of previous versions of this document:
+
+    Tim Nelson <wayland@wayland.id.au>
+    Larry Wall

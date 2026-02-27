@@ -1,0 +1,20 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE role CX::Succeed
+
+=SUBTITLE Succeed control exception
+
+    class CX::Succeed does X::Control { }
+
+A L<control exception|/language/exceptions#Control_exceptions> thrown when
+C<succeed> is called from a C<when> or C<default> block.
+
+=head1 Methods
+
+=head2 method message
+
+    method message()
+
+Returns C<'<next control exception>'>.
+
+=end pod

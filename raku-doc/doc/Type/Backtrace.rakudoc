@@ -1,0 +1,188 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class Backtrace
+
+=SUBTITLE Snapshot of the dynamic call stack
+
+    class Backtrace {}
+
+A backtrace contains the dynamic call stack, usually leading up to a point where
+an exception was thrown, and is a List of L<C<Backtrace::Frame>|/type/Backtrace::Frame> objects.  Its
+default stringification excludes backtrace frames that are deemed unnecessary or
+confusing; for example routines like C<&die> are hidden by default. Being a
+list, you can also access individual elements.
+
+=for code
+sub zipi { { { die "Something bad happened" }() }() };
+try {
+    zipi;
+}
+if ($!) {
+    say $!.backtrace[*-1].raku;
+}
+
+This will print the last frame in the list, pointing at the line where it's
+happened.
+
+=head1 Methods
+
+=head2 method new
+
+    multi method new()
+    multi method new(Int:D $offset)
+    multi method new(Mu \ex)
+    multi method new(Mu \ex, Int:D $offset)
+    multi method new(List:D $bt)
+    multi method new(List:D $bt, Int:D $offset)
+
+Creates a new backtrace, using its calling location as the origin of the
+backtrace or the C<$offset> that is passed as a parameter. If an object or a
+list (that will already contain a backtrace in list form) is passed, they will
+be used instead of the current code.
+
+    my $backtrace = Backtrace.new;
+
+=head2 method gist
+
+    multi method gist(Backtrace:D:)
+
+Returns string C<"Backtrace(42 frames)"> where the number indicates the number
+of frames available via L<list|/routine/list> method.
+
+=head2 method Str
+
+    multi method Str(Backtrace:D:)
+
+Returns a concise string representation of the backtrace, omitting
+routines marked as C<is hidden-from-backtrace>, and at the discretion of
+the implementation, also some routines from the setting.
+
+    my $backtrace = Backtrace.new;
+    say $backtrace.Str;
+
+=head2 method next-interesting-index
+
+    method next-interesting-index(Backtrace:D: Int $idx = 0, :$named, :$noproto, :$setting)
+
+Returns the index of the next C<interesting> frame, once hidden and other
+settings are taken into account. C<$named> will decide whether to printed only
+those with a name, C<$noproto> will hide C<proto>s, and C<$setting> will hide
+those are considered setting.
+
+=for code
+sub zipi { { { die "Something bad happened" }() }() };
+try zipi;
+say $!.backtrace.next-interesting-index;           # OUTPUT: «2␤»
+say $!.backtrace.next-interesting-index( :named ); #  OUTPUT: «4␤»
+
+=head2  method outer-caller-idx
+
+     method outer-caller-idx(Backtrace:D: Int $startidx)
+
+Returns as a list the index of the frames that called the current one.
+
+=for code
+sub zipi { { { die "Something bad happened" }() }() };
+try zipi;
+say $!.backtrace.outer-caller-idx( 4 ); # OUTPUT: «[6]␤»
+
+=head2 method nice
+
+    method nice(Backtrace:D: :$oneline)
+
+Returns the backtrace as a list of I<interesting> frames. If C<:$oneline> is
+set, will stop after the first frame.
+
+=for code
+sub zipi { { { die "Something bad happened" }() }() };
+try zipi;
+say $!.backtrace.nice( :oneline ) if $!;
+# OUTPUT: «  in sub zipi at /tmp/... line 1␤␤»
+
+
+=head2 method full
+
+    multi method full(Backtrace:D:)
+
+Returns a full string representation of the backtrace, including hidden
+frames, compiler-specific frames, and those from the setting.
+
+    my $backtrace = Backtrace.new;
+    say $backtrace.full;
+
+=head2 method list
+
+    multi method list(Backtrace:D:)
+
+Returns a list of L<C<Backtrace::Frame>|/type/Backtrace::Frame> objects for this backtrace.
+
+=head2 method summary
+
+    method summary(Backtrace:D: --> Str:D)
+
+Returns a summary string representation of the backtrace, filtered
+by C<!.is-hidden && (.is-routine || !.is-setting)>.
+
+This program:
+
+    sub inner { say Backtrace.new.summary }
+    sub outer { inner; }
+    outer;
+
+results in:
+
+=for code :lang<text>
+in method new at SETTING::src/core.c/Backtrace.rakumod line 85
+in sub inner at test.raku line 1
+in sub outer at test.raku line 2
+in block <unit> at test.raku line 3
+
+
+=head2 method concise
+
+    method concise(Backtrace:D:)
+
+Returns a concise string representation of the backtrace, filtered
+by C<!.is-hidden && .is-routine && !.is-setting>.
+
+This program:
+
+    sub inner { say Backtrace.new.concise }
+    sub outer { inner; }
+    outer;
+
+results in:
+
+=for code :lang<text>
+in sub inner at test.raku line 1
+in sub outer at test.raku line 2
+
+=head2 method map
+
+    multi method map(Backtrace:D: &block --> Seq:D)
+
+It invokes C<&block> for each element and gathers the return values in a sequence and returns it.
+
+This program:
+
+    sub inner { Backtrace.new.map({ say "{$_.file}: {$_.line}" }); }
+    sub outer { inner; }
+    outer;
+
+results in:
+
+=for code :lang<text>
+SETTING::src/core.c/Backtrace.rakumod: 85
+SETTING::src/core.c/Backtrace.rakumod: 85
+test.raku: 1
+test.raku: 2
+test.raku: 3
+test.raku: 1
+
+=head2 method flat
+
+    multi method flat(Backtrace:D:)
+
+Returns the backtrace same as L<list|#method_list>.
+
+=end pod

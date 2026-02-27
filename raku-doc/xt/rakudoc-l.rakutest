@@ -1,0 +1,197 @@
+#!/usr/bin/env raku
+
+=begin overview
+
+Check any L<> references for validity. If C<%*ENV<NETWORK_TESTING>> is set,
+validate that external links are live.
+
+=end overview
+
+use Test;
+
+use RakuDoc::Test::Files;
+use Pod::Convenience;
+use Cro::HTTP::Client;
+
+my @files = RakuDoc::Test::Files.pods;
+
+if @files {
+    plan +@files;
+} else {
+    plan :skip-all<No rakudoc files specified>
+}
+
+my $ua = Cro::HTTP::Client.new;
+
+sub is-valid-display($content) {
+    if $content.starts-with('#') {
+        flunk "$content starts with a #";
+    }
+}
+
+my %bad-links = BagHash.new;
+my $network-testing = %*ENV<NETWORK_TESTING>:exists.so;
+my %good-links;
+
+sub is-valid-link($links) {
+    for @$links -> $link {
+        if $link.starts-with('/') {
+            if $link.contains('.html') {
+                %bad-links{$link}++;
+                flunk "$link contains .html";
+            }
+            if $link eq "/" {
+                pass "$link exists (generated)";
+                return;
+            }
+            if $link ~~ / '/type/independent-routines' '#'? / {
+                pass "$link exists (generated)";
+                return;
+            }
+            if $link ~~ / '/index' '#'? / {
+                pass "$link exists (generated)";
+                return;
+            }
+            if $link ~~ / '/introduction' '#'? / {
+                pass "$link exists (generated)";
+                return;
+            }
+            if $link ~~ / '/reference' '#'? / {
+                pass "$link exists (generated)";
+                return;
+            }
+
+            # This may be overeager, is needed for Types
+            my $original = $link.subst('::','/', :g);
+
+            # We don't handle fragments yet
+            $original ~~ s/ '#' .* //;
+
+            # split into components
+            my @path = $original.split('/')[1..*];
+            if @path[0] eq 'routine' | 'syntax' {
+                # these are not primary sources, skip for now
+                # Should be caught on error-report in site build
+                diag "skipping $original";
+                next;
+            }
+
+            # Path elements in links should be lower case
+            my $local-path = @path[0];
+
+            if $local-path.fc ne $local-path {
+                %bad-links{$link}++;
+                flunk "$link should be lower case";
+                next;
+            }
+
+            # Folders are title-cased on disk
+            @path[0] = @path[0].tc;
+
+            # Look in doc/ folder for this rakudoc file.
+            @path.unshift: 'doc';
+            my $path = @path.join('/');
+
+            my $ok = ?($path.IO.d or ($path ~ '.rakudoc').IO.e);
+            ok $ok, "$link exists (primary)";
+            %bad-links{$link}++ unless $ok;
+        } elsif $link.starts-with: '#' {
+            next; # don't check in-page anchors
+        } elsif $link.starts-with: 'irc:' {
+            next; # don't vaidate IRC
+        } else {
+            my @valid-protocols = <http https>;
+            if $link.starts-with(any(@valid-protocols) ~ '://') {
+                next unless $network-testing;
+
+                # Skip known incorrect URLS that are just for examples
+                next if $link eq "http://www.MegaGigaTeraPetaCorp.com/std/disclaimer.txt";
+                # Skip known problematic URLs (403 via Cro, fine via browser)
+                next if $link eq "https://dev.mysql.com/downloads/repo/apt/";
+
+                # auto-pass if we already pulled this session
+                if %good-links{$link}:exists {
+                    pass "HTTP KNOWN $link";
+                    next;
+                }
+
+                my $response = await $ua.get: $link, user-agent => 'Raku Docs Validator';
+                CATCH {
+                    when X::Cro::HTTP2::GoAway {
+                        # race condition? try again.
+                        diag "HTTP GoAway $link";
+                        sleep 1;
+                        redo;
+                    }
+                    when X::Cro::HTTP::Error {
+                        if .response.status == 429 {
+                            diag "HTTP 429 $link";
+                            my $retry-after = max(min(.response.header('retry-after'),5),42);
+                            diag "Retrying after $retry-after";
+                            sleep $retry-after;
+                            redo;
+                        } else {
+                            %bad-links{$link}++;
+                            flunk "HTTP {.response.status} $link";
+                            next;
+                        }
+                    }
+                    default {
+                        if $_.message eq "Stream reset by the server" {
+                            diag "HTTP Stream reset $link";
+                            redo;
+                        }
+
+                        %bad-links{$link}++;
+                        flunk "HTTP ({$_.message}): $link";
+                        next;
+                    }
+                    next;
+                }
+                %good-links{$link}++;
+                pass "HTTP {$response.status} $link";
+                next;
+            }
+
+            # fallthrough
+            %bad-links{$link}++;
+            flunk("relative link or bad protocol: $link");
+        }
+    }
+}
+
+
+sub walk-content($x) {
+    for $x.contents -> $contents {
+        next unless $contents;
+        for @$contents -> $item {
+            if $item ~~ Pod::FormattingCode and $item.type eq 'L' {
+                # L<X> has an empty meta but renders as if it were L<X|X>, explicitly set this
+                unless $item.meta {
+                    $item.meta = $item.contents.join;
+                    # Only check the # if there's no meta.
+                    is-valid-display($item.contents.join);
+                }
+                is-valid-link($item.meta);
+            } elsif $item !~~ Str {
+                walk-content($item);
+            }
+        }
+    }
+}
+
+for @files -> $file {
+    my @chunks = extract-pod($file).contents;
+
+    # This emits pass or flunk for each local L<> found.
+    subtest $file => {
+        walk-content($_) for @chunks;
+    }
+}
+
+diag "Listing by link" if %bad-links;
+
+for %bad-links.keys.sort -> $k {
+    my $v = %bad-links{$k};
+    diag "[$v] $k";
+}

@@ -1,0 +1,128 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Label
+
+=SUBTITLE Tagged location in the source code
+
+    class Label {}
+
+Labels are used in Raku to tag loops so that you can specify
+the specific one you want to jump to with L«statements such as
+C<last>|/language/control#LABELs». You can use it to jump out of loops
+and get to outer ones, instead of just exiting the current loop or going
+to the previous statement.
+
+=begin code :skip-test<compile time error>
+USERS:          # the label
+for @users -> $u {
+    for $u.pets -> $pet {
+        # usage of a label
+        next USERS if $pet.barks;
+    }
+    say "None of {$u}'s pets barks";
+}
+say USERS.^name;        # OUTPUT: «Label␤»
+=end code
+
+Those labels are objects of type C<Label>, as shown in the last statement.
+Labels can be used in any loop construct, as long as they appear right before
+the loop statement.
+
+=begin code
+my $x = 0;
+my $y = 0;
+my $t = '';
+A: while $x++ < 2 {
+    $t ~= "A$x";
+    B: while $y++ < 2 {
+        $t ~= "B$y";
+        redo A if $y++ == 1;
+        last A
+    }
+}
+say $t; # OUTPUT: «A1B1A1A2␤»
+=end code
+
+Putting them on the line before the loop or the same line is optional. C<Label>s
+must follow the syntax of
+L<ordinary identifiers|/language/syntax#Ordinary_identifiers>,
+although traditionally we
+will use the latin alphabet in uppercase so that they stand out in the source.
+You can use, however, other alphabets like here:
+
+    駱駝道: while True {
+      say 駱駝道.name;
+      last 駱駝道;
+    }  # OUTPUT: «駱駝道␤»
+
+=head1 Methods
+
+=head2 method name
+
+Not terribly useful, returns the name of the defined label:
+
+    A: while True {
+      say A.name; # OUTPUT: «A␤»
+      last A;
+    }
+
+=head2 method file
+
+Returns the file the label is defined in.
+
+=head2 method line
+
+Returns the line where the label has been defined.
+
+=head2 method Str
+
+Converts to a string including the name, file and line it's been defined in.
+
+=head2 method next
+
+    method next(Label:)
+
+Begin the next iteration of the loop associated with the label.
+
+    MY-LABEL:
+    for 1..10 {
+        next MY-LABEL if $_ < 5;
+        print "$_ ";
+    }
+
+    # OUTPUT: «5 6 7 8 9 10 »
+
+=head2 method redo
+
+    method redo(Label:)
+
+Repeat the same iteration of the loop associated with the label.
+
+    my $has-repeated = False;
+
+    MY-LABEL:
+    for 1..10 {
+        print "$_ ";
+        if $_ == 5 {
+            LEAVE $has-repeated = True;
+            redo MY-LABEL unless $has-repeated;
+        }
+    }
+
+    # OUTPUT: «1 2 3 4 5 5 6 7 8 9 10 »
+
+=head2 method last
+
+    method last(Label:)
+
+Terminate the execution of the loop associated with the label.
+
+    MY-LABEL:
+    for 1..10 {
+        last MY-LABEL if $_ > 5;
+        print "$_ ";
+    }
+
+    # OUTPUT: «1 2 3 4 5 »
+
+=end pod

@@ -1,0 +1,79 @@
+=begin pod :kind("Type") :subkind("role") :category("metamodel")
+
+=TITLE role Metamodel::MultipleInheritance
+
+=SUBTITLE Metaobject that supports multiple inheritance
+
+    role Metamodel::MultipleInheritance {}
+
+I<Warning>: this role is part of the Rakudo implementation, and is not
+a part of the language specification.
+
+Classes, roles and grammars can have parent classes, that is, classes to which
+method lookups fall back to, and to whose type the child class conforms to.
+
+This role implements the capability of having zero, one or more parent (or
+I<super>) classes.
+
+In addition, it supports the notion of I<hidden> classes, whose methods are
+excluded from the normal dispatching chain, so that for example C<nextsame>
+ignores it.
+
+This can come in two flavors: methods from a class marked as C<is hidden>
+are generally excluded from dispatching chains, and C<class A hides B> adds
+C<B> as a parent class to C<A>, but hides it from the method resolution order,
+so that L<mro_unhidden|/type/Metamodel::C3MRO#method_mro_unhidden> skips it.
+
+=head1 Methods
+
+=head2 method add_parent
+
+    method add_parent($obj, $parent, :$hides)
+
+Adds C<$parent> as a parent type. If C<$hides> is set to a true value, the
+parent type is added as a hidden parent.
+
+C<$parent> must be a fully
+L<composed|/language/mop#Composition_time_and_static_reasoning> typed.
+Otherwise an exception of type L<C<X::Inheritance::NotComposed>|/type/X::Inheritance::NotComposed>
+is thrown.
+
+=head2 method ^parents
+
+    method ^parents($obj, :$all, :$tree)
+
+Returns the list of parent classes. By default it stops at L<C<Cool>|/type/Cool>, L<C<Any>|/type/Any> or
+L<C<Mu>|/type/Mu>, which you can suppress by supplying the C<:all> adverb. With C<:tree>,
+a nested list is returned.
+
+    class D { };
+    class C1 is D { };
+    class C2 is D { };
+    class B is C1 is C2 { };
+    class A is B { };
+
+    say A.^parents(:all).raku;
+    # OUTPUT: «(B, C1, C2, D, Any, Mu)␤»
+    say A.^parents(:all, :tree).raku;
+    # OUTPUT: «[B, ([C1, [D, [Any, [Mu]]]], [C2, [D, [Any, [Mu]]]])]␤»
+
+=head2 method hides
+
+    method hides($obj)
+
+Returns a list of all hidden parent classes.
+
+=head2 method hidden
+
+    method hidden($obj)
+
+Returns a true value if (and only if) the class is marked with the trait C<is
+hidden>.
+
+=head2 method set_hidden
+
+    method set_hidden($obj)
+
+Marks the type as hidden.
+
+=end pod

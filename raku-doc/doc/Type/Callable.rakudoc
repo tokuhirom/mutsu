@@ -1,0 +1,64 @@
+=begin pod :kind("Type") :subkind("role") :category("basic")
+
+=TITLE role Callable
+
+=SUBTITLE Invocable code object
+
+    role Callable { ... }
+
+Role for objects which support calling them. It's used in L<C<Block>|/type/Block>,
+L<C<Routine>|/type/Routine>, L<C<Sub>|/type/Sub>, L<C<Method>|/type/Method>, L<C<Submethod>|/type/Submethod> and L<C<Macro>|/type/Macro> types.
+
+Callables can be stored in C<&>-sigiled containers, the default type constraint
+of such a container is C<Callable>.
+=comment A signature object can be used to
+=comment force a check against the signature of the Callable to be stored into the
+=comment container.
+
+    my &a = {;}; # Empty block needs a semicolon
+    my &b = -> {};
+    my &c = sub () {};
+    sub foo() {};
+    my &d = &foo;
+=comment commented out until it's implemented for code
+=comment my &f:(Int) = sub bar(Int) {}; # Not yet implemented
+=comment my &f:(Str) = -> Str {};       # Not yet implemented
+
+=head1 Methods
+
+=head2 method CALL-ME
+
+    method CALL-ME(Callable:D $self: |arguments)
+
+This method is required for the L«C<( )> postcircumfix operator|/language/operators#postcircumfix_(_)»
+and the L«C<.( )> postcircumfix operator|/language/operators#index-entry-.(_)». It's what makes
+an object actually call-able and needs to be overloaded to let a given object
+act like a routine. If the object needs to be stored in an C<&>-sigiled
+container, it has to implement Callable.
+
+    class A does Callable {
+        submethod CALL-ME(|c){ 'called' }
+    }
+    my &a = A;
+    say a(); # OUTPUT: «called␤»
+
+Applying the C<Callable> role is not a requirement to make an object callable;
+if a class simply wants to add subroutine-like semantics in a regular scalar
+container, the submethod C<CALL-ME> can be used for that.
+
+    class A {
+        has @.values;
+        submethod CALL-ME(Int $x where 0 <= * < @!values.elems) {
+            @!values[$x]
+        }
+    }
+    my $a = A.new: values => [4,5,6,7];
+    say $a(2); # OUTPUT: «6␤»
+
+=head2 method Capture
+
+    method Capture()
+
+Throws L<C<X::Cannot::Capture>|/type/X::Cannot::Capture>.
+
+=end pod

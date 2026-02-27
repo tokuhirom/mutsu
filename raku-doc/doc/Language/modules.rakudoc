@@ -1,0 +1,62 @@
+=begin pod :kind("Language") :subkind("Language") :category("tutorial")
+
+=TITLE Modules
+
+=SUBTITLE How to create, use, and distribute Raku modules
+
+=head1 Creating and using modules
+
+A module is usually a source file or set of source files that expose Raku
+constructs N<Technically a module is a set of I<compunits> which are usually
+files but could come from anywhere as long as there is a I<compunit repository>
+that can provide it. See L<S11|https://github.com/Raku/old-design-docs/blob/master/S11-modules.pod>.>.
+
+Modules are typically packages (L<classes|/language/objects#Classes>,
+L<roles|/language/objects#Roles>, L<grammars|/type/Grammar>),
+L<subroutines|/language/functions>, and sometimes
+L<variables|/language/variables>. In Raku I<module> can also refer to a type of
+package declared with the C<module> keyword (see L<Module
+Packages|/language/module-packages> and the examples below) but here we mostly
+mean "module" as a set of source files in a namespace.
+
+=head2 Looking for and installing modules.
+
+See L<Using Modules: Finding and Installing|/language/using-modules/finding-installing>
+
+=head2 Basic structure
+
+See L<Modules: An Introduction|/language/using-modules/introduction>
+
+=head1 X<Loading and basic importing|Language,compunit>
+
+See L<Modules: An Introduction|/language/using-modules/introduction>
+
+=head2 Finding installed modules
+
+See L<Using Modules: Finding and Installing|/language/using-modules/finding-installing>
+
+=head1 Testing modules and a distribution
+
+See L<Distributions: Testing|/language/distributions/testing>.
+
+=head1 Distributing modules
+
+See L<Distributions: Uploading|/language/distributions/uploading>.
+
+=head2 Preparing the module
+
+See L<Making Modules: The Configuration and Structure|/language/distributions/configuration-structure>
+
+=head2 Uploading the module
+
+See L<Distributions: Uploading|/language/distributions/uploading>.
+
+=head1 Modules and tools related to module authoring
+
+See L<Distributions: The Tools|/language/distributions/tools>
+
+=head2 Contact information
+
+See L<Distributions: An Introduction|/language/distributions/introduction>
+
+=end pod

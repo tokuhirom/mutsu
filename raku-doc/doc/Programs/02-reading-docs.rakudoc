@@ -1,0 +1,62 @@
+=begin pod :kind("Programs") :subkind("programs") :category("programs")
+
+=TITLE Reading the docs
+
+=SUBTITLE rakudoc - the Raku pod reader
+
+=head1 X<INTRODUCTION|Programs,rakudoc>
+
+Program C<rakudoc> is a command-line-interface (CLI) program that reads
+Raku pod from B<installed> modules' source code, in contrast to
+running C<raku --doc=MODULE programfile> which reads Raku pod from
+the named source file.
+
+Note that C<rakudoc> may not be installed automatically depending upon
+how you installed Rakudo Raku.  To install it use C<zef>:
+
+=for code :lang<usage>
+zef install 'rakudoc:auth<zef:coke>'
+
+=head1 SYNOPSIS
+
+=for code :lang<usage>
+rakudoc [switches] [arguments]
+
+=head1 DESCRIPTION
+
+With no switches or arguments, C<rakudoc> lists its help to C<$*OUT> (C<stdout>).
+For C«rakudoc:ver<0.2.5>», this output is:
+
+=begin code :lang<output>
+Usage:
+  rakudoc [-d|--doc-sources=<Directories>] [-D|--no-default-docs] <query>
+  rakudoc -b|--build-index [-d|--doc-sources=<Directories>] [-D|--no-default-docs]
+  rakudoc -V|--version
+  rakudoc -h|--help <ARGUMENTS>
+
+    <query>                           Example: 'Map', 'IO::Path.add', '.add'
+    -d|--doc-sources=<Directories>    Additional directories to search for documentation
+    -D|--no-default-docs              Use only directories in --doc-sources / $RAKUDOC
+    -b|--build-index                  Index all documents found in doc source directories
+=end code
+
+The text output can be captured and converted to other forms if desired.
+
+If you want to use ANSI escape sequences, which will apply boldface
+and other enhancements when the output is printed to a terminal, you
+will have to set the environment variable POD_TO_TEXT_ANSI, which is
+unset by default
+
+=for code :lang<shell>
+export POD_TO_TEXT_ANSI=1
+
+
+=head1 LIMITATIONS
+
+Currently C<rakudoc> can only extract embedded Raku pod from installed
+module source files (as listed in a distribution's C<META6.json>
+file).  It is planned to add a feature for C<rakudoc> (in conjunction
+with C<META6.json> changes) to extract B<all> Raku pod in files
+included with the installed distribution.
+
+=end pod

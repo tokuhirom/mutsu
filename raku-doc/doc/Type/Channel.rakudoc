@@ -1,0 +1,191 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Channel
+
+=SUBTITLE Thread-safe queue for sending values from producers to consumers
+
+    class Channel {}
+
+A C<Channel> is a thread-safe queue that helps you to send a series of objects
+from one or more producers to one or more consumers.  Each object will arrive at
+only one such consumer, selected by the scheduler.  If there is only one
+consumer and one producer, the order of objects is guaranteed to be preserved.
+Sending on a C<Channel> is non-blocking.
+
+    my $c = Channel.new;
+    await (^10).map: {
+        start {
+            my $r = rand;
+            sleep $r;
+            $c.send($r);
+        }
+    }
+    $c.close;
+    say $c.list;
+
+Further examples can be found in the L<concurrency page|/language/concurrency#Channels>
+
+=head1 Methods
+
+=head2 method send
+
+    method send(Channel:D: \item)
+
+Enqueues an item into the C<Channel>. Throws an exception of type
+L<C<X::Channel::SendOnClosed>|/type/X::Channel::SendOnClosed> if the C<Channel> has been
+closed already. This call will B<not> block waiting for a consumer to take the object.
+There is no set limit on the number of items that may be queued, so
+care should be taken to prevent runaway queueing.
+
+    my $c = Channel.new;
+    $c.send(1);
+    $c.send([2, 3, 4, 5]);
+    $c.close;
+    say $c.list; # OUTPUT: «(1 [2 3 4 5])␤»
+
+=head2 method receive
+
+    method receive(Channel:D:)
+
+Receives and removes an item from the C<Channel>. It blocks if no item is
+present, waiting for a C<send> from another thread.
+
+Throws an exception of
+type L<C<X::Channel::ReceiveOnClosed>|/type/X::Channel::ReceiveOnClosed> if the C<Channel>
+has been closed, and the last item has been removed already, or if C<close> is called
+while C<receive> is waiting for an item to arrive.
+
+If the C<Channel> has been marked as erratic with method C<fail>, and the last
+item has been removed, throws the argument that was given to C<fail> as an
+exception.
+
+See method C<poll> for a non-blocking version that won't throw exceptions.
+
+    my $c = Channel.new;
+    $c.send(1);
+    say $c.receive; # OUTPUT: «1␤»
+
+=head2 method poll
+
+    method poll(Channel:D:)
+
+Receives and removes an item from the C<Channel>. If no item is present, returns
+L<C<Nil>|/type/Nil> instead of waiting.
+
+    my $c = Channel.new;
+    Promise.in(2).then: { $c.close; }
+    ^10 .map({ $c.send($_); });
+    loop {
+        if $c.poll -> $item { $item.say };
+        if $c.closed  { last };
+        sleep 0.1;
+    }
+
+See method C<receive> for a blocking version that properly responds to C<Channel>
+closing and failure.
+
+=head2 method close
+
+    method close(Channel:D:)
+
+Close the C<Channel>, normally.  This makes subsequent C<send> calls die with
+L<C<X::Channel::SendOnClosed>|/type/X::Channel::SendOnClosed>.  Subsequent calls of
+C<.receive> may still drain any remaining items that were previously sent, but if
+the queue is empty, will throw an L<C<X::Channel::ReceiveOnClosed>|/type/X::Channel::ReceiveOnClosed>
+exception.  Since you can produce a L<C<Seq>|/type/Seq> from a C<Channel> by contextualizing to array with C<@()>
+or by calling the C<.list> method, these methods will not terminate until the C<Channel> has been
+closed. A L<whenever|/language/concurrency#whenever>-block will also
+terminate properly on a closed C<Channel>.
+
+=for code
+my $c = Channel.new;
+$c.close;
+$c.send(1);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Channel::SendOnClosed: Cannot send a message on a closed channel␤»
+
+Please note that any exception thrown may prevent C<.close> from being called,
+this may hang the receiving thread. Use a L<LEAVE|/language/phasers#LEAVE>
+phaser to enforce the C<.close> call in this case.
+
+=head2 method list
+
+    method list(Channel:D:)
+
+Returns a list based on the L<C<Seq>|/type/Seq> which will iterate items in the queue and
+remove each item from it as it iterates. This can only terminate once the
+C<close> method has been called.
+
+    my $c = Channel.new; $c.send(1); $c.send(2);
+    $c.close;
+    say $c.list; # OUTPUT: «(1 2)␤»
+
+=head2 method closed
+
+    method closed(Channel:D: --> Promise:D)
+
+Returns a promise that will be kept once the C<Channel> is closed by a call to
+method C<close>.
+
+    my $c = Channel.new;
+    $c.closed.then({ say "It's closed!" });
+    $c.close;
+    sleep 1;
+
+=head2 method fail
+
+    method fail(Channel:D: $error)
+
+Closes the C<Channel> (that is, makes subsequent C<send> calls die), and enqueues
+the error to be thrown as the final element in the C<Channel>. Method C<receive>
+will throw that error as an exception.  Does nothing if the C<Channel> has already
+been closed or C<.fail> has already been called on it.
+
+    my $c = Channel.new;
+    $c.fail("Bad error happens!");
+    $c.receive;
+    CATCH { default { put .^name, ': ', .Str } };
+    # OUTPUT: «X::AdHoc: Bad error happens!␤»
+
+=head2 method Capture
+
+    method Capture(Channel:D: --> Capture:D)
+
+Equivalent to calling L«C<.List.Capture>|/type/List#method_Capture»
+on the invocant.
+
+=head2 method Supply
+
+    method Supply(Channel:D:)
+
+This returns an C<on-demand> L<C<Supply>|/type/Supply> that emits a value for every value
+received on the C<Channel>. C<done> will be called on the L<C<Supply>|/type/Supply> when the C<Channel>
+is closed.
+
+    my $c = Channel.new;
+    my Supply $s1 = $c.Supply;
+    my Supply $s2 = $c.Supply;
+    $s1.tap(-> $v { say "First $v" });
+    $s2.tap(-> $v { say "Second $v" });
+    ^10 .map({ $c.send($_) });
+    sleep 1;
+
+Multiple calls to this method produce multiple instances of Supply, which compete
+over the values from the C<Channel>.
+
+=head2 sub await
+
+    multi await(Channel:D)
+    multi await(*@)
+
+Waits until all of one or more C<Channel>s has a value available, and returns
+those values (it calls C<.receive> on the C<Channel>). Also works with
+L<C<Promise>|/type/Promise>s.
+
+    my $c = Channel.new;
+    Promise.in(1).then({$c.send(1)});
+    say await $c;
+
+Since 6.d, it no longer blocks a thread while waiting.
+
+=end pod

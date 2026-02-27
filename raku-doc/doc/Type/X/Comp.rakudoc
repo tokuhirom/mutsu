@@ -1,0 +1,38 @@
+=begin pod :kind("Type") :subkind("role") :category("exception")
+
+=TITLE role X::Comp
+
+=SUBTITLE Common role for compile-time errors
+
+    role X::Comp is Exception { }
+
+Common role for compile-time errors.
+
+Note that since the backtrace of a compile time error generally shows
+routines from the compiler, not from user-space programs, the L<C<Backtrace>|/type/Backtrace>
+returned from the L<backtrace|/routine/backtrace> method is not very informative. Instead
+the exception carries its own C<filename>, C<line> and C<column> attributes
+and public accessors.
+
+If an error occurs while creating an object (like a class or routine) at
+compile time, generally the exception associated with it does not hold a
+reference to the object (for example a class would not be fully composed, and
+thus not usable). In those cases the name of the would-be-created object
+is included in the error message instead.
+
+=head1 Methods
+
+=head2 method filename
+
+The filename in which the compilation error occurred
+
+=head2 method line
+
+The line number in which the compilation error occurred.
+
+=head2 method column
+
+The column number of location where the compilation error occurred.
+(Rakudo does not implement that yet).
+
+=end pod

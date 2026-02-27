@@ -1,0 +1,159 @@
+=begin pod :kind("Type") :subkind("role") :category("basic")
+
+=TITLE role Rational
+
+=SUBTITLE Number stored as numerator and denominator
+
+    role Rational[::NuT, ::DeT] does Real { ... }
+
+C<Rational> is the common role for numbers that are stored as pairs of numerator
+and denominator. It is parameterized by the types of the numerator (C<NuT>) and
+denominator (C<DeT>). By default, these are L<C<Int>|/type/Int>, but other types of
+C<Rational> are possible by using a different parameterization.  In addition,
+C<Rational> objects are immutable throughout their life.
+
+
+    class Positive does Rational[UInt] {};
+    my Positive $one-third = Positive.new(1,3);
+    say $one-third;                         # OUTPUT: «0.333333␤»
+    my Positive $fail =Positive.new(-2,3);  # OUTPUT: «Type check failed in binding to parameter 'nu'; expected UInt but got Int (-2)␤»
+
+Please note that, since C<DeT> is by default equal to C<NuT>, in this case both
+are instantiated to L<C<UInt>|/type/UInt>. Built into Raku are L<C<Rat>|/type/Rat> and L<C<FatRat>|/type/FatRat>, which
+both do the C<Rational> role.
+
+=head1 Methods
+
+=head2 method new
+
+    =begin code :preamble<subset NuT of Int; subset DeT of Int>
+    method new(NuT:D $numerator, DeT:D $denominator --> Rational:D)
+    =end code
+
+Creates a new rational object from numerator and denominator, which it
+normalizes to the lowest terms. The C<$denominator> can be zero, in which
+case the numerator is normalized to C<-1>, C<0>, or C<1> depending on whether
+the original is negative, zero, or positive, respectively.
+
+=head2 method Bool
+
+    multi method Bool(Rational:D: --> Bool:D)
+
+Returns C<False> if L<numerator|/routine/numerator> is C<0>, otherwise returns C<True>. This
+applies for C«<0/0>» zero-denominator <C<Rational> as well, despite C«?<0/0>.Num»
+being C<True>.
+
+=head2 method Bridge
+
+    method Bridge()
+
+Returns the number, converted to L<C<Num>|/type/Num>.
+
+=head2 method Int
+
+    method Int(Rational:D: --> Int:D)
+
+Coerces the invocant to L<C<Int>|/type/Int> by truncating non-whole portion of the represented
+number, if any. If the L<denominator|/routine/denominator> is zero, will L<fail|/routine/fail> with
+L<C<X::Numeric::DivideByZero>|/type/X::Numeric::DivideByZero>.
+
+=head2 method Num
+
+    method Num(Rational:D: --> Num:D)
+
+Coerces the invocant to L<C<Num>|/type/Num> by dividing L<numerator|/routine/numerator> by L<denominator|/routine/denominator>.
+If L<denominator|/routine/denominator> is C<0>, returns C<Inf>, C<-Inf>, or C<NaN>, based on
+whether L<numerator|/routine/numerator> is a positive number, negative number, or C<0>,
+respectively.
+
+=head2 method ceiling
+
+    method ceiling(Rational:D: --> Int:D)
+
+Return the smallest integer not less than the invocant. If L<denominator|/routine/denominator>
+is zero, L<fails|/routine/fail> with L<C<X::Numeric::DivideByZero>|/type/X::Numeric::DivideByZero>.
+
+=head2 method floor
+
+    method floor(Rational:D: --> Int:D)
+
+Return the largest integer not greater than the invocant. If L<denominator|/routine/denominator>
+is zero, L<fails|/routine/fail> with L<C<X::Numeric::DivideByZero>|/type/X::Numeric::DivideByZero>.
+
+=head2 method isNaN
+
+    method isNaN(Rational:D: --> Bool:D)
+
+Tests whether the invocant's Num value is a NaN, an acronym for I<Not available
+Number>. That is both its numerator and denominator are zero.
+
+=head2 method numerator
+
+    =begin code :preamble<subset NuT of Int; subset DeT of Int>
+    method numerator(Rational:D: --> NuT:D)
+    =end code
+
+Returns the numerator.
+
+=head2 method denominator
+
+    =begin code :preamble<subset NuT of Int; subset DeT of Int>
+    method denominator(Rational:D: --> DeT:D)
+    =end code
+
+Returns the denominator.
+
+=head2 method nude
+
+    method nude(Rational:D: --> Positional)
+
+Returns a list of the numerator and denominator.
+
+=head2 method norm
+
+    method norm(Rational:D: --> Rational:D)
+
+B<DEPRECATED as of 6.d>. The method is no longer needed, because as of 6.d
+language version, it's required for C<Rational> type to be normalized on
+creation.
+
+Returns a normalized Rational object, i.e. with positive denominator, and
+numerator and denominator coprime. The denominator can also be zero, but using
+it in any operation or a conversion to string will result in an exception.
+
+=for code :solo
+use v6.c;
+my Rational $by-zero = 3/0;
+say $by-zero.norm.raku; # OUTPUT: «<1/0>␤»
+
+=for code :skip-test<Illustrates exception>
+say $by-zero; # OUTPUT: «Attempt to divide by zero when coercing Rational to Str␤
+
+=head2 method base-repeating
+
+    method base-repeating(Rational:D: Int:D() $base = 10)
+
+Returns a list of two strings that, when concatenated, represent the number in
+base C<$base>. The second element is the one that repeats. For example:
+
+    my ($non-rep, $repeating) = (19/3).base-repeating(10);
+    say $non-rep;                               # OUTPUT: «6.␤»
+    say $repeating;                             # OUTPUT: «3␤»
+    printf '%s(%s)', $non-rep, $repeating;      # OUTPUT: «6.(3)»
+
+19/3 is 6.333333... with the 3 repeating indefinitely.
+
+If no repetition occurs, the second string is empty:
+
+    say (5/2).base-repeating(10).raku;          # OUTPUT: «("2.5", "")␤»
+
+The precision for determining the repeating group is limited to 1000
+characters, above that, the second string is C<???>.
+
+C<$base> defaults to C<10>.
+
+=head2 method Range
+
+Returns a L<Range object|/type/Range> that represents the range of values supported.
+
+=end pod

@@ -1,0 +1,23 @@
+use v6;
+use Test;
+
+plan 2;
+
+use lib <packages ../packages t/spec/packages>;
+
+use Test::Util;
+
+#?impl-1 todo 'NYI'
+{
+    is 4,
+        4;
+}
+
+#?impl-1 todo 'nom regression'
+#?impl-2 todo 'copied nom regression'
+is_run 'sub MAIN(:$x) { print $x }',
+    {
+        out => "23",
+    },
+    :args['-x=23'],
+    'option with spacey value';

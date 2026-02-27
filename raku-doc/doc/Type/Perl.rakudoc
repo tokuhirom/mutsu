@@ -1,0 +1,12 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Perl
+
+=SUBTITLE Perl related information
+
+    class Perl is Raku { }
+
+A class that provides the same internal language information as the
+L<Raku|/type/Raku> class.  Only maintained for historical reasons.
+
+=end pod

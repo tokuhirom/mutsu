@@ -1,0 +1,124 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Signature
+
+=SUBTITLE Parameter list pattern
+
+    class Signature { }
+
+A signature is a static description of the L<parameter|/type/Parameter> list
+of a code object.  That is, it describes what and how many arguments
+you need to pass to the code or function in order to call it.
+
+Passing arguments to a signature I<binds> the arguments, contained in
+a L<C<Capture>|/type/Capture>, to the signature.
+
+For information on signature literals, see L<here|/language/signatures>.
+
+=head1 Methods
+
+=head2 method params
+
+    method params(Signature:D: --> Positional)
+
+Returns the list of L<C<Parameter>|/type/Parameter> objects that make up the signature.
+
+=head2 method arity
+
+    method arity(Signature:D: --> Int:D)
+
+Returns the I<minimal> number of positional arguments required to satisfy
+the signature.
+
+=head2 method count
+
+    method count(Signature:D: --> Real:D)
+
+Returns the I<maximal> number of positional arguments which can be bound
+to the signature. Returns C<Inf> if there is a slurpy positional parameter.
+
+=head2 method returns
+
+Whatever the Signature's return constraint is:
+
+    :($a, $b --> Int).returns # OUTPUT: «(Int)»
+
+=head2 method ACCEPTS
+
+    multi method ACCEPTS(Signature:D: Signature $topic)
+    multi method ACCEPTS(Signature:D: Capture $topic)
+    multi method ACCEPTS(Signature:D: Mu \topic)
+
+If C<$topic> is a C<Signature> returns C<True> if anything
+accepted by C<$topic> would also be accepted by the invocant, otherwise returns
+C<False>:
+
+    :($a, $b) ~~ :($foo, $bar, $baz?);   # OUTPUT: «True»
+    :(Int $n) ~~ :(Str);                 # OUTPUT: «False»
+
+The C<$topic> is a L<C<Capture>|/type/Capture>, returns C<True> if it can be bound
+to the invocant, i.e., if a function with invocant's C<Signature> would be able
+to be called with the C<$topic>:
+
+    \(1, 2, :foo) ~~ :($a, $b, :foo($bar)); # OUTPUT: «True»
+    \(1, :bar)    ~~ :($a);                 # OUTPUT: «False»
+
+Lastly, the candidate with C<Mu \topic> converts C<topic> to
+L<C<Capture>|/type/Capture> and follows the same semantics as
+L<C<Capture>|/type/Capture> C<$topic>:
+
+    <a b c d>  ~~ :(Int $a);      # OUTPUT: «False»
+    42         ~~ :(Int);         # OUTPUT: «False» (Int.Capture throws)
+    set(<a b>) ~~ :(:$a, :$b);    # OUTPUT: «True»
+
+Since L«C<where> clauses|/language/signatures#index-entry-where_clause»
+are not introspectable, the method cannot determine whether two signatures
+L<ACCEPTS|/type/Signature#method_ACCEPTS> the same sort of C<where>-constrained
+parameters. Such comparisons will return C<False>. This includes signatures with
+literals, which are just sugar for the C<where>-constraints:
+
+    say :(42) ~~ :($ where 42)    # OUTPUT: «False␤»
+
+=head2 method Capture
+
+    method Capture()
+
+Throws L<C<X::Cannot::Capture>|/type/X::Cannot::Capture>.
+
+=head1 Runtime creation of Signature objects (6.d, 2019.03 and later)
+
+=for code :preamble<role Type {}>
+Signature.new(params => (...), returns => Type, arity => 1, count => 1.Num)
+
+In some situations, specifically when working with the MetaObject Protocol,
+it makes sense to create C<Signature> objects programmatically.  For this
+purpose, you can call the C<new> method with the following named parameters:
+
+=item params
+
+A list of L<C<Parameter>|/type/Parameter> objects for this signature.
+
+=item returns
+
+Any constraint the return value should match.  Defaults to L<C<Mu>|/type/Mu>, which
+effectively implies no return value constraint check.
+
+=item arity
+
+The I<minimal> number of positional arguments required to satisfy the
+signature.  Defaults to the number of L<C<Parameter>|/type/Parameter> objects given with
+the C<params> parameter.
+
+=item count
+
+The I<maximal> number of positional arguments which can be bound to the
+signature. Defaults to the C<arity> if not specified.  Specify C<Inf> if
+there is a slurpy positional parameter.
+
+I<Warning>: although the logical type of the C<count> parameter is integer,
+the value assigned to it must explicitly be of type L<C<Num>|/type/Num>. If any other
+type is used, the C<new> method silently fails and returns an empty signature.
+The same trouble occurs when the value assigned to the C<arity> parameter is
+not of type L<C<Int>|/type/Int>.
+
+=end pod

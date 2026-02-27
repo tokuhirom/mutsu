@@ -1,0 +1,143 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class CallFrame
+
+=SUBTITLE Captures the current frame state
+
+    class CallFrame {}
+
+A C<CallFrame> will be usually captured from the
+current state of a program using the L<callframe|/routine/callframe> subroutine.
+
+    my $frame = callframe;
+    say "The above line of code ran at {$frame.file}:{$frame.line}.";
+
+With no arguments the callframe will give you frame information for the line
+calling C<callframe>. The file and line annotations will be identical to those
+in L«C<$?FILE>|/language/variables#Compile-time_variables» and
+L«C<$?LINE>|/language/variables#Compile-time_variables».
+
+You may, however, pass a number to C<callframe> to specify a different frame
+level. A positive number will move upward through the levels of frame. A
+negative number will move downward into the C<callframe> method and class itself
+at the point at which they are running to construct this information for you.
+
+The frames themselves do not necessarily match only method or subroutine calls.
+Raku constructs a frames for blocks and such as well, so if you need a callframe
+for a particular method call, do not assume it is a fixed number of levels up.
+
+Each frame stores L<annotations|/routine/annotations>, including the
+L<file|/routine/file> and L<line|/routine/line> annotations, which have
+convenience methods for accessing them directly. You can also retrieve a
+reference to the code block of the currently executing frame using the
+L<code|/routine/code> method.  The frame also captures all lexical variables
+stored with the frame, which are available by calling L<my|/routine/my> on the
+frame object.
+
+Here's a short example that will find the calling routine and print the package
+of the caller using the C<callframe> interface.
+
+    sub calling-frame() {
+        for 1..* -> $level {
+            given callframe($level) -> $frame {
+                when $frame ~~ CallFrame {
+                        next unless $frame.code ~~ Routine;
+                        say $frame.code.package;
+                        last;
+                }
+                default {
+                        say "no calling routine or method found";
+                        last;
+                }
+            }
+        }
+    }
+
+    calling-frame;
+
+If you just need to trace caller information, L<C<Backtrace>|/type/Backtrace> may
+provide a better means of getting it. C<CallFrame>
+contains more information about a specific frame, but provides a tedious
+interface for enumerating a call stack.
+
+=head1 Methods
+
+B<Note> From version 6.d, C<.raku> (C<.perl> before release 2019.11) can be
+called on C<CallFrame>.
+
+=head2 method code
+
+    method code()
+
+Return the callable code for the current block. When called on the object
+returned by C<callframe(0)>, this will be the same value found in
+L«C<&?BLOCK>|/language/variables#Compile-time_variables».
+
+=for code
+my $frame;
+for ^3 { FIRST $frame = callframe; say $_ * 3 };
+say $frame.code()
+
+The C<$frame> variable will hold the L<C<Code>|/type/Code> for the block inside the loop in
+this case.
+
+=head2 method file
+
+    method file()
+
+This is a shortcut for looking up the C<file> annotation. Therefore, the
+following code prints C<True>.
+
+    my $frame = callframe(0);
+    say $frame.file eq $frame.annotations<file>;
+
+=head2 method line
+
+    method line()
+
+This is a shortcut for looking up the C<line> annotation. For example, the
+following two calls are identical.
+
+    say callframe(1).line;
+    say callframe(1).annotations<line>;
+
+=head2 method annotations
+
+    method annotations()
+
+Returns a L<C<Map>|/type/Map> containing the invocants annotations, i.e. C<line>
+and C<file>. An easier way to get hold of the annotation information is to use
+one of the convenience methods instead.
+
+    say callframe.annotations.^name;                   # OUTPUT: «Map␤»
+    say callframe.annotations<file> eq callframe.file; # OUTPUT: «True␤»
+
+=head2 method my
+
+    method my()
+
+Return a L<C<Hash>|/type/Hash> that names all the variables and their values
+associated with the lexical scope of the frame.
+
+    sub some-value {
+        my $the-answer = 42;
+        callframe(0);
+    }
+
+    my $frame = some-value();
+    say $frame.my<$the-answer>; # OUTPUT: «42␤»
+
+=head1 Routines
+
+=head2 sub callframe
+
+    sub callframe(Int:D $level = 0)
+
+Returns a C<CallFrame> object for the given level. If no level
+is given, the default level is 0. Positive levels move up the frame stack and
+negative levels move down (into the call to C<callframe> and deeper).
+
+Returns L<C<Mu>|/type/Mu> if there is no call information for the given level.
+Negative levels may result in an exception.
+
+=end pod

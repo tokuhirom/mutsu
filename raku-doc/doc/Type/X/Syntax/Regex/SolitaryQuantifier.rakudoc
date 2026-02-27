@@ -1,0 +1,23 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Syntax::Regex::SolitaryQuantifier
+
+=SUBTITLE Compilation error due to a regex quantifier without preceding atom
+
+    class X::Syntax::Regex::SolitaryQuantifier does X::Syntax { }
+
+Syntax error when a stand alone quantifier (without a preceding atom
+to quantify) is encountered in a regular expression.
+
+For example
+
+=for code :skip-test<compile time error>
+/ * /;
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+Quantifier quantifies nothing
+
+=end pod

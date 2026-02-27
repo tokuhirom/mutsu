@@ -1,0 +1,22 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Syntax::UnlessElse
+
+=SUBTITLE Compilation error due to an C<unless> clause followed by C<else>
+
+    class X::Syntax::UnlessElse does X::Syntax { }
+
+Syntax error thrown when an C<unless> clause is followed by an C<else> clause.
+
+For example
+
+=for code :skip-test<compile time error>
+unless 1 { } else { };
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+"unless" does not take "else", please rewrite using "if"
+
+=end pod

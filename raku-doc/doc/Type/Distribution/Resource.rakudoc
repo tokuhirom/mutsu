@@ -1,0 +1,167 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Distribution::Resource
+
+=SUBTITLE Every one of the resources installed with a distribution
+
+    class Distribution::Resource { }
+
+A C<Distribution::Resource> is every one of the individual resources (files
+or libraries) that are returned as values of the
+L<C<%?RESOURCES>|/language/variables#%?RESOURCES> dynamic variable (which,
+itself, is an instance of C<Distribution::Resources>. These resources are
+installed as part of the standard distribution installation process; please
+check the definition of C<%?RESOURCES> above for more context.
+
+Externally, every one of these resources behaves as an L<C<IO::Path>|/type/IO::Path>, and it
+shares many of the same methods; however, it's really I<not> an L<C<IO::Path>|/type/IO::Path>
+and thus cannot be smartmatched to it.
+
+This variable will work with the current repository chain structure, and will
+give you the right way to get to the resource independently of it being
+installed or not; however, you shouldn't rely on these values maintaining
+consistency across implementations. You will be able to access the resource
+via its handle no matter what. in this example:
+
+=begin code :solo
+unit class Resourceable;
+
+method gimme(::?CLASS:U: ) {
+    %?RESOURCES;
+}
+=end code
+
+with this C<META6.json>:
+
+=begin code :lang<json>
+{
+  "provides": {
+    "Resourceable": "lib/Resourceable.rakumod"
+  },
+  "license": "Artistic-2.0",
+  "description": "Testing how Distribution::Resource(s) work",
+  "perl": "6.*",
+  "auth": "zef:jj",
+  "version": "1.2",
+  "resources": [
+    "libraries/whatever",
+    "data/swim.csv"
+  ],
+  "meta-version": "0",
+  "name": "Resourceable"
+}
+=end code
+
+you see that there are the two kinds of resources available: regular ones,
+and those starting with C<libraries>, whose actual value (and handle)
+returned will depend on the operating system. For example
+on Windows this might find a C<.dll>, on Linux a C<.so>, and on MacOS
+a C<.dylib>.
+
+If we access it through this script (placed in C<bin/>):
+
+=begin code :skip-test<Needs Resourceable>
+use Resourceable;
+
+for <libraries/whatever data/swim.csv> -> $resource {
+    with Resourceable.gimme{$resource} {
+       .say;
+       say "-" x 10, ">";
+       ( .repo-name, .repo, .dist-id, .key )».say;
+    }
+}
+=end code
+
+run directly from the source directory, like this:
+
+=for code :lang<text>
+# raku -Ilib bin/show-resources.raku
+"/home/jmerelo/progs/raku/my-raku-examples/test-resources/resources/libraries/libwhatever.so".IO
+---------->
+(Str)
+file#/home/jmerelo/progs/raku/my-raku-examples/test-resources/lib
+/home/jmerelo/progs/raku/my-raku-examples/test-resources/lib:ver<*>:auth<>:api<*>
+libraries/whatever
+"/home/jmerelo/progs/raku/my-raku-examples/test-resources/resources/data/swim.csv".IO
+---------->
+(Str)
+file#/home/jmerelo/progs/raku/my-raku-examples/test-resources/lib
+/home/jmerelo/progs/raku/my-raku-examples/test-resources/lib:ver<*>:auth<>:api<*>
+data/swim.csv
+
+However, if we install the distribution and run the installed script, instead we
+get something like:
+
+=for code :lang<text>
+"/home/jmerelo/.rakubrew/versions/moar-2020.05/install/share/perl6/site/resources/7127AA0E7F43E87DF309570E813E46A6E2C4D0B2.so".IO
+---------->
+site
+(Str)
+1F8F9C004D7E952B297F30420DA07B354B3F2AA7
+libraries/whatever
+"/home/jmerelo/.rakubrew/versions/moar-2020.05/install/share/perl6/site/resources/D357F3E46256CB0DACD8975033D1CC7A17B4CF9F.csv".IO
+---------->
+site
+(Str)
+1F8F9C004D7E952B297F30420DA07B354B3F2AA7
+data/swim.csv
+
+The main difference, as it can be observed, is that "local" distributions
+have a defined value for C<repo>, while "installed" distributions have a
+defined value for C<repo-name>. C<dist-id> is going to be different depending
+on the type of distribution, and in any case C<.key> will return the name of
+the resources pseudo-hash key.
+
+Please note also that accessing the resource via its key will return a handle
+on the resource, which gists to an L<C<IO::Path>|/type/IO::Path> but is, in fact, a
+C<Distribution::Resource> object. Looking again at the "regular" resources,
+the path it translates to will be the same as the one declared in
+C<resources> in META6.json, but it will change for "library" resources
+converting it to the canonical library name corresponding to the value, in
+the first case C<libwhatever.so>, in the second, a hashed name with the
+canonical Linux extension, C<.so>.
+
+A C<Distribution::Resource> is designed to be used directly as the resource
+it represents, such as a file, for instance
+
+=for code
+my @data = %?RESOURCES<data/swim.csv>.lines.split(",");
+
+However, this is I<not> because it returns an L<C<IO::Path>|/type/IO::Path>, but because it
+shares some methods with it: C<open,
+slurp, lines, comb, split, words, copy>; above we use C<.lines>, for
+instance.
+
+Note that it is essential for C<Resource>s that .IO and related methods be
+determined at runtime, and not done at the compilation stage (specifically,
+that they not make their way into a precomp file).  The reason for this is
+that the file path can and sometimes does change between the two stages.
+Thus, it's important to avoid all methods that reference the file path,
+(such as C<absolute> or C<dirname>) and instead access the file using the
+C<open> method.
+
+In the case of resources placed in the C<libraries/> folder, its main use
+case is as an argument for L<C<is native>|/language/nativecall>, as in this
+example:
+
+=for code :skip-test<Illustrates a use case>
+use NativeCall;
+sub foo() is native(%?RESOURCES<libraries/whatever>)
+
+The C<Distribution::Resource> returned will have the correct name and
+extension for the specific architecture the distribution is being run.
+
+In general and in any case, the guiding principle is that resources
+should be used directly for its intended purpose, be it shared libraries or
+regular resource files.
+
+=head1 Methods
+
+=head2 method IO
+
+     method IO()
+
+Returns the corresponding resource as an L<C<IO::Path>|/type/IO::Path>, which can effectively
+be used as such.
+
+=end pod

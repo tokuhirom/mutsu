@@ -1,0 +1,26 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::IO::Move
+
+=SUBTITLE Error while trying to move a file
+
+=for code :skip-test<compile time error>
+class X::IO::Move does X::IO is Exception { }
+
+Error class for a failed file move operation. A typical
+error message is
+
+=for code :lang<text>
+Failed to move '/tmp/alpha.raku' to 'test.raku': :createonly specified and destination exists
+
+=head1 Methods
+
+=head2 method from
+
+Returns the source of the failed L<move|/routine/move> operation
+
+=head2 method to
+
+Returns the destination of the failed L<move|/routine/move> operation
+
+=end pod

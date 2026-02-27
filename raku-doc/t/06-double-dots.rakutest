@@ -1,0 +1,37 @@
+#!/usr/bin/env raku
+
+use Test;
+
+use Pod::Cache;
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Avoid using C<..> - usually a typo for C<.> or C<...>
+
+=end overview
+
+my @files = RakuDoc::Test::Files.documents;
+
+if @files {
+    plan +@files;
+} else {
+    plan :skip-all<No document files specified>
+}
+
+sub test-it(Str $output, Str $file) {
+    my $ok = True;
+
+    for $output.lines -> $line {
+        if $line ~~ / <alpha> '..' (<space> | $) / {
+            diag "Failure on line `$line`";
+            $ok = False;
+        }
+    }
+    my $error = $file;
+    ok $ok, "$error: file contains ..";
+}
+
+for @files -> $file {
+    test-it(Pod::Cache.cache-file($file).IO.slurp, $file)
+}

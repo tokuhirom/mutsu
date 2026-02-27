@@ -1,0 +1,103 @@
+#!/usr/bin/env raku
+
+# Remove words in xt/pws/*.pws that are no longer needed
+# * Bug fixes in the spell checker have removed the need
+#   to check certain words.
+# * Edits to the docs themselves no longer use some words.
+#
+# set UTIL_CLEAN_SPELL_REGEX environment variable to
+# only check words that match
+# that regex.
+#
+# set UTIL_CLEAN_SPELL_LAST environment variable to
+# note the last word that was processed. The
+# script will continue with the next word
+#
+# This test is slow, this gives
+# us an easy way to chunk the test runs.
+#
+# Try to be clever and only test files that match the word,
+# even if it's a partial match to speed up the testing.
+#
+# Trust but verify: make sure you rerun the entire spell check
+# after letting this program update the .pws files
+
+use File::Temp;
+
+use RakuDoc::Test::Files;
+use Pod::Cache;
+
+my $regex = %*ENV<UTIL_CLEAN_SPELL_REGEX> // ".";
+my $last  = %*ENV<UTIL_CLEAN_SPELL_LAST> // "";
+
+# How many files to check at a time?
+my $at-a-time = 4;
+
+# Check the same files as xt/aspell.t does by default...
+my @files = RakuDoc::Test::Files.documents.grep({not $_ ~~ / 'README.' .. '.md' /});
+
+# ... but use pre-generated/rendered Pod6 files for our quick search.
+note "Caching rakudoc files...";
+@files = @files.map({
+    $_.ends-with('.rakudoc') ?? Pod::Cache.cache-file($_) !! $_;
+});
+
+for <xt/pws/words.pws xt/pws/code.pws> -> $dict {
+    for $dict.IO.lines -> $word {
+        next unless $word gt $last;
+        next unless $word ~~ /<$regex>/;
+        next if $word.starts-with('personal_ws-1.1 en');
+        note "Testing $dict / $word ";
+
+        my $proc = run( 'grep', '-li', $word, |@files, :out);
+        my $output = $proc.out.slurp;
+
+        # remove word, keep pointer to backup lexicon
+        my $backup = erase-word($dict, $word);
+
+        if $output eq '' {
+            note "\tnot found, removing.";
+        } else {
+            my @min-files = $output.lines;
+            note "\tfound in {+@min-files} files, testing.";
+            my $all-ok = True;
+            # use rotor, but get the partial chunk first
+            # so we can fail slightly faster
+            for @min-files.reverse.rotor($at-a-time, :partial).reverse -> @test-files {
+                note "\t\t" ~ @test-files.join("\n\t\t");
+                my $proc = run( 'xt/aspell.t', |@test-files.reverse, :out, :err);
+                if $proc.exitcode != 0 {
+                    $all-ok = False;
+                    note "\taspell test failed, keeping word";
+                    run('mv', $backup, $dict);
+                    last; # no need to test other files
+                }
+            }
+            if $all-ok {
+                note "\taspell test passed, removing word";
+                # We removed the word to do the test, so just leave as is.
+            }
+        }
+    }
+}
+
+sub erase-word($dict, $word) {
+    # Create a temp copy of the lexicon that doesn't contain the word
+    my ($tmp_fname, $tmp_io) = tempfile;
+    for $dict.IO.lines -> $i {
+        $tmp_io.say($i) unless $i eq $word;
+    }
+    $tmp_io.close;
+
+    # backup the dictionary file
+    my ($backup_fname, $bkp_io) = tempfile;
+    $bkp_io.close;
+
+    run('cp', $dict, $backup_fname);
+
+    # try the updated copy
+    run('mv', $tmp_fname, $dict);
+
+    # return a link to the last good copy of the file in case caller needs to restore it.
+    return $backup_fname;
+}

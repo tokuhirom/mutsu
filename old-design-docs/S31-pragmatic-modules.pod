@@ -1,0 +1,70 @@
+
+=encoding utf8
+
+=head1 TITLE
+
+[DRAFT] Synopsis 31: Pragmatic Modules
+
+=head1 VERSION
+
+    Created: 24 Feb 2009
+
+    Last Modified: 24 Feb 2009
+    Version: 1
+
+The document is a draft.
+
+=head1 Overview
+
+It is a general policy in Perl 6 that any pragma designed to influence
+the surface behavior of a keyword is identical to the keyword itself, unless
+there is good reason to do otherwise.  On the other hand, pragmas designed
+to influence deep semantics should not be named identically, though of
+course some similarity is good.
+
+All floating point IEEE modes must be lexically available via pragma except in cases
+where that would entail heroic efforts to bypass a braindead platform.
+
+XXX FIX: I (Tim Nelson) have no clue as to what the above entails, so the spec does not
+reflect this XXX
+
+=head1 Pragmata
+
+=over
+
+=item use autoindex -- see S09-data.pod
+
+=item use bytes -- see S05-regex.pod
+
+=item use chars -- see S05-regex.pod
+
+=item use codes -- see S05-regex.pod
+
+=item use graphs -- see S05-regex.pod
+
+=item use m :foo -- see S05-regex.pod
+
+=item use MONKEY-TYPING -- see S12-objects.pod
+
+=item use PDL -- see S09-data.pod
+
+=item use regex :foo -- see S05-regex.pod
+
+=item use rule :foo -- see S05-regex.pod
+
+=item use rx :foo -- see S05-regex.pod
+
+=item use s :foo -- see S05-regex.pod
+
+=item use token :foo -- see S05-regex.pod
+
+=item use oo :closed :final -- see S12-objects.pod
+
+=back
+
+=head1 AUTHORS
+
+    Tim Nelson <wayland@wayland.id.au>
+    Larry Wall
+
+=for vim:set expandtab sw=4:

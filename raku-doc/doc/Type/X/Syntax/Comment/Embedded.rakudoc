@@ -1,0 +1,23 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Syntax::Comment::Embedded
+
+=SUBTITLE Compilation error due to a malformed inline comment
+
+    class X::Syntax::Comment::Embedded does X::Syntax { }
+
+Syntax error thrown when C<#`> is encountered and it is not followed by
+an opening curly brace.
+
+For example
+
+=for code :skip-test<invalid>
+#`
+
+dies with
+
+=for code :lang<text>
+===SORRY!===
+Opening bracket is required for #` comment
+
+=end pod

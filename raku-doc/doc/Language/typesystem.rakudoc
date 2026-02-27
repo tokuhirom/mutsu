@@ -1,0 +1,986 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Type system
+
+=SUBTITLE Introduction to the type system of Raku
+
+=head1 Definition of a Raku type
+
+A type defines a new object by creating a type object that provides an
+interface to create instances of objects or to check values against. Any type
+object is a subclass of L<C<Any>|/type/Any> or L<C<Mu>|/type/Mu>. Introspection
+methods are provided via inheritance from those base classes and the
+introspection metamethods (L<.^|/language/operators#methodop_.^>). A new type is
+introduced to the current scope by one of the following type declarators at
+compile time or with the L<metaobject protocol|/language/mop> at runtime. All
+type names must be unique in their scope.
+
+=head2 Default types
+
+If no type is provided by the user Raku assumes the type to be L<C<Any>|/type/Any>. This
+includes L<containers|/language/containers>, base-classes,
+L<parameters|/language/signatures#Type_constraints> and return types.
+
+    my $a = 1;
+    $a = Nil;
+    say $a.^name;
+    # OUTPUT: «Any␤»
+
+    class C {};
+    say C.^parents(:all);
+    # OUTPUT: «((Any) (Mu))␤»
+
+For containers the default type is L<C<Any>|/type/Any> but the default type constraint is
+L<C<Mu>|/type/Mu>. Please note that binding replaces the container, not just the value. The
+type constraint may change in this case.
+
+=head2 Type objects
+
+To test if an object is a type object, use
+L<smartmatch|/language/operators#index-entry-smartmatch_operator>
+against a type constrained with a
+L<type smiley|/language/signatures#Constraining_argument_definiteness> or
+L«C<.DEFINITE>|/language/mop#DEFINITE» method:
+
+=begin code :ok-test<WHAT>
+my $a = Int;
+say $a ~~ Mu:U;
+# OUTPUT: «True␤»
+say not $a.DEFINITE;
+# OUTPUT: «True␤»
+=end code
+
+C<.DEFINITE> will return C<True> if the invocant is an instance. If it returns
+C<False>, then the invocant is a type object.
+
+=head3 Undefinedness
+
+Undefined objects maintain type information in Raku. Type objects are used to
+represent both undefinedness and the type of the undefined value. To provide a
+general undefined value use L<C<Any>|/type/Any>. If differentiation from L<C<Any>|/type/Any>,
+the default type for containers and arguments, is required use L<C<Mu>|/type/Mu>.
+
+Instances of objects created by L<.CREATE|/type/Mu#method_CREATE> are by
+convention defined. The method L<.defined|/type/Mu#routine_defined> will return
+C<Bool::True> to indicate definedness. The exceptions to that rule are
+L<C<Nil>|/type/Nil> and L<C<Failure>|/type/Failure>. Please note that any object is
+able to overload C<.defined> and as such can carry additional information.
+Also, Raku makes a clear distinction between definedness and trueness. Many
+values are defined even though they carry the meaning of wrongness or
+emptiness. Such values are C<0>, L<Bool::False|/type/Bool>,
+L<()|/language/operators#term_(_)> (empty list) and L<C<NaN>|/type/Num#NaN>.
+
+Values can become undefined at runtime via L<mixin|/language/operators#infix_but>.
+
+    my Int $i = 1 but role :: { method defined { False } };
+    say $i // "undefined";
+    # OUTPUT: «undefined␤»
+
+To test for definedness call C<.defined>, use
+L<//|/language/operators#infix_//>,
+ L<with/without|/language/control#with_orwith_without> and
+L<signatures|/language/signatures#Constraining_argument_definiteness>.
+
+=head3 Coercion
+
+Turning one type into another is done with coercion methods that have the same
+name as the target type. This convention is made mandatory by
+L<Signatures|/language/signatures#Coercion_type>. The source type has to know how to
+turn itself into the target type. To allow built-in types to turn themselves
+into user defined types use
+L<augment|/language/variables#The_augment_declarator> or the
+L<MOP|/language/mop>.
+
+    class C {
+        has $.int;
+        method this-is-c { put 'oi' x $!int ~ '‽' }
+    }
+
+    use MONKEY-TYPING;
+    augment class Int {
+        method C { C.new(:int(self))}
+    }
+
+    my $i = 10;
+    $i.=C;
+    $i.this-is-c();
+    # OUTPUT: «oioioioioioioioioioi‽␤»
+
+Raku provides methods defined in L<C<Cool>|/type/Cool> to convert to a target
+type before applying further operations. Most built-in types descend from
+L<C<Cool>|/type/Cool> and as such may provide implicit coercion that may be undesired. It is
+the responsibility of the user to care about trap-free usage of those
+methods.
+
+    my $whatever = "123.6";
+    say $whatever.round;
+    # OUTPUT: «124␤»
+    say <a b c d>.starts-with("ab");
+    # OUTPUT: «False␤»
+
+=head1 Type declarators
+
+Type declarators introduce a new type into the given scope. Nested scopes can
+be separated by C<::>. New L<packages|/language/packages> are created
+automatically if no such scope exists already.
+
+    class Foo::Bar::C {};
+    put Foo::Bar::.keys;
+    # OUTPUT: «C␤»
+
+X«|Syntax,... (forward declaration)»
+X«Forward declarations|Language,Forward declarations» can be provided with a block containing only C<...>,
+the L<"stub" operator|/language/operators#listop_...>. The
+compiler will check at the end of the current scope if the type is defined.
+
+    class C {...}
+    # many lines later
+    class C { has $.attr }
+
+=head2 C<class>
+
+The C<class> declarator creates a compile time construct that is compiled into a
+type object. The latter is a simple Raku object and provides methods to
+construct instances by executing initializers and sub methods to fill all
+attributes declared in a class, and any parent class, with values. Initializers
+can be provided with the declaration of attributes or in constructors. It's the
+responsibility of the L<C<Metamodel::ClassHOW>|/type/Metamodel::ClassHOW> to know
+how to run them. This is the only magic part of building objects in Raku. The
+default parent type is L<C<Any>|/type/Any>, which in turn inherits from L<C<Mu>|/type/Mu>. The latter
+provides the default constructor C<.new> which is named like this by convention.
+Aside from this, C<.new> does not carry any special meaning nor is treated in
+any special way.
+
+For more information how to use classes see the L<Classes and objects|/language/classtut>
+tutorial.
+
+=head3 Mixins
+
+The type introduced by C<class> can be extended with
+L«infix:<but>|/language/operators#infix_but» at runtime. The original type is
+not modified, instead a new type object is returned and can be stored in
+a container that type checks successful against the original type or the role
+that is mixed in.
+
+    class A {}
+    role R { method m { say 'oi‽' } }
+    my R $A = A but R;
+    my $a1 = $A.new;
+    $a1.m;
+    say [$A ~~ R, $a1 ~~ R];
+    # OUTPUT: «oi‽␤[True True]␤»
+
+=head3 Introspection
+
+=head4 Metaclass
+
+To test if a given type object is a class, test the metaobject method C<.HOW>
+against L<C<Metamodel::ClassHOW>|/type/Metamodel::ClassHOW>.
+
+    class C {};
+    say C.HOW ~~ Metamodel::ClassHOW;
+    # OUTPUT: «True␤»
+
+=head3 Private attributes
+
+Private L<C<Attribute>|/type/Attribute>s are addressed with any of the twigils
+C<$!>, C<@!> and C<%!>. They do not have public accessor methods generated
+automatically.  As such they can not be altered from outside the class they are
+defined in.
+
+    class C {
+        has $!priv;
+        submethod BUILD { $!priv = 42 }
+    };
+
+    say (.name, .package, .has_accessor) for C.new.^attributes;
+    # OUTPUT: «($!priv (C) False)␤»
+
+X«|Syntax,method (declarator)»
+=head3 Methods
+
+The C<method> declarator defines objects of type L<C<Method>|/type/Method> and
+binds them to the provided name in the scope of a class. Methods in a class are
+C<has> scoped by default. Methods that are C<our> scoped are not added to the
+method cache by default and as such can not be called with the accessor sigil
+C<$.>. Call them with their fully qualified name and the invocant as the
+first argument.
+
+=head4 Inheritance and multis
+
+For a normal method in a subclass, there is no competition from multi methods in a parent class.
+
+    class Parent {
+        multi method m(Numeric $i){ say 'Numeric' }
+        multi method m(Int $i){ say 'Int' }
+    }
+
+    class Child is Parent {
+        method m(Numeric $i){ say 'Child::Numeric' }
+    }
+
+    my Int $i;
+    Child.new.m($i);
+    # OUTPUT: «Child::Numeric␤»
+
+X«|Syntax,only method»
+=head4 Only method
+
+To explicitly state that a method is not a multi method use the C<only> method
+declarator.
+
+=for code :skip-test<compile time error>
+class C {
+    only method m {};
+    multi method m {};
+};
+# OUTPUT: «X::Comp::AdHoc: Cannot have a multi candidate for 'm' when an only method is also in the package 'C'␤»
+
+=head4 submethod BUILD
+
+The L<submethod|/type/Submethod> C<BUILD> is (indirectly) called by
+L<.bless|/type/Mu#method_bless>. It
+is meant to set private and public attributes of a class and receives all named
+attributes passed into C<.bless>. The default
+constructor L<.new|/type/Mu#method_new> defined in L<C<Mu>|/type/Mu> is the method that
+invokes C<.bless>. Given that public accessor methods are not available in C<BUILD>,
+you must use private attribute notation instead.
+
+    class C {
+        has $.attr;
+        submethod BUILD (:$attr = 42) {
+            $!attr = $attr
+        };
+        multi method new($positional) {
+            self.bless(:attr($positional), |%_)
+       }
+    };
+
+    C.new.say; C.new('answer').say;
+    # OUTPUT: «C.new(attr => 42)␤
+    #          C.new(attr => "answer")␤»
+
+X<|Language,FALLBACK (method)>
+=head4 Fallback method
+
+A method with the special name C<FALLBACK> will be called when other means to
+resolve the name produce no result. The first argument holds the name and all
+following arguments are forwarded from the original call. Multi methods and
+L«sub-signatures|/language/signatures#Sub-signatures» are supported.
+
+    class Magic {
+        method FALLBACK ($name, |c(Int, Str)) {
+        put "$name called with parameters {c.raku}"  }
+    };
+    Magic.new.simsalabim(42, "answer");
+
+    # OUTPUT: «simsalabim called with parameters ⌈\(42, "answer")⌋␤»
+
+X<|Language,WHAT (reserved method)>X<|Language,WHO (reserved method)>
+X<|Language,HOW (reserved method)>X<|Language,VAR (reserved method)>
+=head4 Reserved method names
+
+Some built-in introspection methods are actually special syntax provided by the
+compiler, namely C<WHAT>, C<WHO>, C<HOW> and C<VAR>. Declaring methods with
+those names will silently fail. A dynamic call will work, what allows to call
+methods from foreign objects.
+
+=begin code :ok-test<WHAT>
+class A {
+    method WHAT { "ain't gonna happen" }
+};
+
+say A.new.WHAT;    # OUTPUT: «(A)␤»
+say A.new."WHAT"() # OUTPUT: «ain't gonna happen␤»
+=end code
+
+=head4 Methods in package scope
+
+Any C<our> scoped method will be visible in the package scope of a class.
+
+    class C {
+        our method packaged {};
+        method loose {}
+    };
+    say C::.keys
+    # OUTPUT: «(&packaged)␤»
+
+=head4 Setting attributes with namesake variables and methods
+
+Instead of writing C«attr => $attr» or C<:attr($attr)>, you can save some
+typing if the variable (or method call) you're setting the attribute with
+shares the name with the attribute:
+
+    class A { has $.i = 42 };
+    class B {
+        has $.i = "answer";
+        method m() { A.new(:$.i) }
+        #                  ^^^^  Instead of i => $.i or :i($.i)
+    };
+    my $a = B.new.m;
+    say $a.i; # OUTPUT: «answer␤»
+
+Since C<$.i> method call is named C<i> and the attribute is also named C<i>,
+Raku lets us shortcut. The same applies to C<:$var>, C<:$!private-attribute>,
+C<:&attr-with-code-in-it>, and so on.
+
+=head3 trait C<is nodal>
+
+Marks a L<C<List>|/type/List> method to indicate to L<hyperoperators|/language/operators#Hyper_operators> to not descend into inner
+L<C<Iterable>|/type/Iterable>s to call this method. This trait generally isn't
+something end users would be using, unless they're subclassing or augmenting
+core L<C<List>|/type/List> type.
+
+In order to demonstrate the difference consider the following examples, the first
+using a method (C<elems>) that C<is nodal> and the second using a method (L<C<Int>|/type/Int>)
+which is not nodal.
+
+    say ((1.0, "2", 3e0), [^4], '5')».elems; # OUTPUT: «(3, 4, 1)␤»
+    say ((1.0, "2", 3e0), [^4], '5')».Int    # OUTPUT: «((1 2 3) [0 1 2 3] 5)␤»
+
+=head3 trait X<C<handles>|Traits,handles trait>
+
+    multi trait_mod:<handles>(Attribute:D $target, $thunk)
+
+The L<trait|/type/Sub#Traits> C<handles> applied to an attribute of a class will
+delegate all calls to the provided method name to the method with the same name
+of the attribute. The object referenced by the attribute must be initialized. A
+type constraint for the object that the call is delegated to can be provided.
+
+    class A      { method m(){ 'A::m has been called.' } }
+    class B is A { method m(){ 'B::m has been called.' } }
+    class C {
+        has A $.delegate handles 'm';
+        method new($delegate){ self.bless(delegate => $delegate) }
+    };
+    say C.new(B.new).m(); # OUTPUT: «B::m has been called.␤»
+
+Instead of a method name, a L<C<Pair>|/type/Pair> (for renaming), a list of names or
+L<C<Pair>|/type/Pair>s, a L<C<Regex>|/type/Regex> or a L<C<Whatever>|/type/Whatever> can be provided. In the latter case
+existing methods, both in the class itself and its inheritance chain, will take
+precedence. If even local X«C<FALLBACK>|Language,FALLBACK (trait handles)»s should be
+searched, use a L<C<HyperWhatever>|/type/HyperWhatever>.
+
+    class A {
+        method m1(){ 'A::m1 has been called.' }
+        method m2(){ 'A::m2 has been called.' }
+    }
+
+    class C {
+        has $.delegate handles <m1 m2> = A.new()
+    }
+    say C.new.m2; # OUTPUT: «A::m2 has been called.␤»
+
+    class D {
+        has $.delegate handles /m\d/ = A.new()
+    }
+    say D.new.m1; # OUTPUT: «A::m1 has been called.␤»
+
+    class E {
+        has $.delegate handles (em1 => 'm1') = A.new()
+    }
+    say E.new.em1; # OUTPUT: «A::m1 has been called.␤»
+
+    class F {
+      # Delegates all methods from A
+      has A $.delegate handles *;
+    }
+    say F.new.m1; # OUTPUT: «A::m1 has been called.␤»
+    say F.new.m2; # OUTPUT: «A::m2 has been called.␤»
+
+=head3  X<trait C<is>|Traits,is (class)>
+
+    multi trait_mod:<is>(Mu:U $child, Mu:U $parent)
+
+The L<trait|/type/Sub#Traits> C<is> accepts a type object to be
+added as a parent class of a class in its definition. To allow multiple
+inheritance the trait can be applied more than once. Adding parents to a class
+will import their methods into the target class. If the same method name occurs
+in multiple parents, the first added parent will win.
+
+If no C<is> trait is provided the default of L<C<Any>|/type/Any> will be used
+as a parent class. This forces all Raku objects to have the same set of basic
+methods to provide an interface for introspection and coercion to basic types.
+
+    class A {
+        multi method from-a(){ 'A::from-a' }
+    }
+    say A.new.^parents(:all).raku;
+    # OUTPUT: «(Any, Mu)␤»
+
+    class B {
+        method from-b(){ 'B::from-b ' }
+        multi method from-a(){ 'B::from-A' }
+    }
+
+    class C is A is B {}
+    say C.new.from-a();
+    # OUTPUT: «A::from-a␤»
+
+=head3 trait X«C<is rw>|Traits,is rw (class)»
+
+    sub trait_mod:<is>(Mu:U $type, :$rw!)
+
+The L<trait|/type/Sub#Traits> C<is rw> on a class will create writable accessor
+methods on all public attributes of that class.
+
+    class C is rw {
+        has $.a;
+    };
+    my $c = C.new.a = 42;
+    say $c; # OUTPUT: «42␤»
+
+=head3 trait C<is required>
+
+    multi trait_mod:<is>(Attribute $attr, :$required!)
+    multi trait_mod:<is>(Parameter:D $param, :$required!)
+
+Marks a class or roles attribute as required. If the attribute is not
+initialized at object construction time throws
+L<C<X::Attribute::Required>|/type/X::Attribute::Required>.
+
+    class Correct {
+        has $.attr is required;
+    }
+    say Correct.new(attr => 42);
+    # OUTPUT: «Correct.new(attr => 42)␤»
+
+    class C {
+        has $.attr is required;
+    }
+    C.new;
+    CATCH { default { say .^name => .Str } }
+    # OUTPUT: «X::Attribute::Required => The attribute '$!attr' is required, but you did not provide a value for it.␤»
+
+Note a class with a private attribute will give the same error:
+
+    class D {
+        has $!attr is required;
+    }
+    D.new;
+    CATCH { default { say .^name => .Str } }
+    # OUTPUT: «X::Attribute::Required => The attribute '$!attr' is required, but you did not provide a value for it.␤»
+
+You can provide a reason why it's required as an argument to C<is required>
+
+=for code
+class Correct {
+    has $.attr is required("it's so cool")
+};
+say Correct.new();
+# OUTPUT: «The attribute '$!attr' is required because it's so cool,␤but you did not provide a value for it.␤»
+
+=head3 trait C<hides>
+
+The trait C<hides> provides inheritance without being subject to
+L<re-dispatching|/language/functions#Re-dispatching>.
+
+    class A {
+        method m { say 'i am hidden' }
+    }
+    class B hides A {
+        method m { nextsame }
+        method n { self.A::m }
+    };
+
+    B.new.m;  # No output
+    B.new.n;  # OUTPUT: «i am hidden␤»
+
+The trait C<is hidden> allows a class to hide itself from
+L<re-dispatching|/language/functions#Re-dispatching>.
+
+    class A is hidden {
+        method m { say 'i am hidden' }
+    }
+    class B is A {
+        method m { nextsame }
+        method n { self.A::m }
+    }
+
+    B.new.m; # No output
+    B.new.n; # OUTPUT: «i am hidden␤»
+
+Classes declared with C<is hidden> also generate slightly different method
+signatures.  To facilitate re-dispatch, typical methods are automatically
+provided with an extra C<*%_> parameter that L<captures extra named
+arguments|/type/Method#index-entry-*%___(extra_named_arguments)>.  Because classes
+declared with C<is hidden> don't participate in re-dispatch, their methods don't
+receive this extra parameter.
+
+=head3 trait C<trusts>
+
+To allow one class to access the private methods of another class use the trait
+C<trusts>. A forward declaration of the trusted class may be required.
+
+    class B {...};
+    class A {
+        trusts B;
+        has $!foo;
+        method !foo { return-rw $!foo }
+        method raku { "A.new(foo => $!foo)" }
+    };
+    class B {
+        has A $.a .= new;
+        method change { $!a!A::foo = 42; self }
+    };
+    say B.new.change;
+    # OUTPUT: «B.new(a => A.new(foo => 42))␤»
+
+=head3 Augmenting a class
+
+To add methods and attributes to a class at compile time use C<augment> in
+front of a class definition fragment. The compiler will demand the pragmas
+C<use MONKEY-TYPING> or C<use MONKEY> early in the same scope. Please note that
+there may be performance implications, hence the pragmas.
+
+    use MONKEY; augment class Str {
+        method mark(Any :$set){
+            state $mark //= $set; $mark
+        }
+    };
+    my $s = "42";
+    $s.mark(set => "answer");
+    say $s.mark
+    # OUTPUT: «answer␤»
+
+There are few limitations of what can be done inside the class fragment. One of
+them is the redeclaration of a method or sub into a multi. Using added
+attributes is not implemented. Please note that adding a multi candidate
+that differs only in its named parameters will add that candidate behind the
+already defined one and as such it won't be picked by the dispatcher.
+
+=head2 C<role>
+
+X<|Language,role (typesystem)>
+Roles are class fragments, which allow the definition of interfaces that are
+shared by classes. The C<role> declarator also introduces a type object that
+can be used for type checks. Roles can be mixed into classes and objects at
+runtime and compile time. The C<role> declarator returns the created type
+object thus allowing the definition of anonymous roles and in-place mixins.
+
+    role Serialize {
+        method to-string { self.Str }
+        method to-number { self.Num }
+    }
+
+    class A does Serialize {}
+    class B does Serialize {}
+
+    my Serialize @list;
+    @list.push: A.new;
+    @list.push: B.new;
+
+    say @list».to-string;
+    # OUTPUT: «[A<57192848> B<57192880>]␤»
+
+Use C<...> as the only element of a method body to declare a method to be
+abstract. Any class getting such a method mixed in has to overload it. If the
+method is not overloaded before the end of the compilation unit
+L<C<X::Comp::AdHoc>|/type/X::Comp::AdHoc> will be thrown.
+
+    EVAL 'role R { method overload-this(){...} }; class A does R {}; ';
+    CATCH { default { say .^name, ' ', .Str } }
+    # OUTPUT: «X::Comp::AdHoc Method 'overload-this' must be implemented by A because it is required by roles: R.␤»
+
+=head3 Auto-punning
+
+A role can be used instead of a class to create objects. Since roles can't
+exist at runtime, a class of the same name is created that will type check
+successful against the role.
+
+    role R { method m { say 'oi‽' } };
+    R.new.^mro.say;
+    # OUTPUT: «((R) (Any) (Mu))␤»
+    say R.new.^mro[0].HOW.^name;
+    # OUTPUT: «Perl6::Metamodel::ClassHOW␤»
+    say R.new ~~ R;
+    # OUTPUT: «True␤»
+
+=head3 trait C<does>
+
+The trait C<does> can be applied to roles and classes providing compile time
+mixins. To refer to a role that is not defined yet, use a forward declaration.
+The type name of the class with mixed in roles does not reflect the mixin, a
+type check does. If methods are provided in more than one mixed in role, the
+method that is defined first takes precedence. A list of roles separated by
+comma can be provided. In this case conflicts will be reported at compile time.
+
+    role R2 {...};
+    role R1 does R2 {};
+    role R2 {};
+    class C does R1 {};
+
+    say [C ~~ R1, C ~~ R2];
+    # OUTPUT: «[True True]␤»
+
+For runtime mixins see L<but|/language/operators#infix_but> and L<does|/language/operators#infix_does>.
+
+=head3 Parameterized
+
+Roles can be provided with parameters in-between C<[]> behind a roles name.
+
+    role R[$d] { has $.a = $d };
+    class C does R["default"] { };
+
+    my $c = C.new;
+    say $c;
+    # OUTPUT: «C.new(a => "default")␤»
+
+Parameters can have type constraints, C<where> clauses are not supported for
+types but can be implemented via L<C<subset>s|#subset>.
+X<|Language,Type Capture (role)>L<Type captures|/language/signatures#Type_captures> are supported.
+
+    class A {};
+    class B {};
+    subset A-or-B where * ~~ A|B;
+    role R[A-or-B ::T] {};
+    R[A.new].new;
+
+Default parameters can be provided.
+
+    role R[$p = fail("Please provide a parameter to role R")] {};
+    my $i = 1 does R;
+    CATCH { default { say .^name, ': ', .Str} }
+    # OUTPUT: «X::AdHoc: Could not instantiate role 'R':␤Please provide a parameter to role R␤»
+
+=head3 As type constraints
+
+Roles can be used as type constraints wherever a type is expected. If a role is
+mixed in with C<does> or C<but>, its type-object is added to the type-object
+list of the object in question. If a role is used instead of a class (using
+auto-punning), the auto-generated class' type-object, of the same name as the
+role, is added to the inheritance chain.
+
+=begin code
+role Unitish[$unit = fail('Please provide a SI unit quantifier as a parameter to the role Unitish')] {
+    has $.SI-unit-symbol = $unit;
+    method gist {
+        given self {
+            # ...
+            when * < 1 { return self * 1000 ~ 'm' ~ $.SI-unit-symbol }
+            when * < 1000 { return self ~ $.SI-unit-symbol }
+            when * < 1_000_000 { return self / 1_000 ~ 'k' ~ $.SI-unit-symbol }
+            # ...
+        }
+    }
+}
+
+role SI-second   does Unitish[<s>] {}
+role SI-meter    does Unitish[<m>] {}
+role SI-kilogram does Unitish[<g>] {}
+
+sub postfix:<s>(Numeric $num) { ($num) does SI-second }
+sub postfix:<m>(Numeric $num) { ($num) does SI-meter }
+sub postfix:<g>(Numeric $num) { ($num) does SI-kilogram }
+sub postfix:<kg>(Numeric $num){ ($num * 1000) does SI-kilogram }
+
+constant g = 9.806_65;
+
+role SI-Newton does Unitish[<N>] {}
+
+multi N(SI-kilogram $kg, SI-meter $m, SI-second $s --> SI-Newton ){ ($kg * ($m / $s²)) does SI-Newton }
+multi N(SI-kilogram $kg --> SI-Newton)                            { ($kg * g) does SI-Newton }
+
+say [75kg, N(75kg)];
+# OUTPUT: «[75kg 735.49875kN]␤»
+say [(75kg).^name, N(75kg).^name];
+# OUTPUT: «[Int+{SI-kilogram} Rat+{SI-Newton}]␤»
+=end code
+
+X<|Reference,Enumeration;Reference,Enums;Syntax,enum>
+=head2 C<enum>
+
+Enumerations provide constant key-value-pairs with an associated type. Any key
+is of that type and injected as a symbol into the current scope. If the symbol
+is used, it is treated as a constant expression and the symbol is replaced with
+the value of the enum-pair. Any Enumeration inherits methods from the role
+L<C<Enumeration>|/type/Enumeration>. Complex expressions for generating
+key-value pairs are not supported. In general, an C<enum> is a L<C<Map>|/type/Map>
+whose elements have the L<C<Enumeration>|/type/Enumeration> role mixed in; this role includes, for
+each element, an index which creates an order on the map.
+
+Stringification of the symbol, which is done automatically in string context and
+is exactly equal to its name, which is also the key of the enum-pair.
+
+    enum Names ( name1 => 1, name2 => 2 );
+    say name1, ' ', name2; # OUTPUT: «name1 name2␤»
+    say name1.value, ' ', name2.value; # OUTPUT: «1 2␤»
+
+Comparing symbols will use type information and the value of the enum-pair. As
+value types L<C<Num>|/type/Num> and L<C<Str>|/type/Str> are supported.
+
+    enum Names ( name1 => 1, name2 => 2 );
+    sub same(Names $a, Names $b){
+       $a eqv $b
+    }
+
+    say same(name1, name1); # OUTPUT: «True␤»
+    say same(name1, name2); # OUTPUT: «False␤»
+    my $a = name1;
+    say $a ~~ Names; # OUTPUT: «True␤»
+    say $a.^name;    # OUTPUT: «Names␤»
+
+All keys have to be of the same type.
+
+    enum Mass ( mg => 1/1000, g => 1/1, kg => 1000/1 );
+
+    say Mass.enums;
+    # OUTPUT: «Map.new((g => 1, kg => 1000, mg => 0.001))␤»
+
+And you can use any kind of symbol:
+
+    enum Suit <♣ ♦ ♥ ♠>;
+
+As long as you refer to that symbol using the full syntax:
+
+=for code :preamble<< enum Suit<♣> >>
+say Suit::<♣>; # OUTPUT: «♣␤»
+my $heart = '♥';
+say Suit::«$heart»; # OUTPUT: «♥␤»
+
+Attempting to access unicode enum keys without said syntax will result in an
+error:
+
+=for code :skip-test<example of bad code>
+say ♣ ; # OUTPUT: «(exit code 1) ===SORRY!===␤Argument to "say" seems to be malformed…
+
+If no value is given L<C<Int>|/type/Int> will be assumed as the values type and incremented
+by one per key starting at zero. As enum key types L<C<Int>|/type/Int>, L<C<Num>|/type/Num>, L<C<Rat>|/type/Rat> and
+L<C<Str>|/type/Str> are supported.
+
+    enum Numbers <one two three four>;
+
+    say Numbers.enums;
+    # OUTPUT: «Map.new((four => 3, one => 0, three => 2, two => 1))␤»
+
+A different starting value can be provided.
+
+    enum Numbers «:one(1) two three four»;
+
+    say Numbers.enums;
+    # OUTPUT: «Map.new((four => 4, one => 1, three => 3, two => 2))␤»
+
+You can also do this with the B<()> form of the initializer, but will need to
+quote keys that do not have a value:
+
+    enum Numbers (
+      one => 1,
+      'two',
+      'three',
+      'four'
+    );
+
+Enums can also be anonymous, with the only difference with named C<enum>s being
+that you cannot use it in L<C<Signature>|/type/Signature>s or to declare variables.
+
+    my $e = enum <one two three>;
+    say two;       # OUTPUT: «two␤»
+    say one.^name; # OUTPUT: «␤»
+    say $e.^name;  # OUTPUT: «Map␤»
+
+There are various methods to get access to the keys and values of the symbols
+that have been defined. All of them turn the values into L<C<Str>|/type/Str>, which may not
+be desirable. By treating the enum as a package, we can get a list of types for
+the keys.
+
+    enum E <one two>;
+    my @keys = E::.values;
+    say @keys.map: *.raku;
+    # OUTPUT: «(E::one E::two)␤» or «(E::two E::one)␤»
+
+Note that, as the output above indicates, the iteration order of enums
+is not guaranteed.  This is because the methods that "iterate over" an
+enum do not iterate I<directly> on the enum (which, after all, is not
+iterable).  Instead, these iteration methods create a L<C<Map>|/type/Map> with the
+same keys and values as the enum.  Because L<C<Map>|/type/Map>s provide only unordered,
+iteration the iteration methods on an enum do as well.  If you need to
+iterate an enum in order, you can sort on its C<value>, for example
+with C<E.enums.sort(*.value)>.
+
+With the use of B<()> parentheses, an enum can be defined using any
+arbitrary dynamically defined list. The list should consist of Pair
+objects:
+
+For example, in file C<config> we have:
+
+=for code :lang<text>
+a 1
+b 2
+
+We can create an enum using it with this code:
+
+=for code :skip-test<needs filesystem>
+enum ConfigValues ('config'.IO.lines.map({ my ($key, $value) = $_.words; $key => $value }));
+say ConfigValues.enums;          # OUTPUT: «Map.new((a => 1, b => 2))␤»
+
+Firstly, we read lines from C<config> file, split every line using
+C<words> method and return resulting pair for every line, thus
+creating a List of Pairs.
+
+=head3 Typing Enums
+
+When declaring enums with an explicit scope, a type may be provided,
+which will be used to typecheck the enum's values:
+
+=for code
+my Str enum Foo (foo => 'foo');
+
+All enum pairs are typed as L<C<Enumeration>|/type/Enumeration>. In
+addition, when the enum values are typed as L<C<Numeric>|/type/Numeric>, L<C<Stringy>|/type/Stringy>, or a
+combination of these two types, enum pairs also do the
+C<NumericEnumeration>, C<StringyEnumeration>, and
+C<NumericStringyEnumeration> roles respectively.  These simply determine
+how enum pairs get stringified with the L<C<Str>|/type/Str> method.
+
+Given that these types are roles, naturally you can provide your own
+roles when declaring an enum, which allows you to give them custom
+behavior and state. For example, to make it simpler to check if a number
+matches a flag in a bitmask enum, you could write a
+C<BitmaskEnumeration> role with an C<ACCEPTS> method to handle this via
+smartmatching:
+
+=begin code
+role BitmaskEnumeration {
+    multi method ACCEPTS(::?CLASS:D: Int:D $value --> Bool:D) {
+        so $value +& self.value
+    }
+}
+
+enum Flags does BitmaskEnumeration (
+    FLAG_FOO => 0b001,
+    FLAG_BAR => 0b010,
+    FLAG_BAZ => 0b100,
+);
+
+say 0b111 ~~ FLAG_FOO & FLAG_BAR & FLAG_BAZ; # OUTPUT: «True␤»
+=end code
+
+=head3 Metaclass
+
+To test if a given type object is an C<enum>, test the metaobject method
+C<.HOW> against L<C<Metamodel::EnumHOW>|/type/Metamodel::EnumHOW> or simply test
+against the L<C<Enumeration>|/type/Enumeration> role.
+
+    enum E(<a b c>);
+    say E.HOW ~~ Metamodel::EnumHOW; # OUTPUT: «True␤»
+    say E ~~ Enumeration;            # OUTPUT: «True␤»
+
+=head3 Methods
+
+See the L«C<Enumeration>|/type/Enumeration» role for available methods on
+enum types and enum-pairs.
+
+=head3 Coercion
+
+If you want to coerce the value of an enum element to its proper
+enum object, use the coercer with the name of the enum:
+
+    my enum A (sun => 42, mon => 72);
+    A(72).pair.say;   # OUTPUT: «mon => 72␤»
+    A(1000).say; # OUTPUT: «(A)␤»
+
+The last example shows what happens if there is no enum-pair that includes that
+as a value.
+
+=head2 C<module>
+
+Modules are usually one or more source files that expose Raku constructs,
+such as classes, roles, grammars, subroutines and variables. Modules are
+usually used for distributing Raku code as libraries which can be used in
+another Raku program.
+
+For a full explanation see L<Modules|/language/using-modules/introduction>
+and linked pages.
+
+=head2 C<package>
+
+Packages are nested namespaces of named program elements. Modules, classes and
+grammars are all types of package.
+
+For a full explanation see L<Packages|/language/packages>.
+
+=head2 C<grammar>
+
+Grammars are a specific type of class intended for parsing text. Grammars are
+composed of rules, tokens and regexes which are actually methods, since grammars
+are classes.
+
+For a full explanation see L<Grammars|/language/grammars>.
+
+=head2 C<subset>
+
+A X<C<subset>|Syntax,subset> declares a new type that will re-dispatch to its base
+type. If a L<C<where>|/language/signatures#index-entry-where_clause> clause is supplied any assignment
+will be checked against the given code object.
+
+    subset Positive of Int where * > -1;
+    my Positive $i = 1;
+    $i = -42;
+    CATCH { default { put .^name,': ', .Str } }
+    # OUTPUT: «X::TypeCheck::Assignment: Type check failed in assignment to $i; expected Positive but got Int (-42)␤»
+
+Subsets can be used in signatures, e.g. by typing the output:
+
+    subset Foo of List where (Int,Str);
+    sub a($a, $b, --> Foo) { $a, $b }
+    # Only a List with the first element being an Int and the second a Str will pass the type check.
+    a(1, "foo");  # passes
+    a("foo", 1);  # fails
+
+If you skip the base type, it defaults to L<C<Any>|/type/Any>. So the following two are equivalent:
+
+=for code :preamble<class A {}; class B {}>
+subset A-or-B where * ~~ A | B
+
+=for code :preamble<class A {}; class B {}>
+subset A-or-B of Any where * ~~ A | B
+
+Subsets can be anonymous, allowing inline placements where a subset is required
+but a name is neither needed nor desirable.
+
+    my enum E1 <A B>;
+    my enum E2 <C D>;
+    sub g(@a where { .all ~~ subset :: where E1|E2 } ) {
+        say @a
+    }
+    g([A, C]);
+    # OUTPUT: «[A C]␤»
+
+Subsets can be used to check types dynamically, which can be useful in conjunction
+with L<require|/language/modules#require>.
+X<|Language,dynamic subset>
+
+=for code
+require ::('YourModule');
+subset C where ::('YourModule::C');
+
+X«|Syntax,:ver<>»X«|Syntax,:auth<>»X«|Syntax,:api<>»
+=head1 Versioning, authorship, and API version.
+
+When you declare a type you can pass it a version, author, and/or API number,
+all of which you can subsequently introspect. The versioning, authorship,
+and/or API number of a type can be applied via the adverbs C«:ver<>»,
+C«:auth<>», and C«:api<>» respectively. All of them take a string as argument;
+for C<:ver> the string is converted to a L«C«Version»|/type/Version» object, and
+for C<:api> the string is converted into an
+L<allomorph|/language/glossary#Allomorph>
+L«C«IntStr»|/type/IntStr» object. C<:auth> generally takes the form
+C<hosting:ID>, as in C<github:github-user> or C<gitlab:gitlab-user>.
+
+
+To query the version, author, and API version
+of a type use L<C<.^ver>|/type/Metamodel::Versioning#method_ver>,
+L<C<.^auth>|/type/Metamodel::Versioning#method_auth>, and
+L<C<.^api>|/type/Metamodel::Versioning#method_api> respectively, as illustrated
+down below by querying a C<class>.
+
+    class C:ver<4.2.3>:auth<github:jane>:api<1> {}
+    say C.^ver;       # OUTPUT: «v4.2.3␤»
+    say C.^ver.parts; # OUTPUT: «(4 2 3)␤»
+    say C.^auth;      # OUTPUT: «github:jane␤»
+    say C.^api;       # OUTPUT: «1␤»
+
+In a similar fashion, C<role>s, C<grammar>s, and C<module>s can be queried about
+the aforementioned information.
+
+=end pod

@@ -1,0 +1,61 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Rat
+
+=SUBTITLE Rational number (limited-precision)
+
+    class Rat is Cool does Rational[Int, uint64] { }
+
+C<Rat> objects store rational numbers as a pair of a numerator and
+denominator. Number literals with a dot but without exponent produce
+C<Rat>s.
+
+    say 3.1;          # OUTPUT: «3.1␤»      (same as: Rat.new(31, 10))
+    say 3.1.^name;    # OUTPUT: «Rat␤»
+    say 3.1.nude;     # OUTPUT: «(31 10)␤»
+
+    say <1/2>;        # OUTPUT: «0.5␤»      (same as: Rat.new(1, 2))
+    say <1/2>.^name;  # OUTPUT: «Rat␤»
+    say <1/2>.nude;   # OUTPUT: «(1 2)␤»
+
+Thus arithmetic with short dotted-decimal numbers does not suffer
+from floating point errors.
+
+To prevent the numerator and denominator from becoming pathologically large,
+the denominator is limited to 64 bit storage. On overflow of the denominator
+during an arithmetic operation
+a L<C<Num>|/type/Num> (floating-point number) is returned instead.  You can tune this
+behavior by setting the
+L<C<$*RAT-OVERFLOW>|/language/variables#index-entry-%24*RAT-OVERFLOW> dynamic
+variable.
+
+For example this function crudely approximates a square root, and overflows
+the denominator quickly:
+
+    sub approx-sqrt($n, $iterations) {
+        my $x = $n;
+        $x = ($x + $n / $x) / 2 for ^$iterations;
+        return $x;
+    }
+    say approx-sqrt(2, 5).^name;     # OUTPUT: «Rat␤»
+    say approx-sqrt(2, 10).^name;    # OUTPUT: «Num␤»
+
+If you want arbitrary precision arithmetic with rational numbers, use the
+L<C<FatRat>|/type/FatRat> type instead.
+
+C<Rat> objects are immutable.
+
+=head1 Methods
+
+=head2 method raku
+
+    multi method raku(Rat:D: --> Str:D)
+
+Returns an implementation-specific string that produces an L<equivalent|/routine/eqv> object
+when given to L<EVAL|/routine/EVAL>.
+
+=for code
+say (1/3).raku;                # OUTPUT: «<1/3>␤»
+say (2/4).raku;                # OUTPUT: «0.5␤»
+
+=end pod

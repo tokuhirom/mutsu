@@ -1,0 +1,65 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Method
+
+=SUBTITLE Member function
+
+    class Method is Routine { }
+
+A type for methods that behaves in the same way as L<C<Routine>|/type/Routine> with
+some exceptions listed below. For details of a method's parameter
+list see L<C<Signature>|/type/Signature>.
+
+To create a method outside a L<class definition|/language/typesystem#Methods>,
+use the declarators C<my> and C<method>. If an
+L<identifier|/language/syntax#Identifiers> is provided the methods name will be
+injected into the scope specified by the declarator.
+
+    my $m = method ($invocant: $param) {
+        say "$invocant: '$param'";
+    }
+    "greeting".$m("hello");  # OUTPUT: «greeting: 'hello'␤»
+
+    <a b c>.&(my method (List:D:) { say self.raku; self }).say;
+    # OUTPUT: «("a", "b", "c")␤(a b c)␤»
+
+The invocant of a method defaults to C<self>. A type constraint including a
+type-smiley can be used and is honored both for methods defined in a class and
+for free floating methods. Call the latter with C<.&> on an object.
+
+    my method m(Int:D: $b){
+        say self.^name
+    }
+    my $i = 1;
+    $i.&m(<a>);
+    # OUTPUT: «Int␤»
+
+Please note that the main difference between methods defined within and
+without a class is the need to use `&` to invoke them in the latter case. In
+case any other sigil is used in the definition, as in the first example, that
+sigil can also be used.
+
+X<|Syntax,*%_ (extra named arguments)>
+Methods automatically capture extra named arguments into the special variable C<%_>,
+where other types of L<C<Routine>|/type/Routine> will throw at runtime. So
+
+    method x() {}
+
+is actually equivalent to
+
+    method x(*%_) {}
+
+Extra arguments will be forwarded by L«C<nextsame> and
+friends|/language/functions#Re-dispatching».
+
+    class A {
+        multi method m(:$a, :$b) { say "2 named" }
+    }
+
+    class B is A {
+        method m(:$a) { say "1 named"; nextsame }
+    }
+    B.m( :1a, :2b );
+    # OUTPUT: «1 named␤2 named␤»
+
+=end pod

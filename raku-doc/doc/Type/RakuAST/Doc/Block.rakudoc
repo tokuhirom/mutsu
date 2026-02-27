@@ -1,0 +1,368 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class RakuAST::Doc::Block
+
+=SUBTITLE Contains the information of a RakuDoc block
+
+    class RakuAST::Doc::Block { }
+
+The C<RakuAST::Doc::Block> class contains the information about a
+C<RakuDoc> block.
+
+Support for L<C<RakuAST>|/type/RakuAST> functionality is available in language version
+C<6.e+> and was added in Rakudo compiler release 2023.02.  In earlier
+language versions it is only available when specifying:
+
+    use experimental :rakuast;
+
+=head2 Object introspection
+
+C<RakuAST::Doc::Block> objects are typically created when parsing
+Raku Programming Language code that has C<RakuDoc> markers in it.
+So most developers will only need to know how to introspect the
+objects created.
+
+=head3 method type
+
+=begin code :preamble<my $block>
+say "type = $block.type()";
+=end code
+
+Returns the type of the block.
+
+=head3 method level
+
+=begin code :preamble<my $block>
+say "level = $block.level()";
+=end code
+
+Returns a string associated with the level.  If the level is B<0>, then
+it will return an empty string.  Otherwise it will return the
+stringification of the integer value.
+
+=head3 method config
+
+=begin code :preamble<my $block>
+say "allows: $_"
+  with $block.config<allow> andthen .literalize;
+=end code
+
+Returns the L<C<Map>|/type/Map> with any configuration.  Note that you can get
+any constant values by calling the C<.literalize> method on them.
+See also C<resolved-config>.
+
+=head3 method resolved-config
+
+=begin code :preamble<my $block>
+say "allows: $_" with $block.resolved-config<allow>;
+=end code
+
+Returns the L<C<Map>|/type/Map> with any configuration, with the values already
+resolved to "normal" Raku objects.  See also C<config>.
+
+Is available by default if the object was created by the Raku
+grammar.  If the object was created "manually", then the
+C<literalize-config> method must be called once first.
+
+=head3 method paragraphs
+
+=begin code :preamble<my $block>
+for $block.paragraphs {
+    say $_;
+}
+=end code
+
+Returns a L<C<List>|/type/List> of the paragraphs.  Note that each element can
+either be a string, a
+L«C<RakuAST::Doc::Paragraph>|/type/RakuAST::Doc::Paragraph» or another
+C<RakuAST::Doc::Block> object.
+
+=head3 method delimited
+
+=begin code :preamble<my $block>
+with $block {
+    say "=begin $_.type" if .block;
+}
+=end code
+
+Returns a L<C<Bool>|/type/Bool> indicating the block is a delimited block (aka
+with a C<=begin> and an C<=end>.
+
+=head3 method for
+
+=begin code :preamble<my $block>
+with $block {
+    say "=for $_.type" if .for;
+}
+=end code
+
+Returns a L<C<Bool>|/type/Bool> indicating the block is an extended block (aka
+with just a C<=for>.
+
+=head3 method abbreviated
+
+=begin code :preamble<my $block>
+with $block {
+    say "=$_.type" if .abbreviated;
+}
+=end code
+
+Returns a L<C<Bool>|/type/Bool> indicating the block is an abbreviated block
+(aka with just C<=> followed by the type, e.g. C<=foo>).
+
+=head3 method directive
+
+=begin code :preamble<my $block>
+with $block {
+    say "=$_.type" if .directive;
+}
+=end code
+
+Returns a L<C<Bool>|/type/Bool> indicating the block is a C<RakuDoc> directive
+(aka with just C<=> followed by the type, e.g. C<=row>).
+
+=head3 method allowed-markup
+
+=begin code :preamble<my $block>
+my %*OK := $block.allowed-markup;
+say "B markup is allowed" if %*OK<B>;
+=end code
+
+Returns a special purpose L<C<Map>|/type/Map> that can be checked to see whether
+a given markup type is allowed in the block, assuming C<RakuDoc>
+semantics.  Usually C<bound> to a dynamic variable, so it can be
+accessible for rendering all inner L<C<RakuAST::Doc::Markup>|/type/RakuAST::Doc::Markup> objects.
+
+Three types of L<C<Map>|/type/Map>s can be returned:
+=item a real L<C<Map>|/type/Map> from the C<:allow> configuration
+=item a subclass of L<C<Map>|/type/Map> that returns C<True> for all uppercase letters
+=item a subclass of L<C<Map>|/type/Map> that always returns C<False>
+
+=head3 method Str
+
+=begin code :preamble<my $block>
+put $block;  # bar␤
+=end code
+
+Returns the string for the paragraphs of the block, with any
+markup also stringified.
+
+=head3 method raku
+
+=begin code :preamble<my $block>
+# method .gist falls back to .raku
+say $block;  # RakuAST::Doc::Block.new(...
+=end code
+
+Returns the string that is needed for the creation of the block
+using L<C<RakuAST>|/type/RakuAST> calls.
+
+=head1 Object creation
+
+One seldom creates C<RakuAST::Doc::Block> objects directly.  This
+documentation is intended for those few people who'd like to devise
+their own way of programmatically building a C<RakuAST::Doc::Block>
+object.
+
+=head2 method new
+
+=begin code :method
+method new(
+  Str:D  :$type!,        # type of block, e.g. "head"
+  Int:D  :$level = 0,    # level of block, e.g. 1 for "=head1"
+         :%config,       # any configuration to be applied
+  Str:D  :$margin = "",  # left margin (0 or more spaces)
+         :@paragraphs,   # paragraphs of this block
+  Bool:D :$for,          # this is a =for block
+  Bool:D :$abbreviated,  # this is an abbreviated block
+  Bool:D :$directive     # this is a directive (also abbreviated)
+)
+=end code
+
+The C<new> method can be called to create a new C<RakuAST::Doc::Block>
+object.  It only takes named arguments, with the C<:type> argument
+being mandatory.
+
+=begin code :lang<raku> :preamble<use experimental :rakuast>
+  =begin foo
+  bar
+  =end foo
+
+my $block = RakuAST::Doc::Block.new(
+  :margin("  "),
+  :type<foo>,
+  :paragraphs("bar\n",)
+);
+=end code
+
+Note that the paragraphs should B<not> contain the left margin whitespace.
+
+=head3 :type
+
+The type of block: this is a string with the name.  Required.  Any name
+is allowed, but the C<RakuDoc> standard assigns semantics to some names.
+When these are used, it is assumed that the behavior of the block will
+adhere to the C<RakuDoc> standard semantics.
+
+=head3 :level
+
+The level of the block, specified as an integer value, defaults to
+0.  Some blocks in C<RakuDoc> can have a number associated with the
+name, such as C<=item1> and C<=head2>.
+
+=head3 :config
+
+Any config to be associated with this block, defaults to none.
+Specified as an L<C<Associative>|/type/Associative>.  Note that when specified, the
+values B<must> be C<RakuAST::> objects.  So something like:
+
+    frobnicate => 42
+
+should be specified as:
+
+=begin code :preamble<use experimental :rakuast>
+frobnicate => RakuAST::IntLiteral.new(42)
+=end code
+
+=head3 :margin
+
+The left margin to be applied, specifically when deparsing.  Should
+consist of 0 or more spaces.  Defaults to the empty string.
+
+=head3 :paragraphs
+
+The actual content of the block, specified as a L<C<Positional>|/type/Positional>.
+Each element can either be a string, a L<C<RakuAST::Doc::Paragraph>|/type/RakuAST::Doc::Paragraph>
+or another C<RakuAST::Doc::Block> object.  In the case of a string,
+it is assumed that the C<:margin> has already been removed from each
+line in the string.
+
+=head3 :for, :abbreviated, :directive
+
+Mutually exclusive indication of the format of the block, mostly
+used in deparsing.  If C<:for> is specified, it is assumed to be a
+C<=for> block.  If C<:abbreviated> is specified, then it is assumed
+to be a C<=$type> block.  If C<:directive> is specified, then is
+assume to be an abbreviated block that can B<only> occur as an
+abbreviated block B<and> has special C<RakuDoc> semantics (e.g.
+C<=row> or C<=column>).
+
+If neither of these are specified, then a "delimited block" (one
+with a C<=begin> and an C<=end> will be assumed.
+
+=head2 method from-paragraphs
+
+Create a C<RakuAST::Doc::Block> from a number of strings to be
+considered paragraphs.  Strings are assumed to B<not> have removed
+the left margin yet.
+
+=begin code :lang<raku> :preamble<use experimental :rakuast>
+  =begin foo
+  bar
+  =end foo
+
+my $block = RakuAST::Doc::Block.from-paragraphs(
+  :margin("  "),
+  :type<foo>,
+  :paragraphs("  bar\n",)
+);
+=end code
+
+Takes the same arguments as C<new>.  Note that the paragraphs should
+only contain strings and should B<not> contain the left margin
+whitespace.  A C<worry>/C<warning> will be issued if the left margin
+of a string is less than the margin indicated with C<:margin>.
+
+Also note that C<RakuDoc> semantics will be applied, such as:
+=item implicit code blocks
+=item automatic row/column detection for C<=table>
+=item markup detection where (implicitly)  activated
+
+=head1 Object modification
+
+=head2 method set-margin
+
+=begin code :preamble<my $block>
+$block.set-margin("    ");
+=end code
+
+Set the margin to the given value, which is expected to be the empty
+string or 1 more spaces.
+
+=head2 method set-type
+
+=begin code :preamble<my $block>
+$block.set-type("foo");
+=end code
+
+Set the type to the given value, which is expected to be a string.
+
+=head2 method set-level
+
+=begin code :preamble<my $block>
+$block.set-level(1);
+=end code
+
+Set the level to the given value, which is expected to be an integer.
+
+=head2 method set-config
+
+=begin code :preamble<my $block;use experimental :rakuast>
+$block.set-config({
+  numbered => RakuAST::Term::True.new;
+});
+=end code
+
+Set the configuration to the given value, which is expected to be
+an L<C<Associative>|/type/Associative> of which the values are L<C<RakuAST>|/type/RakuAST> objects.
+
+=head2 method add-config
+
+=begin code :preamble<my $block;use experimental :rakuast>
+$block.add-config(
+  'allow',
+  RakuAST::QuotedString.new(
+    processors => <words val>,
+    segments   => (
+      RakuAST::StrLiteral.new("B C"),
+    )
+  )
+);
+=end code
+
+Takes a key and a value to add to the configuration.  Value is
+expected to be either a string or a L<C<RakuAST>|/type/RakuAST> object.
+
+=head2 method set-paragraphs
+
+=begin code :preamble<my $block>
+$block.set-paragraphs( ("foo\n\n","bar\n") );
+=end code
+
+Set the paragraphs to the given L<C<Positional>|/type/Positional>.  Values are expected
+to be either a string, or a L<C<RakuAST::Doc::Paragraph>|/type/RakuAST::Doc::Paragraph> object.
+
+=head2 method add-paragraph
+
+=begin code :preamble<my $block>
+$block.add-paragraph("baz\n\n");
+=end code
+
+Add a paragraph: should be a string, or a L<C<RakuAST::Doc::Paragraph>|/type/RakuAST::Doc::Paragraph>
+object.
+
+=head2 method literalize-config
+
+=begin code :preamble<my $block>
+$block.literalize-config;
+say "allowed are: $block.resolved-config<allowed>";
+=end code
+
+Recursively literalizes the C<config> of the block (if any) and
+puts the result in C<resolved-config>.
+
+If the object was created from the Raku grammar, then there is
+no need to call this method ever, as it will have been called
+as part of the C<CHECK> phaser checks already.
+
+=end pod

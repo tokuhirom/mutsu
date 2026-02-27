@@ -1,0 +1,1391 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Str
+
+=SUBTITLE String of characters
+
+    class Str is Cool does Stringy { }
+
+Built-in class for strings. Objects of type C<Str> are
+L<immutable|/language/faq#If_Str_is_immutable,_how_does_s///_work?_If_Int_is_immutable,_how_does_$i%2B%2B_work?>.
+
+=head1 Methods
+
+=head2 routine chop
+
+     multi method chop(Str:D:)
+     multi method chop(Str:D: Int() $n)
+
+Returns the string with C<$n> characters removed from the end.
+The original string is left unchanged.
+The C<$n> positional is converted to L<C<Int>|/type/Int>
+beforehand.
+
+    say "Whateverable".chop(3.6);  # OUTPUT: «Whatevera␤»
+    my $string= "Whateverable";
+    say $string.chop("3");         # OUTPUT: «Whatevera␤»
+
+Calls without an argument remove just one character.
+If the string contains fewer characters than are to be chopped,
+the result is the empty string.
+
+=head2 routine chomp
+
+    multi        chomp(Str:D  --> Str:D)
+    multi method chomp(Str:D: --> Str:D)
+
+Returns the string with a logical newline (any codepoint that has the
+C<NEWLINE> property) removed from the end.
+
+Examples:
+
+    say chomp("abc\n");       # OUTPUT: «abc␤»
+    say "def\r\n".chomp;      # OUTPUT: «def␤» NOTE: \r\n is a single grapheme!
+    say "foo\r".chomp;        # OUTPUT: «foo␤»
+
+=head2 method contains
+
+    multi method contains(Str:D: Str:D $needle --> Bool)
+    multi method contains(Str:D: Str:D $needle, Int:D $pos --> Bool)
+    multi method contains(Str:D: Str:D $needle, :m(:$ignoremark)! --> Bool)
+    multi method contains(Str:D: Str:D $needle, :i(:$ignorecase)!, :m(:$ignoremark) --> Bool)
+    multi method contains(Str:D: Str:D $needle, Int:D $pos, :m(:$ignoremark)! --> Bool)
+    multi method contains(Str:D: Str:D $needle, Int:D $pos, :i(:$ignorecase)!, :m(:$ignoremark) --> Bool)
+    multi method contains(Str:D: Regex:D $needle --> Bool)
+    multi method contains(Str:D: Regex:D $needle, Int:D $pos --> Bool)
+
+Given a C<Str> invocant (known as the I<haystack>) and a first argument
+(known as the C<$needle>), it searches for the C<$needle> in the I<haystack>
+from the beginning of the string and returns C<True> if C<$needle> is found.
+If the optional parameter C<$pos> is provided, then C<contains> will
+search the I<haystack> starting from C<$pos> characters into the string.
+
+    say "Hello, World".contains('Hello');      # OUTPUT: «True␤»
+    say "Hello, World".contains('hello');      # OUTPUT: «False␤»
+    say "Hello, World".contains('Hello', 1);   # OUTPUT: «False␤»
+    say "Hello, World".contains(',');          # OUTPUT: «True␤»
+    say "Hello, World".contains(',', 3);       # OUTPUT: «True␤»
+    say "Hello, World".contains(',', 10);      # OUTPUT: «False␤»
+
+In the first case, C<contains> searches for the C<'Hello'> string on the
+invocant right from the start of the invocant string and returns C<True>.
+In the third case, the C<'Hello'> string is not found since we have
+started looking from the second position (index 1) in C<'Hello, World'>.
+
+C<$needle> can also be of type L<C<Cool>|/type/Cool>, which will be coerced to C<Str>.
+Similarly, C<$pos> can be of type L<C<Cool>|/type/Cool>, which will be coerced to L<C<Int>|/type/Int>.
+(Technically, these cases will take a detour over L<C<Cool.contains>|/type/Cool#method_contains>,
+which does the coercions and then calls C<Str.contains>.)
+
+    say "Hello, 12345".contains(5, "10.0");    # OUTPUT: «True␤»
+
+Since Rakudo release 2020.02, the C<$needle> can also be
+a L<C<Regex>|/type/Regex> in which case the C<contains> method
+quickly returns whether the regex matches the string at least
+once. No L<C<Match>|/type/Match> objects are created, so this is
+relatively fast.
+
+    say 'Hello, World'.contains(/\w <?before ','>/);    # OUTPUT: «True␤»
+    say 'Hello, World'.contains(/\w <?before ','>/, 5); # OUTPUT: «False␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignorecase>, or C<:i>, is specified, the search for C<$needle>
+ignores the distinction between uppercase, lowercase, and titlecase
+letters.
+
+    say "Hello, World".contains("world");              # OUTPUT: «False␤»
+    say "Hello, World".contains("world", :ignorecase); # OUTPUT: «True␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignoremark>, or C<:m>, is specified, the search for C<$needle>
+only considers base characters, and ignores additional marks such as
+combining accents.
+
+    say "abc".contains("ä");               # OUTPUT: «False␤»
+    say "abc".contains("ä", :ignoremark);  # OUTPUT: «True␤»
+
+Note that because of how a L<C<List>|/type/List> or L<C<Array>|/type/Array> is
+L<coerced|/type/List#method_Str> into a C<Str>, the results may
+sometimes be surprising.
+
+    say <Hello, World>.contains('Hello');    # OUTPUT: «True␤»
+    say <Hello, World>.contains('Hello', 0); # OUTPUT: «True␤»
+    say <Hello, World>.contains('Hello', 1); # OUTPUT: «False␤»
+
+See L<traps|/language/traps#Lists_become_strings,_so_beware_.contains()>.
+
+=head2 routine lc
+
+    multi        lc(Str:D  --> Str:D)
+    multi method lc(Str:D: --> Str:D)
+
+Returns a lowercase version of the string.
+
+Examples:
+
+    lc("A"); # OUTPUT: «"a"»
+    "A".lc;  # OUTPUT: «"a"»
+
+=head2 routine uc
+
+    multi        uc(Str:D  --> Str:D)
+    multi method uc(Str:D: --> Str:D)
+
+Returns an uppercase version of the string.
+
+=head2 routine fc
+
+    multi        fc(Str:D  --> Str:D)
+    multi method fc(Str:D: --> Str:D)
+
+Does a Unicode "fold case" operation suitable for doing caseless
+string comparisons.  (In general, the returned string is unlikely to
+be useful for any purpose other than comparison.)
+
+=head2 routine tc
+
+    multi        tc(Str:D  --> Str:D)
+    multi method tc(Str:D: --> Str:D)
+
+Does a Unicode "titlecase" operation, that is changes the first character in
+the string to titlecase, or to uppercase if the character has no titlecase
+mapping.
+
+=head2 routine tclc
+
+    multi        tclc(Str:D  --> Str:D)
+    multi method tclc(Str:D: --> Str:D)
+
+Turns the first character to titlecase, and all other characters to lowercase.
+
+=head2 routine wordcase
+
+=for code
+multi        wordcase(Cool $x  --> Str)
+multi        wordcase(Str:D $x --> Str)
+multi method wordcase(Str:D: :&filter = &tclc, Mu :$where = True --> Str)
+
+Returns a string in which C<&filter> has been applied to all the words
+that match C<$where>. By default, this means that the first letter of
+every word is capitalized, and all the other letters lowercased.
+
+=head2 method unival
+
+    multi method unival(Str:D: --> Numeric)
+
+Returns the numeric value that the first codepoint in the invocant represents,
+or C<NaN> if it's not numeric.
+
+    say '4'.unival;     # OUTPUT: «4␤»
+    say '¾'.unival;     # OUTPUT: «0.75␤»
+    say 'a'.unival;     # OUTPUT: «NaN␤»
+
+=head2 method univals
+
+    multi method univals(Str:D: --> List)
+
+Returns a list of numeric values represented by each codepoint in the invocant
+string, and C<NaN> for non-numeric characters.
+
+    say "4a¾".univals;  # OUTPUT: «(4 NaN 0.75)␤»
+
+=head2 routine chars
+
+    multi        chars(Cool  $x --> Int:D)
+    multi        chars(Str:D $x --> Int:D)
+    multi        chars(str   $x --> int)
+    multi method chars(Str:D:   --> Int:D)
+
+Returns the number of characters in the string in graphemes. On the JVM,
+this currently erroneously returns the number of codepoints instead.
+
+=head2 method encode
+
+    multi method encode(Str:D $encoding = 'utf8', :$replacement, Bool() :$translate-nl = False, :$strict)
+
+Returns a L<C<Blob>|/type/Blob> which represents the original string in the given
+encoding and normal form. The actual return type is as specific as
+possible, so C<$str.encode('UTF-8')> returns a L<C<utf8>|/type/utf8> object,
+C<$str.encode('ISO-8859-1')> a C<buf8>. If C<:translate-nl> is set to
+C<True>, it will translate newlines from C<\n> to C<\r\n>, but only in
+Windows. C<$replacement> indicates how characters are going to be
+replaced in the case they are not available in the current encoding,
+while C<$strict> indicates whether unmapped codepoints will still
+decode; for instance, codepoint 129 which does not exist in
+C<windows-1252>.
+
+    my $str = "Þor is mighty";
+    say $str.encode("ascii", :replacement( 'Th') ).decode("ascii");
+    # OUTPUT: «Thor is mighty␤»
+
+In this case, any unknown character is going to be substituted by C<Th>. We know
+in advance that the character that is not known in the C<ascii> encoding is
+C<Þ>, so we substitute it by its latin equivalent, C<Th>. In the absence of any
+replacement set of characters, C<:replacement> is understood as a L<C<Bool>|/type/Bool>:
+
+=for code :preamble<my $str = "Þor is mighty";>
+say $str.encode("ascii", :replacement).decode("ascii"); # OUTPUT: «?or is mighty␤»
+
+If C<:replacement> is not set or assigned a value, the error C<Error encoding
+ASCII string: could not encode codepoint 222> will be issued (in this case,
+since þ is codepoint 222).
+
+Since the L<C<Blob>|/type/Blob> returned by C<encode> is the original string in normal form,
+and every element of a L<C<Blob>|/type/Blob> is a byte, you can obtain the length in bytes of
+a string by calling a method that returns the size of the L<C<Blob>|/type/Blob> on it:
+
+=for code
+say "þor".encode.bytes; # OUTPUT: «4␤»
+say "þor".encode.elems; # OUTPUT: «4␤»
+
+=head2 method index
+
+    multi method index(Str:D: Cool:D $needle, :i(:$ignorecase), :m(:$ignoremark) --> Int:D)
+    multi method index(Str:D: Str:D $needle, :i(:$ignorecase), :m(:$ignoremark) --> Int:D)
+    multi method index(Str:D: Cool:D $needle, Cool:D $pos, :i(:$ignorecase), :m(:$ignoremark) --> Int:D)
+    multi method index(Str:D: Str:D $needle, Int:D $pos, :i(:$ignorecase), :m(:$ignoremark) --> Int:D)
+    multi method index(Str:D: @needles --> Int:D)
+    multi method index(Str:D: @needles, :m(:$ignoremark)! --> Int:D)
+    multi method index(Str:D: @needles, :i(:$ignorecase)!, :m(:$ignoremark) --> Int:D)
+
+Searches for C<$needle> in the string starting from C<$pos> (if present). It
+returns the offset into the string where C<$needle> was found, and L<C<Nil>|/type/Nil> if it
+was not found.
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignorecase>, or C<:i>, is specified, the search for C<$needle> ignores
+the distinction between uppercase, lowercase and titlecase letters. In
+addition, if the optional named parameter C<:ignoremark>, or C<:m>, is
+specified, the search for C<$needle> only considers base characters, and ignores
+additional marks such as combining accents.
+
+Since Rakudo release 2020.05, C<index> accepts a list of needles to search
+the string with, and return the lowest index found or L<C<Nil>|/type/Nil>.
+
+Examples:
+
+    say "Camelia is a butterfly".index("a");         # OUTPUT: «1␤»
+    say "Camelia is a butterfly".index("a", 2);      # OUTPUT: «6␤»
+    say "Camelia is a butterfly".index("er");        # OUTPUT: «17␤»
+    say "Camelia is a butterfly".index("Camel");     # OUTPUT: «0␤»
+    say "Camelia is a butterfly".index("Onion");     # OUTPUT: «Nil␤»
+    say "Camelia is a butterfly".index(<a e i u>);   # OUTPUT: «1␤»
+    say "Camelia is a butterfly".index(<a c>, :i);   # OUTPUT: «0␤»
+    say "Camelia is a butterfly".index(('w', 'x'));  # OUTPUT: «Nil␤»
+
+    say "Hello, World".index("world");               # OUTPUT: «Nil␤»
+    say "Hello, World".index("world", :ignorecase);  # OUTPUT: «7␤»
+
+    say "abc".index("ä");                            # OUTPUT: «Nil␤»
+    say "abc".index("ä", :ignoremark);               # OUTPUT: «0␤»
+    say "abc".index("x").defined ?? 'OK' !! 'NOT';   # OUTPUT: «NOT␤»
+
+Other forms of C<index>, including subs, are
+L<inherited from C<Cool>|/type/Cool#routine_index>.
+
+=head2 routine rindex
+
+    multi method rindex(Str:D: Str:D $needle --> Int:D)
+    multi method rindex(Str:D: Str:D $needle, Int:D $pos --> Int:D)
+    multi method rindex(Str:D: @needles --> Int:D)
+
+Returns the last position of C<$needle> in the string not after C<$pos>.
+Returns L<C<Nil>|/type/Nil> if C<$needle> wasn't found.
+
+Since Rakudo release 2020.05, C<rindex> accepts a list of needles to search
+the string with, and return the highest index found or L<C<Nil>|/type/Nil>.
+
+Examples:
+
+    say "aardvark".rindex: "a";       # OUTPUT: «5␤»
+    say "aardvark".rindex: "a", 0;    # OUTPUT: «0␤
+    say "aardvark".rindex: "t";       # OUTPUT: «Nil␤»
+    say "aardvark".rindex: <d v k>;   # OUTPUT: «7␤»
+
+Other forms of C<rindex>, including subs, are
+L<inherited from C<Cool>|/type/Cool#routine_rindex>.
+
+=head2 method indices
+
+    multi method indices(Str:D: Str:D $needle, :i(:$ignorecase), :m(:$ignoremark), :$overlap --> List:D)
+    multi method indices(Str:D: Str:D $needle, Int:D $start, :i(:$ignorecase), :m(:$ignoremark), :$overlap --> List:D)
+
+Searches for all occurrences of C<$needle> in the string starting from position
+C<$start>, or zero if it is not specified, and returns a L<C<List>|/type/List> with all offsets
+in the string where C<$needle> was found, or an empty list if it was not found.
+
+If the optional parameter C<:overlap> is specified the search continues from the
+index directly following the previous match, otherwise the search will continue
+after the previous match.
+
+    say "banana".indices("a");              # OUTPUT: «(1 3 5)␤»
+    say "banana".indices("ana");            # OUTPUT: «(1)␤»
+    say "banana".indices("ana", :overlap);  # OUTPUT: «(1 3)␤»
+    say "banana".indices("ana", 2);         # OUTPUT: «(3)␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignorecase>, or C<:i>, is specified, the search for C<$needle>
+ignores the distinction between uppercase, lowercase and titlecase
+letters.
+
+    say "banAna".indices("a");              # OUTPUT:«(1 5)␤»
+    say "banAna".indices("a", :ignorecase); # OUTPUT:«(1 3 5)␤»
+
+Since Rakudo 2020.02, if the optional named parameter C<:ignoremark>,
+or C<:m>, is specified, the search for C<$needle> only considers base
+characters, and ignores additional marks such as combining accents.
+
+    say "tête-à-tête".indices("te");              # OUTPUT:«(2 9)␤»
+    say "tête-à-tête".indices("te", :ignoremark); # OUTPUT:«(0 2 7 9)␤»
+
+=head2 method match
+
+    method match($pat, :continue(:$c), :pos(:$p), :global(:$g), :overlap(:$ov), :exhaustive(:$ex), :st(:$nd), :rd(:$th), :$nth, :$x --> Match)
+
+Performs a match of the string against C<$pat> and returns a
+L<C<Match>|/type/Match> object if there is a successful match; it returns L<C<Nil>|/type/Nil>
+otherwise. Matches are stored in the L<default match variable
+C<$/>|/language/variables#index-entry-match_variable>. If C<$pat> is not a
+L<C<Regex>|/type/Regex> object, match will coerce the argument to a Str and then
+perform a literal match against C<$pat>.
+
+A number of optional named parameters can be specified, which alter how the match is performed.
+
+=item :continue
+
+The C<:continue> adverb takes as an argument the position where the regex should
+start to search. If no position is specified for C<:c> it will default to 0
+unless C<$/> is set, in which case it defaults to C<$/.to>.
+
+=item :pos
+
+Takes a position as an argument. Fails if regex cannot be matched from that position, unlike C<:continue>.
+
+=item :global
+
+Instead of searching for just one match and returning a L<C<Match>|/type/Match> object, search
+for every non-overlapping match and return them in a L<C<List>|/type/List>.
+
+=item :overlap
+
+Finds all matches including overlapping matches, but only returns one match from
+each starting position.
+
+=item :exhaustive
+
+Finds all possible matches of a regex, including overlapping matches and matches
+that start at the same position.
+
+=item :st, :nd, :rd, :nth
+
+Returns the nth match in the string. The argument can be a L<C<Numeric>|/type/Numeric> or
+an L<C<Iterable>|/type/Iterable> producing monotonically increasing numbers (that is, the
+next produced number must be larger than the previous one). The L<C<Iterable>|/type/Iterable>
+will be lazily L<reified|/language/glossary#Reify> and if
+non-monotonic sequence is encountered an exception will be thrown.
+
+If L<C<Iterable>|/type/Iterable> argument is provided the return value and C<$/> variable
+will be set to a possibly-empty L<C<List>|/type/List> of L<C<Match>|/type/Match> objects.
+
+=item :x
+
+Takes as an argument the number of matches to return, stopping once the
+specified number of matches has been reached. The value must be a L<C<Numeric>|/type/Numeric> or
+a L<C<Range>|/type/Range>; other values will cause C<.match> to return a L<C<Failure>|/type/Failure> containing
+an L<C<X::Str::Match::x>|/type/X::Str::Match::x> exception.
+
+Examples:
+=begin code
+
+say "properly".match('perl');                     # OUTPUT: «｢perl｣␤»
+say "properly".match(/p.../);                     # OUTPUT: «｢prop｣␤»
+say "1 2 3".match([1,2,3]);                       # OUTPUT: «｢1 2 3｣␤»
+say "a1xa2".match(/a./, :continue(2));            # OUTPUT: «｢a2｣␤»
+say "abracadabra".match(/ a .* a /, :exhaustive);
+# OUTPUT: «(｢abracadabra｣ ｢abracada｣ ｢abraca｣ ｢abra｣ ｢acadabra｣ ｢acada｣ ｢aca｣ ｢adabra｣ ｢ada｣ ｢abra｣)␤»
+say 'several words here'.match(/\w+/,:global);    # OUTPUT: «(｢several｣ ｢words｣ ｢here｣)␤»
+say 'abcdef'.match(/.*/, :pos(2));                # OUTPUT: «｢cdef｣␤»
+say "foo[bar][baz]".match(/../, :1st);            # OUTPUT: «｢fo｣␤»
+say "foo[bar][baz]".match(/../, :2nd);            # OUTPUT: «｢o[｣␤»
+say "foo[bar][baz]".match(/../, :3rd);            # OUTPUT: «｢ba｣␤»
+say "foo[bar][baz]".match(/../, :4th);            # OUTPUT: «｢r]｣␤»
+say "foo[bar][baz]bada".match('ba', :x(2));       # OUTPUT: «(｢ba｣ ｢ba｣)␤»
+=end code
+
+=head2 method Numeric
+
+    method Numeric(Str:D: --> Numeric:D)
+
+Coerces the string to L<C<Numeric>|/type/Numeric> using semantics equivalent to L<val|/routine/val> routine.
+L<Fails|/routine/fail> with L<C<X::Str::Numeric>|/type/X::Str::Numeric> if the coercion to a number cannot be done.
+
+Only Unicode characters with property C<Nd>, as well as leading and trailing
+whitespace are allowed, with the special case of the empty string being coerced
+to C<0>. Synthetic codepoints (e.g. C<"7\x[308]">) are forbidden.
+
+While C<Nl> and C<No> characters can be used as numeric literals in the
+language, their conversion via C<Str.Numeric> will fail, by design; the same
+will happen with synthetic numerics (composed of numbers and diacritic marks).
+See L«unival|/routine/unival» if you need to coerce such characters to
+L<C<Numeric>|/type/Numeric>. +, - and the Unicode MINUS SIGN − are all allowed.
+
+=for code
+" −33".Numeric;       # OUTPUT: «-33␤»
+
+=head2 method Num
+
+    method Num(Str:D: --> Num:D)
+
+Coerces the string to L«C<Num>|/type/Num», using the same rules as
+L«C<Str.Numeric>|/type/Str#method_Numeric» and handling negative zero,
+C<-0e0>, and positive zero, C<0e0>.
+
+=begin code
+my Str $s = "-0/5";
+say (.self, .^name) given $s.Numeric;  # OUTPUT: «(0 Rat)␤»
+say (.self, .^name) given $s.Num;      # OUTPUT: «(-0 Num)␤»
+=end code
+
+=head2 method Int
+
+    method Int(Str:D: --> Int:D)
+
+Coerces the string to L<C<Int>|/type/Int>, using the same rules as
+L«C<Str.Numeric>|/type/Str#method_Numeric».
+
+=head2 method Rat
+
+    method Rat(Str:D: --> Rational:D)
+
+Coerces the string to a L<C<Rat>|/type/Rat> object, using the same rules as
+L«C<Str.Numeric>|/type/Str#method_Numeric». If the denominator is larger
+than 64-bits is it still kept and no degradation to L<C<Num>|/type/Num> occurs.
+
+=head2 method Bool
+
+    method Bool(Str:D: --> Bool:D)
+
+Returns C<False> if the string is empty, C<True> otherwise.
+
+=head2 routine parse-base
+
+    multi        parse-base(Str:D $num, Int:D $radix --> Numeric)
+    multi method parse-base(Str:D $num: Int:D $radix --> Numeric)
+
+Performs the reverse of L«C<base>|/routine/base» by converting a string
+with a base-C<$radix> number to its L«C<Numeric>|/type/Numeric»
+equivalent. Will L«C<fail>|/routine/fail» if radix is not in range C<2..36>
+or if the string being parsed contains characters that are not valid
+for the specified base.
+
+    1337.base(32).parse-base(32).say; # OUTPUT: «1337␤»
+    'Raku'.parse-base(36).say;        # OUTPUT: «1273422␤»
+    'FF.DD'.parse-base(16).say;       # OUTPUT: «255.863281␤»
+
+See also: L«syntax for number literals|/syntax/Number%20literals»
+
+=head2 routine parse-names
+
+    sub    parse-names(Str:D $names  --> Str:D)
+    method parse-names(Str:D $names: --> Str:D)
+
+B<DEPRECATED>. Use L<uniparse|/routine/uniparse> instead. Existed in Rakudo implementation as a proof of viability
+implementation before being renamed and will be removed when 6.e language is released.
+
+=head2 routine uniparse
+
+    sub    uniparse(Str:D $names  --> Str:D)
+    method uniparse(Str:D $names: --> Str:D)
+
+Takes string with comma-separated Unicode names of characters and
+returns a string composed of those characters. Will L«C<fail>|/routine/fail»
+if any of the characters' names are empty or not recognized. Whitespace
+around character names is ignored.
+
+    say "I {uniparse 'TWO HEARTS'} Raku"; # OUTPUT: «I 💕 Raku␤»
+    'TWO HEARTS, BUTTERFLY'.uniparse.say; # OUTPUT: «💕🦋␤»
+
+See L<uniname|/routine/uniname> and L<uninames|/routine/uninames> for routines
+that work in the opposite direction with a single codepoint and multiple
+codepoints respectively.
+
+Note that unlike C<\c[...]> construct available in string interpolation,
+C<uniparse> does not accept decimal numerical values. Use L<chr|/routine/chr> routine to
+convert those:
+
+    say "\c[1337]"; # OUTPUT: «Թ␤»
+    say '1337'.chr; # OUTPUT: «Թ␤»
+
+I<Note:> before being standardized in 2017.12, this routine was known
+under its working name of L<parse-names|/routine/parse-names>. This denomination will be removed in the 6.e version.
+
+=head2 method samecase
+
+  multi method samecase(Str:D: Str:D $pattern --> Str:D)
+
+Returns a copy of the invocant with case information for each individual
+character changed according to C<$pattern>.
+
+B<Note>: The pattern string can contain three types of characters,
+i.e. uppercase, lowercase and caseless. For a given character in
+C<$pattern> its case information determines the case of the corresponding
+character in the result.
+
+If the invocant is longer than C<$pattern>, the case information from
+the last character of C<$pattern> is applied to the remaining characters
+of the invocant.
+
+    say "raKu".samecase("A_a_"); # OUTPUT: «Raku␤»
+    say "rAKU".samecase("Ab");   # OUTPUT: «Raku␤»
+
+=head2 routine split
+
+=for code :method
+multi        split(  Str:D $delimiter, Str:D $input, $limit = Inf,
+  :$skip-empty, :$v, :$k, :$kv, :$p)
+=for code :method
+multi        split(Regex:D $delimiter, Str:D $input, $limit = Inf,
+  :$skip-empty, :$v, :$k, :$kv, :$p)
+=for code :method
+multi        split(List:D $delimiters, Str:D $input, $limit = Inf,
+  :$skip-empty, :$v, :$k, :$kv, :$p)
+=for code :method
+multi method split(Str:D:   Str:D $delimiter, $limit = Inf,
+  :$skip-empty, :$v, :$k, :$kv, :$p)
+=for code :method
+multi method split(Str:D: Regex:D $delimiter, $limit = Inf,
+  :$skip-empty, :$v, :$k, :$kv, :$p)
+=for code :method
+multi method split(Str:D: List:D $delimiters, $limit = Inf,
+  :$skip-empty, :$v, :$k, :$kv, :$p)
+
+Splits a string up into pieces based on delimiters found in the string.
+
+If C<$delimiter> is a string, it is used literally. An empty string
+effectively returns all characters of the string separately (plus an
+empty string at the begin and at the end).
+
+C<$delimiter> also can be passed as a L<C<Regex>|/type/Regex>.
+
+If a list is used, then each of its elements
+will be considered a delimiter based on its type as mentioned above.
+
+The optional C<$limit> indicates in how many segments the string should be
+split, if possible.  It defaults to B<Inf> (or B<*>, whichever way you look at
+it), which means "as many as possible". Note that specifying negative limits
+will not produce any meaningful results.
+
+A number of optional named parameters can be specified, which alter the
+result being returned.  The C<:v>, C<:k>, C<:kv> and C<:p> named parameters
+all perform a special action with regards to the delimiter found.
+
+=item :skip-empty
+
+If specified, do not return empty strings before or after a delimiter.
+
+=item :v
+
+Also return the delimiter.  If the delimiter was a regular expression, then
+this will be the associated L<C<Match>|/type/Match> object. Since this stringifies as the
+delimiter string found, you can always assume it is the delimiter string if
+you're not interested in further information about that particular match.
+
+=item :k
+
+Also return the B<index> of the delimiter.  Only makes sense if a list of
+delimiters was specified: in all other cases, this will be B<0>.
+
+=item :kv
+
+Also return both the B<index> of the delimiter, as well as the delimiter.
+
+=item :p
+
+Also return the B<index> of the delimiter and the delimiter as a L<C<Pair>|/type/Pair>.
+
+Examples:
+
+    say split(";", "a;b;c").raku;           # OUTPUT: «("a", "b", "c").Seq␤»
+    say split(";", "a;b;c", :v).raku;       # OUTPUT: «("a", ";", "b", ";", "c").Seq␤»
+    say split(";", "a;b;c", 2).raku;        # OUTPUT: «("a", "b;c").Seq␤»
+    say split(";", "a;b;c", 2, :v).raku;    # OUTPUT: «("a", ";", "b;c").Seq␤»
+    say split(";", "a;b;c,d").raku;         # OUTPUT: «("a", "b", "c,d").Seq␤»
+    say split(/\;/, "a;b;c,d").raku;        # OUTPUT: «("a", "b", "c,d").Seq␤»
+    say split(<; ,>, "a;b;c,d").raku;       # OUTPUT: «("a", "b", "c", "d").Seq␤»
+    say split(/<[;,]>/, "a;b;c,d").raku;    # OUTPUT: «("a", "b", "c", "d").Seq␤»
+    say split(<; ,>, "a;b;c,d", :k).raku;   # OUTPUT: «("a", 0, "b", 0, "c", 1, "d").Seq␤»
+    say split(<; ,>, "a;b;c,d", :kv).raku;  # OUTPUT: «("a", 0, ";", "b", 0, ";", "c", 1, ",", "d").Seq␤»
+
+    say "".split("x").raku;                 # OUTPUT: «("",).Seq␤»
+    say "".split("x", :skip-empty).raku;    # OUTPUT: «().Seq␤»
+
+    say "abcde".split("").raku;             # OUTPUT: «("", "a", "b", "c", "d", "e", "").Seq␤»
+    say "abcde".split("",:skip-empty).raku; # OUTPUT: «("a", "b", "c", "d", "e").Seq␤»
+
+=head2 routine comb
+
+    multi        comb(Str:D   $matcher, Str:D $input, $limit = Inf)
+    multi        comb(Regex:D $matcher, Str:D $input, $limit = Inf, Bool :$match)
+    multi        comb(Int:D $size, Str:D $input, $limit = Inf)
+    multi method comb(Str:D $input:)
+    multi method comb(Str:D $input: Str:D   $matcher, $limit = Inf)
+    multi method comb(Str:D $input: Regex:D $matcher, $limit = Inf, Bool :$match)
+    multi method comb(Str:D $input: Int:D $size, $limit = Inf)
+
+Searches for C<$matcher> in C<$input> and returns a L<C<Seq>|/type/Seq> of non-overlapping
+matches limited to at most C<$limit> matches.
+
+If C<$matcher> is a Regex, each L<C<Match>|/type/Match> object is converted to a C<Str>,
+unless C<$match> is set (available as of the 2020.01 release of the Rakudo
+compiler).
+
+If no matcher is supplied, a Seq of characters in the string is returned,
+as if the matcher was C<rx/./>.
+
+Examples:
+
+    say "abc".comb.raku;                 # OUTPUT: «("a", "b", "c").Seq␤»
+    say "abc".comb(:match).raku;         # OUTPUT: «(｢a｣ ｢b｣ ｢c｣)␤»
+    say 'abcdefghijk'.comb(3).raku;      # OUTPUT: «("abc", "def", "ghi", "jk").Seq␤»
+    say 'abcdefghijk'.comb(3, 2).raku;   # OUTPUT: «("abc", "def").Seq␤»
+    say comb(/\w/, "a;b;c").raku;        # OUTPUT: «("a", "b", "c").Seq␤»
+    say comb(/\N/, "a;b;c").raku;        # OUTPUT: «("a", ";", "b", ";", "c").Seq␤»
+    say comb(/\w/, "a;b;c", 2).raku;     # OUTPUT: «("a", "b").Seq␤»
+    say comb(/\w\;\w/, "a;b;c", 2).raku; # OUTPUT: «("a;b",).Seq␤»
+    say comb(/.<(.)>/, "<>[]()").raku;   # OUTPUT: «(">", "]", ")").Seq␤»
+
+If the matcher is an integer value, C<comb> behaves as if the matcher
+was C<rx/ . ** {1..$matcher} />, but which is optimized to be much faster.
+
+Note that a Regex matcher may control which portion of the matched text
+is returned by using features which explicitly set the top-level capture.
+
+    multi        comb(Pair:D $rotor, Str:D $input, $limit = Inf, Bool :$partial)
+    multi method comb(Str:D $input: Pair:D $rotor, $limit = Inf, Bool :$partial)
+
+Available as of 6.e language version (early implementation exists in Rakudo
+compiler 2022.12+).  The C<rotor> pair indicates the number of characters
+to fetch as the key (the "size"), and the number of "steps" forward to take
+afterwards.  Its main intended use is to provide a way to create
+L<N-grams|https://en.wikipedia.org/wiki/N-gram> from strings in an efficient
+manner.  By default only strings of the specified size will be produced.
+This can be overridden by specifying the named argument C<:partial> with a
+true value.
+
+Examples:
+
+    say "abcde".comb(3 => -2);             # OUTPUT: «(abc bcd cde)␤»
+    say "abcde".comb(3 => -2, :partial);   # OUTPUT: «(abc bcd cde de e)␤»
+    say "abcdefg".comb(3 => -2, 2);        # OUTPUT: «(abc bcd)␤»
+    say comb(3 => -2, "abcde");            # OUTPUT: «(abc bcd cde)␤»
+    say comb(5 => -2, "abcde", :partial);  # OUTPUT: «(abc bcd cde de e)␤»
+    say comb(5 => -2, "abcdefg", 2);       # OUTPUT: «(abc bcd)␤»
+
+=head2 routine lines
+
+    multi method lines(Str:D: $limit, :$chomp = True)
+    multi method lines(Str:D: :$chomp = True)
+
+Returns a L<C<Seq>|/type/Seq> of lines. By default, it chomps line endings the same as a
+call to C<$input.comb( / ^^ \N* /, $limit )> would. To keep line endings,
+set the optional named parameter C<$chomp> to C<False>.
+
+Examples:
+
+    say lines("a\nb").raku;    # OUTPUT: «("a", "b").Seq␤»
+    say lines("a\nb").elems;   # OUTPUT: «2␤»
+    say "a\nb".lines.elems;    # OUTPUT: «2␤»
+    say "a\n".lines.elems;     # OUTPUT: «1␤»
+
+    # Keep line endings
+    say lines(:!chomp, "a\nb").raku;  # OUTPUT: «("a\n", "b").Seq␤»
+    say "a\n".lines(:!chomp).elems;   # OUTPUT: «1␤»
+
+You can limit the
+number of lines returned by setting the C<$limit> variable to a non-zero,
+non-C<Infinity> value:
+
+    say <not there yet>.join("\n").lines( 2 ); # OUTPUT: «(not there)␤»
+
+B«DEPRECATED as of C<6.d> language», the C<:count> argument was used
+to return the total number of lines:
+
+    say <not there yet>.join("\n").lines( :count ); # OUTPUT: «3␤»
+
+Use L<elems|/routine/elems> call on the returned L<C<Seq>|/type/Seq> instead:
+
+    say <not there yet>.join("\n").lines.elems; # OUTPUT: «3␤»
+
+=head2 routine words
+
+    multi method words(Str:D: $limit)
+    multi method words(Str:D:)
+
+Returns a L<C<Seq>|/type/Seq> of non-whitespace bits, i.e. the same as a call to
+C<$input.comb( / \S+ /, $limit )> would.
+
+Examples:
+
+    say "a\nb\n".words.raku;       # OUTPUT: «("a", "b").Seq␤»
+    say "hello world".words.raku;  # OUTPUT: «("hello", "world").Seq␤»
+    say "foo:bar".words.raku;      # OUTPUT: «("foo:bar",).Seq␤»
+    say "foo:bar\tbaz".words.raku; # OUTPUT: «("foo:bar", "baz").Seq␤»
+
+It can also be used as a subroutine, turning the first argument into the
+invocant. C<$limit> is optional, but if it is provided (and not equal to
+C<Inf>), it will return only the first C<$limit> words.
+
+    say words("I will be very brief here", 2); # OUTPUT: «(I will)␤»
+
+
+=head2 routine flip
+
+    multi        flip(Str:D  --> Str:D)
+    multi method flip(Str:D: --> Str:D)
+
+Returns the string reversed character by character.
+
+Examples:
+
+    "Raku".flip;  # OUTPUT: «ukaR»
+    "ABBA".flip;  # OUTPUT: «ABBA»
+
+=head2 method starts-with
+
+    multi method starts-with(Str:D: Str(Cool) $needle, :i(:$ignorecase), :m(:$ignoremark) --> Bool:D)
+
+Returns C<True> if the invocant is identical to or starts with C<$needle>.
+
+    say "Hello, World".starts-with("Hello");     # OUTPUT: «True␤»
+    say "https://raku.org/".starts-with('ftp');  # OUTPUT: «False␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignorecase>, or C<:i>, is specified, the comparison of the invocant
+and C<$needle> ignores the distinction between uppercase, lowercase
+and titlecase letters.
+
+    say "Hello, World".starts-with("hello");              # OUTPUT: «False␤»
+    say "Hello, World".starts-with("hello", :ignorecase); # OUTPUT: «True␤»
+
+Since Rakudo 2020.02, if the optional named parameter C<:ignoremark>,
+or C<:m>, is specified, the comparison of the invocant and C<$needle>
+only considers base characters, and ignores additional marks such as
+combining accents.
+
+    say "abc".starts-with("ä");              # OUTPUT: «False␤»
+    say "abc".starts-with("ä", :ignoremark); # OUTPUT: «True␤»
+
+=head2 method ends-with
+
+    multi method ends-with(Str:D: Str(Cool) $needle, :i(:$ignorecase), :m(:$ignoremark) --> Bool:D)
+
+Returns C<True> if the invocant is identical to or ends with C<$needle>.
+
+    say "Hello, World".ends-with('Hello');      # OUTPUT: «False␤»
+    say "Hello, World".ends-with('ld');         # OUTPUT: «True␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignorecase>, or C<:i>, is specified, the comparison of the invocant
+and C<$needle> ignores the distinction between uppercase, lowercase
+and titlecase letters.
+
+    say "Hello, World".ends-with("world");              # OUTPUT: «False␤»
+    say "Hello, World".ends-with("world", :ignorecase); # OUTPUT: «True␤»
+
+Since Rakudo 2020.02, if the optional named parameter C<:ignoremark>,
+or C<:m>, is specified, the comparison of the invocant and C<$needle>
+only considers base characters, and ignores additional marks such as
+combining accents.
+
+    say "abc".ends-with("ç");              # OUTPUT: «False␤»
+    say "abc".ends-with("ç", :ignoremark); # OUTPUT: «True␤»
+
+=head2 method subst
+
+    multi method subst(Str:D: $matcher, $replacement = "", *%options)
+
+Returns the invocant string where C<$matcher> is replaced by C<$replacement>
+(or the original string, if no match was found). If no C<$replacement> is
+provided, the empty string is used (i.e., matched string(s) are removed).
+
+There is an in-place syntactic variant of C<subst> spelled
+C<s/matcher/replacement/> and with
+adverb following the C<s> or inside the matcher.
+
+C<$matcher> can be a L<C<Regex>|/type/Regex>, or a literal C<Str>. Non-Str matcher arguments of
+type L<C<Cool>|/type/Cool> are coerced to C<Str> for literal matching. If a L<C<Regex>|/type/Regex>
+C<$matcher> is used, the L«C<$/> special variable|/syntax/$$SOLIDUS» will be set
+to L<C<Nil>|/type/Nil> (if no matches occurred), a L<C<Match>|/type/Match> object, or a L<C<List>|/type/List> of L<C<Match>|/type/Match>
+objects (if multi-match options like C<:g> are used).
+
+=head3 Literal replacement substitution
+
+    my $some-string = "Some foo";
+    my $another-string = $some-string.subst(/foo/, "string"); # gives 'Some string'
+    $some-string.=subst(/foo/, "string"); # in-place substitution. $some-string is now 'Some string'
+
+    say "multi-hyphenate".subst("-"); # OUTPUT: «multihyphenate␤»
+
+=head3 Callable
+
+The replacement can be a L<C<Callable>|/type/Callable> in which the current L<C<Match>|/type/Match> object will
+be placed in the C<$/> variable, as well as the C<$_> topic variable. Using a
+L<C<Callable>|/type/Callable> as replacement is how you can refer to any of the captures created
+in the regex:
+
+    # Using capture from $/ variable (the $0 is the first positional capture)
+    say 'abc123defg'.subst(/(\d+)/, { " before $0 after " });
+    # OUTPUT: «abc before 123 after defg␤»
+
+    # Using capture from $/ variable (the $<foo> is a named capture)
+    say 'abc123defg'.subst(/$<foo>=\d+/, { " before $<foo> after " });
+    # OUTPUT: «abc before 123 after defg␤»
+
+    # Using WhateverCode to operate on the Match given in $_:
+    say 'abc123defg'.subst(/(\d+)/, "[ " ~ *.flip ~ " ]");
+    # OUTPUT: «abc[ 321 ]defg␤»
+
+    # Using a Callable to generate substitution without involving current Match:
+    my $i = 41;
+    my $str = "The answer is secret.";
+    say $str.subst(/secret/, {++$i}); # The answer to everything
+    # OUTPUT: «The answer is 42.␤»
+
+=head3 Adverbs
+
+The following adverbs are supported
+
+=begin table
+
+    short                       | long        | meaning
+    ============================+=============+================
+    :g                          | :global     | tries to match as often as possible
+    :nth(Int|Callable|Whatever) |             | only substitute the nth match; aliases: :st, :nd, :rd, and :th
+    :ss                         | :samespace  | preserves whitespace on substitution
+    :ii                         | :samecase   | preserves case on substitution
+    :mm                         | :samemark   | preserves character marks (e.g. 'ü' replaced with 'o' will result in 'ö')
+    :x(Int|Range|Whatever)      |             | substitute exactly $x matches
+
+=end table
+
+Note that only in the C<s///> form C<:ii> implies C<:i> and C<:ss> implies
+C<:s>. In the method form, the C<:s> and C<:i> modifiers must be added to the
+regex, not the C<subst> method call.
+
+
+=head3 More Examples
+
+Here are other examples of usage:
+
+    my $str = "Hey foo foo foo";
+
+    say $str.subst(/foo/, "bar", :g);           # OUTPUT: «Hey bar bar bar␤»
+    say $str.subst(/\s+/, :g);                  # OUTPUT: «Heyfoofoofoo␤»
+
+    say $str.subst(/foo/, "bar", :x(0));        # OUTPUT: «Hey foo foo foo␤»
+    say $str.subst(/foo/, "bar", :x(1));        # OUTPUT: «Hey bar foo foo␤»
+    # Can not match 4 times, so no substitutions made
+    say $str.subst(/foo/, "bar", :x(4));        # OUTPUT: «Hey foo foo foo␤»
+    say $str.subst(/foo/, "bar", :x(2..4));     # OUTPUT: «Hey bar bar bar␤»
+    # Replace all of them, identical to :g
+    say $str.subst(/foo/, "bar", :x(*));        # OUTPUT: «Hey bar bar bar␤»
+
+    say $str.subst(/foo/, "bar", :nth(3));      # OUTPUT: «Hey foo foo bar␤»
+    # Replace last match
+    say $str.subst(/foo/, "bar", :nth(*));      # OUTPUT: «Hey foo foo bar␤»
+    # Replace next-to-last last match
+    say $str.subst(/foo/, "bar", :nth(*-1));    # OUTPUT: «Hey foo bar foo␤»
+
+The C<:nth> adverb has readable English-looking variants:
+
+    say 'ooooo'.subst: 'o', 'x', :1st; # OUTPUT: «xoooo␤»
+    say 'ooooo'.subst: 'o', 'x', :2nd; # OUTPUT: «oxooo␤»
+    say 'ooooo'.subst: 'o', 'x', :3rd; # OUTPUT: «ooxoo␤»
+    say 'ooooo'.subst: 'o', 'x', :4th; # OUTPUT: «oooxo␤»
+
+
+=head2 method subst-mutate
+
+B<NOTE:> I<<< C<.subst-mutate> is deprecated in the 6.d version, and will be
+removed in future ones. You can use L<subst|/routine/subst> with L«C<.=> method
+call assignment operator|/routine/.=» or L«C<s///> substitution
+operator|/language/operators#s///_in-place_substitution» instead. >>>
+
+Where L<subst|/routine/subst> returns the modified string and leaves the
+original unchanged, it is possible to mutate the original string by using
+C<subst-mutate>. If the match is successful, the method returns a
+L<C<Match>|/type/Match> object representing the successful match, otherwise returns
+L<C<Nil>|/type/Nil>. If C<:nth> (or one of its aliases) with
+L<C<Iterable>|/type/Iterable> value, C<:g>, C<:global>, or C<:x> arguments are
+used, returns a L<C<List>|/type/List> of L<C<Match>|/type/Match> objects, or an empty
+L<C<List>|/type/List> if no matches occurred.
+
+    my $some-string = "Some foo";
+    my $match = $some-string.subst-mutate(/foo/, "string");
+    say $some-string;  # OUTPUT: «Some string␤»
+    say $match;        # OUTPUT: «｢foo｣␤»
+    $some-string.subst-mutate(/<[oe]>/, '', :g); # remove every o and e, notice the :g named argument from .subst
+
+If a L<C<Regex>|/type/Regex> C<$matcher> is used, the
+L«C<$/> special variable|/syntax/$$SOLIDUS» will be set to L<C<Nil>|/type/Nil> (if no
+matches occurred), a L<C<Match>|/type/Match> object, or a L<C<List>|/type/List> of L<C<Match>|/type/Match> objects (if
+multi-match options like C<:g> are used).
+
+=head2 routine substr
+
+    multi        substr(Str:D $s, $from, $chars?  --> Str:D)
+    multi        substr(Str:D $s, Range  $from-to --> Str:D)
+    multi method substr(Str:D $s: $from, $chars?  --> Str:D)
+    multi method substr(Str:D $s: Range $from-to  --> Str:D)
+
+Returns a substring of the original string, between the indices specified by
+C<$from-to>'s endpoints (coerced to L<C<Int>|/type/Int>) or from index C<$from> and of
+length C<$chars>.
+
+Both C<$from> and C<$chars> can be specified as L<C<Callable>|/type/Callable> and the
+returned value will be used as the value for the argument. C<$from> is invoked with the L<length|/routine/chars> of the original string, while C<$chars> is invoked with remaining character count after C<$from>. If C<$from> or
+C<$chars> are not L<C<Callable>|/type/Callable>, they'll be coerced to L<C<Int>|/type/Int>.
+
+If C<$chars> is omitted or is larger than the available characters,
+the string from C<$from> until the end of the string is returned.
+If C<$from-to>'s starting index or C<$from> is less than
+zero, L<C<X::OutOfRange>|/type/X::OutOfRange> exception is thrown. The C<$from-to>'s ending index is
+permitted to extend past the end of string, in which case it will be equivalent
+to the index of the last character.
+
+    say substr("Long string", 3..6);     # OUTPUT: «g st␤»
+    say substr("Long string", 6, 3);     # OUTPUT: «tri␤»
+    say substr("Long string", 6);        # OUTPUT: «tring␤»
+    say substr("Long string", 6, *-1);   # OUTPUT: «trin␤»
+    say substr("Long string", *-3, *-1); # OUTPUT: «in␤»
+
+=head2 method substr-eq
+
+    multi method substr-eq(Str:D:  Str(Cool) $test-string, Int(Cool) $from, :i(:$ignorecase), :m(:$ignoremark) --> Bool)
+    multi method substr-eq(Cool:D: Str(Cool) $test-string, Int(Cool) $from, :i(:$ignorecase), :m(:$ignoremark) --> Bool)
+
+Returns C<True> if the C<$test-string> exactly matches the C<String> object,
+starting from the given initial index C<$from>.  For example, beginning with
+the string C<"foobar">, the substring C<"bar"> will match from index 3:
+
+    my $string = "foobar";
+    say $string.substr-eq("bar", 3);    # OUTPUT: «True␤»
+
+However, the substring C<"barz"> starting from index 3 won't match even
+though the first three letters of the substring do match:
+
+    my $string = "foobar";
+    say $string.substr-eq("barz", 3);   # OUTPUT: «False␤»
+
+Naturally, to match the entire string, one merely matches from index 0:
+
+    my $string = "foobar";
+    say $string.substr-eq("foobar", 0); # OUTPUT: «True␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignorecase>, or C<:i>, is specified, the comparison of the invocant
+and C<$test-string> ignores the distinction between uppercase,
+lowercase and titlecase letters.
+
+    say "foobar".substr-eq("Bar", 3);              # OUTPUT: «False␤»
+    say "foobar".substr-eq("Bar", 3, :ignorecase); # OUTPUT: «True␤»
+
+Since Rakudo release 2020.02, if the optional named parameter
+C<:ignoremark>, or C<:m>, is specified, the comparison of the
+invocant and C<$test-string> only considers base characters, and
+ignores additional marks such as combining accents.
+
+    say "cliché".substr-eq("che", 3);              # OUTPUT: «False␤»
+    say "cliché".substr-eq("che", 3, :ignoremark); # OUTPUT: «True␤»
+
+Since this method is inherited from the L<C<Cool>|/type/Cool> type, it also works on
+integers.  Thus the integer C<42> will match the value C<342> starting from
+index 1:
+
+    my $integer = 342;
+    say $integer.substr-eq(42, 1);      # OUTPUT: «True␤»
+
+As expected, one can match the entire value by starting at index 0:
+
+    my $integer = 342;
+    say $integer.substr-eq(342, 0);     # OUTPUT: «True␤»
+
+Also using a different value or an incorrect starting index won't match:
+
+    my $integer = 342;
+    say $integer.substr-eq(42, 3);      # OUTPUT: «False␤»
+    say $integer.substr-eq(7342, 0);    # OUTPUT: «False␤»
+
+=head2 method substr-rw
+
+    method substr-rw($from, $length = *)
+
+A version of C<substr> that returns a L<C<Proxy>|/type/Proxy> functioning as a
+writable reference to a part of a string variable. Its first argument, C<$from>
+specifies the index in the string from which a substitution should occur, and
+its last argument, C<$length> specifies how many characters are to be replaced.
+If not specified, C<$length> defaults to the length of the string.
+
+For example, in its method form, if one wants to take the string C<"abc">
+and replace the second character (at index 1) with the letter C<"z">, then
+one does this:
+
+    my $string = "abc";
+    $string.substr-rw(1, 1) = "z";
+    $string.say;                         # OUTPUT: «azc␤»
+
+Note that new characters can be inserted as well:
+
+    my $string = 'azc';
+    $string.substr-rw(2, 0) = "-Zorro-"; # insert new characters BEFORE the character at index 2
+    $string.say;                         # OUTPUT: «az-Zorro-c␤»
+
+C<substr-rw> also has a function form, so the above examples can also be
+written like so:
+
+    my $string = "abc";
+    substr-rw($string, 1, 1) = "z";
+    $string.say;                          # OUTPUT: «azc␤»
+    substr-rw($string, 2, 0) = "-Zorro-";
+    $string.say;                          # OUTPUT: «az-Zorro-c␤»
+
+It is also possible to alias the writable reference returned by C<substr-rw>
+for repeated operations:
+
+    my $string = "A character in the 'Flintstones' is: barney";
+    $string ~~ /(barney)/;
+    my $ref := substr-rw($string, $0.from, $0.to-$0.from);
+    $string.say;
+    # OUTPUT: «A character in the 'Flintstones' is: barney␤»
+    $ref = "fred";
+    $string.say;
+    # OUTPUT: «A character in the 'Flintstones' is: fred␤»
+    $ref = "wilma";
+    $string.say;
+    # OUTPUT: «A character in the 'Flintstones' is: wilma␤»
+
+=head2 routine samemark
+
+    multi  samemark(Str:D $string, Str:D $pattern --> Str:D)
+    method samemark(Str:D: Str:D $pattern --> Str:D)
+
+Returns a copy of C<$string> with the mark/accent information for each
+character changed such that it matches the mark/accent of the corresponding
+character in C<$pattern>. If C<$string> is longer than C<$pattern>, the
+remaining characters in C<$string> receive the same mark/accent as the last
+character in C<$pattern>. If C<$pattern> is empty no changes will be made.
+
+Examples:
+
+    say 'åäö'.samemark('aäo');                        # OUTPUT: «aäo␤»
+    say 'åäö'.samemark('a');                          # OUTPUT: «aao␤»
+
+    say samemark('Räku', 'a');                        # OUTPUT: «Raku␤»
+    say samemark('aöä', '');                          # OUTPUT: «aöä␤»
+
+=head2 method succ
+
+    method succ(Str:D: --> Str:D)
+
+Returns the string incremented by one.
+
+String increment is "magical". It searches for the last alphanumeric
+sequence that is not preceded by a dot, and increments it.
+
+    '12.34'.succ;      # OUTPUT: «13.34»
+    'img001.png'.succ; # OUTPUT: «img002.png»
+
+The actual increment step works by mapping the last alphanumeric
+character to a character range it belongs to, and choosing the next
+character in that range, carrying to the previous letter on overflow.
+
+    'aa'.succ;   # OUTPUT: «ab»
+    'az'.succ;   # OUTPUT: «ba»
+    '109'.succ;  # OUTPUT: «110»
+    'α'.succ;    # OUTPUT: «β»
+    'a9'.succ;   # OUTPUT: «b0»
+
+String increment is Unicode-aware, and generally works for scripts where a
+character can be uniquely classified as belonging to one range of characters.
+
+=head2 method pred
+
+    method pred(Str:D: --> Str:D)
+
+Returns the string decremented by one.
+
+String decrementing is "magical" just like string increment (see
+L<succ|/routine/succ>). It fails on underflow
+
+=for code
+'b0'.pred;           # OUTPUT: «a9»
+'a0'.pred;           # OUTPUT: Failure
+'img002.png'.pred;   # OUTPUT: «img001.png»
+
+=head2 routine ord
+
+    multi        ord(Str:D  --> Int:D)
+    multi method ord(Str:D: --> Int:D)
+
+Returns the codepoint number of the base characters of the first grapheme
+in the string.
+
+Example:
+
+    ord("A"); # 65
+    "«".ord;  # 171
+
+=head2 method ords
+
+    multi method ords(Str:D: --> Seq)
+
+Returns a list of Unicode codepoint numbers that describe the codepoints making up the string.
+
+Example:
+
+    "aå«".ords; # (97 229 171)
+
+Strings are represented as graphemes. If a character in the string is represented by multiple
+codepoints, then all of those codepoints will appear in the result of C<ords>. Therefore, the
+number of elements in the result may not always be equal to L<chars|/routine/chars>, but will be equal to
+L<codes|/routine/codes>; L<codes|/routine/codes> computes the codepoints in a different way, so the result might be faster.
+
+The codepoints returned will represent the string in L<C<NFC>|/type/NFC>. See the L<C<NFD>|/type/NFD>, L<C<NFKC>|/type/NFKC>, and
+L<C<NFKD>|/type/NFKD> methods if other forms are required.
+
+=head2 method trans
+
+    multi method trans(Str:D: Pair:D \what, *%n --> Str)
+    multi method trans(Str:D: *@changes, :complement(:$c), :squash(:$s), :delete(:$d) --> Str)
+
+Replaces one or many characters with one or many characters. Ranges are
+supported, both for keys and values. Regexes work as keys. In case a list of
+keys and values is used, substrings can be replaced as well. When called with
+C<:complement> anything but the matched value or range is replaced with a
+single value; with C<:delete> the matched characters without corresponding
+replacement are removed. Combining C<:complement> and C<:delete> will remove
+anything but the matched values, I<unless replacement characters have been
+specified>, in which case, C<:delete> would be ignored. The adverb C<:squash>
+will reduce repeated matched characters to a single character.
+
+Example:
+
+    my $str = 'say $x<b> && $y<a>';
+    $str.=trans( '<' => '«' );
+    $str.=trans( '<' => '«', '>' => '»' );
+
+    $str.=trans( [ '<'   , '>'   , '&' ] =>
+                 [ '&lt;', '&gt;', '&amp;' ]);
+
+    $str.=trans( ['a'..'y'] => ['A'..'z'] );
+
+    "abcdefghij".trans(/<[aeiou]> \w/ => '');                     # OUTPUT: «cdgh»
+
+    "a123b123c".trans(['a'..'z'] => 'x', :complement);            # OUTPUT: «axxxbxxxc»
+    "aaa1123bb123c".trans('a'..'z' => 'A'..'Z', :squash);         # OUTPUT: «A1123B123C»
+    "aaa1123bb123c".trans('a'..'z' => 'x', :complement, :squash); # OUTPUT: «aaaxbbxc»
+
+In general, the strings will have the same length after the substitution:
+
+    say "a123b123c".trans('23' => '4');   # OUTPUT: «a144b144c␤»
+    say "a123b123c".trans('123' => 'þð'); # OUTPUT: «aþðþbþðþc␤»
+
+C<:squash> and C<:delete> will have the same effect in this case making it a
+strict substitution:
+
+    say "a123b123c".trans('123' => 'þð', :squash); # OUTPUT: «aþðbþðc␤»
+    say "a123b123c".trans('123' => 'þð', :delete); # OUTPUT: «aþðbþðc␤»
+
+C<:delete> will also remove non-matched characters from the original string:
+
+    say "abc".trans("abc".comb => 1..2, :delete);  # OUTPUT: «12␤»
+
+
+Please note that the behavior of the two versions of the multi method is
+slightly different. The first form will transpose only one character if the
+origin is also one character:
+
+=begin code
+say "abcd".trans( "a" => "zz" );  # OUTPUT: «zbcd␤»
+say "abcd".trans( "ba" => "yz" ); # OUTPUT: «zycd␤»
+=end code
+
+In the second case, behavior is as expected, since the origin is more than one
+char long. However, if the L<C<Pair>|/type/Pair> in the multi method does not have a C<Str> as
+an origin or target, it is handled to the second multi method, and behavior
+changes:
+
+    say "abcd".trans: ["a"] => ["zz"]; # OUTPUT: «zzbcd␤»
+
+In this case, neither origin nor target in the L<C<Pair>|/type/Pair> are C<Str>; the method
+with the L<C<Pair>|/type/Pair> signature then calls the second, making this call above
+equivalent to C«"abcd".trans: ["a"] => ["zz"],» (with the comma behind, making
+it a L<C<Positional>|/type/Positional>, instead of a L<C<Pair>|/type/Pair>), resulting in the behavior shown as
+output.
+
+=head2 method indent
+
+    multi method indent(Int $steps where { $_ == 0 } )
+    multi method indent(Int $steps where { $_ > 0  } )
+    multi method indent($steps where { .isa(Whatever) || .isa(Int) && $_ < 0 } )
+
+Indents each line of the string by C<$steps>. If C<$steps> is negative,
+it outdents instead. If C<$steps> is L<C<*>|/routine/*>, then the string is
+outdented to the margin:
+
+    "  indented by 2 spaces\n    indented even more".indent(*)
+        eq "indented by 2 spaces\n  indented even more"
+
+=head2 method trim
+
+    method trim(Str:D: --> Str)
+
+Remove leading and trailing whitespace. It can be used both as a method
+on strings and as a function. When used as a method it will return
+the trimmed string. In order to do in-place trimming, one needs to write
+C<.=trim>
+
+
+    my $line = '   hello world    ';
+    say '<' ~ $line.trim ~ '>';        # OUTPUT: «<hello world>␤»
+    say '<' ~ trim($line) ~ '>';       # OUTPUT: «<hello world>␤»
+    $line.trim;
+    say '<' ~ $line ~ '>';             # OUTPUT: «<   hello world    >␤»
+    $line.=trim;
+    say '<' ~ $line ~ '>';             # OUTPUT: «<hello world>␤»
+
+See also L<trim-trailing|/routine/trim-trailing> and L<trim-leading|/routine/trim-leading>.
+
+=head2 method trim-trailing
+
+    method trim-trailing(Str:D: --> Str)
+
+Removes the whitespace characters from the end of a string. See also L<trim|/routine/trim>.
+
+=head2 method trim-leading
+
+    method trim-leading(Str:D: --> Str)
+
+Removes the whitespace characters from the beginning of a string. See also L<trim|/routine/trim>.
+
+=head2 method NFC
+
+    method NFC(Str:D: --> NFC:D)
+
+Returns a codepoint string in L<C<NFC>|/type/NFC> format (Unicode
+Normalization Form C / Composed).
+
+=head2 method NFD
+
+    method NFD(Str:D: --> NFD:D)
+
+Returns a codepoint string in L<C<NFD>|/type/NFD> format (Unicode
+Normalization Form D / Decomposed).
+
+=head2 method NFKC
+
+    method NFKC(Str:D: --> NFKC:D)
+
+Returns a codepoint string in L<C<NFKC>|/type/NFKC> format (Unicode Normalization
+Form KC / Compatibility Composed).
+
+=head2 method NFKD
+
+    method NFKD(Str:D: --> NFKD:D)
+
+Returns a codepoint string in L<C<NFKD>|/type/NFKD> format (Unicode Normalization
+Form KD / Compatibility Decomposed).
+
+=head2 method ACCEPTS
+
+    multi method ACCEPTS(Str:D: $other)
+
+Returns C<True> if the string is L<the same as|/routine/eq> C<$other>.
+
+=head2 method Capture
+
+    method Capture()
+
+Throws C<X::Cannot::Capture>.
+
+=head2 routine val
+
+    multi val(*@maybevals)
+    multi val(Slip:D \maybevals)
+    multi val(List:D \maybevals)
+    multi val(Pair:D \ww-thing)
+    multi val(\one-thing)
+    multi val(Str:D $MAYBEVAL, :$val-or-fail)
+
+Given a C<Str> that may be parsable as a numeric value, it will
+attempt to construct the appropriate L<allomorph|/language/glossary#Allomorph>,
+returning one of L<C<IntStr>|/type/IntStr>, L<C<NumStr>|/type/NumStr>, L<C<RatStr>|/type/RatStr>
+or L<C<ComplexStr>|/type/ComplexStr> or a plain C<Str> if a numeric value cannot
+be parsed.
+
+    say val("42").^name;    # OUTPUT: «IntStr␤»
+    say val("42e0").^name;  # OUTPUT: «NumStr␤»
+    say val("42.0").^name;  # OUTPUT: «RatStr␤»
+    say val("42+0i").^name; # OUTPUT: «ComplexStr␤»
+
+You can use the plus and minus sign, as well as the Unicode "Minus Sign" as
+part of the String
+
+    say val("−42");         # OUTPUT: «−42␤»
+
+While characters belonging to the Unicode categories C<Nl> (number
+letters) and C<No> (other numbers) can be used as numeric literals
+in the language, they will not be converted to a number by C<val>,
+by design, and using C<val> on them will produce a failure. The
+same will happen with synthetic numerics (such as 7̈ ). See
+L«unival|/routine/unival» if you need to convert such characters to
+L<C<Numeric>|/type/Numeric>.
+
+=head2 method Version
+
+    method Version(Str:D: --> Version:D)
+
+Available as of the 2020.01 release of the Rakudo compiler.
+
+Coerces the string to L<C<Version>|/type/Version>.
+
+This could be used for L<type coercion in
+signature|/language/signatures#Coercion_type>, as for example:
+
+    sub f(Version(Str) $want-version) { say $want-version.^name };
+    f "1.2.3";  # OUTPUT: «Version␤»
+
+=head2 method Date
+
+    method Date(Str:D:)
+
+Available as of the 2020.05 release of the Rakudo compiler.
+
+Coerces a C<Str> to a L«C«Date»|/type/Date» object, provided the string is
+properly formatted. C«Date(Str)» also works.
+
+Examples:
+
+    say '2015-11-24'.Date.year;  # OUTPUT: «2015␤»
+    say Date('2015-11-24').year; # OUTPUT: «2015␤»
+
+=head2 method DateTime
+
+    method DateTime(Str:D:)
+
+Available as of the 2020.05 release of the Rakudo compiler.
+
+Coerces a C<Str> to a L«C«DateTime»|/type/DateTime» object, provided the
+string is properly formatted. C«DateTime(Str)» also works.
+
+Examples:
+
+    say ('2012-02-29T12:34:56Z').DateTime.hour; # OUTPUT: «12␤»
+    say DateTime('2012-02-29T12:34:56Z').hour;  # OUTPUT: «12␤»
+
+Since Rakudo release 2022.07, it is also possible to just specify a
+"YYYY-MM-DD" string to indicate midnight on the given date.
+
+    say "2023-03-04".DateTime;  # OUTPUT: «2023-03-04T00:00:00Z␤»
+
+=end pod

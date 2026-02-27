@@ -1,0 +1,31 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class Pod::Block::Declarator
+
+=SUBTITLE Declarator block in a Pod document
+
+    class Pod::Block::Declarator is Pod::Block { }
+
+Class for a declarator Pod block
+
+=head1 Methods
+
+=head2 method leading
+
+    method leading(Pod::Block::Declarator:D:)
+
+Returns the leading Pod comment attached to the declarator
+
+=head2 method trailing
+
+    method trailing(Pod::Block::Declarator:D:)
+
+Returns the trailing Pod comment attached to the declarator
+
+=head2 method WHEREFORE
+
+    method WHEREFORE(--> Mu)
+
+Returns the code object or metaobject to which the Pod block is attached to
+
+=end pod

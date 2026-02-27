@@ -1,0 +1,66 @@
+#!/usr/bin/env raku
+
+use Test;
+
+use Pod::Cache;
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Check for duplicate words in documentation; ignore case.
+
+Save the last word of each line, comparing it to the next line as well.
+
+Allow a few well known duplicates, like 'long long'
+
+=end overview
+
+my $safe-dupes = Set.new(<method default that yada,>); # Allow these dupes
+
+my @files = RakuDoc::Test::Files.files.grep(* ne 'LICENSE').grep(* ne 'CREDITS');
+
+plan +@files;
+
+sub test-it(Str $output, Str $file) {
+    my $ok = True;
+
+    my @dupes;
+    my $last-word = '';
+    my $line-num = 0;
+    for $output.lines -> $line is copy {
+        $line-num++;
+        if $line.starts-with: ' ' or $line eq '' {
+            # could be code, table, heading; don't check for dupes
+            $last-word = '';
+            next;
+        }
+        next unless $line.chars;
+
+        my @words = flat $last-word, $line.words;
+        @words .= grep(*.chars);
+
+        # End of a sentence resets word check, as do short lines (typically headings)
+        if $line.ends-with('.') or @words.elems <= 2 {
+            $last-word = '';
+        } elsif @words {
+            $last-word = @words[*-1];
+        }
+
+        my @line-dupes = @words.rotor(2=> -1).grep({$_[0] eq $_[1]}).map({$_[0]});
+        for @line-dupes -> $dupe {
+            # explicitly allowed duplicates
+            next if $safe-dupes ∋ ~$dupe[0];
+            # Single characters that are probably fine
+            next if $dupe ~~ /^ [<:Sm>|<:CS>] $/;
+            # Ignore numbers
+            next if $dupe ~~ /^ \d+ $/;
+            @dupes.push: "“" ~ $dupe[0] ~ "” on line $line-num";
+        }
+    }
+    my $message = "$file has duplicate words";
+    is @dupes.join("\n"), '', $message;
+}
+
+for @files -> $file {
+    test-it(Pod::Cache.cache-file($file).IO.slurp, $file)
+}

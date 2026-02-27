@@ -1,0 +1,182 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Statement prefixes
+
+=SUBTITLE Prefixes that alter the behavior of a statement or a set of them
+
+Statement prefixes are written in front of a
+statement, and change their meaning, their output, or the moment they are going
+to be run. Since they have a specific behavior, they are also sometimes specific
+to some statement or group of statements.
+
+=head2 X<C<lazy>|Syntax,lazy (statement prefix)>
+
+As a statement prefix, C<lazy> acts in front of any statement, including C<for>
+loops, saving the execution for when the variable they are assigned to is
+actually needed.
+
+=for code
+my $incremented = 0;
+my $var = lazy for <1 2 3 4> -> $d {
+    $incremented++
+};
+say $incremented; # OUTPUT: «0␤»
+say eager $var;   # OUTPUT: «(0 1 2 3)␤»
+say $incremented; # OUTPUT: «4␤»
+
+The C<$incremented> variable is only incremented, that is, the internal part of
+the loop is only run when we eagerly evaluate the variable C<$var> that
+contains the lazy loop. Eagerness can be applied on a variable in other ways,
+such as calling the C<.eager> method on it.
+
+=for code
+my @array = lazy { (^3).map( *² )  };
+say @array;       # OUTPUT: «[...]␤»
+say @array.eager; # OUTPUT: «[0 1 4]␤»
+
+This prefix can also be used L<in front of
+C<gather>|/language/control#gather/take> to make the inner statements behave
+lazily; in general, any set of statements that returns a value will be made
+lazy using this.
+
+=head2 X<C<eager>|Syntax,eager (statement prefix)>
+
+The C<eager> statement prefix will eagerly return the result of the statements
+behind, throwing away laziness and returning the result.
+
+=for code
+my $result := eager gather { for 1..3 { say "Hey"; take $_² } };
+say $result[0]; # OUTPUT: «Hey␤Hey␤Hey␤1␤»
+
+C<gather> is L<implicitly lazy when bound to a scalar|/syntax/gather%20take>.
+However, with C<eager> as a statement prefix it will run all three iterations in
+the loop, as shown by the printed "Hey", even if we are just requesting the
+first one in a row.
+
+=head2 X<C<hyper>|Syntax,hyper (statement prefix)>, X<C<race>|Syntax,race (statement prefix)>
+
+A C<for> loop will automatically serialize any L<C<HyperSeq>|/type/HyperSeq> or
+L<C<RaceSeq>|/type/RaceSeq> used in it; on the other hand C<hyper> and C<race>
+use (maybe simultaneous) threads to run different iterations in a loop:
+
+=for code
+my @a = hyper for ^100_000 { .is-prime }
+
+This code is around 3x faster than the bare C<for>. But there are a couple of
+caveats here:
+
+=item The operation inside the loop should take enough time for threading
+to make sense.
+
+=item There should be no read or write access to the same data structure inside
+the loop. Let the loop produce a result, and assign it.
+
+=item If there's an I/O operation inside the loop, there might be some contention
+so please avoid it.
+
+Main difference between C<hyper> and C<race> is the ordering of results. Use
+C<hyper> if you need the loop results to be produced in order, C<race> if you
+don't care.
+
+=head2 X<C<quietly>|Syntax,quietly (statement prefix)>
+
+As a prefix, C<quietly> suppresses all runtime warnings produced by the
+block or statement it precedes.
+
+=for code
+sub marine() {};
+quietly say ~&marine; # OUTPUT: «marine␤»
+sub told-you { warn 'hey...' };
+quietly { told-you; warn 'kaput!' };
+warn 'Telling you now!';  # OUTPUT: «Telling you now!␤ [...] ␤»
+
+Calling L<C<.Str> on C<code> produces a warning|/type/Code#method_Str>.
+Preceding the code with C<quietly> will just produce the output without warning.
+
+=head2 X<C<try>|Syntax,try (statement prefix)>
+
+If you use C<try> in front of a statement, it will contain the exception
+produced in it and store it in the C<$!> variable, just like when L<it's used in
+front of a block|/language/exceptions#try_blocks>.
+
+=for code
+try [].pop;
+say $!; # OUTPUT: «Cannot pop from an empty Array␤..»
+
+Note that if no L<C<Exception>|/type/Exception> had been thrown
+in the C<try> block, then C<$!> will be undefined.
+
+=head2 X<C<do>|Syntax,do (statement prefix)>
+
+C<do> can be used as a statement prefix to disambiguate the statement they
+precede; this is needed, for instance, if you want to assign the result of a
+C<for> statement. A bare C<for> will fail, but this will work:
+
+=for code
+my $counter = 0;
+my $result = do for ^5 { $counter++ };
+say $counter; # OUTPUT: «5␤»
+say $result;  # OUTPUT: «(0 1 2 3 4)␤»
+
+C<do> is equivalent, as in other cases, to surrounding a statement with a
+parenthesis. It can be used as an alternative with a (possibly more)
+straightforward syntax.
+
+=head2 X<C<sink>|Syntax,sink (statement prefix)>
+
+As in the L<case of the routine|/routine/sink>, C<sink> will run the statement,
+throwing away the result. Use it in case you want to run some statement for the
+side effects it produces.
+
+=for code
+my $counter = 0;
+my $result = sink for ^5 { $counter++ };
+say $counter; #  OUTPUT: «5␤»
+say $result;  #  OUTPUT: «(Any)␤»
+
+The C<sink> statement prefix will also convert L<C<Failure>|/type/Failure>s into exceptions:
+
+=for code
+sub find-the-number ( Int $n where $n < 10 ) {
+    if $n == 7 {
+        return True;
+    } else {
+        fail "Not that number" ;
+    }
+}
+for 1..^10 {
+    try {
+        sink find-the-number($_);
+    };
+    say "Found $_" unless $!;
+}
+
+In this case, we will know that the number has been found only when the
+C<try> block is not catching an exception.
+
+=head2 X<C<react>|Syntax,react (statement prefix)>
+
+C<react> can be used in concurrent programs to create blocks of code that run
+whenever some event occurs. It L<works with blocks|/syntax/react>, and also as a
+statement prefix.
+
+=begin code
+my Channel $KXGA .= new;
+for ^100 {
+    $KXGA.send( (100000..200000).pick );
+}
+
+my @sums = ( start react whenever $KXGA -> $number {
+    say "In thread ", $*THREAD.id;
+    say "→ ", (^$number).sum;
+} ) for ^10;
+
+start { sleep 10; $KXGA.close(); }
+
+await @sums;
+=end code
+
+In this case C<react> prefixes C<whenever>, which makes a long sum with every
+number read from a channel.
+
+=end pod

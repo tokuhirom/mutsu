@@ -1,0 +1,1225 @@
+=begin pod :kind("Language") :subkind("Language") :category("reference")
+
+=TITLE Glossary
+
+=SUBTITLE Glossary of Raku terminology
+
+=head1 X<6model|Reference,6model>
+
+C<6model> is used in the L<MoarVM|/language/glossary#MoarVM>, and provides
+primitives used to create an object system. It is described in
+L<this presentation by Jonathan Worthington|https://jnthn.net/papers/2013-yapceu-moarvm.pdf> and implemented
+L<here in MoarVM|https://github.com/MoarVM/MoarVM/tree/master/src/6model>.
+
+=head1 X<Abstract class|Reference,Abstract Class>
+
+The generic Computer Science term "abstract class" defines the
+L<interface|#Interface> or L<API|#API> of a class. In Raku, this is
+implemented using L<roles|#Roles> with L<stubbed|#Stub> methods.
+
+    role Canine {
+        method bark { ... }          # the ... indicates a stub
+    }
+
+    class Dog does Canine {
+        method bark { say "woof" }   # *MUST* be implemented by class
+    }
+
+
+=head1 X<Advent calendar|Reference,Advent Calendar>
+
+In the context of Raku, a yearly set of blog posts for each day from
+the 1st until the 25th of December, to be found at
+L<https://raku-advent.blog>.
+
+=head1 X<Adverb|Language,Adverb>
+
+Generically, an adverb is a named argument to a function. There are
+also some specific syntax forms that allow adverbs to be tucked into
+some convenient places:
+
+=for code :preamble<my @h>
+q:w"foo bar";   # ":w" is a Quotelike form modifier adverb
+m:g/a|b|c/;     # ":g" is too
+@h{3}:exists;   # ":exists" is too, but is known as a subscript adverb
+
+Adverbs are usually expressed with colon pair notation, and for this
+reason colon pair notation is also known as the adverbial pair form:
+
+    :a(4)          # Same as "a" => 4
+
+Some other forms that use a colon in ways that have adverb-like
+semantics are called adverbial forms. One special form starts with an
+integer value, followed by a name (for the key):
+
+    :20seconds     # same as seconds => 20
+
+Also see L<Colon pair and colon list|#Colon pair and colon list>.
+
+=head1 X<Adverbial pair|Language,Adverbial Pair>
+
+A generalized form of C<pair notation>. They all start with the colon,
+as shown in the following examples:
+
+=begin table
+  adverbial pair            | pair notation
+  ==========================|==========================
+    :foo<hi hello>          | foo => <hi hello>
+    :foo('bar')             | foo => 'bar'
+    :foo(42)                | foo => 42
+    :42foo                  | foo => 42
+    :foo                    | foo => True
+    :!foo                   | foo => False
+    :$foo                   | foo => $foo
+=end table
+
+Similarly to the angle brackets L«C«<…>»|/language/quoting#Word_quoting:_<_>» in the first line,
+other circumfix operators with their usual semantics can be used for stating the value,
+e.g. C<:foo[…]> for an array and C<:foo{…}> for a hash or even a L<C<Block>|/type/Block>.
+With parentheses like in the second and third line, nearly all constructs can be used inside,
+notably L<quoting constructs|/language/quoting> and L<regexes|/language/regexes>.
+
+Also see the sections L<Adverb|#Adverb> and L<Colon pair and colon list|#Colon pair and colon list>.
+
+=head1 X<Allomorph|Language,Allomorph>
+
+A type that has two related values which may be used depending on the
+context. For example L<C<IntStr>|/type/IntStr> allomorph C<is> both
+an L<C<Int>|/type/Int> and a L<C<Str>|/type/Str>, so it will be accepted by
+anything that expects an L<C<Int>|/type/Int>, a L<C<Str>|/type/Str>, or an L<C<IntStr>|/type/IntStr>. Keep in mind
+that certain constructs, such as L<sets, bags, and mixes|/language/setbagmix>
+care about object identity, and so will not accept an allomorph as equivalent
+of its components alone.
+
+The I<allomorph> types L<C<IntStr>|/type/IntStr>, L<C<NumStr>|/type/NumStr>,
+L<C<RatStr>|/type/RatStr> and L<C<ComplexStr>|/type/ComplexStr> may be created
+as a result of parsing a string quoted with angle brackets:
+
+    say <42>.^name;     # OUTPUT: «IntStr␤»
+    say <42.1e0>.^name; # OUTPUT: «NumStr␤»
+    say <42.1>.^name;   # OUTPUT: «RatStr␤»
+
+B<Note>: angle brackets can also be used to create literals for which you'd
+normally need to use some operator (e.g. C</> for L<C<Rat>|/type/Rat> or C<+> for
+L<C<Complex>|/type/Complex>). This allows you to use such literals in places where
+expressions are not allowed, for example, as literals in signatures:
+
+=for code :skip-test<syntax error>
+# Wrong, can't use an operator there:
+multi foo (1/3) { say "It's one third!" }
+=for code
+# Right, a Rat literal:
+multi foo (<1/3>) { say "It's one third!" }
+
+If you I<do> want an allomorph and not a literal L<C<Numeric>|/type/Numeric>, then
+include whitespace around angle brackets:
+
+    say <42/1>.^name;    # OUTPUT: «Rat␤»
+    say <42+0i>.^name;   # OUTPUT: «Complex␤»
+    say < 42+0i >.^name; # OUTPUT: «ComplexStr␤»
+    say < 42/1 >.^name;  # OUTPUT: «RatStr␤»
+
+Please see L<the Numerics page|/language/numerics#Allomorphs> for a more
+complete description on how to work with these allomorphs.
+
+=head1 X<Anonymous|Reference,Anonymous>
+
+A subroutine, method or submethod is called I<anonymous> if it can't be
+called by name.
+
+    # named subroutine
+    sub double($x) { 2 * $x };
+
+    # anonymous subroutine, stored in a named scalar
+    my $double = sub ($x) { 2 * $x };
+
+Note that it is still allowed to have a name, but you cannot call it by
+that name:
+
+=for code
+# anonymous, but knows its own name
+my $s = anon sub triple($x) { 3 * $x }
+say $s.name;        # OUTPUT: «triple␤»
+=for code :skip-test<illustrates error>
+say triple(42);     # OUTPUT: «Undeclared routine: triple␤»
+
+
+=head1 X<API|Reference,API>
+
+Application Programming Interface. Ideally, someone using your system or
+library should be able to do so with knowledge only of the API, but not
+necessarily knowing anything about the internals or the implementation details.
+
+See also L<abstract class|#Abstract class>.
+
+=head1 X<Apocalypse|Reference,Apocalypse>
+
+A document originally written by L<TimToady|#TimToady>, in which he processed the
+initial barrage of RFCs that came out of the Perl community. Now only kept
+as a historical document for reference. See also L<Exegesis|#Exegesis> and
+L<Synopsis|#Synopsis>.
+
+=head1 X<Arity|Reference,Arity>
+
+The number of L<C<Positional>|/type/Positional> operands expected by an
+L<operator|#Operator>, subroutine, method or callable block.
+
+=begin code :preamble<class Foo {}>
+sub infix:<+>(Foo $a, Foo $b) { $a.Int + $b.Int }  # arity of "+" is 2
+sub frobnicate($x) { ... }                         # arity of 1
+sub the-answer() { 42 }                            # arity of 0
+-> $key, $value { ... }                            # arity of 2
+=end code
+
+The arity of a L<C<Callable>|/type/Callable> is one of the main selectors in
+L<multi-dispatch|#Multi-dispatch>.
+
+=head1 X<ASCII operator|Language,ASCII operator;Language,Texas operator>
+
+=begin comment
+“Texas” was used in the past but is now discouraged.
+Remove the link when “Texas” goes completely out of use.
+=end comment
+
+The ASCII variant of a non-ASCII Unicode L<operator|#Operator> or
+L<symbol|#Symbol>.
+For instance, C<(elem)> corresponds to the C<∈> ("Is this an element of
+that set?") operator that comes from set theory. ASCII operators are a
+workaround to the problem that people don't know how to type Unicode yet.
+Culturally, while we encourage people to use the Unicode symbols in a
+vague sort of way, we do not disparage the use of the
+L<ASCII variants|/language/unicode_ascii>.
+Well, maybe just a little...
+
+=head1 X<Autothreading|Language,Autothreading>
+
+Autothreading is what happens if you pass a L<C<Junction>|/type/Junction> to
+a subroutine that expects a parameter of type L<C<Any>|/type/Any> or a subtype
+thereof (such as anything L<C<Cool>|/type/Cool>). The call is then executed for
+each value of the junction. The result of these calls is assembled in a new
+junction of the same type as the original junction.
+
+    sub f($x) { 2 * $x };
+    say f(1|2|3) == 4;    # OUTPUT: «any(False, True, False)␤»
+
+Here C<f()> is a sub with one parameter, and since it has no explicit type,
+it is implicitly typed as L<C<Any>|/type/Any>. The L<C<Junction>|/type/Junction> argument causes the
+C<f(1|2|3)> call to be internally executed as C<f(1)|f(2)|f(3)>, and the
+resulting junction is C<2|4|6>. These are then all compared to C<4>,
+resulting in a junction C<False|True|False>. This process of separating
+junction arguments into multiple calls to a function is called
+I<autothreading>.
+
+If you use the resulting junction in a Boolean context, such as with an
+C<if>, it collapses into a single Boolean which is C<True> if any of the
+values in the junction are True.
+
+=for code :preamble<sub f {};>
+if f(1|2|3) == 4 {    # fires because f(2) == 4 is true
+    say 'success';
+}
+
+=head1 X<Backtracking|Reference,Backtracking>
+
+Backtracking is the default way a regexp is matched. The engine
+is allowed to explore several ways moving backward in the string
+characters in order to allow every piece of a regexp
+to match something.
+For more information, see
+L<Regexp Backtracking section|/language/regexes#Backtracking>.
+
+=head1 X<binder|Reference,binder>
+
+When you pass an argument list to a function (or any other callable,
+like a method or a block), the argument list gets bound to the
+parameters in the signature. The code that does this is called the
+I<binder>.
+
+=head1 X<block|Reference,block>
+
+L<Blocks|/type/Block> are code object with its own lexical scope, which
+allows them to define variables without interfering with other in the
+containing block.
+
+=head1 X<bytecode|Reference,bytecode>
+
+Although Raku looks like an interpreted language, since it uses the
+C<#!> form to run its scripts (and they are called I<scripts>), it is
+actually
+L<compiled to run in a virtual machine|https://www.reddit.com/r/perl6/comments/42dkme/perl6_not_being_an_interpreted_language/>
+so the compiler (currently Rakudo) generates
+L<bytecode|https://en.wikipedia.org/wiki/Bytecode> that runs either in
+MoarVM or the Java Virtual Machine, the two VMs currently supported.
+
+=head1 X<Camelia|Reference,Camelia>
+
+A butterfly image intended primarily to represent Raku, The Language.
+
+=head1 X<Colon pair and colon list|Reference,Colon Pair;Reference,Colon List>
+
+A colon pair is a shorthand syntax used to create or visually present
+a L<C<Pair>|/type/Pair> object. The two most common forms are:
+
+    :a(4)          # Same as "a" => 4,   same as Pair.new("a", 4)
+    :a<4>          # Same as "a" => "4", same as Pair.new("a", val("4"))
+
+This is also known as the adverbial pair form.
+
+B<Note>: when the part after the colon and before the balanced delimiters is
+not a legal identifier, other semantics apply, not all of which produce
+L<C<Pair>|/type/Pair> objects.
+
+Two other common forms are:
+
+    :a             # Same as :a(True)
+    :!a            # Same as :a(False)
+
+A colon list just means that a list that contains only colon pairs,
+does not need commas, or even spaces:
+
+    :a(4):c:!d:c   # Same as a => 4, c => True, d => False, c => True
+
+Finally, if there is a variable with the same name as an intended adverbial
+pair, you don't have to specify the name twice, but just specify the adverb
+with the appropriate sigil:
+
+=begin table
+    variable only | same as
+  ================|==============
+    :$foo         | foo => $foo
+    :@bar         | bar => @bar
+    :%mapper      | mapper => %mapper
+    :&test        | test => &test
+=end table
+
+See also L<Adverb|#Adverb>.
+
+
+=head1 X<Community|Reference,Community>
+
+See L<https://raku.org/community/> for information about how to participate
+in the friendly Raku community.
+
+=head1 X<Damian Conway|Reference,Damian Conway>
+
+Original author of the L<Exegesis|#Exegesis> (among many other things).
+See also L<https://en.wikipedia.org/wiki/Damian_Conway>.
+
+=head1 X<decont|Reference,decont>
+
+Short for "decontainerize", meaning to remove an item
+L<from its C«Scalar» container|/language/containers>, often to obtain
+L<a different behavior|https://perl6advent.wordpress.com/2017/12/02/#theoneandonly>
+for items that have it.
+
+=head1 X<diffy|Reference,diffy>
+
+See L<operator|#Operator>. It means the type of the operator result is
+sufficiently different from its arguments that op= makes little sense.
+
+=head1 X<ecosystem|Reference,ecosystem>
+
+The module ecosystem consists of all the published modules available for Raku, which
+can be searched at L<Raku Land|https://raku.land/>. Note that different ecosystems
+based on different technologies exist, but this typically refers to the C<fez>
+ecosystem.
+
+=head1 X<Exegesis|Reference,Exegesis>
+
+A document originally written by L<TheDamian|#TheDamian>, in which he tried to explain
+the L<Apocalypses|#Apocalypse> to the common (wo)man. Now only kept as a
+historical document for reference. See also L<Synopsis|#Synopsis>.
+
+=head1 X<fiddly|Reference,fiddly>
+
+Too complicated to apply a metaop to. See L<operator|#Operator>.
+
+=head1 X<Forward declarations|Reference,forward declaration>
+
+Declare the scope and/or type of a functional entity (class or routine)
+without actually declaring its code by using
+the L<"stub" operator|/language/operators#listop_...>; code
+will be declared later on in the same file.
+
+=for code
+grammar Quux {
+    my regex future {...};
+    say "foobarbaz" ~~ /<future>/;
+    regex future { f \w** 2 b \w ** 2 }
+}
+
+In this case, the regex acts as a method; please note that the scope is only
+declared once.
+
+=head1 X<Handle|Reference,Handle>
+
+A handle is a data structure used to store information about some
+input/output operation such as file or socket reading or writing. Raku
+uses L<C<IO::Handle>|/type/IO::Handle> as a base class for filehandles,
+and L<C<IO::Socket>|/type/IO::Socket> for sockets.
+
+=head1 X<Huffmanize|Reference,Huffmanize>
+
+With reference to L<Huffman coding|https://en.wikipedia.org/wiki/Huffman_coding>,
+"huffmanizing" is making things that are commonly used easier, and often shorter,
+to type. With things that are used less frequently it's both less of a bother
+to type longer pieces of code and often longer, more descriptive naming
+is necessary to easily be reminded of what the rarely-used feature does.
+
+For example, printing output is a common task, while performing
+thread-safe atomic addition on native atomicity-safe integers is much less so.
+There's a need to "huffmanize" the task printing and that's why you can do it
+by just typing three letters L<put|/routine/put>. But there's no need to
+"huffmanize" the rarely-needed atomic operators, which is why you type the
+lengthier names, such as L<atomic-inc-fetch|/routine/atomic-inc-fetch>. The
+name L<put|/routine/put> is a bit vague, but because
+it's commonly used, it's easy to learn what it does. On the other hand,
+the name L<atomic-inc-fetch|/routine/atomic-inc-fetch> is rarer,
+and the more descriptive name helps recall its purpose better.
+
+=head1 X<iffy|Reference,iffy>
+
+Often used as a Boolean value. See L<operator|#Operator>. Made via
+the L<C<use> keyword|/language/using-modules/code#use>.
+
+=head1 X<import|Reference,import>
+
+Include functions from a module in the current namespace.
+
+=head1 X<infix stopper|Reference,infix>
+
+An I<infix stopper> is something that tells us the grammar not try to parse
+an infix at that point. Consider say C<"abc42def" ~~ m|\d+|>. Ordinarily,
+a C<|> in a regex is treated as an alternation, but since the infix stopper
+matches the current regex terminator, we don't continue and try to parse an
+infix at that point. The C<|> is thus treated as the end of the regex.
+
+=head1 X<Instance|Reference,instance>
+
+An I<instance> of a class is also called an I<object> in some other
+programming languages. It has storage for attributes and is often the return
+value of a call to a method called C<new>, or a literal.
+
+Instances of most types are defined to be C<True> e.g.,
+C<defined($instance)> is C<True>.
+
+    my Str $str = "hello";  ## this is with built-in types, e.g. Str
+    if defined($str) {
+        say "Oh, yeah. I'm defined.";
+    }
+    else {
+        say "No. Something off? ";
+    }
+
+    ## if you wanted objects...
+    class A {
+        # nothing here for now.
+    }
+
+    my $an_instance = A.new;
+    say $an_instance.defined.raku;# defined($an_instance) works too.
+
+To put things another way, a class contains the blueprints of methods
+and attributes, and an instance carries it into the real world.
+
+=head1 X<Interface|Reference,Interface>
+
+An interface is an L<abstract class|#Abstract class>.
+
+=head1 X<Invocant|Reference,Invocant>
+
+Caller, I<the one who calls or invokes>. The invocant of a method would
+be the object on which that method is being called, or, in some cases,
+the class itself. I<Invocant> is used instead of caller because the
+latter refers to the I<scope>.
+
+=head1 X<IRC|Reference,IRC>
+
+Internet Relay Chat. Raku developers and users usually hang out on
+the C<#raku> channel of C<irc.libera.chat>. This channel is also
+populated by a host of friendly bots that allow you to interact with
+Raku and its codebase, as well as send delayed messages and other
+goodies. Check the full list in
+L<the community page of raku.org|https://raku.org/community>.
+
+=head1 X<IRC lingo|Reference,IRC lingo>
+
+The following terms are often used on the Raku related L<IRC|#IRC>
+channels:
+
+=head2 X<ALAP|Reference,ALAP>
+
+As Late As Possible
+
+=head2 X<autopun|Reference,autopun>
+
+A self-referencing pun, e.g. "Are you ignorant or apathetic?" - "I don't
+know, and I don't care."
+
+=head2 X<backlog|Reference,backlog>
+
+That part of a discussion on an L<IRC|#IRC> channel that you've missed. If it is
+not or no longer available in your IRC client, you can go to sites such as
+L<https://irclogs.raku.org> to see what has been logged
+for you.
+
+=head2 X<Bot|Reference,Bot>
+
+A program that does automatic tasks on one or more L<IRC|#IRC> channels by
+acting like a regular user (as far as the IRC server is concerned) and
+performing some tasks that may involve answering to users requests.
+Examples can be found L<on the IRC page of raku.org|https://raku.org/community/irc>.
+
+=head2 X<Compilation unit or I<compunit>|Reference,compunit (glossary);Reference,compilation unit>
+
+A L<compunit|https://github.com/rakudo/rakudo/blob/master/docs/module_management.md>
+is a piece of Raku code that is analyzed and compiled as a single unit.
+Typically, this piece of code will be contained in a single file, but code
+inside an L<EVAL|/routine/EVAL> is also considered a compunit.
+
+=head2 X<DWIM|Reference,DWIM>
+
+I<Do What I Mean>. A programming language designer motto.
+The opposite of a DWIM is a L<WAT|#WAT>.
+
+=head2 X<flap|Reference,flap>
+
+Sometimes a test will fail under some conditions, but not others; when this
+test passes in some test runs and fails in others, it's called flapping.
+
+=head2 X<fossil|Reference,fossil>
+
+Something in a generally current document that is no longer true but which
+has not yet been fixed by correcting or removing it.
+
+=head2 X<FSVO|Reference,FSVO>
+
+For Some Value Of...
+
+=head2 X<FTFY|Reference,FTFY>
+
+Fixed That For You
+
+=head2 X<gradual typing|Reference,gradual typing>
+
+You don't have to specify types of variables and parameters, but if you do,
+it helps in early determination of impossible dispatches and better
+optimization. See also L<https://en.wikipedia.org/wiki/Gradual_typing>.
+
+=head2 X<IIRC|Reference,IIRC>
+
+If I Read (or Remember) Correctly.
+
+=head2 X<IMHO|Reference,IMHO>
+
+In My Humble Opinion.
+
+=head2 X<IWBN|Reference,IWBN>
+
+It Would Be Nice
+
+=head2 X<LHF|Reference,LHF>
+
+Low Hanging Fruit. Usually used in the context of a (relatively) simple
+task to be performed by a (relative) newbie.
+
+=head2 X<LGTM|Reference,LGTM>
+
+Looks Good To Me
+
+=head2 X<LTA|Reference,LTA>
+
+Less Than Awesome. Usually used in the context of an error message that
+is rather non-descriptive or unrelated to the actual error.
+
+=head2 X<NST|Reference,NST>
+
+No Such Thing
+
+=head2 X<Opt|Reference,Opt>
+
+Short for "optimization", usually in either the context of
+L<spesh|#Spesh> or JIT.
+
+=head2 X<PB|Reference,PB>
+
+Short for "problem". As in "that's not the pb".
+
+=head2 X<PR|Reference,PR>
+
+See L<Pull request|#Pull request>.
+
+=head2 X<P5|Reference,P5>
+
+Perl 5
+
+=head2 X<P6|Reference,P6>
+
+Raku (née Perl 6)
+
+=head2 X<RSN|Reference,RSN>
+
+Real Soon Now.
+
+=head2 X<RT|Reference,RT>
+
+Request Tracker (L<https://rt.perl.org/>). The place where all the bugs
+related to L<Rakudo|#Rakudo> used to live. Nowadays, the Github issue tracker of
+the rakudo/rakudo repository is used for that.
+
+=head2 X<TIMTOWTDI|Reference,TIMTOWTDI>
+
+An alternative form of L<TIMTOWTDI|#TMTOWTDI>, explicitly including the "is" from
+the contraction "There's".
+
+=head2 X<TMI|Reference,TMI>
+
+Too Much Information.
+
+=head2 X<TMTOWTDI|Reference,TMTOWTDI>
+
+"There's More Than One Way To Do It", the Perl motto.
+
+=head2 X<UGT|Reference,UGT>
+
+"Universal Greeting Time" - i.e., it's always "morning".
+
+=head2 X<WFM|Reference,WFM>
+
+Works For Me
+
+=head2 X<WIP|Reference,WIP>
+
+Work In Progress
+
+=head2 X<WP|Reference,WP>
+
+Wikipedia
+
+=head2 X<WW|Reference,WW>
+
+Short for C<wrong window>. When on L<IRC|#IRC>, someone types something in
+a channel that was intended for another channel, or for a private
+message.
+
+=head1 X<Larry Wall|Reference,Larry Wall>
+
+L<Perl's|#Perl> benevolent dictator for life, among many other things.
+See also L<https://en.wikipedia.org/wiki/Larry_Wall>.
+
+=head1 X<Lexing|Reference,Lexing>
+
+Performing L<lexical analysis|https://en.wikipedia.org/wiki/Lexical_analysis>,
+a step which usually precedes parsing.
+
+=head1 X<LHS|Reference,LHS;Reference,Left-hand side>
+
+As an acronym left-hand side, it usually refers to the left-hand side of
+an expression, and more specifically to the left-hand side of
+expressions such as C<$lhs = "this would be the right-hand side">. Since
+the left-hand side of these expressions modify their value, when
+something behaves as a LHS it means that it can be read and written to.
+See also L<https://en.wikipedia.org/wiki/Sides_of_an_equation|Sides of an equation>.
+
+=head1 X<Literal|Reference,Literal>
+
+A I<literal> is a piece of code that directly stands for an (often built-in)
+object and also refers to the object itself.
+
+    my $x = 2;      # the 2 is a literal
+    say $x;         # $x is not a literal, but a variable
+    my $s = "Foo";  # the "Foo" is a literal, the $s is a variable
+
+Different types of literals are described in
+L<the syntax document|/language/syntax#Literals>.
+
+=head1 X<lvalue|Reference,lvalue>
+
+An I<lvalue>, or a I<left value>, is anything that can appear on the
+left-hand side of the assignment operator C<=>. It is anything you
+can assign to.
+
+Typical lvalues are variables, private and C<is rw> attributes, lists of
+variables and lvalue subroutines.
+
+Examples of lvalues:
+
+=begin table
+    Declaration             lvalue          Comments
+
+    my $x;                  $x
+    my ($a, $b);            ($a, $b)
+    has $!attribute;        $!attribute     Only inside classes
+    has $.attrib is rw;     $.attrib
+    sub a is rw { $x };     a()
+=end table
+
+Examples of things that are not lvalues:
+
+=begin table
+    3                        literals
+    constant x = 3;          constants
+    has $.attrib;            attributes; you can only assign to $!attrib
+    sub f { }; f();          "normal" subs are not writable
+    sub f($x) { $x = 3 };    error - parameters are read-only by default
+=end table
+
+These are typically called L<rvalues|#rvalue>.
+
+=head1 X<Mainline|Reference,Mainline>
+
+The C<mainline> is the program text that is not part of any kind of block.
+
+=for code :solo
+use v6.c;     # mainline
+sub f {
+              # not in mainline, in sub f
+}
+f();          # in mainline again
+
+You can also have the mainline of any package-like declarator, such as
+class, L<module|/language/using-modules/introduction>, L<grammar|/language/grammars>, etc.
+These are typically run just after the class/module/grammar have been compiled
+(or when loaded from a precompiled file).
+
+=head1 X<Mayspec|Reference,Mayspec>
+
+Stands for "Maybe Specification". Usually refers to existing tests in the
+L<language specification|https://github.com/Raku/roast/>. The speaker
+is indicating they did not check whether the test is a spectest or a propspec
+test; i.e., whether the test is included in a released language specification
+or is a new test, proposed for the next version of the spec.
+
+=head1 X<MoarVM|Reference,MoarVM>
+
+MoarVM is short for Metamodel On A Runtime Virtual Machine.
+It's a virtual machine designed specifically for L<NQP|#NQP> and
+its L<MOP|/language/mop>: L<6model|#6model>. A document about
+L<the purpose of MoarVM|https://github.com/MoarVM/MoarVM/blob/master/docs/reveal.md>.
+MoarVM has some similarities with the Hotspot VM so you may peruse its
+L<glossary|http://openjdk.java.net/groups/hotspot/docs/HotSpotGlossary.html>
+for entries missing from the present one.
+
+=head1 X<Multi-dispatch|Reference,Multi-Dispatch;Reference,MMD>
+
+The mechanism used to invoke different routines (L<C<Method>|/type/Method>s or
+L<C<Sub>|/type/Sub>s) of the same name, selecting the correct one based on the
+L<C<Parameter>|/type/Parameter> prototype and the arguments it was called with.
+
+The selection process is primarily based on types and number of arguments
+(L<arity|#Arity>), where the narrowest, most specific candidate wins,
+typically without regard to the order of declaration.  The C<is default>
+trait may be used as a tiebreaker in this first phase.  There is also a
+secondary phase where some different tiebreakers may be evaluated in order
+of declaration of the methods or subs.
+
+=head1 X<multi-method|Reference,multi-method>
+
+A L<method|/type/Method> that has multiple candidates going by the same name
+and are subject to L<Multi-Dispatch|#Multi-dispatch>.
+
+=head1 X<NFG|Reference,NFG>
+
+Normal Form Grapheme is the way Raku implements graphemes, using a normal form
+in which strings with the same graphemes can be easily compared in constant
+time. More on that on L<these articles|https://raku.github.io/CCR/Remaster/Jonathan%20Worthington/This-week-Unicode-normalization-many-RTs.html> L<by Jonathan Worthington|https://raku.github.io/CCR/Remaster/Jonathan%20Worthington/This-week-digging-into-NFG-fixing-use-fatal-and-more.html>
+and a fun explanation of how NFG works in L<this IRC log|https://irclogs.raku.org/perl6/2018-04-29.html#16:57-0002>.
+
+=head1 X<Niecza|Reference,Niecza>
+
+An implementation of Raku targeting the .NET platform. No longer actively
+maintained.
+
+=head1 X<Not Quite Perl|Reference,NQP>
+
+See L<NQP|#NQP>.
+
+=head1 X<NQP|Reference,Not Quite Perl>
+
+NQP is a primitive language for writing subroutines and methods using a
+subset of the Raku syntax. It's not intended to be a full-fledged
+programming language, nor does it provide a runtime environment beyond
+the basic VM primitives. Compilers (such as L<Rakudo|#Rakudo>) typically use
+NQP to compile action methods that convert a parse tree
+into its equivalent abstract syntax tree representation.
+
+=head1 X<NYI|Reference,NYI>
+
+Not Yet Implemented
+
+=head1 X<opcode|Reference,opcode>
+
+An opcode, or operation code, is a bytecode operation, that is, a command of
+the language actually used on the virtual machine. They are not usually
+intended for human consumption, but they are usually specified somewhere,
+like L<this document for MoarVM|https://github.com/MoarVM/MoarVM/blob/master/docs/bytecode.md>.
+
+=head1 X<Operator|Reference,Operator>
+
+An expression is made of operators and operands. More precisely it is made
+of an operator and operands that can be subexpressions or L<value|#value>s.
+Operators are an alternative syntax for a L<multi-method|#multi-method>. With that
+syntax, what would be the arguments of the function are named
+operands instead. Operators are classified into
+L<categories|https://github.com/Raku/old-design-docs/blob/master/S02-bits.pod#Grammatical_Categories> of
+categories. A category has a precedence, an arity, and can be L<fiddly|#fiddly>,
+L<iffy|#iffy>, L<diffy|#diffy>. Raku is very creative as to what is an operator, so
+there are many categories. Operators are made of many tokens, possibly with
+a subexpression. For example, C<@a[0]> belongs to the postcircumfix
+category, is broken into the operand C<@a> and the postcircumfix operator
+C<[0]> where C<0> is the postcircumfixed subexpression.
+
+The C«<O(I<...>)>» construction gives information about an operator
+that completes the information provided by its category. Below
+C<%conditional> is the category, C«:reducecheck<ternary>», which
+specifies calling C<.ternary> to post-process the L<parse subtree|#Parse_tree>
+and C«:pasttype<if>» specifies the NQP L<opcode|#opcode> generated in the
+AST from the parse subtree.
+
+        <O('%conditional, :reducecheck<ternary>, :pasttype<if>')>
+
+=head1 X<Parameter|Reference,Parameter>
+
+L<C<Parameter>|/type/Parameter> is a class to define parameters to
+L<C<Sub>|/type/Sub>routines, L<C<Method>|/type/Method>s and L<C<Callable>|/type/Callable> blocks.
+As opposed to the arguments you specify when calling a
+subroutine/method/callable block.
+
+    sub foo($bar) { say $bar }     # $bar is a parameter
+    foo(42);                       # 42 is an argument
+
+=head1 X<Parrot|Reference,Parrot>
+
+A L<virtual machine|#Virtual_machine> designed to run Raku and other
+dynamic languages. No longer maintained.
+
+=head1 X<Parse tree|Reference,Parse Tree>
+
+A L<parse tree|https://en.wikipedia.org/wiki/Parse_tree> represents the
+structure of a string or sentence according to a grammar.
+L<C<Grammar>|/type/Grammar>s in Raku output parse trees when they successfully
+match a string.
+
+=head1 X<PAST|Reference,PAST>
+
+L<Parrot|#Parrot> AST.
+
+=head1 X<Perl|Reference,Perl>
+
+The Perl programming language.
+
+=head1 X<Perl 6|Reference,Perl 6>
+
+The name used for Raku before October 2019.
+
+=head1 X<POD|Reference,POD>
+
+B<P>lain B<O>l' B<D>ocumentation, a documentation format understood by
+Raku. See L<here|/language/pod> for further information.
+
+=head1 X<POV|Reference,POV>
+
+Stands for "Proof Of Viability". To be included in the language specification,
+a "proof of viability" implementation of the feature must exist in at least one
+mostly-compliant Raku compiler.
+
+=head1 X<priming|Reference,priming>
+
+Priming (sometimes called L<partial function
+application|https://en.wikipedia.org/wiki/Partial_application> in other
+programming languages) is the act of creating a new function by providing some
+but not all of the arguments to an existing function.  For example, to create a
+function that takes one argument and adds 42 to it, you could prime the addition
+operator with C<42> as a single argument: C<* + 42>.  See
+L<Whatever-priming|/type/Whatever> and L<assuming|/type/Code#method_assuming>.
+
+=head1 X<property|Reference,property>
+
+In this context, it either refers to an
+L<object property|/language/objects#index-entry-Property-property>,
+which is the value of an instance variable, or a
+L<Unicode property|/language/regexes#Unicode_properties>
+which are codepoint features that
+allow programs to identify what kind of entity they represent, that is, if they
+are a letter, or a number, or something completely different like a control
+character.
+
+=head1 X<Propspec|Reference,Propspec>
+
+Stands for "Proposed Specification". Usually refers to existing tests in the
+L<language specification|https://github.com/Raku/roast/> that are proposed
+for inclusion in the next release.
+
+=head1 X<pugs|Reference,pugs>
+
+L<pugs|https://en.wikipedia.org/wiki/Pugs> was one of the first
+interpreters/compilers written for Raku. It was written in Haskell
+by Audrey Tang.
+
+=head1 X<Pull request|Reference,Pull request>
+
+A feature of L<GitHub|https://github.com> and other git hosts like
+L<GitLab|https://gitlab.com> that allows you to make patches to be
+easily applied using the GitHub web user interface. It means you request
+someone to do a git pull from your L<repository|#Repository> to hers. PR
+is its usual acronym.
+
+=head1 X<QAST|Reference,QAST>
+
+Successor to L<PAST|#PAST> ('Q' being the next letter after 'P').
+
+=head1 X<Rakudo|Reference,Rakudo>
+
+Rakudo is the name of a Raku implementation that runs on L<MoarVM|#MoarVM> and
+the JVM. It is an abbreviation of C<Rakuda-do>, which, when translated
+from Japanese, means "The Way of the Camel". Also, in Japanese, "Rakudo"
+means "Paradise."
+
+=head1 X<Reify|Reference,Reify>
+
+In the English language, L<reify means|https://www.dictionary.com/browse/reify>
+"to convert into or regard as a concrete thing." Its meaning in Raku is very
+similar, in that conceptual things, like "elements of an infinite list", get
+I<reified> when you try to operate on some of them. In general, reification
+means turning a potential element (be it an element in a lazy list that has not
+been computed yet or an element in a container that has not been extracted) into
+its actual value.
+
+=head1 X<Repository|Reference,Repository>
+
+A filesystem under control of a source control management application,
+usually git, that holds the sources for a project, library or
+application. This file, for instance, is in
+L<a GitHub repository|https://github.com/Raku/doc>. Repositories store not only
+files, but also history of changes and can be used by the developing or
+writing team for interaction through issues or comments to code.
+
+In Raku context, however, a repository is also a short name for
+I<compilation unit repository> and constitutes a system that locates and
+loads modules, managing their installation and precompilation. They are
+structured as linked lists, including chain of repositories ending in
+the default C<Compunit::Repository::Installation>.
+
+=head1 X<RHS|Reference,RHS;Reference,Right-hand side>
+
+Acronym for right-hand side, usually refers to the right-hand side of
+assignment operators and expressions such as C<my $bound := $rhs> or
+C<my $a = 5; $a //= $rhs>. See
+also L<https://en.wikipedia.org/wiki/Sides_of_an_equation|Sides of an equation>.
+
+=head1 X<roast|Reference,roast>
+
+The Raku L<specification tests|#Test suite>, which live here:
+L<https://github.com/Raku/roast/>. Originally developed for L<pugs|#pugs>,
+it now serves all Raku implementations. Why roast? It's the
+B<r>epository B<o>f B<a>ll B<s>pec B<t>ests.
+
+=head1 X<Roles|Reference,role>
+
+Roles, mix-ins or traits define interfaces and/or implementation of
+those interfaces as well as instance variables using them, and are
+mixed-in when declaring classes that follow that interface. L<Abstract
+classes|#Abstract_class> are particular examples of Roles where the
+actual implementation is deferred to the class that uses that Role.
+
+Roles are part of Raku's L<object system|/language/objects>, and are
+declared using the
+L<role|/language/objects#index-entry-role_declaration-role> keyword and
+used in class declaration via L<does|/routine/does>.
+
+=head1 X<rvalue|Reference,rvalue>
+
+A value that can be used on the right-hand side of an assignment. See also
+L<lvalue|#lvalue>.
+
+=head1 X<SAP|Reference,SAP>
+
+Stands for "Specification APpendices". The
+L<SAP|https://github.com/Raku/roast/tree/master/APPENDICES> includes
+optional tests that implementations may choose to follow, but don't
+necessarily have to.
+
+Can be used as a verb. To I<SAP> something is to place it into Specification
+Appendices.
+
+=head1 X<Semilist|Reference,Semilist>
+
+A semilist is a I<semicolon-separated> list like this one: C<1;3;5>, and
+is actually a list of lists, with each component of the semilist being a
+slice of a particular dimension. C<@array[1;3;5]> would be equivalent to
+C<@array[1][3][5]>.
+
+=head1 X<Sigil|Reference,Sigil>
+
+The sigil is the first character of a variable name. It must
+be either $, @, %, or & respectively for a L<C<Scalar>|/type/Scalar>,
+L<C<Array>|/type/Array>, L<C<Hash>|/type/Hash>, or L<C<Code>|/type/Code>
+variable. See also Twigil and role. Also sigiled variables allow short
+conventions for L<variable interpolation|#Variable_interpolation> in a
+double quoted string, or even postcircumfix expressions starting with
+such a variable.
+
+=head1 X<Sigilless variable|Reference,Sigilless Variable>
+
+L<Sigilless variables|/language/variables#index-entry-\_(sigilless_variables)>
+are actually aliases to the value it is assigned to them, since they are not
+containers. Once you assign a sigilless variable (using the escape
+C<\>), its value cannot be changed.
+
+=head1 X<Spesh|Reference,Spesh>
+
+A functionality of the L<MoarVM|#MoarVM> platform that uses runtime gathered
+data to improve commonly used pieces of L<bytecode|#bytecode>. It is much like a
+JIT compiler, except that those usually output machine code rather than
+bytecode.
+
+=head1 X<STD|Reference,STD>
+
+C<STD.pm> is the "standard" Raku grammar definition (see
+L<https://github.com/perl6/std/>) that was used to implement Raku.
+STD.pm is no longer really a "specification" in a proscriptive sense:
+it's more of a guideline or model for Raku implementations to follow.
+
+=head1 X<Stub|Reference,Stub>
+
+Stubs define name and signature of methods whose implementation is
+deferred to other classes.
+
+    role Canine {
+        method bark { ... }          # the ... indicates a stub
+    }
+
+Classes with stubs are L<Abstract classes|#Abstract class>.
+
+=head1 X<Symbol|Reference,Symbol>
+
+Fancy alternative way to denote a name. Generally used in the context of
+L<module|/language/using-modules/introduction>s linking, be it in the OS level, or at the
+Raku L<virtual machine|#Virtual_machine> level for modules generated from languages
+targeting these VMs. The set of imported or exported symbols is called
+the symbol table.
+
+=head1 X<Synopsis|Reference,Synopsis>
+
+The current human-readable description of the Raku language. Still in
+development. Much more a community effort than the
+L<Apocalypses|#Apocalypse> and L<Exegeses|#Exegesis> were. The current
+state of the language is reflected by L<roast|#roast>, its L<test suite|#Test suite>, not
+the synopses where speculative material is not always so flagged or more
+recent additions have not been documented. This is even more true of
+material that has not been yet implemented.
+
+=head1 X<Syntax analysis|Reference,Syntax Analysis>
+
+A syntax or syntactic analysis is equivalent to
+L<parsing|https://en.wikipedia.org/wiki/Parsing> a string to generate its
+L<parse tree|#Parse_tree>.
+
+=head1 X<Test suite|Reference,test suite>
+
+The Raku test suite is L<roast|#roast>.
+
+=head1 X<TheDamian|Reference,TheDamian>
+
+L<IRC|#IRC> screen name for L<Damian Conway|#Damian Conway>, writer of the original
+L<Exegeses|#Exegesis>.
+
+=head1 X<Thunk|Reference,Thunk>
+
+A piece of code that isn't immediately executed, but doesn't have an independent
+scope.
+
+=head1 X<Tight and loose precedence|Reference,Tight;Reference,Loose>
+
+In this context, tight or tighter refers to
+L<precedence rules|/language/functions#Precedence>
+and is the opposite of C<looser>. Precedence rules for new terms are
+always expressed in relationship with other terms, so C<is tighter>
+implies that operands with that operator will be grouped before operands
+with the looser operator. Operators with
+L<tight precedence|/language/operators#Tight_AND_precedence>
+are grouped with priority to others and are generally tighter than most
+others; loose
+L<exactly the opposite|/language/traps#Loose_Boolean_operators>,
+so it is always convenient to be aware of the exact precedence of all
+operators used in an expression.
+
+=head1 X<TimToady|Reference,TimToady>
+
+L<IRC|#IRC> screen name for L<Larry Wall|#Larry Wall>, creator of Perl. The name comes from
+the pronunciation of L<TIMTOWTDI|#TIMTOWTDI> as a word.
+
+
+=head1 X<token|Reference,Token>
+
+In this context, a L<C<token>|/syntax/token> is a regex that does not backtrack.
+In general, L<tokens|https://en.wikipedia.org/wiki/Lexical_analysis> are
+extracted from the source program while L<lexing|#Lexing>.
+
+=head1 X<Truthy and Falsy|Reference,Truthy;Reference,Falsy>
+
+A value is "truthy" if it evaluates to C<True> in Boolean context and "falsy"
+if it evaluates to C<False>.
+
+For example, a non-empty string is considered C<True> and an empty string
+C<False>:
+
+=begin code
+say so "";                    # OUTPUT: «False␤»
+say so "non-empty";           # OUTPUT: «True␤»
+
+say "truthy" if "non-empty";  # OUTPUT: «truthy␤»
+=end code
+
+while L«C<Numeric>|/type/Numeric»s are considered C<True> when non-zero:
+
+=begin code
+say so  0;                    # OUTPUT: «False␤»
+say so  1;                    # OUTPUT: «True␤»
+say so -1;                    # OUTPUT: «True␤»
+
+say "truthy" if -1;           # OUTPUT: «truthy␤»
+say 0 || "falsy";             # OUTPUT: «falsy␤»
+=end code
+
+=head1 X<twine|Reference,twine>
+
+A data structure used to hold a POD string with embedded formatting
+codes. For example:
+
+=begin code
+=begin pod
+C<foo>
+=end pod
+say $=pod[0].contents[0].contents.raku;
+=end code
+
+The output will be:
+
+=begin code
+["", Pod::FormattingCode.new(type => "C", meta => [], config => {}, contents => ["foo"]),""]
+=end code
+
+The C<twine> is an array with an odd number of elements beginning
+with a simple string, alternating with formatting code objects and
+simple strings, and ending with a simple string; the formatting code
+objects are interC<twine>d with the strings. The strings may be empty
+(as shown in the example). A twine with no formatting code will contain
+one simple string.
+
+=head1 X<Type objects|Reference,Type Objects>
+
+A
+L<type object|/language/classtut#A_word_on_types>
+is an object that is used to represent a type or a class. Since in
+object oriented programming everything is an object, classes are
+objects too, and they inherit from L<C<Mu>|/type/Mu>.
+
+=head1 X<Type smiley|Reference,Type Smiley>
+
+A
+L<type smiley|/language/signatures#Constraining_argument_definiteness>
+is a suffix a type may have that indicates the definiteness of values
+that can typecheck against it. This may be C<:D> to indicate that only
+defined values can typecheck (i.e. instances), C<:U> to indicate that only
+undefined values can typecheck (i.e. type objects), or C<:_> to indicate
+that both defined and undefined values can typecheck. These resemble
+emoticons, thus the name.
+
+=head1 X<UB|Reference,UB>
+
+Stands for "Undefined Behavior". In other words, it is something that
+is not explicitly specified by the language specification.
+
+=head1 X<value|Reference,value>
+
+A value is what is actually contained in a container such as a variable.
+Used in expressions such as L<lvalue|/language/glossary#lvalue>, to
+indicate that that particular container can be assigned to.
+
+=head1 X<Value type|Reference,Value type>
+
+A type is known as a B<value type> if it is immutable and any instance
+of that type is interchangeable with any other instance "of the same
+value"—that is, any instance constructed in the same way. An instance of
+a value type is often I<called> a B<value> (but should not be confused
+with L<lvalue|#lvalue>s or L<rvalue|#rvalue>s).
+
+For example, numbers are value types, so a number constructed one place
+in your program with, for instance, the literal C<3> can't be changed in
+any way—it simply I<is> 3—and any later use of the literal C<3> can
+safely be pointed at the same place in memory as the first with no ill
+consequences.
+
+Classes doing the roles L<C<Numeric>|/type/Numeric> and
+L<C<Stringy>|/type/Stringy> are among a few examples of built-in value
+types.
+
+A value type is created by ensuring that an instance of the value type
+is immutable (i.e., its attributes cannot be modified after
+construction) and that its L«C<WHICH>|/routine/WHICH» method returns the
+same thing every time an instance with the same value is constructed
+(and conversely returns a different thing every time an instance with a
+different value is constructed).
+
+The language is free to optimize based on the assumption that equivalent
+instances of value types are interchangeable, but you should not depend
+on any such optimization. For instance, if you want
+L«C<clone>|/routine/clone» to return an instance of C<self>, or you want
+instance construction to be
+L<memoized|https://en.wikipedia.org/wiki/Memoization> so that
+re-construction of a previously-constructed value always returns the
+same instance, you currently must override this behavior yourself.
+
+(The same would hold true of object finalization, but if your instances
+need special destruction behavior, you almost certainly do not actually
+have a value type. Values should be thought of as "timeless" and
+existing in some ideal form outside of your program's memory, like
+natural values are.)
+
+=head1 X<Variable|Reference,Variable>
+
+A variable is a name for a L<container|/language/containers>.
+
+=head1 X<Variable interpolation|Reference,Variable Interpolation>
+
+The value of variables is interpolated into strings by simply inserting
+that variable into the string:
+
+    my $polation="polation";
+    say "inter$polation";     # OUTPUT: «interpolation␤»
+
+This might need curly braces in case it precedes some alphanumeric
+characters
+
+    my $inter="inter";
+    say "{$inter}polation"; # OUTPUT: «interpolation␤»
+
+Interpolation occurs in L<string context|/language/contexts#String>, so
+a valid stringification method must exist for the class. More general
+interpolation can be achieved using the
+L<double q|/language/quoting#Interpolation:_qq> quoting constructs.
+
+=head1 X<Virtual machine|Reference,Virtual Machine>
+
+A virtual machine is the Raku compiler entity that executes the
+L<bytecode|#bytecode>. It can optimize the bytecode or generate machine code
+Just in Time. Examples are L<MoarVM|#MoarVM>, L<Parrot|#Parrot> (who are intended to run
+Raku) and more generic virtual machines such as JVM and Javascript.
+
+=head2 X<WAT|Reference,WAT>
+
+The opposite of a L<DWIM|#DWIM>; counter-intuitive behavior. It is said
+that to every DWIM there is a corresponding WAT.
+See also L<https://www.destroyallsoftware.com/talks/wat>.
+
+=head1 X<whitespace|Reference,whitespace>
+
+A character or group of blank characters, used to separate words. An
+example is the space character « ».
+
+=head1 X<zef|Reference,zef>
+
+L<zef|https://github.com/ugexe/zef> is a tool to manage Raku module installation.
+
+=end pod

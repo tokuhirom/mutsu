@@ -1,0 +1,193 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class Exception
+
+=SUBTITLE Anomalous event capable of interrupting normal control-flow
+
+    class Exception {}
+
+All exceptions that are placed into the C<$!> variable (or into C<$_>
+in C<CATCH> blocks) inherit from C<Exception>. When you call C<die>
+or C<fail> with a non-Exception argument, it is wrapped into an
+L<C<X::AdHoc>|/type/X::AdHoc> object, which also inherits from C<Exception>.
+
+User-defined exception classes should inherit from C<Exception> too, and
+define at least a method C<message>.
+
+    class X::YourApp::SomeError is Exception {
+        method message() {
+            "A YourApp-Specific error occurred: out of coffee!";
+        }
+    }
+
+=head1 Methods
+
+=head2 method message
+
+    method message(Exception:D: --> Str:D)
+
+This is a stub that must be overwritten by subclasses, and should
+return the exception message.
+
+Special care should be taken that this method does not produce
+an exception itself.
+
+    try die "Something bad happened";
+    if ($!) {
+        say $!.message; # OUTPUT: «Something bad happened.␤»
+    }
+
+=head2 method backtrace
+
+    method backtrace(Exception:D:)
+
+Returns the backtrace associated with the exception in a
+L<C<Backtrace>|/type/Backtrace> object or an empty string if there is none. Only
+makes sense on exceptions that have been thrown at least once.
+
+    try die "Something bad happened";
+    with $! { .backtrace.print ; }
+
+=head2 method throw
+
+    method throw(Exception:D:)
+
+Throws the exception.
+
+    my $exception = X::AdHoc.new;    # Totally fine
+    try $exception.throw;            # Throws
+    if ($!) { #`( some handling ) }; # Suppress the exception
+
+=head2 method resume
+
+    method resume(Exception:D:)
+
+Resumes control flow where C<.throw> left it when handled in a C<CATCH> block.
+
+    # For example, resume control flow for any exception
+    CATCH { default { .resume } }
+
+=head2 method rethrow
+
+    method rethrow(Exception:D:)
+
+Rethrows an exception that has already been thrown at least once.
+This is different from C<throw> in that it preserves the original
+backtrace.
+
+    sub f() { die 'Bad' };
+    sub g() { f; CATCH { default { .rethrow } } };
+    g;
+    CATCH { default { say .backtrace.full } };
+
+=head2 routine fail
+
+    multi  fail(Exception $e)
+    method fail(Exception:D:)
+
+Exits the calling L<C<Routine>|/type/Routine> and returns a L<C<Failure>|/type/Failure> object wrapping the
+exception.
+
+=begin code
+# A custom exception defined
+class ForbiddenWord is Exception {
+    has Str $.word;
+    method message { "This word is forbidden: «$!word»" }
+}
+
+sub say-word ( $word ) {
+    ForbiddenWord.new(:word($word)).fail if $word eq 'foo';
+    $word.say;
+}
+
+my $result = say-word("foo");
+say $result.exception;
+=end code
+
+The routine form works in the same way, with an alternative syntax:
+C<fail ForbiddenWord.new(:word($word))>.
+
+=head2 method gist
+
+    multi method gist(Exception:D:)
+
+Returns whatever the exception printer should produce for this exception.
+The default implementation returns message and backtrace separated by
+a newline.
+
+    my $e = X::AdHoc.new(payload => "This exception is pretty bad");
+    try $e.throw;
+    if ($!) { say $!.gist; };
+    # OUTPUT: «This exception is pretty bad
+    #   in block <unit> at <unknown file> line 1␤»
+
+=head2 method Failure
+
+    method Failure(Exception:D: --> Failure:D)
+
+Available as of the 2022.06 release of the Rakudo compiler.
+
+Coerces the C<Exception> into a L<C<Failure>|/type/Failure> object.
+
+=head2 routine die
+
+    multi  die()
+    multi  die(*@message)
+    multi  die(Exception:D $e)
+    method die(Exception:D:)
+
+Throws a fatal C<Exception>. The default exception handler prints each
+element of the list to
+L«C<$*ERR>|/language/variables#index-entry-%24%2AERR» (STDERR).
+
+=for code
+die "Important reason";
+
+If the subroutine form is called without arguments, the value of
+L«C<$!> variable|/syntax/$!» is checked. If it is set to a
+L«C<.DEFINITE>|/language/mop#DEFINITE»
+value, its value will be used as the C<Exception> to throw if it's of
+type C<Exception>, otherwise, it will be used as payload of
+L<C<X::AdHoc>|/type/X::AdHoc> exception. If C<$!> is not C<.DEFINITE>,
+L<C<X::AdHoc>|/type/X::AdHoc> with string C<"Died"> as payload will be thrown.
+
+C<die> will print by default the line number where it happens
+
+=begin code
+die "Dead";
+# OUTPUT: «(exit code 1) Dead␤
+# in block <unit> at /tmp/dead.raku line 1␤␤»
+=end code
+
+However, that default behavior is governed at the C<Exception> level and
+thus can be changed to anything we want by capturing the exception using
+C<CATCH>. This can be used, for instance, to suppress line numbers.
+
+=begin code
+CATCH {
+  default {
+    .payload.say
+  }
+};
+die "Dead" # OUTPUT: «Dead␤»
+=end code
+
+=head2 sub warn
+
+    multi warn(*@message)
+
+Throws a resumable warning exception, which is considered a control
+exception, and hence is invisible to most normal exception handlers.  The
+outermost control handler will print the warning to C<$*ERR>. After printing
+the warning, the exception is resumed where it was thrown.  To override this
+behavior, catch the exception in a C<CONTROL> block.  A C<quietly {...}>
+block is the opposite of a C<try {...}> block in that it will suppress any
+warnings but pass fatal exceptions through.
+
+To simply print to C<$*ERR>, please use C<note> instead.  C<warn> should be
+reserved for use in threatening situations when you don't quite want to
+throw an exception.
+
+    warn "Warning message";
+
+=end pod

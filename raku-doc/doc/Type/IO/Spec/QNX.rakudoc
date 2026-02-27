@@ -1,0 +1,34 @@
+=begin pod :kind("Type") :subkind("class") :category("domain-specific")
+
+=TITLE class IO::Spec::QNX
+
+=SUBTITLE Platform specific operations on file and directory paths QNX
+
+    class IO::Spec::QNX is IO::Spec::Unix { }
+
+An object of this type is available via the variable C<$*SPEC> if the
+Raku interpreter is running on a C<QNX> platform.
+
+About this class and its related classes also see
+L<C<IO::Spec>|/type/IO::Spec>.
+
+=head1 Methods
+
+=head2 method canonpath
+
+    method canonpath(Str() $path, :$parent --> Str:D)
+
+Returns a string that is a canonical representation of C<$path>. If C<:$parent>
+is set to true, will also clean up references to parent directories. B<NOTE:>
+the routine does not access the filesystem, so no symlinks are followed.
+
+    IO::Spec::QNX.canonpath("foo//../bar/../ber").say;
+    # OUTPUT: «foo/../bar/../ber␤»
+
+    IO::Spec::QNX.canonpath("foo///./../bar/../ber").say;
+    # OUTPUT: «foo/../bar/../ber␤»
+
+    IO::Spec::QNX.canonpath("foo///./../bar/../ber", :parent).say;
+    # OUTPUT: «ber␤»
+
+=end pod

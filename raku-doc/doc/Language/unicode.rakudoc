@@ -1,0 +1,234 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Unicode
+
+=SUBTITLE Unicode support in Raku
+
+Raku has a high level of support of Unicode, with the latest version supporting
+Unicode 17.0. This document aims to be both an overview as well as description
+of Unicode features which don't belong in the documentation for routines and
+methods.
+
+While it is specifically part of the VM used by C<Rakudo>, this
+L<overview|https://github.com/MoarVM/MoarVM/blob/master/docs/strings.asciidoc>
+on MoarVM's internal representation of strings provides some interesting details.
+
+=begin nested
+For security reasons, browsers (e.g.:  Firefox) may restrict the display of Unicode
+glyphs not in a trusted font, even if the OS has a font installed that displays the glyph.
+To overcome this problem for Firefox, set the `privacy.fingerprintingProtection` config option to `False`.
+=end nested
+
+=head1 Filehandles and I/O
+
+X<|Reference,Normalization>
+=head2 Normalization
+
+Raku applies normalization by default to all input and output except for file
+names, which are read and written as L<C<UTF8-C8>|#UTF8-C8>; graphemes, which are
+user-visible forms of the characters, will use a normalized representation.
+For example, the grapheme C<á> can be represented in two ways,
+either using one codepoint:
+
+=for code :lang<text>
+á (U+E1 "LATIN SMALL LETTER A WITH ACUTE")
+
+Or two codepoints:
+
+=for code :lang<text>
+a +  ́ (U+61 "LATIN SMALL LETTER A" + U+301 "COMBINING ACUTE ACCENT")
+
+Raku will turn both these inputs into one codepoint, as is specified for
+Normalization Form C (B<X<NFC|Reference,NFC>>). In most cases this is useful and means
+that two inputs that are equivalent are both treated the same. Unicode has a concept
+of canonical equivalence which allows us to determine the canonical form of a string,
+thus allowing us to properly compare strings and manipulate them without having to worry
+about the text losing these properties. By default, any text you process or output
+from Raku will be in this “canonical” form, even when making modifications or
+concatenations to the string (see below for how to avoid this). For more detailed information
+about Normalization Form C and canonical equivalence, see the Unicode Foundation's page on
+L<Normalization and Canonical Equivalence|https://unicode.org/reports/tr15/#Canon_Compat_Equivalence>.
+
+One case where we don't default to this is for the names of files. This is because
+the names of files must be accessed exactly as the bytes are written on the disk.
+
+To avoid normalization you can use a special encoding format called L<UTF8-C8|#UTF8-C8>.
+Using this encoding with any filehandle will allow you to read the exact bytes as they are
+on disk without normalization. They may look funny when printed out if you use a
+UTF8 handle. If you print it out to a handle where the output encoding is UTF8-C8,
+then it will render as you would normally expect as a byte-for-byte exact
+copy. More technical details on L<UTF8-C8|#UTF8-C8> on MoarVM are described below.
+
+=head2 X<UTF8-C8|Reference,UTF8-C8>
+
+X<UTF-8 Clean-8|Reference,UTF-8 Clean-8> is an encoder/decoder that primarily works as the UTF-8 one.
+However, upon encountering a byte sequence that will either not decode as valid
+UTF-8, or that would not round-trip due to normalization, it will use
+L<NFG synthetics|/language/glossary#NFG>
+to keep track of the original bytes involved.
+This means that encoding back to UTF-8 Clean-8 will be able to recreate the
+bytes as they originally existed. The synthetics contain four codepoints:
+
+=item The codepoint 0x10FFFD (which is a private use codepoint)
+=item The codepoint 'x'
+=item The upper 4 bits of the non-decodable byte as a hex char (0..9A..F)
+=item The lower 4 bits as the non-decodable byte as a hex char (0..9A..F)
+
+Under normal UTF-8 encoding, this means the unrepresentable characters will
+come out as something like C<?xFF>.
+
+UTF-8 Clean-8 is used in places where MoarVM receives strings from the
+environment, command line arguments, and filesystem queries; for instance when decoding buffers:
+
+    say Buf.new(ord('A'), 0xFE, ord('Z')).decode('utf8-c8');
+    #  OUTPUT: «A􏿽xFEZ␤»
+
+You can see how the two initial codepoints used by UTF8-C8 show up below right
+before the 'FE'. You can use this type of encoding to read files with unknown
+encoding:
+
+    my $test-file = "/tmp/test";
+    given open($test-file, :w, :bin) {
+      .write: Buf.new(ord('A'), 0xFA, ord('B'), 0xFB, 0xFC, ord('C'), 0xFD);
+      .close;
+    }
+
+    say slurp($test-file, enc => 'utf8-c8');
+    # OUTPUT: «(65 250 66 251 252 67 253)␤»
+
+Reading with this type of encoding and encoding them back to UTF8-C8 will give you back the original bytes; this would not have been possible with the default UTF-8 encoding.
+
+Please note that this encoding so far is not supported in the JVM implementation of Rakudo.
+
+=head1 Defining Unicode characters with Unicode codepoints and codepoint sequences
+
+=head2 Entering codepoints in strings by number
+
+X<|Syntax,\c[N+] Unicode decimal codepoint>
+X<|Syntax,\xN+ Unicode hexadecimal codepoint>
+X<|Syntax,\oN+ Unicode octal codepoint>
+You can insert Unicode codepoints by number (decimal or hexadecimal or octal).
+For example, the character named "latin capital letter ae with macron" has
+decimal codepoint 482, hexadecimal codepoint 0x1E2, and octal codepoint 0o742:
+
+    say "\c[482]"; # OUTPUT: «Ǣ␤» (mnemonic aid: 'c - character name or decimal')
+    say "\x1E2";   # OUTPUT: «Ǣ␤» (mnemonic aid: 'x - hexadecimal')
+    say "\o742";   # OUTPUT: «Ǣ␤» (mnemonic aid: 'o - octal')
+
+Note any character following the hexadecimal and octal examples above will
+be interpreted as part of the conversion unless it is not valid for the number type.
+For example:
+
+    say "\x1E2";   # OUTPUT: «Ǣ␤»
+    say "\x1E2P";  # OUTPUT: «ǢP␤» ('P' is not a hexadecimal digit, result: 2 chars)
+    say "\x1E2 ";  # OUTPUT: «Ǣ ␤» (' ' is not a hexadecimal digit, result: 2 chars)
+    say "\x1E20";  # OUTPUT: «Ḡ␤»  ('0' is a hexadecimal digit', result: 1 char)
+
+The same type of result would occur for the octal version if the ending character
+was not in the set (0..7).
+
+=head2 Inserting codepoints in strings by name
+
+You can also access Unicode codepoints by name, and
+Raku supports all Unicode names. X<|Syntax,\c[some name] Unicode name>
+
+    say "\c[PENGUIN]"; # OUTPUT: «🐧␤»
+    say "\c[BELL]";    # OUTPUT: «🔔␤» (U+1F514 BELL)
+
+All Unicode codepoint names and name sequences are now case-insensitive:
+[Starting in Rakudo 2017.02]
+
+    say "\c[latin capital letter ae with macron]"; # OUTPUT: «Ǣ␤»
+    say "\c[latin capital letter E]";              # OUTPUT: «E␤» (U+0045)
+
+(However, those names will be shown in uppercase when interrogating the character's
+uniname.)
+
+You can specify multiple characters by using a comma separated list inside
+a single C<\c[]> instance. You can combine numeric and named styles as well:
+
+    say "\c[482,PENGUIN]"; # OUTPUT: «Ǣ🐧␤»
+
+In addition to using C<\c[]> inside interpolated strings, you can also use
+the L<uniparse|/routine/uniparse> to show its character:
+
+    say "DIGIT ONE".uniparse;  # OUTPUT: «1␤»
+    say uniparse("DIGIT ONE"); # OUTPUT: «1␤»
+
+See L<uniname|/routine/uniname> and L<uninames|/routine/uninames> for routines
+that work in the opposite direction with a single codepoint and multiple
+codepoints, respectively.
+
+=head2 Codepoint sequences
+
+Codepoint sequences can be inserted into a single string by following a codepoint entry
+with others or intermingling them with single characters, words, and spaces as normal
+text. Such codepoint entries are very useful for users who do not have ready access to
+a Unicode capable keyboard. Strings may use any or all of the methods
+of Unicode insertion. For example, to use a French acute accent, create the text like this:
+
+    say "Le Caf\xe9 Marly"; # OUTPUT: «Le Café Marly␤»
+
+Finally, here is a more complete example showing many of the methods in one string:
+
+    say "\c[PENGUIN] went looking for \x1F41F but found only \o[375274,40,373046]."
+    # Output: «🐧 went looking for 🐟 but found only 🪼 😦.␤»
+
+=head2 Name aliases
+
+Name Aliases are used mainly for codepoints without an official
+name, for abbreviations, or for corrections (Unicode names never change).
+For a full list of them see L<here|https://www.unicode.org/Public/UCD/latest/ucd/NameAliases.txt>.
+
+Control codes without any official name:
+
+    say "\c[ALERT]";     # Not visible (U+0007 control code (also accessible as \a))
+    say "\c[LINE FEED]"; # Not visible (U+000A same as "\n")
+
+Corrections:
+
+    #   Correct name as input:
+    say                     "\c[LATIN CAPITAL LETTER GHA]"; # OUTPUT: «Ƣ␤»
+    #   Original, erroneous name as output:
+    say "Ƣ".uniname; # OUTPUT: «LATIN CAPITAL LETTER OI␤»
+
+    # This one is a spelling mistake that was corrected in a Name Alias:
+    #   Correct name as input:
+    say    "\c[PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRACKET]".uniname;
+    #   Original, erroneous name as output:
+    # OUTPUT: «PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRAKCET␤»
+
+Abbreviations:
+
+    say "\c[ZWJ]".uniname;   # OUTPUT: «ZERO WIDTH JOINER␤»
+    say "\c[NBSP]".uniname;  # OUTPUT: «NO-BREAK SPACE␤»
+    say "\c[NNBSP]".uniname; # OUTPUT: «NARROW NO-BREAK SPACE␤»
+
+=head2 Named sequences
+
+You can also use any of the L<Named Sequences|https://www.unicode.org/Public/UCD/latest/ucd/NamedSequences.txt>,
+these are not single codepoints, but sequences of them. [Starting in Rakudo 2017.02]
+
+    say "\c[LATIN CAPITAL LETTER E WITH VERTICAL LINE BELOW AND ACUTE]";      # OUTPUT: «É̩␤»
+    say "\c[LATIN CAPITAL LETTER E WITH VERTICAL LINE BELOW AND ACUTE]".ords; # OUTPUT: «(201 809)␤»
+
+=head3 Emoji sequences
+
+Raku supports Emoji sequences.
+For all of them see:
+L<Emoji ZWJ Sequences|https://www.unicode.org/Public/emoji/4.0/emoji-zwj-sequences.txt>
+and L<Emoji Sequences|https://www.unicode.org/Public/emoji/4.0/emoji-sequences.txt>.
+Note that any names with commas should have their commas removed since Raku uses
+commas to separate different codepoints/sequences inside the same C<\c> sequence.
+
+    say "\c[woman gesturing OK]";         # OUTPUT: «🙆‍♀️␤»
+    say "\c[family: man woman girl boy]"; # OUTPUT: «👨‍👩‍👧‍👦␤»
+
+=head2 Confusability
+
+Because of the number of characters in unicode, wider support means you may find some that are
+confusable. For general tips on how to avoid issues, see
+L<Confusability|https://www.unicode.org/reports/tr39/#Confusable_Detection>
+at the unicode.org site.
+
+=end pod

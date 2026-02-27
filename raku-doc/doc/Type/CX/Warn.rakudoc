@@ -1,0 +1,18 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE role CX::Warn
+
+=SUBTITLE Control exception warning
+
+    class CX::Warn does X::Control { }
+
+A L<control exception|/language/exceptions#Control_exceptions> triggered when C<warn> is called to warn about any
+incidence.
+
+=head1 Methods
+
+=head2 method new
+
+C<CX::Warn> objects are created when a warning is thrown in any block.
+
+=end pod

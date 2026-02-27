@@ -1,0 +1,53 @@
+@import 'perl.css';
+/* We can't include the rules below inside perl.css, because it's used by other sites,
+   and we can't specify more than one stylesheet to the podhtml.pl program. So... import
+*/
+
+body {
+    padding-top: 100px;
+    margin: 5px auto;
+}
+
+body:before {
+    content: "Note: these documents may be out of date. For Perl 6 documentation see docs.perl6.org; for specs, see the official test suite.";
+    text-align: center;
+    background: #600;
+    color: white;
+    width: 100%;
+    display: block;
+    padding: 10px 20px;
+    font-size: 110%;
+    position: fixed;
+    z-index: 10;
+    top: 0;
+    left: 0;
+}
+
+:target {
+    display: block;
+    padding-top: 90px;
+}
+
+[id^="line_"] {
+     position: relative;
+}
+
+[id^="line_"]::before {
+     color: transparent;
+     content: attr(id);
+     left: -9em;
+     position: absolute;
+}
+
+[id^="line_"] + [id^="line_"]::before {
+     content: none;
+}
+
+
+[id^="line_"] {
+     position: relative;
+}
+
+.pod:hover [id^="line_"]::before {
+     color: #ddd;
+}

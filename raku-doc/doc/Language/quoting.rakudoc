@@ -1,0 +1,667 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Quoting constructs
+
+=SUBTITLE Writing strings and word lists, in Raku
+
+=head1 The Q lang
+
+Strings are usually represented in Raku code using some form of quoting
+construct. The most minimalistic of these is C<Q>, usable via the shortcut
+C<｢…｣>, or via C<Q> followed by any pair of delimiters surrounding your
+text, including many
+L<Unicode pairs|https://github.com/Raku/roast/blob/aa4994a7f6b3f6b450a9d231bebd5fba172439b0/S02-literals/quoting-unicode.t#L49-L65>.
+Most of the time, though, the most you'll need is
+C<'…'>
+ or C<"…">,
+described in more detail in the following sections.
+
+For information about quoting as applied in regexes, see the L<regular
+expression documentation|/language/regexes>.
+
+=head2 X<Literal strings: Q|Syntax,Q;Syntax,｢ ｣>
+
+=for code :skip-test<listing>
+Q[A literal string]
+｢More plainly.｣
+Q^Almost any non-word character can be a delimiter!^
+Q｢｢Delimiters can be repeated/nested if they are adjacent.｣｣
+Q｟Quoting with fancy unicode pairs｠
+
+Delimiters can be nested, but in the plain C<Q> form, backslash escapes
+aren't allowed. In other words, basic C<Q> strings are as literal as
+possible.
+
+Some delimiters are not allowed immediately after C<Q>, C<q>, or C<qq>. Any
+characters that are allowed in L<identifiers|/language/syntax#Identifiers> are
+not allowed to be used, since in such a case, the quoting construct together
+with such characters are interpreted as an identifier. In addition, C<( )> is
+not allowed because that is interpreted as a function call. If you still wish
+to use those characters as delimiters, separate them from C<Q>, C<q>, or C<qq>
+with a space. Please note that some natural languages use a left delimiting
+quote on the right side of a string. C<Q> will not support those as it relies
+on unicode properties to tell left and right delimiters apart.
+
+=for code :skip-test<listing>
+Q'this will not work!'
+Q(this won't work either!)
+
+The examples above will produce an error. However, this will work
+
+=for code :skip-test<listing>
+Q (this is fine, because of space after Q)
+Q 'and so is this'
+Q<Make sure you <match> opening and closing delimiters>
+Q{This is still a closing curly brace → \}
+
+These examples produce:
+
+=begin code :solo
+this is fine, because of space after Q
+and so is this
+Make sure you <match> opening and closing delimiters
+This is still a closing curly brace → \
+=end code
+
+X<|Adverbs,:x (quoting adverb)>X<|Adverbs,:exec (quoting adverb)>X<|Adverbs,:w (quoting adverb)>X<|Adverbs,:words (quoting adverb)>
+X<|Adverbs,:ww (quoting adverb)>X<|Adverbs,:quotewords (quoting adverb)>X<|Adverbs,:q (quoting adverb)>X<|Adverbs,:single (quoting adverb)>
+X<|Adverbs,:qq (quoting adverb)>X<|Adverbs,:double (quoting adverb)>X<|Adverbs,:s (quoting adverb)>
+X<|Adverbs,:scalar (quoting adverb)>X<|Adverbs,:a (quoting adverb)>X<|Adverbs,:array (quoting adverb)>X<|Adverbs,:h (quoting adverb)>
+X<|Adverbs,:hash (quoting adverb)>X<|Adverbs,:f (quoting adverb)>X<|Adverbs,:function (quoting adverb)>X<|Adverbs,:c (quoting adverb)>
+X<|Adverbs,:closure (quoting adverb)>X<|Adverbs,:b (quoting adverb)>X<|Adverbs,:backslash (quoting adverb)>X<|Adverbs,:to (quoting adverb)>
+X<|Adverbs,:heredoc (quoting adverb)>X<|Adverbs,:v (quoting adverb)>X<|Adverbs,:val (quoting adverb)>
+
+The behavior of quoting constructs can be modified with adverbs, as explained
+in detail in later sections.
+
+=begin table
+Short       Long            Meaning
+
+:x          :exec           Execute as command and return results
+
+:w          :words          Split result on words (no quote protection)
+
+:ww         :quotewords     Split result on words (with quote protection)
+
+:q          :single         Interpolate \\, \qq[...] and escaping the delimiter with \
+
+:qq         :double         Interpolate with :s, :a, :h, :f, :c, :b
+
+:s          :scalar         Interpolate $ vars
+
+:a          :array          Interpolate @ vars (when followed by postcircumfix)
+
+:h          :hash           Interpolate % vars (when followed by postcircumfix)
+
+:f          :function       Interpolate & calls
+
+:c          :closure        Interpolate {...} expressions
+
+:b          :backslash      Enable backslash escapes (\n, \qq, \$foo, etc)
+
+:to         :heredoc        Parse result as heredoc terminator
+
+:v          :val            Convert to allomorph if possible
+=end table
+
+These adverbs can be used together with C<Q>, so that it will interpolate
+even if the quoting operator does not:
+
+=for code
+my %þ = :is-mighty;
+say Q "Þor %þ<>";                         # OUTPUT: «Þor %þ<>␤»
+say Q:h"Þor %þ<>";                        # OUTPUT: «Þor is-mighty   True␤»
+%þ = :42foo, :33bar;
+say Q:h:c "Þor %þ<> →  { [+] %þ.values}"; # OUTPUT: «Þor bar 33␤foo  42 →  75␤»
+my @þ= <33 44>; say Q:a "Array contains @þ[]"; # OUTPUT: «Array contains 33 44␤»
+say Q:v<33> + 3;                          # OUTPUT: «36␤»
+
+By default, and as shown, C<Q> quotes directly without any kind of
+transformation of the quoted string. The adverbs will modify its behavior,
+converting, for instance, the string into an allomorph (with the C<:v> adverb)
+or allowing interpolation of hashes (via C<:h>) or C<{}> code sections (via
+C<:c>). Arrays and hashes must be I<followed by a postcircumfix>; that is, the
+sigiled identifier will not interpolate, but followed by an indexing, decont
+operator or a method call with parentheses, it will:
+
+=for code
+my @þ= <33 44>;
+say Q:a "Array contains @þ.elems()"; # OUTPUT: «Array contains 2␤»
+
+The same code without the parentheses will simply not interpolate, absent the
+post-circumfix operator.
+
+X<|Syntax,escaping quote>
+=head2 X<Escaping: q|Syntax,q;Syntax,' '>
+
+=begin code
+'Very plain';
+q[This back\slash stays];
+q[This back\\slash stays]; # Identical output
+q{This is not a closing curly brace → \}, but this is → };
+Q :q $There are no backslashes here, only lots of \$\$\$!$;
+'(Just kidding. There\'s no money in that string)';
+'No $interpolation {here}!';
+Q:q!Just a literal "\n" here!;
+=end code
+
+The C<q> form allows for escaping characters that would otherwise end the
+string using a backslash. The backslash itself can be escaped, too, as in
+the third example above. The usual form is C<'…'> or C<q> followed by a
+delimiter, but it's also available as an adverb on C<Q>, as in the fifth and
+last example above.
+
+These examples produce:
+=for code :lang<text>
+Very plain
+This back\slash stays
+This back\slash stays
+This is not a closing curly brace → } but this is →
+There are no backslashes here, only lots of $$$!
+(Just kidding. There's no money in that string)
+No $interpolation {here}!
+Just a literal "\n" here
+
+The C<\qq[...]> escape sequence enables
+L«C<qq> interpolation|/language/quoting#Interpolation:_qq» for a portion
+of the string. Delimiters other than C<[]> can also be used.
+Using a C<q>-quoted string in combination with this escape sequence is handy when
+HTML markup is involved, to avoid interpretation of angle brackets as hash keys:
+
+    my $var = 'foo';
+    say '<code>$var</code> is <var>\qq[$var.uc()]</var>';
+    # OUTPUT: «<code>$var</code> is <var>FOO</var>␤»
+
+=head2 X<Interpolation: qq|Syntax,qq;Syntax," ">
+
+=begin code
+my $color = 'blue';
+say "My favorite color is $color!"; # OUTPUT: «My favorite color is blue!␤»
+=end code
+
+X<|Syntax,\ (quoting)>
+
+The C<qq> form – usually written using double quotes – allows for
+interpolation of backslash escape sequences (like C<q:backslash>), all sigiled
+variables (like C<q:scalar:array:hash:function>), and any code inside C<{...}>
+(like C<q:closure>).
+
+=head3 Interpolating variables
+
+Inside a C<qq>-quoted string, you can use variables with a sigil to trigger
+interpolation of the variable's value.  Variables with the C<$> sigil are
+interpolated whenever the occur (unless escaped); that's why, in the example
+above, C<"$color"> became C<blue>.
+
+Variables with other sigils, however, only trigger interpolation when you follow
+the variable with the appropriate postfix (C<[]> for Arrays, C«{}» or C«<>» or C<«»> for Hashes,
+C<()> for Subs). This allows you to write expressions like
+C<"documentation@raku.org"> without interpolating the C<@raku> variable.
+
+To interpolate an Array (or other L<C<Positional>|/type/Positional> variable),
+append a C<[]> to the variable name:
+
+=begin code
+my @neighbors = "Felix", "Danielle", "Lucinda";
+say "@neighbors[] and I try our best to coexist peacefully."
+# OUTPUT: «Felix Danielle Lucinda and I try our best to coexist peacefully.␤»
+=end code
+
+Alternatively, rather than using C<[]>, you can interpolate the Array by
+following it with a method call with parentheses after the method name. Thus the
+following code will work:
+
+=begin code :preamble<my @neighbors = "Felix", "Danielle", "Lucinda">
+say "@neighbors.join(', ') and I try our best to coexist peacefully."
+# OUTPUT: «Felix, Danielle, Lucinda and I try our best to coexist peacefully.␤»
+=end code
+
+However, C<"@example.com"> produces C<@example.com>.
+
+To call a subroutine, use the C<&>-sigil and follow the subroutine name with parentheses.
+X<|Syntax,& (interpolation)>
+
+    say "uc  'word'";  # OUTPUT: «uc  'word'»␤
+    say "&uc 'word'";  # OUTPUT: «&uc 'word'»␤
+    say "&uc('word')"; # OUTPUT: «WORD»␤
+    # OUTPUT: «abcDEFghi␤»
+
+To interpolate a Hash (or other L<C<Associative>|/type/Associative> variable), use
+the C«<>» postcircumfix operator.
+
+    my %h = :1st; say "abc%h<st>ghi";
+    # OUTPUT: «abc1ghi␤»
+
+The way C<qq> interpolates variables is the same as
+C<q:scalar:array:hash:function>.  You can use these adverbs (or their short
+forms, C<q:s:a:h:f>) to interpolate variables without enabling other C<qq>
+interpolations.
+
+=head3 Interpolating closures
+
+Another feature of C<qq> is the ability to interpolate Raku code from
+within the string, using curly braces:
+
+=begin code
+my ($x, $y, $z) = 4, 3.5, 3;
+say "This room is {$x}m by {$y}m by {$z}m.";               # OUTPUT: «This room is 4m by 3.5m by 3m.␤»
+say "Therefore its volume should be { $x * $y * $z }m³!";  # OUTPUT: «Therefore its volume should be 42m³!␤»
+=end code
+
+This provides the same functionality as the C<q:closure>/C<q:c> quoting form.
+
+=head3 Interpolating escape codes
+
+The C<qq> quoting form also interpolates backslash escape sequences.  Several of
+these print invisible/whitespace ASCII control codes or whitespace characters:
+
+=begin table
+Sequence    Hex Value       Character            Reference URL
+\0          \x0000          Nul                  https://util.unicode.org/UnicodeJsps/character.jsp?a=0000
+\a          \x0007          Bel                  https://util.unicode.org/UnicodeJsps/character.jsp?a=0007
+\b          \x0008          Backspace            https://util.unicode.org/UnicodeJsps/character.jsp?a=0008
+\e          \x001B          Esc                  https://util.unicode.org/UnicodeJsps/character.jsp?a=001B
+\f          \x000C          Form Feed            https://util.unicode.org/UnicodeJsps/character.jsp?a=000C
+\n          \x000A          Newline              https://util.unicode.org/UnicodeJsps/character.jsp?a=000A
+\r          \x000D          Carriage Return      https://util.unicode.org/UnicodeJsps/character.jsp?a=000D
+\t          \x0009          Tab                  https://util.unicode.org/UnicodeJsps/character.jsp?a=0009
+=end table
+
+C<qq> also supports two multi-character escape sequences: C<\x> and C<\c>. You
+can use C<\x> or C<\x[]> with the hex-code of a Unicode character or a list of
+characters:
+
+    my $s = "I \x2665 Raku!";
+    say $s;
+    # OUTPUT: «I ♥ Raku!␤»
+
+    $s = "I really \x[2661,2665,2764,1f495] Raku!";
+    say $s;
+    # OUTPUT: «I really ♡♥❤💕 Raku!␤»
+
+You can also create a Unicode character with C<\c> and that character's
+L«unicode name|/language/unicode#Entering_unicode_codepoints_and_codepoint_sequences»
+, L<named sequences|/language/unicode#Named_sequences>
+or L<name alias|/language/unicode#Name_aliases>:
+
+    my $s = "Camelia \c[BROKEN HEART] my \c[HEAVY BLACK HEART]!";
+    say $s;
+    # OUTPUT: «Camelia 💔 my ❤!␤»
+
+See the description of
+L«\c[]|/language/unicode#Entering_unicode_codepoints_and_codepoint_sequences» on
+the L<Unicode|/language/unicode> documentation page for more details.
+
+C<qq> provides the same interpolation of escape sequences as that
+provided by C<q:backslash>/C<q:b>.
+
+=head3 preventing interpolation and handling missing values
+
+You can prevent any undesired interpolation in a
+C<qq>-quoted string by escaping the sigil or other initial character:
+
+=begin code :preamble<my $color = 'blue'>
+say "The \$color variable contains the value '$color'"; # OUTPUT: «The $color variable contains the value 'blue'␤»
+=end code
+
+Interpolation of undefined values will raise a control exception that can be
+caught in the current block with
+L<CONTROL|/language/phasers#CONTROL>.
+
+=begin code
+sub niler {Nil};
+my Str $a = niler;
+say("$a.html", "sometext");
+say "alive"; # this line is dead code
+CONTROL { .die };
+=end code
+
+X<|Syntax,qw word quote>
+=head2 Word quoting: qw
+
+=for code
+qw|! @ # $ % ^ & * \| < > | eqv '! @ # $ % ^ & * | < >'.words.list;
+q:w { [ ] \{ \} }           eqv ('[', ']', '{', '}');
+Q:w | [ ] { } |             eqv ('[', ']', '{', '}');
+
+The C<:w> form, usually written as C<qw>, splits the string into
+"words". In this context, words are defined as sequences of non-whitespace
+characters separated by whitespace. The C<q:w> and C<qw> forms inherit the
+interpolation and escape semantics of the C<q> and single quote string
+delimiters, whereas C<Qw> and C<Q:w> inherit the non-escaping semantics of
+the C<Q> quoter.
+
+This form is used in preference to using many quotation marks and commas for
+lists of strings. For example, where you could write:
+
+    my @directions = 'left', 'right,', 'up', 'down';
+
+It's easier to write and to read this:
+
+    my @directions = qw|left right up down|;
+
+=head2 Word quoting: C«< >»
+X«|Syntax,< > word quote»
+
+=for code
+say <a b c> eqv ('a', 'b', 'c');   # OUTPUT: «True␤»
+say <a b 42> eqv ('a', 'b', '42'); # OUTPUT: «False␤», the 42 became an IntStr allomorph
+say < 42 > ~~ Int; # OUTPUT: «True␤»
+say < 42 > ~~ Str; # OUTPUT: «True␤»
+
+The angle brackets quoting is like C<qw>, but with extra feature that lets you
+construct L<allomorphs|/language/glossary#Allomorph> or literals
+of certain numbers:
+
+    say <42 4/2 1e6 1+1i abc>.raku;
+    # OUTPUT: «(IntStr.new(42, "42"), RatStr.new(2.0, "4/2"), NumStr.new(1000000e0, "1e6"), ComplexStr.new(<1+1i>, "1+1i"), "abc")␤»
+
+To construct a L«C<Rat>|/type/Rat» or L«C<Complex>|/type/Complex» literal, use
+angle brackets around the number, without any extra spaces:
+
+    say <42/10>.^name;   # OUTPUT: «Rat␤»
+    say <1+42i>.^name;   # OUTPUT: «Complex␤»
+    say < 42/10 >.^name; # OUTPUT: «RatStr␤»
+    say < 1+42i >.^name; # OUTPUT: «ComplexStr␤»
+
+Compared to C<42/10> and C<1+42i>, there's no division (or addition) operation
+involved. This is useful for literals in routine signatures, for example:
+
+=begin code
+sub close-enough-π (<355/113>) {
+    say "Your π is close enough!"
+}
+close-enough-π 710/226; # OUTPUT: «Your π is close enough!␤»
+=end code
+
+=begin code :skip-test<illustrates error>
+# WRONG: can't do this, since it's a division operation
+sub compilation-failure (355/113) {}
+=end code
+
+=head2 X<Word quoting with quote protection: qww|Syntax,qww>
+
+The C<qw> form of word quoting will treat quote characters literally, leaving
+them in the resulting words:
+
+    say qw{"a b" c}.raku; # OUTPUT: «("\"a", "b\"", "c")␤»
+
+Using the C<qww> variant allows you to use quote characters for embedding strings
+in the word quoting structure:
+
+    say qww{"a b" c}.raku; # OUTPUT: «("a b", "c")␤»
+
+Other kinds of quotes are also supported with their usual semantics:
+
+    my $one = 'here';
+    my $other = 'there';
+    say qww{ ’this and that’ “$one or $other” ｢infinity and beyond｣ }.raku;
+    # OUTPUT: «("this and that", "here or there", "infinity and beyond")␤»
+
+The delimiters of embedded strings are always considered word splitters:
+
+    say qww{'alpha'beta'gamma' 'delta'"epsilon"}.raku; # OUTPUT: «("alpha", "beta", "gamma", "delta", "epsilon")␤»
+
+=head2 X<Word quoting with interpolation: qqw|Syntax,qqw>
+
+The C<qw> form of word quoting doesn't interpolate variables:
+
+    my $a = 42; say qw{$a b c};  # OUTPUT: «$a b c␤»
+
+Thus, if you wish for variables to be interpolated within the quoted string,
+you need to use the C<qqw> variant:
+
+    my $a = 42;
+    my @list = qqw{$a b c};
+    say @list;                # OUTPUT: «[42 b c]␤»
+
+Note that variable interpolation happens before word splitting:
+
+    my $a = "a b";
+    my @list = qqw{$a c};
+    .say for @list; # OUTPUT: «a␤b␤c␤»
+
+=head2 X<<<Word quoting with interpolation and quote protection: qqww|Syntax,qqww>>>
+
+The C<qqw> form of word quoting will treat quote characters literally,
+leaving them in the resulting words:
+
+    my $a = 42; say qqw{"$a b" c}.raku;  # OUTPUT: «("\"42", "b\"", "c")␤»
+
+Using the C<qqww> variant allows you to use quote characters for embedding strings
+in the word quoting structure:
+
+    my $a = 42; say qqww{"$a b" c}.raku; # OUTPUT: «("42 b", "c")␤»
+
+The delimiters of embedded strings are always considered word splitters:
+
+    say qqww{'alpha'beta'gamma' 'delta'"epsilon"}.raku; # OUTPUT: «("alpha", "beta", "gamma", "delta", "epsilon")␤»
+
+Unlike the C<qqw> form, interpolation also always splits (except for interpolation that takes place in an embedded string):
+
+    my $time = "now";
+    $_ = 'ni';
+    my @list = qqww<$time$time {6*7}{7*6} "$_$_">;
+    .say for @list; # OUTPUT: «now␤now␤42␤42␤nini␤»
+
+Quote protection happens before interpolation, and interpolation happens
+before word splitting, so quotes coming from inside interpolated variables are
+just literal quote characters:
+
+    my $a = "1 2";
+    say qqww{"$a" $a}.raku; # OUTPUT: «("1 2", "1", "2")␤»
+    my $b = "1 \"2 3\"";
+    say qqww{"$b" $b}.raku; # OUTPUT: «("1 \"2 3\"", "1", "\"2", "3\"")␤»
+
+=head2 X<<<Word quoting with interpolation and quote protection: « »|Syntax,<< >>;Syntax,« »>>>
+
+This style of quoting is like C<qqww>, but with the added benefit of
+constructing L<allomorphs|/language/glossary#Allomorph> (making it
+functionally equivalent to L<qq:ww:v|#index-entry-:val_(quoting_adverb)>). The
+ASCII equivalent to C<« »> are double angle brackets C«<< >>».
+
+    # Allomorph Construction
+    my $a = 42; say «  $a b c    ».raku;  # OUTPUT: «(IntStr.new(42, "42"), "b", "c")␤»
+    my $a = 42; say << $a b c   >>.raku;  # OUTPUT: «(IntStr.new(42, "42"), "b", "c")␤»
+
+    # Quote Protection
+    my $a = 42; say «  "$a b" c  ».raku;  # OUTPUT: «("42 b", "c")␤»
+    my $a = 42; say << "$a b" c >>.raku;  # OUTPUT: «("42 b", "c")␤»
+
+=head2 X<Shell quoting: qx|Syntax,qx>
+
+To run a string as an external program, not only is it possible to pass the
+string to the C<shell> or C<run> functions but one can also perform shell
+quoting. There are some subtleties to consider, however. C<qx> quotes
+I<don't> interpolate variables. Thus
+
+    my $world = "there";
+    say qx{echo "hello $world"}
+
+prints simply C<hello>. Nevertheless, if you have declared an environment
+variable before calling C<raku>, this will be available within C<qx>, for
+instance
+
+=begin code :skip-test<REPL>
+WORLD="there" raku
+> say qx{echo "hello $WORLD"}
+=end code
+
+will now print C<hello there>.
+
+The result of calling C<qx> is returned, so this information can be assigned
+to a variable for later use:
+
+    my $output = qx{echo "hello!"};
+    say $output;    # OUTPUT: «hello!␤»
+
+See also L<shell|/routine/shell>, L<run|/routine/run> and
+L<C<Proc::Async>|/type/Proc::Async> for other ways to execute external commands.
+
+=head2 X<Shell quoting with interpolation: qqx|Syntax,qqx>
+
+If one wishes to use the content of a Raku variable within an external
+command, then the C<qqx> shell quoting construct should be used:
+
+    my $world = "there";
+    say qqx{echo "hello $world"};  # OUTPUT: «hello there␤»
+
+Again, the output of the external command can be kept in a variable:
+
+    my $word = "cool";
+    my $option = "-i";
+    my $file = "/usr/share/dict/words";
+    my $output = qqx{grep $option $word $file};
+    # runs the command: grep -i cool /usr/share/dict/words
+    say $output;      # OUTPUT: «Cooley␤Cooley's␤Coolidge␤Coolidge's␤cool␤...»
+
+Be aware of the content of the Raku variable used within an external command; malicious content can be used to execute arbitrary code. See L<C<qqx> traps|/language/traps#Beware_of_variables_used_within_qqx>
+
+See also L<run|/routine/run> and L<C<Proc::Async>|/type/Proc::Async> for
+better ways to execute external commands.
+
+=head2 X<Heredocs: :to|Syntax,heredocs :to>
+
+A convenient way to write a multi-line string literal is by using a I<heredoc>, which
+lets you choose the delimiter yourself:
+
+=begin code
+say q:to/END/;
+Here is
+some multi-line
+string
+END
+=end code
+
+The contents of the I<heredoc> always begin on the next line, so you can (and
+should) finish the line.
+
+=begin code :preamble<sub my-escaping-function { $^x }>
+my $escaped = my-escaping-function(q:to/TERMINATOR/, language => 'html');
+Here are the contents of the heredoc.
+Potentially multiple lines.
+TERMINATOR
+=end code
+
+If the terminator is indented, that amount of indention is removed from the
+string literals. Therefore this I<heredoc>
+
+=begin code
+say q:to/END/;
+    Here is
+    some multi line
+        string
+    END
+=end code
+
+produces this output:
+
+=begin code :lang<text>
+Here is
+some multi line
+    string
+=end code
+
+I<Heredocs> include the newline from before the terminator.
+A common idiom to remove it is to put a L<C<chomp>|/type/Str#routine_chomp> at the beginning, for example:
+
+=begin code
+my $s = chomp q:to/END/;
+The result will have
+no final newline.
+END
+=end code
+
+To allow interpolation of variables use the L<C<qq>|/language/quoting#Interpolation:_qq> form. For example:
+
+  my $f = 'db.7.3.8';
+  my $s = qq:to/END/;
+  option \{
+      file "$f";
+  };
+  END
+  say $s;
+
+would produce:
+
+=begin code :lang<text>
+option {
+    file "db.7.3.8";
+};
+=end code
+
+Some other situations to pay attention to are innocent-looking ones
+where the text looks like a Raku expression. For example, the
+following generates an error:
+
+=begin code :lang<text>
+my $title = 'USAFA Class of 1965';
+say qq:to/HERE/;
+<a href='https://usafa-1965.org'>$title</a>
+HERE
+# Output:
+Type Str does not support associative indexing.
+  in block <unit> at here.raku line 2
+=end code
+
+The angle bracket to the right of '$title' makes it look like a hash index
+to Raku when it is actually a L<C<Str>|/type/Str> variable, hence the error message.
+One solution is to enclose the scalar with curly braces which is one
+way to enter an expression in any interpolating quoting construct:
+
+=begin code :lang<text>
+say qq:to/HERE/;
+<a href='https://usafa-1965.org'>{$title}</a>
+HERE
+=end code
+
+Another option is to escape the `<` character to avoid it being parsed
+as the beginning of an indexing operator:
+
+=begin code :lang<text>
+say qq:to/HERE/;
+<a href='https://usafa-1965.org'>$title\</a>
+HERE
+=end code
+
+Because a I<heredoc> can be very long but is still interpreted by Raku
+as a single line, finding the source of an error can sometimes be
+difficult. One crude way to debug the error is by starting with the
+first visible line in the code and treating is as a I<heredoc> with
+that line only. Then, until you get an error, add each line in turn.
+(Creating a Raku program to do that is left as an exercise for the
+reader.)
+
+You can begin multiple Heredocs in the same line. If you do so, the
+second heredoc will not start until after the first heredoc has
+ended.
+
+=begin code
+my ($first, $second) = qq:to/END1/, qq:to/END2/;
+  FIRST
+  MULTILINE
+  STRING
+  END1
+   SECOND
+   MULTILINE
+   STRING
+   END2
+say $first;  # OUTPUT: «FIRST␤MULTILINE␤STRING␤»
+say $second; # OUTPUT: «SECOND␤MULTILINE␤STRING␤»
+=end code
+
+=head2 X<Unquoting|Language,Unquoting>
+
+Literal strings permit interpolation of embedded quoting constructs by using the
+escape sequences such as these:
+
+    my $animal="quaggas";
+    say 'These animals look like \qq[$animal]'; # OUTPUT: «These animals look like quaggas␤»
+    say 'These animals are \qqw[$animal or zebras]'; # OUTPUT: «These animals are quaggas or zebras␤»
+
+In this example, C<\qq> will do double-quoting interpolation, and C<\qqw> word
+quoting with interpolation. Escaping any other quoting construct as above will
+act in the same way, allowing interpolation in literal strings.
+
+
+=end pod

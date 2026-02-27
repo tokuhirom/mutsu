@@ -1,0 +1,290 @@
+=begin pod :kind("Language") :subkind("Language") :category("fundamental")
+
+=TITLE Pragmas
+
+=SUBTITLE Special modules that define certain aspects of the behavior of the code
+
+In Raku, B<pragmas> are directive used to either identify a specific
+version of Raku to be used or to modify the compiler's normal behavior
+in some way. The C<use> keyword enables a pragma (similar to how you can
+C<use> a module). To disable a pragma, use the C<no> keyword:
+
+=begin code :solo
+use v6.c;   # use 6.c language version
+no worries; # don't issue compile time warnings
+=end code
+
+Following is a list of pragmas with a short description of each
+pragma's purpose or a link to more details about its use.
+
+=head2 X<v6.x|Pragmas,v6.x>
+
+This pragma states the version of the compiler that is going to be used,
+and turns on its features if they are optional.
+
+Since these pragmas turn on the compiler version, they should be the
+first statement in the file (preceding comments and Pod are fine).
+
+=for code :solo
+use v6;           # Load latest supported version (non-PREVIEW).
+
+Historically, C<use v6;> was intended to signal to Perl interpreters to
+error out and warn the user to use Perl 6. This is no longer a consideration,
+so this statement has therefore become meaningless.
+
+=for code :solo
+use v6.c;         # Use the "Christmas" version of Raku
+
+=for code :solo
+use v6.d;         # Use the "Diwali" version of Raku
+
+From 2018.11, which implemented 6.d, this pragma does not do anything.
+
+=for code :solo
+use v6.d.PREVIEW; # On 6.d-capable compilers, enables 6.d features,
+                  # otherwise enables the available experimental
+                  # preview features for 6.d language
+
+=for code :solo
+use v6.e.PREVIEW; # Enables the available experimental preview features
+                  # for 6.e language
+
+=for code :solo
+use v6.*;         # Enables the available experimental preview features
+                  # for the language version currently in development
+
+=head2 X<MONKEY-GUTS|Pragmas,MONKEY-GUTS>
+
+C<use MONKEY-GUTS;>
+
+This pragma is not currently part of any Raku specification, but is present
+in Rakudo as a synonym to C<use nqp> (see below).
+
+=head2 X<MONKEY-SEE-NO-EVAL|Pragmas,MONKEY-SEE-NO-EVAL>
+C<use EVAL;>
+
+Enables usage of the C<EVAL> routine,
+which due to its dangerousness would otherwise trigger a compiler error.
+For details, see L<routine C<EVAL>|/type/independent-routines#routine_EVAL>.
+
+Note that, unlike the I<routine>, the C<EVAL> I<method> on an object
+can be executed without this pragma,
+i.e. an absence of C<MONKEY> pragmas is no guarantee against C<EVAL> calls.
+
+=head2 X<MONKEY-TYPING|Pragmas,MONKEY-TYPING>
+
+C<use MONKEY-TYPING;>
+
+Enables C<augment> for adding methods (though not attributes) to existing classes and grammars. See L<augment|/syntax/augment>.
+
+=head2 X<MONKEY|Pragmas,MONKEY>
+
+C<use MONKEY;>
+
+Turns on all available C<MONKEY> pragmas, equivalent to
+
+    use MONKEY-TYPING;
+    use MONKEY-SEE-NO-EVAL;
+    use MONKEY-GUTS;
+
+=head2 X<dynamic-scope|Pragmas,dynamic-scope>
+
+Applies the L<is dynamic|/type/Variable#trait_is_dynamic> trait to variables
+in the pragma's lexical scope. The effect can be restricted to a subset of
+variables by listing their names as arguments. By default applies to I<all>
+variables.
+
+=begin code
+# Apply `is dynamic` only to $x, but not to $y
+use dynamic-scope <$x>;
+
+sub poke {
+    say $CALLER::x;
+    say $CALLER::y;
+}
+
+my $x = 23;
+my $y = 34;
+poke;
+
+# OUTPUT:
+# 23
+# Cannot access '$y' through CALLER, because it is not declared as dynamic
+=end code
+
+This pragma is not currently part of any Raku specification and was added
+in Rakudo 2019.03.
+
+=head2 X<experimental|Pragmas,experimental>
+
+Allows use of L<experimental features|/language/experimental>
+
+=head2 X<fatal|Pragmas,fatal>
+
+A lexical pragma that makes L<Failures|/type/Failure> returned from routines
+fatal. For example, prefix C<+> on a L<C<Str>|/type/Str> coerces it to
+L<C<Numeric>|/type/Numeric>, but will return a L<C<Failure>|/type/Failure> if the
+string contains non-numeric characters. Saving that L<C<Failure>|/type/Failure> in
+a variable prevents it from being sunk, and so the first code block below
+reaches the C<say $x.^name;> line and prints L<C<Failure>|/type/Failure> in output.
+
+In the second block, the C<use fatal> pragma is enabled, so the C<say> line is
+never reached because the L<C<Exception>|/type/Exception> contained in the L<C<Failure>|/type/Failure> returned from
+prefix C<+> gets thrown and the C<CATCH> block gets run, printing the
+C<Caught...> line. Note that both blocks are the same program and C<use fatal>
+only affects the lexical block it was used in:
+
+    {
+        my $x = +"a";
+        say $x.^name;
+        CATCH { default { say "Caught {.^name}" } }
+    } # OUTPUT: «Failure␤»
+
+    {
+        use fatal;
+        my $x = +"a";
+        say $x.^name;
+        CATCH { default { say "Caught {.^name}" } }
+    } # OUTPUT: «Caught X::Str::Numeric␤»
+
+Inside L«C<try> blocks|/language/exceptions#try_blocks», the
+C<fatal> pragma is enabled by default, and you can I<disable> it with C<no
+fatal>:
+
+    try {
+        my $x = +"a";
+        say $x.^name;
+        CATCH { default { say "Caught {.^name}" } }
+    } # OUTPUT: «Caught X::Str::Numeric␤»
+
+    try {
+        no fatal;
+        my $x = +"a";
+        say $x.^name;
+        CATCH { default { say "Caught {.^name}" } }
+    } # OUTPUT: «Failure␤»
+
+=head2 X<isms|Pragmas,isms>
+
+C<[2018.09 and later]>
+
+Allow for some other language constructs that were deemed to be a trap that
+warranted a warning and/or an error in normal Raku programming.  Currently,
+C<Perl> and C<C++> are allowed.
+
+=begin code :skip-test<compile-time error>
+sub abs() { say "foo" }
+abs;
+# Unsupported use of bare "abs"; in Raku please use .abs if you meant
+# to call it as a method on $_, or use an explicit invocant or argument,
+# or use &abs to refer to the function as a noun
+=end code
+
+In this case, providing an C<abs> sub that doesn't take any arguments, did
+not make the compilation error go away.
+
+    use isms <Perl5>;
+    sub abs() { say "foo" }
+    abs;   # foo
+
+With this, the compiler will allow the offending Perl construct, allowing
+the code to actually be executed.
+
+If you do not specify any language, all known language constructs are allowed.
+
+    use isms;   # allow for Perl and C++ isms
+
+=head2 X<lib|Pragmas,lib>
+
+This pragma adds subdirectories to the library search
+path so that the interpreter can
+L<find the modules|/language/using-modules/finding-installing#Finding_installed_modules>.
+
+=begin code :solo
+use lib <lib /opt/lib /usr/local/lib>;
+
+#or a mixed list of IO::Path and Str
+use lib ('.', '.'.IO, './lib'.IO);
+=end code
+
+This will search the directories passed in a list. Please check
+L<the modules documentation|/language/using-modules/code#use> for more examples.
+
+=head2 X<newline|Pragmas,newline>
+
+Set the value of the L<$?NL|/language/variables#Compile-time_variables> constant
+in the scope it is called.  Possible values are C<:lf> (which is the default,
+indicating Line Feed), C<:crlf> (indicating Carriage Return, Line Feed) and
+C<:cr> (indicating Carriage Return).
+
+=head2 X<nqp|Pragmas,nqp>
+
+Use at your own risk.
+
+This is a Rakudo-specific pragma. With it, Rakudo provides access to the
+L<nqp opcodes|https://github.com/Raku/nqp/blob/master/docs/ops.markdown>
+in a top level namespace:
+
+    use nqp;
+    nqp::say("hello world");
+
+This uses the underlying nqp C<say> opcode instead of the Raku routine. This
+pragma may make your code rely on a particular version of nqp, and since
+that code is not part of the Raku specification, it's not guaranteed to
+be stable. You may find a large number of usages in the Rakudo core,
+which are used to make the core functionality as fast as possible.
+Future optimizations in the code generation of Rakudo may obsolete these
+usages.
+
+=head2 X<precompilation|Pragmas,precompilation>
+
+The default allows precompilation of source code, specifically if used in a
+module.  If for whatever reason you do not want the code (of your module) to
+be precompiled, you can use C<no precompilation>.  This will prevent the
+entire compilation unit (usually a file) from being precompiled.
+
+=head2 X<soft|Pragmas,soft>
+
+L<Re-dispatching|/language/functions#Re-dispatching>, L<inlining|/language/functions#index-entry-use_soft_(pragma)>
+
+=head2 X<strict|Pragmas,strict>
+
+C<strict> is the default behavior, and requires that you declare variables
+before using them. You can relax this restriction with C<no>.
+
+=for code
+no strict; $x = 42; # OK
+
+=head2 X<trace|Pragmas,trace>
+
+When C<use trace> is activated, any line of code executing will be written to
+STDERR.  You can use C<no trace> to switch off the feature, so this only happens
+for certain sections of code.
+
+=head2 X<v6|Pragmas,v6>
+
+L<Writing Tests|/language/testing#Writing_tests>
+
+=head2 X<variables|Pragmas,variables>
+
+L<Defined Variables Pragma|/language/variables#Default_defined_variables_pragma>
+
+=head2 X<worries|Pragmas,worries>
+
+Lexically controls whether compile-time warnings generated by the
+compiler get shown. Enabled by default.
+
+    =begin code :lang<text>
+    $ raku -e 'say :foo<>.Pair'
+    Potential difficulties:
+      Pair with <> really means an empty list, not null string; use :foo('') to represent the null string,
+        or :foo() to represent the empty list more accurately
+      at -e:1
+      ------> say :foo<>⏏.Pair
+    foo => Nil
+
+    $ raku -e 'no worries; say :foo<>.Pair'
+    foo => Nil
+    =end code
+
+=end pod

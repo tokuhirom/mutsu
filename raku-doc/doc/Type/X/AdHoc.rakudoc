@@ -1,0 +1,66 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::AdHoc
+
+=SUBTITLE Error with a custom message
+
+=for code
+class X::AdHoc is Exception { }
+
+When die() is called on an argument which is not an
+L<C<Exception>|/type/Exception>, the argument is wrapped in an
+exception of type C<X::AdHoc>, which is then thrown.
+
+The benefit of C<X::AdHoc> over returning non-L<C<Exception>|/type/Exception>
+objects is that it gives access to all the methods from class
+L<C<Exception>|/type/Exception>, like C<backtrace> and C<rethrow>.
+
+You can obtain the original object with the C<payload> method.
+
+    try {
+        die [404, 'File not found']; # throw non-exception object
+    }
+    print "Got HTTP code ",
+        $!.payload[0],          # 404
+        " and backtrace ",
+        $!.backtrace.Str;
+
+Note that young code will often be prototyped using C<X::AdHoc> and then later
+be revised to use more specific subtypes of L<C<Exception>|/type/Exception>. As such it is usually
+best not to explicitly rely on receiving an C<X::AdHoc> – in many cases using
+the string returned by the C<.message> method, which all L<C<Exception>|/type/Exception>s must
+have, is preferable. Please note that we need to explicitly call C<.Str> to
+stringify the backtrace correctly.
+
+=head1 Methods
+
+=head2 method payload
+
+Returns the original object which was passed to C<die>.
+
+=head2 method Numeric
+
+    method Numeric()
+
+Converts the payload to L<C<Numeric>|/type/Numeric> and returns it
+
+=head2 method from-slurpy
+
+    method from-slurpy (|cap)
+
+X<|Reference,SlurpySentry>
+Creates a new exception from a capture and returns it. The capture will have the
+C<SlurpySentry> role mixed in, so that the C<.message> method behaves in a
+different when printing the message.
+
+=for code
+try {
+    X::AdHoc.from-slurpy( 3, False, "Not here" ).throw
+};
+print $!.payload.^name; # OUTPUT: «Capture+{X::AdHoc::SlurpySentry}»
+print $!.message;       # OUTPUT: «3FalseNot here»
+
+The C<SlurpySentry> role joins the elements of the payload, instead of directly
+converting them to a string.
+
+=end pod

@@ -1,0 +1,213 @@
+=begin pod :kind("Type") :subkind("class") :category("composite")
+
+=TITLE class BagHash
+
+=SUBTITLE Mutable collection of distinct objects with integer weights
+
+    class BagHash does Baggy { }
+
+A C<BagHash> is a mutable bag/multiset, meaning a collection of distinct
+items in no particular order that each have an integer weight assigned to
+them signifying how many copies of that element are considered "in the
+bag".  If you do not need the mutability that a C<BagHash> provides,
+consider using the I<immutable> L<C«Bag»|/type/Bag> type instead.
+
+An item may be a definite object of any type – not just a L<C<Str>|/type/Str>.  For
+example, you can store L<C«Sub»|/type/Sub>'s in a C<BagHash>, and you
+will store the actual L<C<Sub>|/type/Sub> rather than a string with the same name
+as the L<C<Sub>|/type/Sub>.  Within a C<BagHash>, items that would compare
+positively with the L<===|/routine/===> operator are considered the
+same element, with the number of how many there were as its weight.
+Alternatively, you can use the C<kxxv> method to easily get back the
+expanded list of items (without the order):
+
+=begin code
+my $breakfast = <spam eggs spam spam bacon spam>.BagHash;
+
+say $breakfast.elems;      # OUTPUT: «3␤»
+say $breakfast.keys.sort;  # OUTPUT: «bacon eggs spam␤»
+
+say $breakfast.total;      # OUTPUT: «6␤»
+say $breakfast.kxxv.sort;  # OUTPUT: «bacon eggs spam spam spam spam␤»
+=end code
+
+C<BagHash>es can be treated as object hashes using the L«C<{ }>
+postcircumfix operator|/language/operators#postcircumfix_{_}», or the
+L«C«< >» postcircumfix operator|/language/operators#postcircumfix_<_>»
+for literal string keys, which returns the corresponding integer weight
+for keys that are elements of the bag, and C<0> for keys that aren't.  These
+operators can also be used to modify weights (see
+L<Updating BagHash Objects|#Updating_BagHash_Objects>, below).
+
+=begin code
+my $breakfast = <spam eggs spam spam bacon spam>.BagHash;
+say $breakfast<bacon>;     # OUTPUT: «1␤»
+say $breakfast<spam>;      # OUTPUT: «4␤»
+say $breakfast<sausage>;   # OUTPUT: «0␤»
+
+$breakfast<sausage> = 2;
+$breakfast<bacon>--;
+say $breakfast.kxxv.sort;  # OUTPUT: «eggs sausage sausage spam spam spam spam␤»
+=end code
+
+=head1 Creating C<BagHash> objects
+
+C<BagHash>es can be composed using C<BagHash.new>.  Any positional parameters,
+regardless of their type, become elements of the bag:
+
+    my $n = BagHash.new: "a", "b", "c", "c";
+    say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+    say $n.keys.raku;        # OUTPUT: «("b", "a", "c").Seq␤»
+    say $n.values.raku;      # OUTPUT: «(1, 1, 2).Seq␤»
+
+Besides, C<BagHash.new-from-pairs> can create a C<BagHash> with items and their
+occurrences.
+
+    my $n = BagHash.new-from-pairs: "a" => 0, "b" => 1, "c" => 2, "c" => 2;
+    say $n.raku;             # OUTPUT: «("b"=>1,"c"=>4).BagHash␤»
+    say $n.keys.raku;        # OUTPUT: «("b", "c").Seq␤»
+    say $n.values.raku;      # OUTPUT: «(1, 4).Seq␤»
+
+Alternatively, the C<.BagHash> coercer (or its functional form, C<BagHash()>)
+can be called on an existing object to coerce it to a C<BagHash>.  Its semantics
+depend on the type and contents of the object.  In general it evaluates the
+object in list context and creates a bag with the resulting items as elements,
+although for Hash-like objects or Pair items, only the keys become elements of
+the bag, and the (cumulative) values become the associated integer weights:
+
+    my $m = ("a", "b", "c", "c").BagHash;
+    my $n = ("a" => 0, "b" => 1, "c" => 2, "c" => 2).BagHash;
+    say $m.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+    say $n.raku;             # OUTPUT: «("b"=>1,"c"=>4).BagHash␤»
+
+You can also create C<BagHash> masquerading as a hash by using the C<is> trait:
+
+    my %bh is BagHash = <a b b c c c>;
+    say %bh<b>;  # OUTPUT: «2␤»
+    say %bh<d>;  # OUTPUT: «0␤»
+
+Since 6.d (2019.03 and later) it is also possible to specify the type of values
+you would like to allow in a C<BagHash>.  This can either be done when calling
+C<.new>:
+
+    # only allow strings
+    my $n = BagHash[Str].new: <a b b c c c>;
+
+or using the masquerading syntax:
+
+    # only allow strings
+    my %bh is BagHash[Str] = <a b b c c c>;
+    say %bh<b>;  # OUTPUT: «2␤»
+    say %bh<d>;  # OUTPUT: «0␤»
+
+    # only allow whole numbers
+    my %bh is BagHash[Int] = <a b b c c c>;
+    # Type check failed in binding; expected Int but got Str ("a")
+
+=head1 Updating BagHash Objects
+
+Once you have created a C<BagHash>, you can update its values in two
+ways.  First, you can use the C<add> and C<remove> methods:
+
+    my $n = BagHash.new: "a", "b", "c", "c";
+    say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+    $n.add('c');
+    say $n.raku;             # OUTPUT: «("b"=>1,"c"=>3,"a"=>1).BagHash␤»
+    $n.remove(('b', 'a'),);
+    say $n.raku;             # OUTPUT: «("c"=>3).BagHash␤»
+    $n.remove('c');
+    say $n.raku;             # OUTPUT: «("c"=>2).BagHash␤»
+
+Note that, as shown in the final example, the C<remove> method removes
+a I<single> value from the C<BagHash>; it doesn't entirely remove the
+key from the C<BagHash>.
+
+Alternatively, you can use assignment (including with L<autoincrement
+operators|/language/operators#Autoincrement_precedence> such as C<++>
+and C<-->) to modify the C<BagHash>'s contents.
+
+    my $n = BagHash.new: "a", "b", "c", "c";
+    say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+    $n<c>++;
+    say $n.raku;             # OUTPUT: «("b"=>1,"c"=>3,"a"=>1).BagHash␤»
+    $n<b> -= 1;
+    say $n.raku;             # OUTPUT: «("a"=>1,"c"=>3).BagHash␤»
+    $n{'a'} = 0;
+    say $n.raku;             # OUTPUT: «("c"=>3).BagHash␤»
+
+Using either syntax, if you set the value of an item to zero or less
+than zero, the item will be removed from the C<BagHash>.
+
+=head1 Operators
+
+See L<Operators with set
+semantics|/language/setbagmix#Operators_with_set_semantics> for a complete
+list of "set operators" applicable to, among other types, C<BagHash>.
+
+Examples:
+
+=begin code
+my ($a, $b) = BagHash.new(2, 2, 4), BagHash.new(2, 3, 3, 4);
+
+say $a (<) $b;   # OUTPUT: «False␤»
+say $a (<=) $b;  # OUTPUT: «False␤»
+say $a (^) $b;   # OUTPUT: «BagHash(3(2) 2)␤»
+say $a (+) $b;   # OUTPUT: «BagHash(2(3) 4(2) 3(2))␤»
+
+# Unicode versions:
+say $a ⊂ $b;  # OUTPUT: «False␤»
+say $a ⊆ $b;  # OUTPUT: «False␤»
+say $a ⊖ $b;  # OUTPUT: «BagHash(3(2) 2)␤»
+say $a ⊎ $b;  # OUTPUT: «BagHash(2(3) 4(2) 3(2))␤»
+=end code
+
+=head1 Note on C<reverse> and ordering.
+
+BagHash inherits C<reverse> from L<Any|/type/Any#routine_reverse>,
+however, L<C<Bag>|/type/Bag>s do not have an inherent order and you should not trust
+it returning a consistent output.
+
+If you sort a BagHash, the result is a list of pairs, at which point
+C<reverse> makes perfect sense:
+
+=begin code
+my $a = BagHash.new(2, 2, 18, 3, 4);
+say $a;  # OUTPUT: «BagHash(18 2(2) 3 4)␤»
+
+say $a.sort;  # OUTPUT: «(2 => 2 3 => 1 4 => 1 18 => 1)␤»
+say $a.sort.reverse;  # OUTPUT: «(18 => 1 4 => 1 3 => 1 2 => 2)␤»
+=end code
+
+=head2 method add
+
+    method add(BagHash: \to-add, *%_ --> Nil)
+
+When C<to-add> is a single item, C<add> inserts it into the C<BagHash>
+or, if it was already present, increases its weight by 1.  When
+C<to-add> is a L<C<List>|/type/List>, L<C<Array>|/type/Array>, L<C<Seq>|/type/Seq>, or any other type that
+C<does> the L<C«Iterator»|/type/Iterator> Role, C<add> inserts each
+element of the L<C<Iterator>|/type/Iterator> into the L<C<SetHash>|/type/SetHash> or increments the
+weight of each element by 1.
+
+I<Note:> Added in release 2020.02.
+
+=head2 method remove
+
+    method remove(BagHash: \to-remove, *%_ --> Nil)
+
+When C<to-remove> is a single item, C<remove> reduces the weight of
+that item by one.  If this results in the item having a weight of 0,
+this removes the item from the C<BagHash>.  If the item is not present
+in the C<BagHash>, C<remove> has no effect.  When C<to-remove> is a
+L<C<List>|/type/List>, L<C<Array>|/type/Array>, L<C<Seq>|/type/Seq>, or any other type that C<does> the
+L<C«Iterator»|/type/Iterator> Role, C<remove> reduces the weight of
+each element by 1 and removes any items with the resulting weight of
+0.
+
+I<Note:> Added in release 2020.02.
+
+=head1 See Also
+
+L<Sets, Bags, and Mixes|/language/setbagmix>
+
+=end pod

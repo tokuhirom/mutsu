@@ -1,0 +1,152 @@
+=begin pod :kind("Type") :subkind("class") :category("metamodel")
+
+=TITLE class Metamodel::Primitives
+
+=SUBTITLE Metaobject that supports low-level type operations
+
+    class Metamodel::Primitives {}
+
+C<Metamodel::Primitives> provides low-level operations for working with types,
+which are otherwise only available as implementation-dependent directives. These
+primitives are available as class methods.
+
+Here is an example that steals the metamodel instance from the
+L<C<Int>|/type/Int> class to create a custom type (usually you would create your
+own metaclass if you mess with something as low-level), which allows calling
+of just one method called C<why>:
+
+    my Mu $type := Metamodel::Primitives.create_type(Int.HOW, 'P6opaque');
+    $type.^set_name('why oh why?');
+    my %methods =  why => sub ($) { say 42 };
+    Metamodel::Primitives.install_method_cache($type, %methods, :authoritative);
+    $type.why;      # 42
+    $type.list;
+    CATCH { default { put .^name, ': ', .Str } };
+    # OUTPUT: «X::Method::NotFound: Method 'list' not found for invocant of class 'why oh why?'␤»
+
+Every metaobject has the capacity to hold a parameterization cache. This is
+distinct from the C<parameterize> metamethod backing parameterization syntax.
+For example, a package can be parametric in this low-level sense:
+
+    package Cache {
+        our sub parameterize(+args) is raw {
+            Metamodel::Primitives.parameterize_type: $?PACKAGE, args
+        }
+
+        sub noop(Mu, Mu \args) is raw {
+            args
+        }
+
+        BEGIN Metamodel::Primitives.set_parameterizer: $?PACKAGE, &noop;
+    }
+
+=head1 Methods
+
+=head2 method create_type
+
+    method create_type(Mu $how, $repr = 'P6opaque')
+
+Creates and returns a new type from a metaobject C<$how> and a representation
+name.
+
+=head2 method set_package
+
+    method set_package(Mu $type, $package)
+
+Sets the package associated with the type.
+
+=head2 method install_method_cache
+
+    method install_method_cache( Mu $type, %cache, :$authoritative = True)
+
+Installs a method cache, that is, a mapping from method names to code objects.
+If C<:authoritative> is missing, or set to C<True>, then calls of methods that
+do not exist in the cache will throw an exception of type
+L<C<X::Method::NotFound>|/type/X::Method::NotFound>. If C<:authoritative> is set
+to C<False>, the usual fallback mechanism are tried.
+
+=head2 method configure_type_checking
+
+    method configure_type_checking( Mu $type, @cache, :$authoritative = True, :$call_accepts = False )
+
+Configures the type checking for C<$type>. C<@cache> is a list of known types
+against which C<$type> checks positively (so in a classical class-based system,
+the type itself and all recursive superclasses). If C<:authoritative> is missing
+or C<True>, this type will fail checks against all types not in C<@cache>. If
+C<:call_accepts> is True, the method L<ACCEPTS|/routine/ACCEPTS> will be called
+for type checks against this type.
+
+=head2 method configure_destroy
+
+    method configure_destroy(Mu $type, $destroy)
+
+Configures whether C<DESTROY> methods are called (if present) when the garbage
+collector collects an object of this type (if C<$destroy> is set to a true
+value). This comes with a performance overhead, so should only be set to a
+true value if necessary.
+
+=head2 method compose_type
+
+    method compose_type(Mu $type, $configuration)
+
+Composes C<$type> (that is, finalizes it to be ready for instantiation). See
+L<https://github.com/Raku/nqp/blob/master/docs/6model/repr-compose-protocol.markdown>
+for what C<$configuration> can contain (until we have better docs, sorry).
+
+=head2 method rebless
+
+    method rebless(Mu $object, Mu $type)
+
+Changes C<$object> to be of type C<$type>. This only works if C<$type>
+type-checks against the current type of C<$object>, and if the storage of
+C<$object> is a subset of that of C<$type>. N<As of Raku 2019.11, this method
+ requires
+L<special arrangements|https://github.com/rakudo/rakudo/issues/3414#issuecomment-573251877>.>
+
+=head2 method is_type
+
+    method is_type(Mu \obj, Mu \type --> Bool:D)
+
+Type-checks C<obj> against C<type>
+
+=head2 method set_parameterizer
+
+    method set_parameterizer(Mu \obj, &parameterizer --> Nil)
+
+Initializes the parameterization cache for a metaobject. This incorporates the
+C<&parameterize> routine to produce parameterizations to be cached. This is
+assumed to carry a signature compatible with C<:(Mu $root, List:D $args)>,
+C<$root> being the base metaobject for the parameterization, C<$args> being the
+type arguments' object buffer.
+
+=head2 method parameterize_type
+
+    method parameterize_type(Mu \obj, +parameters --> Mu)
+
+Parameterizes a metaobject prepared by C<set_parameterizer> with C<parameters>.
+The resulting metaobject is cached by literal object comparisons with C<=:=>
+for each element of C<parameters>. I<Containers tend to invalidate any match>.
+
+=head2 method type_parameterized
+
+    method type_parameterized(Mu \obj --> Mu)
+
+Returns the base metaobject from a parameterization given its resulting C<obj>.
+Returns L<C<Mu>|/type/Mu> if none was ever performed.
+
+=head2 method type_parameters
+
+    method type_parameters(Mu \obj --> List:D)
+
+Returns the type arguments' object buffer from a parameterization given its
+resulting C<obj>. Dies if none was ever performed.
+
+=head2 method type_parameter_at
+
+    method type_parameter_at(Mu \obj, Int:D \idx --> Mu) is raw
+
+Returns a particular object from a parameterization given its resulting C<obj>
+and an index, skipping the L<C<List>|/type/List>-building step of C<type_parameters>. Dies if
+none was ever performed.
+
+=end pod

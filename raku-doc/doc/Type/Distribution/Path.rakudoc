@@ -1,0 +1,38 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Distribution::Path
+
+=SUBTITLE Distribution::Path
+
+=for code :preamble<role Distribution::Locally {}>
+class Distribution::Path does Distribution::Locally { }
+
+A L<C<Distribution>|/type/Distribution> implementation backed by the filesystem. It requires a
+C<META6.json> file at its root.
+
+=head1 Methods
+
+=head2 method new
+
+    method new(IO::Path $prefix, IO::Path :$meta-file = IO::Path)
+
+Creates a new C<Distribution::Path> instance from the C<META6.json> file found
+at the given C<$prefix>, and from which all paths in the metadata will be
+prefixed with. C<:$meta-file> may optionally be passed if a filename other than
+C<META6.json> needs to be used.
+
+=head2 method meta
+
+    method meta(Distribution::Path:D:)
+
+Returns a Hash with the representation of the metadata.
+
+=head2 method content
+
+L<Distribution::Locally#method_content|/type/Distribution#method_content>
+
+Returns an L<C<IO::Handle>|/type/IO::Handle> to the file represented by C<$name-path>. C<$name-path>
+is a relative path as it would be found in the metadata such as C<lib/Foo.rakumod>
+or C<resources/foo.txt>.
+
+=end pod

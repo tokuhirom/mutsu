@@ -1,0 +1,38 @@
+=begin pod :kind("Type") :subkind("class") :category("exception")
+
+=TITLE class X::Bind::NativeType
+
+=SUBTITLE Compilation error due to binding to a natively typed variable
+
+    class X::Bind::NativeType does X::Comp { }
+
+Compile-time error thrown when trying to bind to a natively typed variable.
+
+Since native variables explicitly don't have the concept of a container at
+runtime, it does not make sense to support both binding and assignment;
+Raku supports only assignment (which makes more sense, because native
+types are value types).
+
+For example the code
+
+=for code :skip-test<compile time error>
+my int $x := 3;
+
+dies with
+
+=for code :lang<text>
+Cannot bind to natively typed variable '$x'; use assignment instead
+
+and can be fixed by writing it as
+
+    my int $x = 3;
+
+=head1 Methods
+
+=head2 method name
+
+    method name(--> Str:D)
+
+Returns the name of the variable.
+
+=end pod

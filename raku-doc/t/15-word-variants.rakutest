@@ -1,0 +1,87 @@
+#!/usr/bin/env raku
+
+use Test;
+use RakuDoc::Test::Files;
+
+=begin overview
+
+Make sure certain words are normalized by checking regular expressions.
+
+=end overview
+
+my @files = RakuDoc::Test::Files.pods;
+
+if @files {
+    plan +@files;
+} else {
+    plan :skip-all<No rakudoc files specified>
+}
+
+# Keys are the preferred variant, values are regex to complain about
+my %variants = %(
+    # no lowercase 'boolean', unless it is followed by some selected
+    # characters as it might be included in a code snippet,
+    # see for example doc/Language/js-nutshell.rakudoc
+    Boolean    => rx/ << boolean <!before \s* <[ \= \< \> \{ \} ]> > /,
+    "call site" => rx/ <<'call' '-'? 'site'>>/,
+    "environment variable" => rx:i/ << env(ironmental)? [\s+|\-] variable/,
+    filehandle => rx:i/ << file [\s+|\-] handle /,
+    filesystem => rx:i/ << file [\s+|\-] system /,
+    left-hand => rx:i/ << left [\s+] hand /,
+    lookahead  => rx:i/ << look \- ahead /,
+    lookbehind => rx:i/ << look [\s+|\-] behind /,
+    lowercase  => rx:i/ << lower [\s+|\-] case /,
+    # Allow the one url with meta-object
+    metaobject  => rx:i/ << meta [\s+|\-] object <!before '-protocol' >/,
+    # The one meta we want a dash on
+    "meta-info"  => rx:i/ << meta [\s*] info /,
+    # "method" is tricky with headings.
+    metamethod  => rx:i/ <<<!after [method|| \$ || \- || \"] \s*> << meta [\s+|\-] method /,
+    NYI        => rx:i/ << niy /,
+    parameterization => rx:i/ << parametrization >> /,
+    precompil => rx:i/ << pre [\s+|\-] compil /,
+    right-hand => rx:i/ << right [\s+] hand /,
+    runtime    => rx:i/ << run [\s+|\-] time /,
+    semicolon => rx:i/ << semi [\s+|\-] colon /,
+    shorthand  => rx:i/ << short [\s+|\-] hand /,
+    sigiled => rx:i/ << sigilled /,
+    smartmatch => rx:i/ << smart  [\s+|\-] match /,
+    subdirectories => rx:i/ << sub [\s+|\-] directories /,
+    subdirectory => rx:i/ << sub [\s+|\-] directory /,
+    substring  => rx:i/ << sub \- string /,
+    tiebreak => rx:i/ << tie [\s+|\-] break /,
+    timezone   => rx:i/ << time [\s+|\-] zone /,
+    titlecase  => rx:i/ << title [\s+|\-] case /,
+    uppercase  => rx:i/ << upper [\s+|\-] case /,
+    zero-width => rx:i/ << zero \s+ width<!before ' joiner'><!before ' no-break space'> /,
+);
+
+for <character class data model operator package program role synta type> -> $meta {
+    %variants{"meta$meta"} = rx:i/ << meta [\s+|\-] $meta/;
+}
+
+my %result;
+
+for @files.race -> $file {
+    my $ok = True;
+    my $row = 0;
+    my @bad;
+    my $content =  $file.IO.slurp.lines.join(" ");
+    for %variants.kv -> $word, $rx {
+        if $content ~~ $rx {
+            $ok = False;
+            @bad.push: "«$/» found. We prefer ｢$word｣";
+        }
+    }
+    %result{$file} = [$ok, @bad];
+}
+
+for %result.keys.sort -> $file {
+    my $result = $file;
+    my $ok = %result{$file}[0];
+    my @bad = %result{$file}[1];
+    if !$ok {
+       $result ~= " {@bad.join: ', '}: Certain words should be normalized.";
+    }
+    ok $ok, $result;
+}

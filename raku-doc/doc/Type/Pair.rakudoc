@@ -1,0 +1,336 @@
+=begin pod :kind("Type") :subkind("class") :category("composite")
+
+=TITLE class Pair
+
+=SUBTITLE Key/value pair
+
+    class Pair does Associative {}
+
+Consists of two parts, a I<key> and a I<value>. C<Pair>s can be seen as the
+atomic units in L<C<Hash>|/type/Hash>es, and they are also used in conjunction with named
+arguments and parameters.
+
+X<|Language,colon pair (Pair)>
+X<|Syntax,:> X«|Syntax,=>» X<|Syntax,:!> X<|Syntax,:$>
+There are many syntaxes for creating C<Pair>s:
+
+    Pair.new('key', 'value'); # The canonical way
+    'key' => 'value';         # this...
+    :key<value>;              # ...means the same as this
+    :key<value1 value2>;      # But this is  key => <value1 value2>
+    :foo(127);                # short for  foo => 127
+    :127foo;                  # the same   foo => 127
+
+Note that last form supports Non-ASCII numerics as well:
+
+    # use MATHEMATICAL DOUBLE-STRUCK DIGIT THREE
+    say (:𝟛math-three);         # OUTPUT: «math-three => 3␤»
+
+But not I<synthetic> (i.e. formed by a digit and additional Unicode marks):
+
+=for code :skip-test<Will fail>
+say :7̈a
+
+You can also use an I<identifier-like literal> as key; this will not need the
+quotes as long as it follows the syntax of
+L<ordinary identifiers|/language/syntax#Ordinary_identifiers>:
+
+    (foo => 127)              # the same   foo => 127
+
+Variants of this are
+
+    :key;                     # same as   key => True
+    :!key;                    # same as   key => False
+
+And this other variant, to be used in routine invocation
+
+=begin code
+sub colon-pair( :$key-value ) {
+    say $key-value;
+}
+my $key-value = 'value';
+colon-pair( :$key-value );               # OUTPUT: «value␤»
+colon-pair( key-value => $key-value );   # OUTPUT: «value␤»
+=end code
+
+
+X<|Language,colon list (Pair)>
+Colon pairs can be chained without a comma to create a List of Pairs. Depending
+on context you may have to be explicit when assigning colon lists.
+
+    sub s(*%h){ say %h.raku };
+    s :a1:b2;
+    # OUTPUT: «{:a1, :b2}␤»
+
+    my $manna = :a1:b2:c3;
+    say $manna.^name;
+    # OUTPUT: «Pair␤»
+
+    $manna = (:a1:b2:c3);
+    say $manna.^name;
+    # OUTPUT: «List␤»
+
+Any variable can be turned into a C<Pair> of its name and its value.
+
+    my $bar = 10;
+    my $p   = :$bar;
+    say $p; # OUTPUT: «bar => 10␤»
+
+
+It is worth noting that when assigning a L<C<Scalar>|/type/Scalar> as value of a
+C<Pair> the value holds the container of the value itself. This means that it is
+possible to change the value from outside of the C<Pair> itself:
+
+=begin code
+my $v = 'value A';
+my $pair = a => $v;
+$pair.say;  # OUTPUT: «a => value A␤»
+
+$v = 'value B';
+$pair.say;  # OUTPUT: «a => value B␤»
+=end code
+
+Please also note that this behavior is totally unrelated to the way used to
+build the C<Pair> itself (i.e., explicit usage of C<new>, use of colon, fat
+arrow), as well as if the C<Pair> is bound to a variable.
+
+It is possible to change the above behavior forcing the C<Pair> to remove the
+scalar container and to hold the effective value itself via the method
+L<freeze|/type/Pair#method_freeze>:
+
+=begin code
+my $v = 'value B';
+my $pair = a => $v;
+$pair.freeze;
+$v = 'value C';
+$pair.say; # OUTPUT: «a => value B␤»
+=end code
+
+As Pair implements L<C<Associative>|/type/Associative> role, its value can be
+accessed using Associative subscription operator, however, due to Pair's
+singular nature, the pair's value will be only returned for the pair's key.
+L<C<Nil>|/type/Nil> object will be returned for any other key. Subscript
+adverbs such as C<:exists> can be used on Pair.
+
+=for code
+my $pair = a => 5;
+say $pair<a>;           # OUTPUT: «5␤»
+say $pair<a>:exists;    # OUTPUT: «True␤»
+say $pair<no-such-key>; # OUTPUT: «Nil␤»
+
+=head1 Methods
+
+=head2 method new
+
+    multi method new(Pair: Mu  $key, Mu  $value)
+    multi method new(Pair: Mu :$key, Mu :$value)
+
+Constructs a new C<Pair> object.
+
+=head2 method ACCEPTS
+
+    multi method ACCEPTS(Pair:D $: %topic)
+    multi method ACCEPTS(Pair:D $: Pair:D $topic)
+    multi method ACCEPTS(Pair:D $: Mu $topic)
+
+If C<%topic> is an L<C<Associative>|/type/Associative>, looks up the value using invocant's key in
+it and checks invocant's value C<.ACCEPTS> that value:
+
+    say %(:42a) ~~ :42a; # OUTPUT: «True␤»
+    say %(:42a) ~~ :10a; # OUTPUT: «False␤»
+
+If C<$topic> is another C<Pair>, checks the invocant's key and value
+C<.ACCEPTS> the C<$topic>'s key and value respectively:
+
+    say :42a ~~ :42a; # OUTPUT: «True␤»
+    say :42z ~~ :42a; # OUTPUT: «False␤»
+    say :10a ~~ :42a; # OUTPUT: «False␤»
+
+If C<$topic> is any other value, the invocant C<Pair>'s key is treated as a method name.
+This method is called on C<$topic>, the L«C<Bool>|/type/Bool» result of which is compared
+against the invocant C<Pair>'s L«C<Bool>|/type/Bool» value. For example, primality can
+be tested using smartmatch:
+
+    say 3 ~~ :is-prime;             # OUTPUT: «True␤»
+    say 3 ~~  is-prime => 'truthy'; # OUTPUT: «True␤»
+    say 4 ~~ :is-prime;             # OUTPUT: «False␤»
+
+This form can also be used to check
+L<C<Bool>|/type/Bool> values of multiple methods on the same object, such as
+L<C<IO::Path>|/type/IO::Path>, by using L<C<Junction>|/type/Junction>s:
+
+    say "foo" .IO ~~ :f & :rw; # OUTPUT: «False␤»
+    say "/tmp".IO ~~ :!f;      # OUTPUT: «True␤»
+    say "."   .IO ~~ :f | :d;  # OUTPUT: «True␤»
+
+=head2 method antipair
+
+    method antipair(Pair:D: --> Pair:D)
+
+Returns a new C<Pair> object with key and value exchanged.
+
+    my $p = (d => 'Raku').antipair;
+    say $p.key;         # OUTPUT: «Raku␤»
+    say $p.value;       # OUTPUT: «d␤»
+
+=head2 method key
+
+    multi method key(Pair:D:)
+
+Returns the I<key> part of the C<Pair>.
+
+    my $p = (Raku => "d");
+    say $p.key; # OUTPUT: «Raku␤»
+
+=head2 method value
+
+    multi method value(Pair:D:) is rw
+
+Returns the I<value> part of the C<Pair>.
+
+    my $p = (Raku => "d");
+    say $p.value; # OUTPUT: «d␤»
+
+=head2 infix cmp
+
+    multi infix:<cmp>(Pair:D, Pair:D)
+
+The type-agnostic comparator; compares two C<Pair>s. Compares first their
+I<key> parts, and then compares the I<value> parts if the keys are equal.
+
+    my $a = (Apple => 1);
+    my $b = (Apple => 2);
+    say $a cmp $b; # OUTPUT: «Less␤»
+
+=head2 method fmt
+
+    multi method fmt(Pair:D: Str:D $format --> Str:D)
+
+Takes a I<format string>, and returns a string the I<key> and I<value>
+parts of the C<Pair> formatted. Here's an example:
+
+    my $pair = :Earth(1);
+    say $pair.fmt("%s is %.3f AU away from the sun")
+    # OUTPUT: «Earth is 1.000 AU away from the sun␤»
+
+For more about format strings, see L<sprintf|/routine/sprintf>.
+
+=head2 method kv
+
+    multi method kv(Pair:D: --> Seq:D)
+
+Returns a two-element L<C<Seq>|/type/Seq> with the I<key> and I<value> parts of
+C<Pair>, in that order. This method is a special case of the same-named
+method on L<C<Hash>|/type/Hash>, which returns all its entries as a list of keys and
+values.
+
+    my $p = (Raku => "d");
+    say $p.kv[0]; # OUTPUT: «Raku␤»
+    say $p.kv[1]; # OUTPUT: «d␤»
+
+=head2 method pairs
+
+    multi method pairs(Pair:D:)
+
+Returns a list of one C<Pair>, namely this one.
+
+    my $p = (Raku => "d");
+    say $p.pairs.^name; # OUTPUT: «List␤»
+    say $p.pairs[0];    # OUTPUT: «Raku => d␤»
+
+=head2 method antipairs
+
+    multi method antipairs(Pair:D:)
+
+Returns a L<C<List>|/type/List> containing the L<antipair|/type/Pair#method_antipair>
+of the invocant.
+
+    my $p = (d => 'Raku').antipairs;
+    say $p.^name;                                     # OUTPUT: «List␤»
+    say $p.first;                                     # OUTPUT: «Raku => d␤»
+    say $p.first.^name;                               # OUTPUT: «Pair␤»
+
+=head2 method invert
+
+    method invert(Pair:D: --> Seq:D)
+
+Returns a L<C<Seq>|/type/Seq>. If the C<.value> of the invocant is I<NOT> an
+L<C<Iterable>|/type/Iterable>, the L<C<Seq>|/type/Seq> will contain a single C<Pair> whose
+C<.key> is the C<.value> of the invocant and whose C<.value> is the C<.key> of
+the invocant:
+
+    :foo<bar>.invert.raku.say; # OUTPUT: «(:bar("foo"),).Seq␤»
+
+If invocant's C<.value> I<is> an L<C<Iterable>|/type/Iterable>, the returned L<C<Seq>|/type/Seq>
+will contain the same number of C<Pair>s as items in the C<.value>, with each
+of those items a C<.key> of a pair and the C<.key> of the invocant the C<.value>
+of that pair:
+
+    :foo<Raku is great>.invert.raku.say;
+    # OUTPUT: «(:Raku("foo"), :is("foo"), :great("foo")).Seq␤»
+
+    :foo{ :42a, :72b }.invert.raku.say;
+    # OUTPUT: «((:a(42)) => "foo", (:b(72)) => "foo").Seq␤»
+
+To perform the exact C<.key> and C<.value> swap, use
+L«C<.antipair> method|/type/Pair#method_antipair».
+
+=head2 method keys
+
+    multi method keys(Pair:D: --> List:D)
+
+Returns a L<C<List>|/type/List> containing the L<key|/type/Pair#method_key>
+of the invocant.
+
+    say (Raku => "d").keys;                           # OUTPUT: «(Raku)␤»
+
+=head2 method values
+
+    multi method values(Pair:D: --> List:D)
+
+Returns a L<C<List>|/type/List> containing the L<value|/type/Pair#method_value>
+of the invocant.
+
+    say (Raku => "d").values;                         # OUTPUT: «(d)␤»
+
+=head2 method freeze
+
+    method freeze(Pair:D:)
+
+Makes the I<value> of the C<Pair> read-only, by removing it from its L<Scalar container|/language/containers#Scalar_containers>, and returns it.
+
+    my $str = "apple";
+    my $p = Pair.new('key', $str);
+    $p.value = "orange";              # this works as expected
+    $p.say;                           # OUTPUT: «key => orange␤»
+    $p.freeze.say;                    # OUTPUT: «orange␤»
+    $p.value = "a new apple";         # Fails
+    CATCH { default { put .^name, ': ', .Str } };
+    # OUTPUT: «X::Assignment::RO: Cannot modify an immutable Str (apple)␤»
+
+B<NOTE:> this method is deprecated as of B<6.d> language version. Instead,
+create a new C<Pair>, with a L<decontainerized|/language/glossary#decont> key/value.
+
+=for code :preamble<my $p>
+$p.=Map.=head.say;                                    # OUTPUT: «orange␤»
+
+=head2 method Str
+
+    multi method Str(Pair:D: --> Str:D)
+
+Returns a string representation of the invocant formatted
+as I<key ~ \t ~ value>.
+
+    my $b = eggs => 3;
+    say $b.Str;                                       # OUTPUT: «eggs  3␤»
+
+=head2 method Pair
+
+    method Pair()
+
+Returns the invocant C<Pair> object.
+
+    my $pair = eggs => 3;
+    say $pair.Pair === $pair;                         # OUTPUT: «True␤»
+
+=end pod

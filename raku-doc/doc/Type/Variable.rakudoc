@@ -1,0 +1,117 @@
+=begin pod :kind("Type") :subkind("class") :category("basic")
+
+=TITLE class Variable
+
+=SUBTITLE Object representation of a variable for use in traits
+
+    class Variable {}
+
+Variables have a wealth of compile-time information, but at runtime, accesses to
+a variable usually act on the value stored inside it, not the variable itself.
+The runtime class of a variable is L<C<Scalar>|/type/Scalar>.
+
+Class C<Variable> holds the compile-time information that traits can use to
+introspect and manipulate variables.
+
+=head1 Traits
+
+=head2 X<trait is default|Traits,is default>
+
+Sets the default value with which a variable is initialized, and to which it is
+reset when L<C<Nil>|/type/Nil> is assigned to it. Trait arguments are evaluated at
+compile time. Closures won't do what you expect: they are stored as is and need
+to be called by hand.
+
+    my Int $x is default(42);
+    say $x;     # OUTPUT: «42␤»
+    $x = 5;
+    say $x;     # OUTPUT: «5␤»
+    # explicit reset:
+    $x = Nil;
+    say $x;     # OUTPUT: «42␤»
+
+
+The trait C<is default> can be used also with subscripting things like arrays
+and hashes:
+
+=begin code
+my @array is default( 'N/A' );
+@array[22].say;  # OUTPUT: N/A
+@array = Nil;
+@array.say;      # OUTPUT: [N/A]
+@array[4].say;   # OUTPUT: N/A
+
+my %hash is default( 'no-value-here' );
+%hash<non-existent-key>.say; # OUTPUT: no-value-here
+%hash<foo> = 'bar';
+%hash<>.say;                 # OUTPUT: {foo => bar}
+%hash<wrong-key>.say;        # OUTPUT: no-value-here
+=end code
+
+
+=head2 trait is dynamic
+
+    multi trait_mod:<is>(Variable:D, :$dynamic)
+
+Marks a variable as dynamic, that is, accessible from inner dynamic scopes
+without being in an inner lexical scope.
+
+=begin code
+sub introspect() {
+    say $CALLER::x;
+}
+{
+    my $x is dynamic = 42;
+    introspect();  # OUTPUT: «42␤»
+}
+{
+    my $x = 41;    # not dynamic
+    introspect();  # dies with an exception of X::Caller::NotDynamic
+}
+=end code
+
+The C<is dynamic> trait is a rather cumbersome way of creating and accessing
+dynamic variables.  A much easier way is to use the L<C<* twigil>|/language/variables#The_*_twigil>:
+
+=begin code
+sub introspect() {
+    say $*x;
+}
+{
+    my $*x = 42;
+    introspect();  # OUTPUT: «42␤»
+}
+{
+    my $x = 41;    # not dynamic
+    introspect();  # dies with an exception of X::Dynamic::NotFound
+}
+=end code
+
+=head2 trait of
+
+    multi trait_mod:<of>(Mu:U $target, Mu:U $type)
+
+Sets the type constraint of a container bound to a variable.
+
+    my $i of Int = 42;
+    $i = "forty plus two";
+    CATCH { default { say .^name, ' ', .Str } }
+    # OUTPUT: «X::TypeCheck::Assignment Type check failed in assignment to $i; expected Int but got Str ("forty plus two")␤»
+
+You can use any value defined in compile time as a type constraint, including
+constants:
+
+    constant \T = Int;
+    my $i of T = 42;
+
+which would be equivalent to the previous definition.
+
+=head1 Methods
+
+=head2 method name
+
+    method name(Variable:D: str)
+
+Returns the name of the variable, including the sigil.
+
+=end pod

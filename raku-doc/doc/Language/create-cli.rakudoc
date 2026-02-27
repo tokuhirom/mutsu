@@ -1,0 +1,650 @@
+=begin pod :kind("Language") :subkind("Language") :category("tutorial")
+
+=TITLE Command line interface
+
+=SUBTITLE Creating your own CLI in Raku
+
+X<|Programs,command line arguments>
+=head1 Command line interface - an overview
+
+The default command line interface of Raku scripts consists of three parts:
+
+=head2 Parsing the command line parameters into a L<C<Capture>|/type/Capture>
+
+This looks at the values in L<@*ARGS|/language/variables#index-entry-@*ARGS>,
+interprets these according to some policy, and creates a L<C<Capture>|/type/Capture>
+object out of that. An alternative way of parsing may be provided by the developer
+or installed using a module.
+
+=head2 Calling a provided C<MAIN> subroutine using that capture
+
+Standard L<multi dispatch|/language/functions#Multi-dispatch>
+is used to call the C<MAIN> subroutine with the generated L<C<Capture>|/type/Capture> object.
+This means that your C<MAIN> subroutine may be a C<multi sub>, each candidate
+of which is responsible for some part of processing the given command line
+arguments.
+
+=head2 Creating / showing usage information if calling C<MAIN> failed
+
+If multi dispatch failed, then the user of the script should be informed as
+well as possible as to why it failed. By default, this is done by inspecting
+the signature of each C<MAIN> candidate sub, and any associated Pod information.
+The result is then shown to the user on STDERR (or on STDOUT if C<--help>
+was specified). An alternative way of generating the usage information may
+be provided by the developer or installed using a module.
+
+X<|Programs,MAIN>
+=head1 sub MAIN
+
+The sub with the special name C<MAIN> will be executed after all relevant entry
+phasers (C<BEGIN>, C<CHECK>, C<INIT>, C<PRE>, C<ENTER>) have been run and
+the L<mainline|/language/glossary#Mainline> of the script has been
+executed. No error will occur if there is no C<MAIN> sub: your script will
+then just have to do the work, such as argument parsing, in the mainline of
+the script.
+
+Any normal exit from the C<MAIN> sub will result in an exit code of C<0>,
+indicating success. Any return value of the C<MAIN> sub will be ignored.
+If an exception is thrown that is not handled inside the C<MAIN> sub, then the
+exit code will be C<1>. If the dispatch to C<MAIN> failed, a usage message
+will be displayed on STDERR and the exit code will be C<2>.
+
+The command line parameters are present in the C<@*ARGS> dynamic variable
+and may be altered in the mainline of the script before the C<MAIN> unit is
+called.
+
+The signature of (the candidates of the multi) sub C<MAIN> determines which
+candidate will actually be called using the standard
+L<multi dispatch|/language/glossary#Multi-dispatch> semantics.
+
+A simple example:
+
+    # inside file 'hello.raku'
+    sub MAIN($name) {
+        say "Hello $name, how are you?"
+    }
+
+If you call that script without any parameters, you get the following
+usage message:
+
+=begin code :lang<shell>
+$ raku hello.raku
+Usage:
+  hello.raku <name>
+=end code
+
+However, if you give a default value for the parameter, running the script
+either with or without specifying a name will always work:
+
+    # inside file 'hello.raku'
+    sub MAIN($name = 'bashful') {
+        say "Hello $name, how are you?"
+    }
+
+=begin code :lang<shell>
+$ raku hello.raku
+Hello bashful, how are you?
+=end code
+
+=begin code :lang<shell>
+$ raku hello.raku Liz
+Hello Liz, how are you?
+=end code
+
+Another way to do this is to make C<sub MAIN> a C<multi>:
+
+    # inside file 'hello.raku'
+    multi MAIN()      { say "Hello bashful, how are you?" }
+    multi MAIN($name) { say "Hello $name, how are you?"   }
+
+Which would give the same output as the examples above. Whether you should
+use either method to achieve the desired goal is entirely up to you.
+
+If you want to pass an indeterminate number of parameters to be dealt with in
+C<sub MAIN>, you can use L<slurpy parameters|/language/signatures#Slurpy_parameters>:
+
+    # inside file 'hello-all.raku'
+    sub MAIN(*@all) { for @all -> $name { say "Hello, " ~ $name } }
+
+=begin code :lang<shell>
+$ raku hello-all.raku peter paul mary
+Hello, peter
+Hello, paul
+Hello, mary
+=end code
+
+=head2 Multiple named parameters, and C<where> clauses
+
+A more complicated example using a single positional and multiple
+named parameters, and also showing that C<where> clauses can also be applied
+to C<MAIN> arguments:
+
+=for code :method<False>
+# inside "frobnicate.raku"
+sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',
+  Int  :$length = 24,
+  Bool :$verbose
+) {
+    say $length if $length.defined;
+    say $file   if $file.defined;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+
+The clause C<where *.IO.f> checks that the string C<$file> corresponds to the name of a file that actually exists.
+The part C<= 'file.dat'> specifies a default value for C<$file> in case no argument for it is given.
+
+If a file C<file.dat> is present, a call with no arguments will work this way:
+=begin code :lang<shell>
+$ raku frobnicate.raku
+24
+file.dat
+Verbosity off
+=end code
+
+Or this way with C<--verbose>:
+
+=begin code :lang<shell>
+$ raku frobnicate.raku --verbose
+24
+file.dat
+Verbosity on
+=end code
+
+If the file C<file.dat> is not present, or you've specified another filename
+that doesn't exist, you would get the standard usage message created from
+introspection of the C<MAIN> sub:
+
+=begin code :lang<shell>
+$ raku frobnicate.raku doesnotexist.dat
+Usage:
+  frobnicate.raku [--length=<Int>] [--verbose] [<file>]
+=end code
+
+Such usage messages are generated completely automatically for you.
+If they seem too terse, you can easily add more information to them.
+
+=head2 Improve usage messages with rakudoc comments
+
+There's an easy way to make the autogenerated usage
+message better by providing hints using pod features:
+
+=for code :method<False>
+# inside "frobnicate.raku"
+sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',  #= an existing file to frobnicate
+  Int  :$length = 24,                     #= length needed for frobnication
+  Bool :$verbose,                         #= required verbosity
+) {
+    say $length if $length.defined;
+    say $file   if $file.defined;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+
+Which would improve the usage message like this:
+
+=begin code :lang<shell>
+$ raku frobnicate.raku doesnotexist.dat
+Usage:
+  frobnicate.raku [--length=<Int>] [--verbose] [<file>]
+
+    [<file>]          an existing file to frobnicate
+    --length=<Int>    length needed for frobnication
+    --verbose         required verbosity
+=end code
+
+=head2 Command lines and usage messages: more examples
+
+From release 2021.03, values to single named arguments can be separated by
+spaces too. Consider a C<demo> program with the following source:
+
+    subset name of Any where Str|True;
+    subset port of Str;
+    multi MAIN(
+        $file,
+        name :$profile,    #= Write profile information to a file
+        port :$debug-port, #= Listen for debugger connections on the specified port
+        Bool :v($verbose), #= Display verbose output
+
+    ) {}
+    multi MAIN("--process-files", *@images) {}
+
+This program generates the following usage message:
+
+=begin code :lang<text>
+Usage:
+  demo [--profile[=name]] [--debug-port=<port>] [-v] <file>
+  demo --process-files [<images> ...]
+
+    --profile[=name]       Write profile information to a file
+    --debug-port=<port>    Listen for debugger connections on the specified port
+    -v                     Display verbose output
+=end code
+
+The following are valid ways to call C<demo>:
+
+=for code :lang<text>
+demo --profile ~/foo
+demo --profile=/tmp/bar ~/foo
+demo --debug-port 4242 ~/foo
+demo --debug-port=4242 ~/foo
+demo -v ~/foo
+demo --process-files *.jpg
+
+These, however, are not valid
+
+=for code :lang<text>
+demo --profile /tmp/bar ~/foo
+demo --debug-port ~/foo
+
+The first is invalid because C</tmp/bar> and C<~/foo> are both parsed as
+positional arguments, which means C<demo> was called with too many
+positional arguments.  The second is invalid because C<~/foo> is parsed
+as an argument to C<--debug-port>, and thus C<demo> lacks the required
+positional argument.
+
+Here's how it works; with Raku distinguishing between three types of options:
+
+=item Boolean options (like C<-v>), which I<never> take an argument; they
+   are ether present or absent.
+=item Options with a mandatory argument (like C<--debug-port>), which
+   always take an argument.  If you give them an argument with C<=>,
+   they will use that; if not, they'll take the following argument.
+=item Options with an optional argument (like C<--profile>), which are
+   valid both with and without an argument.  You can I<only> give these
+   arguments an option with the C<=> syntax; if there is a space after
+   the option, that means it was called without an argument.
+
+And here's the signature that produces each type of argument:
+
+=item Boolean options: A L<C<Bool>|/type/Bool> type constraint.
+=item Options with a mandatory argument: A type that does not
+    L<C<.ACCEPT>|/routine/ACCEPTS> a L<C<Bool>|/type/Bool>.
+=item Options with an optional argument: A type that C<.ACCEPTS> a
+   C<True> (because passing an option without an argument is equivalent
+   to passing C<True>)
+
+=head2 Aliases for named parameters
+
+As any other subroutine, C<MAIN> can define
+L<aliases|/language/signatures#Argument_aliases> for its named parameters.
+In particular, this can be used to define single-letter alternative names.
+
+=for code :method<False>
+sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',  #= an existing file to frobnicate
+  Int  :l(:$length) = 24,                 #= length needed for frobnication
+  Bool :v(:$verbose),                     #= required verbosity
+) {
+    say $length if $length.defined;
+    say $file   if $file.defined;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+
+In which case, these aliases will also be listed as alternatives with C<--help>:
+
+=begin code :lang<text>
+Usage:
+  frobnicate.raku [--size|--length=<Int>] [--verbose] [<file>]
+
+    [<file>]                 an existing file to frobnicate
+    -l|--length=<Int>        length needed for frobnication
+    -v|--verbose             required verbosity
+=end code
+
+=head2 Named arrays
+
+The MAIN subroutine can also use a different kind of named parameter: the named array.
+This enables, for instance, providing two different short arrays as arguments on a
+command line.
+
+Declare a named-array parameter with C<:@> in sub MAIN's signature:
+
+    # inside file 'named-array.raku'
+    sub MAIN(:@n) {
+        .raku.say for @n
+    }
+
+You can use this on the command line by repeating the named-array
+parameter with different values each time.
+
+=begin code :lang<shell>
+$ raku named-array.raku --n=foo --n=23 --n=6.3 --n=3e8 --n=2+2i --n=bar
+"foo"
+IntStr.new(23, "23")
+RatStr.new(6.3, "6.3")
+NumStr.new(300000000e0, "3e8")
+ComplexStr.new(<2+2i>, "2+2i")
+"bar"
+=end code
+
+=head2 Enumerations
+
+L<C<Enumeration>|/type/Enumeration>s can be used in signatures with arguments converted
+automatically to its corresponding C<enum> symbol:
+
+=begin code
+enum Flag  (
+    FLAG_FOO => 0b001,
+    FLAG_BAR => 0b010,
+    FLAG_BAZ => 0b100,
+);
+
+sub MAIN(Flag $flag = FLAG_FOO) {
+    say "Flagging $flag with value $flag.value()";
+}
+=end code
+
+This will work correctly with
+
+=for code :lang<text>
+raku MAIN-enum.raku FLAG_BAZ
+# OUTPUT: «Flagging FLAG_BAZ with value 4␤»
+
+but will die if called with something that is not a C<Flag>.
+
+
+=head2 X<C<%*SUB-MAIN-OPTS>|Variables,%*SUB-MAIN-OPTS>
+
+It's possible to alter how arguments are processed before they're passed
+to C<sub MAIN {}> by setting options in the C<%*SUB-MAIN-OPTS> hash. Due to
+the nature of dynamic variables, it is required to set up the
+C<%*SUB-MAIN-OPTS> hash and fill it with the appropriate settings.
+For instance:
+
+    my %*SUB-MAIN-OPTS =
+      :named-anywhere,             # allow named variables at any location
+      :bundling,                   # allow bundling of named arguments
+      :coerce-allomorphs-to(Int),  # coerce allomorphic arguments to given type
+      :allow-no,                   # allow --no-foo as alternative to --/foo
+      :numeric-suffix-as-value,    # allow -j2 as alternative to --j=2
+    ;
+    sub MAIN ($a, $b, :$c, :$d) {
+        say "Accepted!"
+    }
+
+Available options are:
+
+=head3 X<C<named-anywhere>|Reference,named-anywhere>
+
+By default, named arguments passed to the program (i.e., C<MAIN>)
+cannot appear after any positional argument. However, if
+C«%*SUB-MAIN-OPTS<named-anywhere>» is set to a true value, named arguments
+can be specified anywhere, even after positional parameter. For example,
+the above program can be called with:
+
+=begin code :lang<shell>
+$ raku example.raku 1 --c=2 3 --d=4
+=end code
+
+=head3 X<C<bundling>|Programs,command-line argument bundling>
+
+When C«%*SUB-MAIN-OPTS<bundling>» is set to a true value, single letter named
+arguments can be bundled together with a single dash. The following two
+commands are then equivalent:
+
+=begin code :lang<shell>
+$ raku example.raku -a -b -c
+$ raku example.raku -abc
+=end code
+
+Bundled arguments can be understood as flags, that can neither be negated, nor
+assigned a value though:
+
+=begin code :lang<shell>
+$ raku example.raku -/a       # OK
+$ raku example.raku -a=asdf   # OK
+$ raku example.raku -abc=asdf # Error
+$ raku example.raku -/abc     # Error
+=end code
+
+This option is only available starting in the 2020.10 release of the
+Rakudo compiler.
+
+=head3 X<C<coerce-allomorphs-to>|Programs,command-line argument coercion>
+
+When C«%*SUB-MAIN-OPTS<coerce-allomorphs-to>» is set to a specific type,
+then any L<allomorphic|/type/Allomorph> values will be coerced to that
+type.  This can be helpful in any dispatch issues to C<MAIN>.
+
+This option is only available starting in the 2020.12 release of the
+Rakudo compiler.
+
+=head3 X<C<allow-no>|Programs,allow no- to negate>
+
+When C«%*SUB-MAIN-OPTS<allow-no>» is set to a true value, then negation
+of arguments on the command line can also be indicated by using the
+C<no-> instead of C</>.
+
+=begin code :lang<shell>
+$ raku example.raku --/foo    # named argument "foo" is False
+$ raku example.raku --no-foo  # same
+=end code
+
+This option is only available starting in the 2022.12 release of
+the Rakudo compiler.
+
+=head3 X<C<numeric-suffix-as-value>|Programs,simpler way for numeric values>
+
+When C«%*SUB-MAIN-OPTS<numeric-suffix-as-value>» is set to a true value,
+then single letter arguments can have a numeric value specified as a suffix.
+
+=begin code :lang<shell>
+$ raku example.raku --j=2  # named argument "j" is 2
+$ raku example.raku -j2    # same
+=end code
+
+This option is only available starting in the 2022.12 release of
+the Rakudo compiler.
+
+=head2 X<C<is hidden-from-USAGE>|Reference,hidden-from-USAGE>
+
+Sometimes you want to exclude a C<MAIN> candidate from being shown in any
+automatically generated usage message. This can be achieved by adding
+a C<hidden-from-USAGE> trait to the specification of the C<MAIN> candidate
+you do not want to show. Expanding on an earlier example:
+
+    # inside file 'hello.raku'
+    multi MAIN() is hidden-from-USAGE {
+        say "Hello bashful, how are you?"
+    }
+    multi MAIN($name) {  #= the name by which you would like to be called
+        say "Hello $name, how are you?"
+    }
+
+So, if you would call this script with just a named variable, you would get
+the following usage:
+
+=begin code :lang<shell>
+$ raku hello.raku --verbose
+Usage:
+  hello.raku <name> -- the name by which you would like to be called
+=end code
+
+Without the C<hidden-from-USAGE> trait on the first candidate, it would have
+looked like this:
+
+=begin code :lang<shell>
+$ raku hello.raku --verbose
+Usage:
+  hello.raku
+  hello.raku <name> -- the name by which you would like to be called
+=end code
+
+Which, although technically correct, doesn't read as well.
+
+=head1 X<Unit-scoped definition of C<MAIN>|Reference,unit (MAIN)>
+
+If the entire program body resides within C<MAIN>, you can use the C<unit>
+declarator as follows (adapting an earlier example):
+
+=begin code :solo
+unit sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',
+  Int  :$length = 24,
+  Bool :$verbose,
+);  # <- note semicolon here
+
+say $length if $length.defined;
+say $file   if $file.defined;
+say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+# rest of script is part of MAIN
+=end code
+
+Note that this is only appropriate if you can get by with just a single
+(only) C<sub MAIN>.
+
+=head2 X<sub USAGE|Tutorial,USAGE> and X<C«$*USAGE»|Tutorial,$*USAGE>
+
+If no multi candidate of C<MAIN> is found for the given command line
+parameters, the sub C<USAGE> is called. If no such method is found,
+the compiler will output a default usage message.
+
+In the following example, we print a custom usage message via
+a L<Q string|/language/quoting>
+(with the C<:c|/language/quoting#Interpolating_closures> flag enabling interpolation of curly braces,
+and the C<:to|/language/quoting#Heredocs:_:to> flag for stating it all as a heredoc):
+
+    #|(is it the answer)
+    multi MAIN(Int $i) { say $i == 42 ?? 'answer' !! 'dunno' }
+    #|(divide two numbers)
+    multi MAIN($a, $b){ say $a/$b }
+
+    sub USAGE() {
+        print Q:c:to/EOH/;
+        Usage: {$*PROGRAM-NAME} [number]
+
+        Prints the answer or 'dunno'.
+    EOH
+    }
+
+The default usage message is available inside C<sub USAGE> via the read-only
+C<$*USAGE> variable. It will be generated based on available C<sub MAIN>
+candidates and their parameters. As shown before, you can specify an
+additional extended description for each candidate using a
+C<#|(...)> Pod block to set L«C<WHY>|/routine/WHY».
+
+
+=head1 Intercepting usage message generation (2018.10, v6.d and later)
+
+You can replace or augment the default way of usage message generation
+(after a failed dispatch to MAIN) by supplying a C<GENERATE-USAGE> subroutine
+yourself, or by importing one from any of the
+L<Getopt|https://raku.land/?q=getopt> modules available in the
+ecosystem.
+
+=head2 X<sub GENERATE-USAGE|Subroutines,GENERATE-USAGE>
+
+The C<GENERATE-USAGE> subroutine should accept a L<C<Callable>|/type/Callable> representing the
+C<MAIN> subroutine that didn't get executed because the dispatch failed.
+This can be used for introspection. All the other parameters are the
+parameters that were set up to be sent to C<MAIN>. It should return the
+string of the usage information you want to be shown to the user. An example
+that will just recreate the L<C<Capture>|/type/Capture> that was created from processing the
+arguments:
+
+    sub GENERATE-USAGE(&main, |capture) {
+        capture<foo>:exists
+          ?? "You're not allowed to specify a --foo"
+          !! &*GENERATE-USAGE(&main, |capture)
+    }
+
+You can also use multi subroutines to create the same effect:
+
+    multi GENERATE-USAGE(&main, :$foo!) {
+        "You're not allowed to specify a --foo"
+    }
+    multi GENERATE-USAGE(&main, |capture) {
+        &*GENERATE-USAGE(&main, |capture)
+    }
+
+Note that the dynamic variable
+L<C<&*GENERATE-USAGE>|/language/variables#&*GENERATE-USAGE> is available to
+perform the default usage message generation so you don't have to reinvent the
+whole wheel if you don't want to.
+
+
+=head1 Intercepting CLI argument parsing (2018.10, v6.d and later)
+
+You can replace or augment the default way of argument parsing by supplying an
+C<ARGS-TO-CAPTURE> subroutine yourself, or by importing one from any of
+the L<Getopt|https://raku.land/?q=getopt> modules available
+in the ecosystem.
+
+=head2 X<sub ARGS-TO-CAPTURE|Subroutines,ARGS-TO-CAPTURE>
+
+The C<ARGS-TO-CAPTURE> subroutine should accept two parameters: a
+L<C<Callable>|/type/Callable> representing the C<MAIN> unit to be executed (so it
+can be introspected if necessary) and an array with the arguments from the
+command line. It should return a L<C<Capture>|/type/Capture> object that will be
+used to dispatch the C<MAIN> unit. The following is a B<very> contrived example
+that will create a L<C<Capture>|/type/Capture> depending on some keyword that was entered (which
+can be handy during testing of a command line interface of a script):
+
+    sub ARGS-TO-CAPTURE(&main, @args --> Capture) {
+        # if we only specified "frobnicate" as an argument
+        @args == 1 && @args[0] eq 'frobnicate'
+          # then dispatch as MAIN("foo","bar",verbose => 2)
+          ?? Capture.new( list => <foo bar>, hash => { verbose => 2 } )
+          # otherwise, use default processing of args
+          !! &*ARGS-TO-CAPTURE(&main, @args)
+    }
+
+Note that the dynamic variable
+L<C<&*ARGS-TO-CAPTURE>|/language/variables#&*ARGS-TO-CAPTURE> is available to
+perform the default command line arguments to L<C<Capture>|/type/Capture> processing so you don't
+have to reinvent the whole wheel if you don't want to.
+
+=head2 X<sub RUN-MAIN|Subroutines,RUN-MAIN>
+
+    sub RUN-MAIN(&main, $mainline, :$in-as-argsfiles)
+
+This routine allows complete control over the handling of C<MAIN>. It gets a
+L<C<Callable>|/type/Callable> that is the C<MAIN> that should be executed, the return value of the
+mainline execution and an additional named variable: C<:in-as-argsfiles> which
+will be C<True> if STDIN should be treated as C<$*ARGFILES>.
+
+If C<RUN-MAIN> is not provided, a default one will be run that looks for
+subroutines of the old interface, such as C<MAIN_HELPER> and C<USAGE>. If
+found, it will execute following the "old" semantics.
+
+=begin code
+class Hero {
+    has @!inventory;
+    has Str $.name;
+    submethod BUILD( :$name, :@inventory ) {
+        $!name = $name;
+        @!inventory = @inventory
+    }
+}
+
+sub new-main($name, *@stuff ) {
+    Hero.new(:name($name), :inventory(@stuff) ).raku.say
+}
+
+RUN-MAIN( &new-main, Nil );
+=end code
+
+This will print the name (first argument) of the generated object.
+
+
+=head1 Intercepting MAIN calling (before 2018.10, v6.e)
+
+An older interface enabled one to intercept the calling to C<MAIN> completely.
+This depended on the existence of a C<MAIN_HELPER> subroutine that would be
+called if a C<MAIN> subroutine was found in the mainline of a program.
+
+This interface was never documented. However, any programs using this
+undocumented interface will continue to function until C<v6.e>. From v6.d
+onward, the use of the undocumented API will cause a C<DEPRECATED> message.
+
+Ecosystem modules can provide both the new and the old interface for
+compatibility with older versions of Perl 6 and Raku: if a newer Raku recognizes
+the new (documented) interface, it will use that. If there is no new
+interface subroutine available, but the old C<MAIN_HELPER> interface is,
+then it will use the old interface.
+
+If a module developer decides to only offer a module for C<v6.d> or higher,
+then the support for the old interface can be removed from the module.
+
+=end pod
