@@ -70,7 +70,6 @@ roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
-roast/S03-junctions/boolean-context.t
 roast/S03-metaops/not.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
@@ -164,6 +163,7 @@ roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/Perl_2.t
+roast/S05-modifier/Perl_6.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
