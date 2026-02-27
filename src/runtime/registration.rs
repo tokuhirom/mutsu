@@ -268,6 +268,7 @@ impl Interpreter {
                 cond,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.validate_private_access_in_expr(caller_class, cond)?;
                 self.validate_private_access_in_stmts(caller_class, then_branch)?;

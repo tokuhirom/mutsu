@@ -438,6 +438,14 @@ impl Interpreter {
         self.block_stack.last()
     }
 
+    pub(crate) fn push_block(&mut self, val: Value) {
+        self.block_stack.push(val);
+    }
+
+    pub(crate) fn pop_block(&mut self) {
+        self.block_stack.pop();
+    }
+
     /// Stringify a value, calling the `.Str` method for Instance and Package types.
     pub(crate) fn stringify_value(&mut self, value: Value) -> Result<String, RuntimeError> {
         match &value {

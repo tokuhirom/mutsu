@@ -21,6 +21,7 @@ use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 
 fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
     if crate::parser::stmt::simple::is_test_assertion_callable(name) {
@@ -28,6 +29,13 @@ fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Ve
             left: Box::new(Expr::Literal(Value::Str(
                 TEST_CALLSITE_LINE_KEY.to_string(),
             ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        });
+    }
+    if name == "callframe" || name == "caller" {
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
         });
@@ -760,6 +768,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         cond,
                         then_branch,
                         else_branch,
+                        binding_var: None,
                     })),
                 ));
             }
@@ -778,6 +787,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         },
                         then_branch: body,
                         else_branch: Vec::new(),
+                        binding_var: None,
                     })),
                 ));
             }
@@ -1365,6 +1375,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Functions that can be called with no arguments as bare words
     if matches!(name.as_str(), "await" | "slip" | "set" | "bag" | "mix") && is_terminator {
+        return Ok((rest, make_call_expr(name, input, vec![])));
+    }
+
+    // callframe and caller are term-like functions: always a zero-arg call
+    if matches!(name.as_str(), "callframe" | "caller") {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

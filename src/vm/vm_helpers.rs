@@ -459,6 +459,8 @@ impl VM {
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
                 | "Proxy"
+                | "CallFrame"
+                | "Backtrace"
                 | "array"
         )
     }
@@ -785,8 +787,19 @@ impl VM {
         let saved_stack_depth = self.stack.len();
         let return_spec = cf.return_type.clone();
 
-        // Push caller environment for $CALLER:: / $DYNAMIC:: resolution
         self.interpreter.push_caller_env();
+
+        // Push Sub value to block_stack for callframe().code
+        let sub_val = Value::make_sub(
+            fn_package.to_string(),
+            fn_name.to_string(),
+            cf.params.clone(),
+            cf.param_defs.clone(),
+            vec![],
+            false,
+            self.interpreter.env().clone(),
+        );
+        self.interpreter.push_block(sub_val);
 
         if !fn_name.is_empty() {
             self.interpreter
@@ -904,10 +917,11 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }
-
-        self.interpreter.pop_caller_env();
+        self.interpreter.pop_block();
 
         let mut restored_env = saved_env;
+        self.interpreter
+            .pop_caller_env_with_writeback(&mut restored_env);
         self.interpreter
             .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         let rw_sources: std::collections::HashSet<String> = rw_bindings

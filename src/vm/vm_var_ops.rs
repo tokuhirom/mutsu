@@ -1563,6 +1563,43 @@ impl VM {
         self.stack.push(val);
     }
 
+    /// Generic index assignment on a stack-computed target.
+    /// Stack order: target (bottom), index, value (top).
+    /// If the target hash has `__callframe_depth`, routes through set_caller_var.
+    pub(super) fn exec_index_assign_generic_op(&mut self) -> Result<(), RuntimeError> {
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let target = self.stack.pop().unwrap_or(Value::Nil);
+        let key = idx.to_string_value();
+
+        match &target {
+            Value::Hash(h) => {
+                // Check for callframe .my hash with depth marker
+                if let Some(Value::Int(depth)) = h.get("__callframe_depth") {
+                    let depth = *depth as usize;
+                    // Strip sigil from key to get bare variable name
+                    let bare_name = if key.starts_with('$')
+                        || key.starts_with('@')
+                        || key.starts_with('%')
+                    {
+                        &key[1..]
+                    } else {
+                        &key
+                    };
+                    self.interpreter.set_caller_var(bare_name, depth, val.clone())?;
+                    self.stack.push(val);
+                    return Ok(());
+                }
+                // Regular hash: just do the assignment (on a temporary — won't persist)
+                self.stack.push(val);
+            }
+            _ => {
+                self.stack.push(val);
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn exec_get_local_op(
         &mut self,
         code: &CompiledCode,

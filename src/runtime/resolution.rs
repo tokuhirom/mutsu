@@ -500,8 +500,8 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
-            self.pop_caller_env();
             let mut merged = saved_env;
+            self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
                     if merged.contains_key(k) {

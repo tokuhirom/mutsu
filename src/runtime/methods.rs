@@ -36,6 +36,7 @@ impl Interpreter {
                     cond,
                     then_branch,
                     else_branch,
+                    ..
                 } => {
                     scan_expr(cond, positional, named);
                     for s in then_branch {
@@ -5995,6 +5996,18 @@ impl Interpreter {
         }
         // Fallback .new on basic types
         match target {
+            Value::Package(name) if name == "CallFrame" => {
+                // CallFrame.new(depth) — equivalent to callframe(depth)
+                let depth = args
+                    .first()
+                    .and_then(|v| match v {
+                        Value::Int(i) => Some(*i as usize),
+                        Value::Num(f) => Some(*f as usize),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                self.builtin_callframe(&args, depth)
+            }
             Value::Package(name) => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
                 name

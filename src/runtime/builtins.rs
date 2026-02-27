@@ -508,23 +508,37 @@ impl Interpreter {
             let return_spec = self.routine_return_spec_by_name(&def.name);
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            self.push_caller_env();
             let rw_bindings =
                 match self.bind_function_args_values(&def.param_defs, &def.params, args) {
                     Ok(bindings) => bindings,
                     Err(e) => {
+                        self.pop_caller_env();
                         self.env = saved_env;
                         self.restore_readonly_vars(saved_readonly);
                         return Err(e);
                     }
                 };
+            let sub_val = Value::make_sub(
+                def.package.clone(),
+                def.name.clone(),
+                def.params.clone(),
+                def.param_defs.clone(),
+                def.body.clone(),
+                def.is_rw,
+                self.env.clone(),
+            );
+            self.block_stack.push(sub_val);
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
                 .push((def.package.clone(), def.name.clone()));
             self.prepare_definite_return_slot(return_spec.as_deref());
             let result = self.eval_block_value(&def.body);
             self.routine_stack.pop();
+            self.block_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);
             let mut restored_env = saved_env;
+            self.pop_caller_env_with_writeback(&mut restored_env);
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
@@ -1489,20 +1503,26 @@ impl Interpreter {
         Ok(self.env.get("made").cloned().unwrap_or(Value::Nil))
     }
 
-    fn builtin_callframe(
+    pub(crate) fn builtin_callframe(
         &self,
         args: &[Value],
         default_depth: usize,
     ) -> Result<Value, RuntimeError> {
-        let depth = args
-            .first()
-            .and_then(|v| match v {
-                Value::Int(i) if *i >= 0 => Some(*i as usize),
-                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-                _ => None,
-            })
-            .unwrap_or(default_depth);
-        if let Some(frame) = self.callframe_value(depth) {
+        let mut depth = default_depth;
+        let mut callsite_line: Option<i64> = None;
+        for arg in args {
+            match arg {
+                Value::Int(i) if *i >= 0 => depth = *i as usize,
+                Value::Num(f) if *f >= 0.0 => depth = *f as usize,
+                Value::Pair(k, v) if k == "__callframe_line" => {
+                    if let Value::Int(line) = v.as_ref() {
+                        callsite_line = Some(*line);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(frame) = self.callframe_value(depth, callsite_line) {
             return Ok(frame);
         }
         Ok(Value::Nil)
