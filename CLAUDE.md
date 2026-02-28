@@ -263,49 +263,44 @@ Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI
 
 ### Scripts
 
-- **`ai-sandbox.sh`** — Creates an isolated sandbox (via `bwrap`) with a fresh git clone of the repo per branch. Runs `claude`, `codex`, or `bash` inside the sandbox. Sandboxes share a cargo build cache under `.git/sandbox/.shared-target/`.
-- **`ai-run-roast.sh`** — Takes a single roast test file path, builds a prompt with investigation steps, and runs an agent in a sandbox to fix it. Retries up to 3 times on failure.
+- **`ai-sandbox.sh`** — Creates an isolated sandbox (via `bwrap`) with a fresh git clone of the repo per branch. Runs `claude`, `codex`, or `bash` inside the sandbox. Copies parent repo's `target/` as build cache on first clone. Sandboxes persist across runs (no `--recreate` by default) so interrupted agents can resume.
+- **`ai-run-roast.sh`** — Takes a single roast test file path, builds a prompt with investigation steps, and runs an agent in a sandbox to fix it. If the sandbox has uncommitted changes from a previous interrupted session, the prompt instructs the agent to continue from where it left off. Retries up to 3 times on failure.
 - **`ai-next-roast.sh`** — Continuously picks random failing roast tests (via `pick-next-roast.sh`), coordinates with other instances via `wip.txt` to avoid duplicate work, and delegates each test to `ai-run-roast.sh`.
 - **`ai-supervisor.sh`** — Monitors open PRs for merge conflicts and CI failures. Dispatches agents to rebase/fix them. When idle, triggers roast history updates. Polls every 10 minutes.
+- **`ai-fleet.sh`** — Fleet manager. Monitors tmux windows with the `fleet:` prefix and automatically restarts dead workers. Can run as a daemon (`ai-fleet.sh`) or one-shot (`ai-fleet.sh --once`).
+- **`tmux-status.sh`** — Quick status display of all tmux windows (pid, alive/dead, last N lines of output). Usage: `./scripts/tmux-status.sh [lines]`
 
-### Starting the fleet (tmux)
+### Fleet manager
 
-Each worker and the supervisor should run in its own tmux window so that logs are visible and manageable.
+`ai-fleet.sh` manages the fleet automatically. It monitors tmux windows with the `fleet:` prefix and restarts dead workers.
 
 ```bash
-# Launch N workers in separate tmux windows
-tmux new-window -n 'codex-1' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent codex'
-tmux new-window -n 'codex-2' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent codex'
-tmux new-window -n 'codex-3' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent codex'
-tmux new-window -n 'claude'  -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent claude'
+# Start the fleet manager (runs in foreground, Ctrl-C to stop)
+./scripts/ai-fleet.sh
 
-# Launch 1 supervisor
-tmux new-window -n 'supervisor' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-supervisor.sh --agent codex'
+# Check status once without looping
+./scripts/ai-fleet.sh --once
+
+# Dry-run: show what would be launched
+./scripts/ai-fleet.sh --once --dry-run
 ```
+
+Default fleet composition (edit `FLEET` array in `ai-fleet.sh` to change):
+- `fleet:codex:1`, `fleet:codex:2` — codex workers
+- `fleet:claude:1` — claude worker
+- `fleet:supervisor:1` — PR supervisor
 
 ### Monitoring
 
-- **List windows**: `tmux list-windows -F '#{window_index} #{window_name}'`
-- **Read worker output**: `tmux capture-pane -t ":N" -p -S -30` (N = window index)
-- **Worker processes**: `ps aux | grep ai-next-roast`
+- **Fleet status**: `./scripts/ai-fleet.sh --once`
+- **Read worker output**: `tmux capture-pane -t "fleet:codex:1" -p -S -30`
 - **PR progress**: `gh pr list --state open`
 - **Supervisor status**: `dotenvx run -- ./scripts/ai-supervisor.sh --list`
-- **Agent logs** (claude): pipe through `python3 scripts/stream-json-pretty.py`
-- **Restart dead workers**: `tmux send-keys -t ":N" 'dotenvx run -- ./scripts/ai-next-roast.sh --agent codex' Enter`
-
-### Parent AI responsibilities
-
-- Periodically run `tmux capture-pane -t ":N" -p -S -30` for each worker window to check progress
-- Check that child processes are alive (`tmux list-panes -t ":N" -F '#{pane_pid} #{pane_dead}'`) and restart any that died
-- Review captured logs and identify patterns in failures
-- Improve prompts and scripts based on observed failure modes
-- Record failure reasons in `TODO_roast/` to accumulate knowledge
-- Monitor `wip.txt` for stale entries (agents that died mid-task)
 
 ### Stopping
 
 ```bash
-# Stop all agents
+# Stop all agents (fleet manager also exits)
 touch tmp/.stop
 
 # Stop a specific agent by PID
