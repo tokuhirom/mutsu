@@ -121,16 +121,13 @@ impl Interpreter {
         result
     }
 
-    pub(super) fn collect_class_attributes(
-        &mut self,
-        class_name: &str,
-    ) -> Vec<(String, bool, Option<Expr>, bool)> {
+    pub(super) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
-        let mut attrs: Vec<(String, bool, Option<Expr>, bool)> = Vec::new();
+        let mut attrs: Vec<ClassAttributeDef> = Vec::new();
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.classes.get(cn) {
                 for attr in &class_def.attributes {
-                    if let Some(pos) = attrs.iter().position(|(n, _, _, _)| n == &attr.0) {
+                    if let Some(pos) = attrs.iter().position(|(n, ..)| n == &attr.0) {
                         attrs.remove(pos);
                     }
                     attrs.push(attr.clone());

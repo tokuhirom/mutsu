@@ -993,7 +993,7 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
         if let Some(role) = role {
-            for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+            for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
                 role.attributes.iter().enumerate()
             {
                 let value = if let Some(arg) = role_args.get(idx) {
@@ -1470,7 +1470,7 @@ impl Interpreter {
     pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
         let filtered_params: Vec<ParamDef> = param_defs
             .iter()
-            .filter(|p| !p.traits.iter().any(|t| t == "invocant"))
+            .filter(|p| !p.is_invocant && !p.traits.iter().any(|t| t == "invocant"))
             .cloned()
             .collect();
         let positional_params: Vec<&ParamDef> =

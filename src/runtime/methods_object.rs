@@ -123,7 +123,7 @@ impl Interpreter {
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     self.env.insert(param_name.clone(), type_arg.clone());
                 }
-                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -854,7 +854,7 @@ impl Interpreter {
 
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
-                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -906,22 +906,48 @@ impl Interpreter {
                         self.env.insert(name.clone(), value.clone());
                     }
                 }
-                for (attr_name, _is_public, default, _is_rw) in
-                    self.collect_class_attributes(class_key)
+                let class_attrs_info = self.collect_class_attributes(class_key);
+                // Check required attributes BEFORE evaluating defaults
+                // (required attributes are checked before defaults run)
+                let provided_attr_names: std::collections::HashSet<String> = args
+                    .iter()
+                    .filter_map(|v| match v {
+                        Value::Pair(k, _) => Some(k.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                    &class_attrs_info
                 {
-                    let val = if let Some(expr) = default {
-                        self.eval_block_value(&[Stmt::Expr(expr)])?
-                    } else {
-                        Value::Nil
-                    };
-                    attrs.insert(attr_name, val);
+                    if let Some(reason) = is_required {
+                        let has_build = self.class_has_method(class_key, "BUILD");
+                        // If class has BUILD, BUILD handles attribute setting,
+                        // so we skip required check here (BUILD may set defaults)
+                        if !has_build && !provided_attr_names.contains(attr_name.as_str()) {
+                            let attr_full_name = format!("$!{}", attr_name);
+                            return Err(RuntimeError::attribute_required(
+                                &attr_full_name,
+                                reason.as_deref(),
+                            ));
+                        }
+                    }
                 }
-                self.env = saved_default_env;
+                // Build a sigil map for later coercion
+                let sigil_map: HashMap<String, char> = class_attrs_info
+                    .iter()
+                    .map(|(name, _, _, _, _, sigil)| (name.clone(), *sigil))
+                    .collect();
+                // First, collect constructor args into attrs
+                self.env = saved_default_env.clone();
                 let class_mro = self.class_mro(class_key);
                 for val in &args {
                     match val {
                         Value::Pair(k, v) => {
-                            attrs.insert(k.clone(), *v.clone());
+                            let coerced = Self::coerce_attr_value_by_sigil(
+                                *v.clone(),
+                                sigil_map.get(k).copied().unwrap_or('$'),
+                            );
+                            attrs.insert(k.clone(), coerced);
                         }
                         Value::Instance {
                             class_name: src_class,
@@ -929,9 +955,7 @@ impl Interpreter {
                             ..
                         } if class_mro.iter().any(|name| name == src_class) => {
                             for (attr, value) in src_attrs.iter() {
-                                if attrs.contains_key(attr) {
-                                    attrs.insert(attr.clone(), value.clone());
-                                }
+                                attrs.insert(attr.clone(), value.clone());
                             }
                         }
                         _ => {
@@ -948,6 +972,44 @@ impl Interpreter {
                         Value::array(positional_ctor_args),
                     );
                 }
+                // Then evaluate defaults for attributes not provided by args,
+                // binding `self` so default expressions like `self.x` work.
+                // Restore role parameter bindings so that default expressions
+                // referencing role type parameters (e.g., `has $.x = $a`) work.
+                if let Some(role_bindings) = self.class_role_param_bindings.get(class_key) {
+                    for (name, value) in role_bindings {
+                        self.env.insert(name.clone(), value.clone());
+                    }
+                } else if let Some(role_bindings) = self.class_role_param_bindings.get(class_name) {
+                    for (name, value) in role_bindings {
+                        self.env.insert(name.clone(), value.clone());
+                    }
+                }
+                for (attr_name, _is_public, default, _is_rw, _is_required, sigil) in
+                    class_attrs_info.clone()
+                {
+                    if attrs.contains_key(&attr_name) {
+                        continue;
+                    }
+                    let val = if let Some(expr) = default {
+                        let temp_self = Value::make_instance(class_name.clone(), attrs.clone());
+                        let old_self = self.env.get("self").cloned();
+                        self.env.insert("self".to_string(), temp_self);
+                        let result = self.eval_block_value(&[Stmt::Expr(expr)]);
+                        if let Some(old) = old_self {
+                            self.env.insert("self".to_string(), old);
+                        } else {
+                            self.env.remove("self");
+                        }
+                        let val = result?;
+                        Self::coerce_attr_value_by_sigil(val, sigil)
+                    } else {
+                        Value::Nil
+                    };
+                    attrs.insert(attr_name, val);
+                }
+                // Restore env after default evaluation
+                self.env = saved_default_env.clone();
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
                 let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
@@ -965,6 +1027,22 @@ impl Interpreter {
                         Some(Value::make_instance(class_name.clone(), attrs.clone())),
                     )?;
                     attrs = updated;
+                    // After BUILD runs, check required attributes that BUILD didn't set
+                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                        &class_attrs_info
+                    {
+                        if let Some(reason) = is_required {
+                            let attr_val = attrs.get(attr_name.as_str());
+                            let is_set = !matches!(attr_val, Some(Value::Nil) | None);
+                            if !is_set {
+                                let attr_full_name = format!("$!{}", attr_name);
+                                return Err(RuntimeError::attribute_required(
+                                    &attr_full_name,
+                                    reason.as_deref(),
+                                ));
+                            }
+                        }
+                    }
                 }
                 if self.class_has_method(class_name, "TWEAK") {
                     let tweak_args = if has_direct_tweak {

@@ -269,6 +269,7 @@ roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
 roast/S12-attributes/mutators.t
 roast/S12-class/anonymous.t
+roast/S12-class/attributes-required.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t

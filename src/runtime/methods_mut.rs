@@ -1430,9 +1430,11 @@ impl Interpreter {
                 let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
                 } else {
-                    class_attrs.iter().any(|(attr_name, is_public, _, is_rw)| {
-                        *is_public && attr_name == method && *is_rw
-                    })
+                    class_attrs
+                        .iter()
+                        .any(|(attr_name, is_public, _, is_rw, ..)| {
+                            *is_public && attr_name == method && *is_rw
+                        })
                 };
                 if is_public_rw_accessor {
                     // User-defined rw method takes priority over simple accessor
@@ -1481,7 +1483,7 @@ impl Interpreter {
                     } else {
                         class_attrs
                             .iter()
-                            .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method)
+                            .any(|(attr_name, is_public, ..)| *is_public && attr_name == method)
                     };
                     if is_public_accessor {
                         let current = attributes.get(method).cloned().unwrap_or(Value::Nil);

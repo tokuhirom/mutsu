@@ -190,6 +190,27 @@ impl RuntimeError {
         err
     }
 
+    pub(crate) fn attribute_required(name: &str, why: Option<&str>) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        let why_str = why.unwrap_or("Required").to_string();
+        attrs.insert("why".to_string(), Value::Str(why_str.clone()));
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(format!(
+                "The attribute '{}' is required, but you did not provide a value for it.",
+                name
+            )),
+        );
+        let ex = Value::make_instance("X::Attribute::Required".to_string(), attrs);
+        let mut err = Self::new(format!(
+            "The attribute '{}' is required, but you did not provide a value for it.",
+            name
+        ));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     pub(crate) fn numeric_divide_by_zero() -> Self {
         let mut attrs = HashMap::new();
         attrs.insert(

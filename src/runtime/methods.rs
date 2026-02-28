@@ -3,6 +3,45 @@ use crate::ast::CallArg;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
 impl Interpreter {
+    /// Coerce a value based on attribute sigil: @ → Array, % → Hash
+    pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
+        match sigil {
+            '@' => match &val {
+                Value::Array(..) => val,
+                Value::Range(start, end) => {
+                    let items: Vec<Value> = (*start..=*end).map(Value::Int).collect();
+                    Value::Array(std::sync::Arc::new(items), false)
+                }
+                Value::RangeExcl(start, end) => {
+                    let items: Vec<Value> = (*start..*end).map(Value::Int).collect();
+                    Value::Array(std::sync::Arc::new(items), false)
+                }
+                _ => val,
+            },
+            '%' => match &val {
+                Value::Hash(_) => val,
+                Value::Array(arr, _) => {
+                    // Convert array of pairs to hash
+                    let mut map = HashMap::new();
+                    let mut has_pairs = false;
+                    for item in arr.iter() {
+                        if let Value::Pair(k, v) = item {
+                            map.insert(k.clone(), *v.clone());
+                            has_pairs = true;
+                        }
+                    }
+                    if has_pairs {
+                        Value::Hash(std::sync::Arc::new(map))
+                    } else {
+                        val
+                    }
+                }
+                _ => val,
+            },
+            _ => val,
+        }
+    }
+
     pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
         fn scan_stmt(stmt: &Stmt, positional: &mut bool, named: &mut bool) {
             match stmt {
@@ -1098,7 +1137,7 @@ impl Interpreter {
                     && role
                         .attributes
                         .iter()
-                        .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method);
+                        .any(|(attr_name, is_public, ..)| *is_public && attr_name == method);
                 if role.methods.contains_key(method) || is_public_attr_accessor {
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;
                     return self.call_method_with_values(instance, method, args);
@@ -1110,7 +1149,7 @@ impl Interpreter {
                     && role
                         .attributes
                         .iter()
-                        .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method);
+                        .any(|(attr_name, is_public, ..)| *is_public && attr_name == method);
                 if role.methods.contains_key(method) || is_public_attr_accessor {
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;
                     return self.call_method_with_values(instance, method, args);
@@ -2690,7 +2729,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name) {
-                    for (attr_name, _is_public, default, _is_rw) in
+                    for (attr_name, _is_public, default, _is_rw, _, _) in
                         self.collect_class_attributes(&class_name)
                     {
                         let val = if let Some(expr) = default {
@@ -3328,7 +3367,7 @@ impl Interpreter {
                         return Ok(val.clone());
                     }
                 } else {
-                    for (attr_name, is_public, _, _) in &class_attrs {
+                    for (attr_name, is_public, ..) in &class_attrs {
                         if *is_public && attr_name == method {
                             return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
                         }
