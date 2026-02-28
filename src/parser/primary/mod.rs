@@ -80,6 +80,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
         try_primary!(number::integer(input));
+        try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::smart_single_quoted_string(input));
