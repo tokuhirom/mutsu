@@ -512,6 +512,7 @@ roast/S32-num/pi.t
 roast/S32-num/polar.t
 roast/S32-num/power.t
 roast/S32-num/real-bridge.t
+roast/S32-num/rshift_pos_amount.t
 roast/S32-num/sqrt.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t
