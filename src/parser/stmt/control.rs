@@ -616,7 +616,8 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             r
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
+        {
             type_constraint = Some(tc);
             r2
         } else {
@@ -642,6 +643,104 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     {
         slurpy = true;
         rest = &rest[1..];
+    }
+
+    // Anonymous callable pointy parameter with code signature: -> &:(Str) { ... }
+    if rest.starts_with("&:(") {
+        let r = &rest[1..]; // skip '&'
+        let (r, _) = parse_char(r, ':')?;
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, (sig_params, sig_ret)) = super::sub::parse_param_list_with_return(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+
+        let mut optional_marker = false;
+        let mut required_marker = false;
+        let mut rest = if let Some(after) = r.strip_prefix('?') {
+            optional_marker = true;
+            after
+        } else if let Some(after) = r.strip_prefix('!') {
+            required_marker = true;
+            after
+        } else {
+            r
+        };
+
+        let mut traits = Vec::new();
+        loop {
+            let (r, _) = ws(rest)?;
+            let Some(after_is) = keyword("is", r) else {
+                rest = r;
+                break;
+            };
+            let (after_is, _) = ws1(after_is)?;
+            let (after_is, trait_name) = ident(after_is)?;
+            sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            traits.push(trait_name);
+            rest = after_is;
+        }
+        return Ok((
+            rest,
+            ParamDef {
+                name: "&".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: required_marker,
+                named: false,
+                slurpy,
+                double_slurpy,
+                sigilless: false,
+                type_constraint,
+                literal_value: None,
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: Some((sig_params, sig_ret)),
+                where_constraint: None,
+                traits,
+                optional_marker,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
+    }
+
+    // Literal value parameter in pointy signatures, e.g. `-> 42 { ... }`
+    if rest.starts_with(|c: char| c.is_ascii_digit()) {
+        let mut end = 0usize;
+        for (idx, ch) in rest.char_indices() {
+            if ch.is_ascii_digit() || ch == '_' {
+                end = idx + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let token = &rest[..end];
+        let parsed = token.replace('_', "").parse::<i64>().unwrap_or(0);
+        let rest = &rest[end..];
+        return Ok((
+            rest,
+            ParamDef {
+                name: "__literal__".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy,
+                double_slurpy,
+                sigilless: false,
+                type_constraint,
+                literal_value: Some(crate::value::Value::Int(parsed)),
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
     }
 
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
