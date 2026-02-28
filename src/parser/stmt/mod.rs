@@ -636,10 +636,14 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         match simple::expr_stmt(input) {
             Ok(r) => Ok(r),
             Err(err) => {
-                update_best_error(&mut best_error, err, input_len);
-                Err(best_error
-                    .map(|(_, err)| err)
-                    .unwrap_or_else(|| PError::expected_at("statement", input)))
+                if err.is_fatal() {
+                    Err(err)
+                } else {
+                    update_best_error(&mut best_error, err, input_len);
+                    Err(best_error
+                        .map(|(_, err)| err)
+                        .unwrap_or_else(|| PError::expected_at("statement", input)))
+                }
             }
         }
     };

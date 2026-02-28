@@ -792,6 +792,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let decl_stmt = Stmt::VarDecl {
             name: name.clone(),
@@ -828,6 +829,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let decl_stmt = Stmt::VarDecl {
             name: name.clone(),

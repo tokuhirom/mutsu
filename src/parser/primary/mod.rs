@@ -72,7 +72,12 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
             ($expr:expr) => {
                 match $expr {
                     Ok(r) => return Ok(r),
-                    Err(err) => update_best_error(&mut best_error, err, input_len),
+                    Err(err) => {
+                        if err.is_fatal() {
+                            return Err(err);
+                        }
+                        update_best_error(&mut best_error, err, input_len);
+                    }
                 }
             };
         }

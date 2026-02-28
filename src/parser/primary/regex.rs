@@ -7,7 +7,13 @@ use crate::value::Value;
 
 /// Validate a regex pattern at parse time, converting any RuntimeError to PError.
 fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
-    validate_regex_syntax(pattern).map_err(|e| PError::fatal(e.message))
+    validate_regex_syntax(pattern).map_err(|e| {
+        if let Some(ex) = e.exception {
+            PError::fatal_with_exception(e.message, ex)
+        } else {
+            PError::fatal(e.message)
+        }
+    })
 }
 
 use super::super::expr::expression;
@@ -466,6 +472,31 @@ fn scan_to_delim_inner(
                     || after_delim.starts_with('<')
                 {
                     chars.next(); // skip the delimiter char (it's part of $/)
+                }
+            }
+        } else if !p5_mode && (c == '@' || c == '$') && !is_paired {
+            // @(...) or $(...) parenthesized expressions inside regex.
+            // Track parenthesis depth so that delimiters (like /) inside
+            // the expression don't prematurely close the regex.
+            let after = &input[i + c.len_utf8()..];
+            if after.starts_with('(') {
+                chars.next(); // skip '('
+                let mut paren_depth = 1u32;
+                loop {
+                    match chars.next() {
+                        Some((_, '(')) => paren_depth += 1,
+                        Some((_, ')')) => {
+                            paren_depth -= 1;
+                            if paren_depth == 0 {
+                                break;
+                            }
+                        }
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some(_) => {}
+                        None => return None,
+                    }
                 }
             }
         } else if c == '\\' {

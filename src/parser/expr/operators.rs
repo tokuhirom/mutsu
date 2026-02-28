@@ -573,5 +573,6 @@ pub(super) fn enrich_expected_error(
     PError {
         messages: merge_expected_messages(context, &err.messages),
         remaining_len: err.remaining_len.or(Some(remaining_len_fallback)),
+        exception: None,
     }
 }

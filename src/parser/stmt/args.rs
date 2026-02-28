@@ -26,6 +26,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
         let (r, first_arg) = parse_single_call_arg(r).map_err(|err| PError {
             messages: merge_expected_messages("expected first call argument", &err.messages),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         // Check for invocant colon: foo($obj:) or foo($obj: $a, $b)
         {
@@ -54,6 +55,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(after_ws.len())),
+                    exception: None,
                 })?;
                 args.extend(more);
                 let (r2, _) = ws(r2)?;
@@ -78,6 +80,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                             &err.messages,
                         ),
                         remaining_len: err.remaining_len.or(Some(r2.len())),
+                        exception: None,
                     })?;
                     args.extend(more);
                     return Ok((r2, args));
@@ -109,6 +112,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             args.push(arg);
             r = r2;
@@ -141,6 +145,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
     let (mut rest, first) = parse_single_call_arg(input).map_err(|err| PError {
         messages: merge_expected_messages("expected first call argument", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
+        exception: None,
     })?;
     let (rest_ws, _) = ws(rest)?;
     if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
@@ -184,6 +189,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         let (r, arg) = parse_single_call_arg(r).map_err(|err| PError {
             messages: merge_expected_messages("expected call argument after ','", &err.messages),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         args.push(arg);
         rest = r;
@@ -273,6 +279,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                             &err.messages,
                         ),
                         remaining_len: err.remaining_len.or(Some(r.len())),
+                        exception: None,
                     })?;
                     let (r, _) = ws(r)?;
                     // Check for comma — makes a list: :name(a, b) or :name(a,)
@@ -292,6 +299,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                                exception: None,
                             })?;
                             let (r2, _) = ws(r2)?;
                             items.push(next);
@@ -327,6 +335,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                 &err.messages,
                             ),
                             remaining_len: err.remaining_len.or(Some(r.len())),
+                            exception: None,
                         })?;
                         items.push(first);
                         let mut r = r2;
@@ -350,6 +359,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                                exception: None,
                             })?;
                             items.push(next);
                             r = r2;
@@ -423,6 +433,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             return Ok((
                 r2,
@@ -450,6 +461,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: None,
         })?;
     Ok((rest, CallArg::Positional(expr)))
 }

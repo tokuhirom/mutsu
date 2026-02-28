@@ -419,8 +419,9 @@ impl Interpreter {
                         Value::Nil => String::new(),
                         other => other.to_string_value(),
                     };
-                    let instantiated = interp.interpolate_regex_scalars(&pattern);
-                    out.push((instantiated, def.package.clone()));
+                    if let Ok(instantiated) = interp.interpolate_regex_scalars(&pattern) {
+                        out.push((instantiated, def.package.clone()));
+                    }
                 }
             }
             interp.env = saved_env;
@@ -1872,6 +1873,14 @@ impl Interpreter {
                 let target: String = chars.iter().collect();
                 let pattern_str =
                     self.eval_regex_closure_interpolation(code, current_caps, &target);
+                if let Some(ref pat_str) = pattern_str
+                    && Interpreter::contains_dangerous_regex_code(pat_str)
+                {
+                    regex_parse::PENDING_REGEX_ERROR.with(|e| {
+                        *e.borrow_mut() = Some(Interpreter::make_security_policy_error());
+                    });
+                    return None;
+                }
                 if let Some(pat_str) = pattern_str
                     && let Some(parsed) = self.parse_regex(&pat_str)
                 {
