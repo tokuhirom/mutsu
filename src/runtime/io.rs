@@ -308,7 +308,8 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
-                    let (contents, next_idx) = Self::collect_pod_entries(lines, idx + 1, Some(target));
+                    let (contents, next_idx) =
+                        Self::collect_pod_entries(lines, idx + 1, Some(target));
                     if target == "pod" {
                         entries.push(Self::make_pod_block(contents));
                     } else if let Some(level) = Self::parse_heading_level(target) {
@@ -474,7 +475,8 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
-                    let (contents, next_idx) = Self::collect_pod_entries(&lines, idx + 1, Some(target));
+                    let (contents, next_idx) =
+                        Self::collect_pod_entries(&lines, idx + 1, Some(target));
                     if target == "pod" {
                         entries.push(Self::make_pod_block(contents));
                     } else if let Some(level) = Self::parse_heading_level(target) {
