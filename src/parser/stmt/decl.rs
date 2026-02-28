@@ -483,6 +483,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -502,6 +503,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -519,6 +521,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -561,6 +564,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -580,6 +584,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -599,6 +604,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -660,23 +666,24 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         (rest, None)
     };
 
-    // Parse variable traits. Only a small set is currently supported on
-    // lexical/package variable declarations; unknown traits are compile-time errors.
+    // Parse variable traits. Builtins are handled directly; unknown/custom
+    // traits are recorded for trait_mod:<is> dispatch at runtime.
     let mut has_dynamic_trait = false;
     let mut has_export_trait = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
             // Parse trait name
             let (r2, trait_name) = ident(r2)?;
-            if !is_supported_variable_trait(&trait_name) {
-                return Err(PError::fatal(format!(
-                    "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
-                    trait_name
-                )));
+            if trait_name == "readonly" {
+                return Err(PError::fatal(
+                    "X::Comp::Trait::Unknown: Unknown variable trait 'is readonly'".to_string(),
+                ));
             }
+            let is_builtin = is_supported_variable_trait(&trait_name);
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
             }
@@ -707,25 +714,18 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
-                let mut depth = 1;
-                let mut end = 0;
-                for (i, c) in r3.char_indices() {
-                    match c {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = i;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                let r3 = &r3[end + 1..];
+                let (r3, trait_arg) = expression(r3)?;
                 let (r3, _) = ws(r3)?;
+                let (r3, _) = parse_char(r3, ')')?;
+                let (r3, _) = ws(r3)?;
+                if !is_builtin {
+                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                }
                 r = r3;
             } else {
+                if !is_builtin {
+                    custom_traits.push((trait_name.clone(), None));
+                }
                 r = r2;
             }
         }
@@ -775,6 +775,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -806,6 +807,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         let assign_stmt = Stmt::Assign {
             name: name.clone(),
@@ -841,6 +843,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         let assign_stmt = Stmt::Assign {
             name: name.clone(),
@@ -905,6 +908,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -947,6 +951,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -979,6 +984,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -1004,6 +1010,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags,
+            custom_traits,
         },
     ))
 }
@@ -1066,6 +1073,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            custom_traits: Vec::new(),
         }];
         for (i, var_name) in names.iter().enumerate() {
             stmts.push(Stmt::VarDecl {
@@ -1080,6 +1088,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             });
         }
         return Ok((rest, Stmt::SyntheticBlock(stmts)));
@@ -1098,6 +1107,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            custom_traits: Vec::new(),
         });
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
@@ -1454,6 +1464,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -1469,6 +1480,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export,
             export_tags,
+            custom_traits: Vec::new(),
         },
     ))
 }

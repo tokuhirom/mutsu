@@ -1741,9 +1741,21 @@ impl Interpreter {
         name.trim_start_matches(['$', '@', '%', '&'])
     }
 
+    fn var_meta_value_key(name: &str) -> String {
+        format!("__mutsu_var_meta::{}", name)
+    }
+
     pub(crate) fn set_var_dynamic(&mut self, name: &str, dynamic: bool) {
         let key = Self::normalize_var_meta_name(name).to_string();
         self.var_dynamic_flags.insert(key, dynamic);
+    }
+
+    pub(crate) fn set_var_meta_value(&mut self, name: &str, value: Value) {
+        self.env.insert(Self::var_meta_value_key(name), value);
+    }
+
+    pub(crate) fn var_meta_value(&self, name: &str) -> Option<Value> {
+        self.env.get(&Self::var_meta_value_key(name)).cloned()
     }
 
     pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {

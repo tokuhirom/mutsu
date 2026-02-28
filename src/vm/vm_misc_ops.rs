@@ -406,6 +406,29 @@ impl VM {
         } else {
             val
         };
+        if let Value::Str(s) = &val {
+            let trimmed = s.trim();
+            if !trimmed.is_empty()
+                && trimmed.parse::<i64>().is_err()
+                && trimmed.parse::<f64>().is_err()
+            {
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::Str(format!(
+                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                        s
+                    )),
+                );
+                let ex = Value::make_instance("X::Str::Numeric".to_string(), ex_attrs);
+                let mut failure_attrs = std::collections::HashMap::new();
+                failure_attrs.insert("exception".to_string(), ex);
+                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                self.stack
+                    .push(Value::make_instance("Failure".to_string(), failure_attrs));
+                return Ok(());
+            }
+        }
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
         Ok(())

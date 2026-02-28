@@ -254,6 +254,26 @@ impl VM {
     pub(super) fn exec_infix_min_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        if matches!(&left, Value::Package(name) if name == "Any") {
+            self.stack.push(right);
+            return;
+        }
+        if matches!(&right, Value::Package(name) if name == "Any") {
+            self.stack.push(left);
+            return;
+        }
+        let left_is_failure =
+            matches!(&left, Value::Instance { class_name, .. } if class_name == "Failure");
+        let right_is_failure =
+            matches!(&right, Value::Instance { class_name, .. } if class_name == "Failure");
+        if left_is_failure {
+            self.stack.push(left);
+            return;
+        }
+        if right_is_failure {
+            self.stack.push(right);
+            return;
+        }
         let ord = cmp_values(&left, &right);
         self.stack.push(if ord.is_le() { left } else { right });
     }
@@ -261,6 +281,26 @@ impl VM {
     pub(super) fn exec_infix_max_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        if matches!(&left, Value::Package(name) if name == "Any") {
+            self.stack.push(right);
+            return;
+        }
+        if matches!(&right, Value::Package(name) if name == "Any") {
+            self.stack.push(left);
+            return;
+        }
+        let left_is_failure =
+            matches!(&left, Value::Instance { class_name, .. } if class_name == "Failure");
+        let right_is_failure =
+            matches!(&right, Value::Instance { class_name, .. } if class_name == "Failure");
+        if left_is_failure {
+            self.stack.push(left);
+            return;
+        }
+        if right_is_failure {
+            self.stack.push(right);
+            return;
+        }
         let ord = cmp_values(&left, &right);
         self.stack.push(if ord.is_ge() { left } else { right });
     }

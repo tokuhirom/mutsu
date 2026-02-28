@@ -325,6 +325,8 @@ pub(crate) enum Stmt {
         is_dynamic: bool,
         is_export: bool,
         export_tags: Vec<String>,
+        /// Custom variable `is` traits as `(trait_name, optional_arg_expr)`.
+        custom_traits: Vec<(String, Option<Expr>)>,
     },
     Assign {
         name: String,

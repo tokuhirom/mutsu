@@ -273,6 +273,7 @@ impl Interpreter {
             "abs" => self.builtin_abs(&args),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
+            "minmax" => self.builtin_minmax(&args),
             "cross" => self.builtin_cross(args),
             "roundrobin" => self.builtin_roundrobin(&args),
             // List operations
@@ -354,7 +355,30 @@ impl Interpreter {
                 // sink evaluates args and returns Nil.
                 // If the argument is a block/sub, call it first.
                 if let Some(func @ Value::Sub(_)) = args.first() {
-                    self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    let value = self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = &value
+                        && class_name == "Failure"
+                        && let Some(ex) = attributes.get("exception")
+                    {
+                        let mut err = RuntimeError::new(ex.to_string_value());
+                        err.exception = Some(Box::new(ex.clone()));
+                        return Err(err);
+                    }
+                } else if let Some(Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                }) = args.first()
+                    && class_name == "Failure"
+                    && let Some(ex) = attributes.get("exception")
+                {
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex.clone()));
+                    return Err(err);
                 }
                 Ok(Value::Nil)
             }
@@ -590,6 +614,16 @@ impl Interpreter {
             self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
+            for (k, v) in self.env.iter() {
+                if k != "_"
+                    && k != "@_"
+                    && ((restored_env.contains_key(k)
+                        && matches!(v, Value::Array(..) | Value::Hash(..)))
+                        || k.starts_with("__mutsu_var_meta::"))
+                {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+            }
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;

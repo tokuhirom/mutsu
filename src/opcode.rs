@@ -560,6 +560,13 @@ pub(crate) enum OpCode {
         name_idx: u32,
         tags_idx: Option<u32>,
     },
+    /// Apply a custom variable trait via trait_mod:<is>.
+    /// When `has_arg` is true, pops trait argument value from stack.
+    ApplyVarTrait {
+        name_idx: u32,
+        trait_name_idx: u32,
+        has_arg: bool,
+    },
 
     /// Get a variable from the caller's scope ($CALLER::varname).
     /// name_idx = constant index for the bare variable name (without CALLER:: prefix).

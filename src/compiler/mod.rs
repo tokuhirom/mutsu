@@ -146,6 +146,7 @@ impl Compiler {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
                 }
             } else {
                 Stmt::Assign {
