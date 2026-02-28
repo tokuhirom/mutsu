@@ -65,7 +65,7 @@ impl VM {
         args: &[Value],
         skip_native: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
-        if !skip_native && let Some(native_result) = Self::try_native_method(target, method, args) {
+        if !skip_native && let Some(native_result) = self.try_native_method(target, method, args) {
             return Ok(vec![native_result?]);
         }
         self.interpreter
@@ -200,7 +200,7 @@ impl VM {
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             self.stack.push(native_result?);
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
@@ -284,7 +284,7 @@ impl VM {
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             self.stack.push(native_result?);
         } else {
             let result = self.interpreter.call_function(&name, args)?;
@@ -354,7 +354,7 @@ impl VM {
             let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
-                let r = if let Some(nr) = Self::try_native_method(v, &method, &args) {
+                let r = if let Some(nr) = self.try_native_method(v, &method, &args) {
                     nr?
                 } else {
                     self.interpreter
@@ -409,7 +409,7 @@ impl VM {
         let target_for_mod = target.clone();
         let args_for_mod = args.clone();
         let call_result = if !skip_native {
-            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+            if let Some(native_result) = self.try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
@@ -488,7 +488,7 @@ impl VM {
             self.interpreter.call_sub_value(name_val, call_args, false)
         } else {
             let method = name_val.to_string_value();
-            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+            if let Some(native_result) = self.try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
@@ -561,7 +561,7 @@ impl VM {
             let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
-                let r = if let Some(nr) = Self::try_native_method(v, &method, &args) {
+                let r = if let Some(nr) = self.try_native_method(v, &method, &args) {
                     nr?
                 } else {
                     self.interpreter
@@ -604,7 +604,7 @@ impl VM {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
         let call_result = if !skip_native {
-            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+            if let Some(native_result) = self.try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
@@ -715,7 +715,7 @@ impl VM {
             let result = self.interpreter.eval_call_on_value(target, args);
             self.interpreter.set_pending_call_arg_sources(None);
             result?
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             native_result?
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
@@ -781,7 +781,7 @@ impl VM {
                 Some("?") => {
                     let val = if !skip_native {
                         if let Some(native_result) =
-                            Self::try_native_method(item, &method, &item_args)
+                            self.try_native_method(item, &method, &item_args)
                         {
                             native_result.unwrap_or(Value::Package("Any".to_string()))
                         } else {
@@ -809,7 +809,7 @@ impl VM {
                 Some("+") => {
                     let vals = if !skip_native {
                         if let Some(native_result) =
-                            Self::try_native_method(item, &method, &item_args)
+                            self.try_native_method(item, &method, &item_args)
                         {
                             vec![native_result?]
                         } else {
@@ -829,7 +829,7 @@ impl VM {
                 Some("*") => {
                     if !skip_native
                         && let Some(native_result) =
-                            Self::try_native_method(item, &method, &item_args)
+                            self.try_native_method(item, &method, &item_args)
                     {
                         match native_result {
                             Ok(v) => results.push(Value::array(vec![v])),
@@ -848,7 +848,7 @@ impl VM {
                 _ => {
                     let val = if !skip_native {
                         if let Some(native_result) =
-                            Self::try_native_method(item, &method, &item_args)
+                            self.try_native_method(item, &method, &item_args)
                         {
                             native_result?
                         } else {
@@ -973,7 +973,7 @@ impl VM {
             match modifier.as_deref() {
                 Some("?") => {
                     let val = if let Some(native_result) =
-                        Self::try_native_method(item, method, &item_args)
+                        self.try_native_method(item, method, &item_args)
                     {
                         native_result.unwrap_or(Value::Package("Any".to_string()))
                     } else {
@@ -989,7 +989,7 @@ impl VM {
                 }
                 Some("+") => {
                     let vals = if let Some(native_result) =
-                        Self::try_native_method(item, method, &item_args)
+                        self.try_native_method(item, method, &item_args)
                     {
                         vec![native_result?]
                     } else {
@@ -1001,7 +1001,7 @@ impl VM {
                     results.push(Value::array(vals));
                 }
                 Some("*") => {
-                    if let Some(native_result) = Self::try_native_method(item, method, &item_args) {
+                    if let Some(native_result) = self.try_native_method(item, method, &item_args) {
                         match native_result {
                             Ok(v) => results.push(Value::array(vec![v])),
                             Err(_) => results.push(Value::array(vec![])),
@@ -1018,7 +1018,7 @@ impl VM {
                 }
                 _ => {
                     let val = if let Some(native_result) =
-                        Self::try_native_method(item, method, &item_args)
+                        self.try_native_method(item, method, &item_args)
                     {
                         native_result?
                     } else {
@@ -1096,7 +1096,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(None);
             call_result?;
             self.sync_locals_from_env(code);
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             native_result?;
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);

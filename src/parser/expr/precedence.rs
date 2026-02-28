@@ -1731,6 +1731,12 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         return Some((meta.to_string(), op, 1 + inner_len));
     }
 
+    // Set operators in parenthesized and unicode form used by meta ops:
+    // Z(&), Z∩, X(|), X∪, etc.
+    if let Some((op, len)) = parse_meta_set_op(r) {
+        return Some((meta.to_string(), op.to_string(), 1 + len));
+    }
+
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
         "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "+&", "+|",
@@ -1749,9 +1755,6 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         if r.starts_with(op) && !is_ident_char(r.as_bytes().get(op.len()).copied()) {
             return Some((meta.to_string(), op.to_string(), 1 + op.len()));
         }
-    }
-    if let Some((op, len)) = parse_meta_set_op(r) {
-        return Some((meta.to_string(), op, 1 + len));
     }
     // Custom word operators: Xwtf, Zfoo-bar, Rcustom-op
     if let Some((name, len)) = parse_meta_word_op(r) {

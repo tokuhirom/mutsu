@@ -435,7 +435,7 @@ impl VM {
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
                 self.sync_locals_from_env(code);
                 result
-            } else if let Some(native_result) = Self::try_native_function(name, &[]) {
+            } else if let Some(native_result) = self.try_native_function(name, &[]) {
                 native_result?
             } else {
                 let result = self.interpreter.call_function(name, Vec::new())?;

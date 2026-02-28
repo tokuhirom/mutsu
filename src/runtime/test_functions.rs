@@ -550,9 +550,23 @@ impl Interpreter {
         let explicit_rel_tol =
             Self::named_value(args, "rel-tol").and_then(|v| super::to_float_value(&v));
 
+        let mut coerce_float = |value: &Value| -> Option<f64> {
+            if let Some(v) = super::to_float_value(value) {
+                return Some(v);
+            }
+            if matches!(value, Value::Instance { .. }) {
+                let coerced = self
+                    .call_method_with_values(value.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+                    .ok()?;
+                return super::to_float_value(&coerced);
+            }
+            None
+        };
+
         // Raku's DWIM is-approx: when |expected| < 1e-6, use abs-tol 1e-5;
         // otherwise use rel-tol 1e-6. Explicit named args override this.
-        let expected_f = super::to_float_value(expected);
+        let expected_f = coerce_float(expected);
 
         // Helper: check if two f64 values are approximately equal
         let approx_eq = |g: f64, e: f64| -> bool {
@@ -591,13 +605,13 @@ impl Interpreter {
                 }
             }
             (_, Value::Complex(er, ei)) => {
-                if let Some(g) = super::to_float_value(got) {
+                if let Some(g) = coerce_float(got) {
                     approx_eq(g, *er) && approx_eq(0.0, *ei)
                 } else {
                     false
                 }
             }
-            _ => match (super::to_float_value(got), expected_f) {
+            _ => match (coerce_float(got), expected_f) {
                 (Some(g), Some(e)) => approx_eq(g, e),
                 _ => false,
             },

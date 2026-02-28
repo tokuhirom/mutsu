@@ -228,9 +228,27 @@ impl Interpreter {
             let is_invocant = method_def
                 .param_defs
                 .get(idx)
-                .map(|pd| pd.traits.iter().any(|t| t == "invocant"))
+                .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                 .unwrap_or(false);
             if is_invocant {
+                if let Some(pd) = method_def.param_defs.get(idx)
+                    && let Some(constraint) = &pd.type_constraint
+                {
+                    if let Some(captured_name) = constraint.strip_prefix("::") {
+                        self.env
+                            .insert(captured_name.to_string(), Self::captured_type_object(&base));
+                    } else if !self.type_matches_value(constraint, &base) {
+                        self.method_class_stack.pop();
+                        self.env = saved_env;
+                        self.restore_readonly_vars(saved_readonly);
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                            param_name,
+                            constraint,
+                            super::value_type_name(&base)
+                        )));
+                    }
+                }
                 self.env.insert(param_name.clone(), base.clone());
                 continue;
             }
@@ -290,6 +308,11 @@ impl Interpreter {
         let mut merged_env = saved_env.clone();
         for (k, v) in self.env.iter() {
             if saved_env.contains_key(k) {
+                merged_env.insert(k.clone(), v.clone());
+            }
+            if (k.starts_with('&') && !k.starts_with("&?"))
+                || k.starts_with("__mutsu_method_value::")
+            {
                 merged_env.insert(k.clone(), v.clone());
             }
         }

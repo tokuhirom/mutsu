@@ -1223,12 +1223,14 @@ impl VM {
                 body_end,
                 label,
                 collect,
+                isolate_topic,
             } => {
                 let spec = vm_control_ops::WhileLoopSpec {
                     cond_end: *cond_end,
                     body_end: *body_end,
                     label: label.clone(),
                     collect: *collect,
+                    isolate_topic: *isolate_topic,
                 };
                 self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }

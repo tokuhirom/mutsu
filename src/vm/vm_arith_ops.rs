@@ -5,6 +5,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 Ok(result)
             } else {
@@ -19,6 +20,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 Ok(result)
             } else {
@@ -48,7 +50,8 @@ impl VM {
     pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
         self.stack.push(result);
@@ -58,8 +61,10 @@ impl VM {
     pub(super) fn exec_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_div(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            crate::builtins::arith_div(l, r)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -67,8 +72,10 @@ impl VM {
     pub(super) fn exec_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_mod(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            crate::builtins::arith_mod(l, r)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -76,7 +83,8 @@ impl VM {
     pub(super) fn exec_pow_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_pow(l, r))
         })?;
         self.stack.push(result);
@@ -85,6 +93,7 @@ impl VM {
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        let val = self.coerce_numeric_bridge_value(val)?;
         self.stack.push(crate::builtins::arith_negate(val)?);
         Ok(())
     }
