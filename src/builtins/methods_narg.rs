@@ -428,6 +428,12 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::Str(rendered)))
             }
         }
+        "sprintf" => {
+            // Method form: '%f'.sprintf(value) — target is the format string
+            let fmt = target.to_string_value();
+            let rendered = runtime::format_sprintf(&fmt, Some(arg));
+            Some(Ok(Value::Str(rendered)))
+        }
         "parse-base" => {
             let radix = match arg {
                 Value::Int(n) => *n as u32,
