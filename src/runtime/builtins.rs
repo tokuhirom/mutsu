@@ -291,8 +291,8 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
-                self.take_value(value);
-                Ok(Value::Nil)
+                self.take_value(value.clone());
+                Ok(value)
             }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
