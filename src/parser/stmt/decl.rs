@@ -1371,7 +1371,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Default value
-    let (rest, default) = if rest.starts_with('=') && !rest.starts_with("==") {
+    let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
@@ -1382,6 +1382,18 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         (rest, None)
     };
+    if sigil == b'@'
+        && let Some(expr) = default.take()
+    {
+        default = Some(match expr {
+            Expr::ArrayLiteral(_)
+            | Expr::BracketArray(_)
+            | Expr::ArrayVar(_)
+            | Expr::Var(_)
+            | Expr::Index { .. } => expr,
+            other => Expr::ArrayLiteral(vec![other]),
+        });
+    }
     let (rest, _) = ws(rest)?;
 
     let (rest, _) = opt_char(rest, ';');

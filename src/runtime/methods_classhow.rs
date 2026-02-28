@@ -298,6 +298,29 @@ impl Interpreter {
                 )))
             }
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
+            "candidates" if !args.is_empty() => {
+                let base_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::ParametricRole { base_name, .. } => base_name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    other => other
+                        .to_string_value()
+                        .trim_start_matches('(')
+                        .trim_end_matches(')')
+                        .to_string(),
+                };
+                if let Some(candidates) = self.role_candidates.get(&base_name) {
+                    let values = candidates
+                        .iter()
+                        .map(|_| Value::Package(base_name.clone()))
+                        .collect::<Vec<_>>();
+                    return Ok(Value::array(values));
+                }
+                if self.roles.contains_key(&base_name) {
+                    return Ok(Value::array(vec![Value::Package(base_name)]));
+                }
+                Ok(Value::array(Vec::new()))
+            }
             "concretization" if args.len() >= 2 => {
                 let class_name = match &args[0] {
                     Value::Package(name) => name.clone(),

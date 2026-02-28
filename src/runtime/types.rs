@@ -1158,6 +1158,18 @@ impl Interpreter {
             };
             return ok;
         }
+        if let Value::ParametricRole {
+            base_name,
+            type_args,
+        } = value
+            && (base_name == constraint
+                || self.role_is_subtype(base_name, constraint)
+                || self
+                    .role_parent_args_for(base_name, type_args, constraint)
+                    .is_some())
+        {
+            return true;
+        }
         // Role constraints should accept composed role instances/mixins.
         if self.roles.contains_key(constraint) && value.does_check(constraint) {
             return true;
@@ -1987,6 +1999,46 @@ impl Interpreter {
                         );
                         err.exception = Some(Box::new(exception));
                         return Err(err);
+                    }
+                    if let Some(where_expr) = &pd.where_constraint {
+                        let saved_param = if pd.name.is_empty() {
+                            None
+                        } else {
+                            self.env.get(&pd.name).cloned()
+                        };
+                        if !pd.name.is_empty() {
+                            self.bind_param_value(&pd.name, value.clone());
+                        }
+                        let saved_topic = self.env.get("_").cloned();
+                        self.env.insert("_".to_string(), value.clone());
+                        let ok = match where_expr.as_ref() {
+                            Expr::AnonSub { body, .. } => self
+                                .eval_block_value(body)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false),
+                            expr => self
+                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                                .map(|v| self.smart_match(&value, &v))
+                                .unwrap_or(false),
+                        };
+                        if let Some(previous) = saved_topic {
+                            self.env.insert("_".to_string(), previous);
+                        } else {
+                            self.env.remove("_");
+                        }
+                        if !pd.name.is_empty() {
+                            if let Some(previous) = saved_param {
+                                self.env.insert(pd.name.clone(), previous);
+                            } else {
+                                self.env.remove(&pd.name);
+                            }
+                        }
+                        if !ok {
+                            return Err(RuntimeError::new(format!(
+                                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                                pd.name
+                            )));
+                        }
                     }
                     if !pd.name.is_empty()
                         && pd.name != "__type_only__"

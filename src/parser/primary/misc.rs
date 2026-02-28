@@ -1292,6 +1292,7 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
             name,
             type_params: Vec::new(),
+            type_param_defs: Vec::new(),
             body,
         })),
     ))
