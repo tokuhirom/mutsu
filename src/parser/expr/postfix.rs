@@ -8,8 +8,8 @@ use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::expression;
 use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+use super::{expression, expression_no_sequence};
 
 /// Try to parse a secondary adverb after :exists/:!exists.
 /// Returns (remaining_input, adverb).
@@ -393,7 +393,12 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input) {
         let rest = &input[len..];
         let (rest, _) = ws(rest)?;
-        let (rest, arg) = prefix_expr(rest)?;
+        let assoc = crate::parser::stmt::simple::lookup_user_sub_assoc(&name);
+        let (rest, arg) = if assoc.as_deref() == Some("looser") {
+            expression_no_sequence(rest)?
+        } else {
+            prefix_expr(rest)?
+        };
         return Ok((
             rest,
             Expr::Call {
@@ -514,7 +519,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // Lower to the same unary Pipe AST used by plain `|expr`.
     if input.starts_with("|<<") || input.starts_with("|>>") {
         let (rest, _) = ws(&input[3..])?;
-        let (rest, expr) = postfix_expr(rest)?;
+        let (rest, expr) = prefix_expr(rest)?;
         return Ok((
             rest,
             Expr::Unary {
@@ -526,7 +531,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // |expr — slip/flatten prefix
     if input.starts_with('|') && !input.starts_with("||") {
         let (rest, _) = ws(&input[1..])?;
-        let (rest, expr) = postfix_expr(rest)?;
+        let (rest, expr) = prefix_expr(rest)?;
         return Ok((
             rest,
             Expr::Unary {

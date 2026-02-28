@@ -371,11 +371,11 @@ mod tests {
     #[test]
     fn parse_program_accepts_unicode_single_quoted_regex_atoms() {
         let src = r#"
-ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");
-ok("ab/cd" ~~ m/ab ‚/’ c d/, "low-high single quote");
-ok("ab/cd" ~~ m/ab ‚/‘ c d/, "low-curly single quote");
-ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
-"#;
+	ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");
+	ok("ab/cd" ~~ m/ab ‚/’ c d/, "low-high single quote");
+	ok("ab/cd" ~~ m/ab ‚/‘ c d/, "low-curly single quote");
+	ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
+	"#;
         let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 4);
     }
@@ -385,5 +385,28 @@ ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
         let src = "use Test;\nis-deeply −<42+2i>, -<42+2i>, 'prefix, Complex';";
         let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn parse_program_accepts_test_call_with_bracket_metaop_assign_argument() {
+        let src = r#"use Test; my $y = 5; is $y [R/]= 1, 1/5, "[R/]= works correctly (1)";"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_reverse_roast_block() {
+        let src = r#"
+use Test;
+{
+    my $y = 5;
+    is $y [R/]= 1, 1/5, '[R/]= works correctly (1)';
+    sub r2cf(Rat $x is copy) {
+        gather $x [R/]= 1 while ($x -= take $x.floor) > 0
+    }
+}
+"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
     }
 }

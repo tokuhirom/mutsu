@@ -365,7 +365,25 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
-    let (l, r) = runtime::coerce_numeric(left, right);
+    let (mut l, mut r) = runtime::coerce_numeric(left, right);
+    // Mixed Num/Rat modulo should use floating semantics; routing through
+    // exact-rational reduction loses expected precision behavior for cases like
+    // 1.01 % 0.2 (should be ~0.01).
+    if matches!(l, Value::Num(_))
+        && matches!(
+            r,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        )
+    {
+        r = Value::Num(runtime::to_float_value(&r).unwrap_or(f64::NAN));
+    } else if matches!(r, Value::Num(_))
+        && matches!(
+            l,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        )
+    {
+        l = Value::Num(runtime::to_float_value(&l).unwrap_or(f64::NAN));
+    }
     if let (Some((an, ad)), Some((bn, bd))) = (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
         if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {

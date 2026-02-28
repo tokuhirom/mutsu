@@ -198,12 +198,22 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
 
 /// Parse a single call argument (named or positional).
 pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
-    // Capture slip: |var — flatten a capture into the argument list
+    // Capture slip: |expr — flatten an expression into the argument list
     if input.starts_with('|') && !input.starts_with("||") {
         let after_pipe = &input[1..];
-        // Must be followed by an identifier (sigilless capture variable)
-        if let Ok((r, name)) = ident(after_pipe) {
-            return Ok((r, CallArg::Slip(Expr::BareWord(name))));
+        if let Some(&c) = after_pipe.as_bytes().first()
+            && (c == b'@'
+                || c == b'%'
+                || c == b'$'
+                || c == b'.'
+                || c == b'('
+                || c == b'['
+                || c == b'<'
+                || c.is_ascii_alphabetic()
+                || c == b'_')
+            && let Ok((r, expr)) = expression(after_pipe)
+        {
+            return Ok((r, CallArg::Slip(expr)));
         }
     }
 
@@ -470,7 +480,29 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_single_call_arg;
+    use super::*;
+
+    #[test]
+    fn parse_call_args_accepts_bracket_metaop_assign_expr() {
+        let (rest, args) = parse_stmt_call_args("$y [R/]= 1, 1/5, \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_call_args_no_paren_accepts_bracket_metaop_assign_expr() {
+        let (rest, args) = parse_stmt_call_args_no_paren("$y [R/]= 1, 1/5, \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_call_args_no_paren_accepts_bracket_metaop_assign_expr_with_bracket_desc() {
+        let input = "$y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";";
+        let (rest, args) = parse_stmt_call_args_no_paren(input).unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
 
     #[test]
     fn parse_single_call_arg_ascii_minus_angle_complex_literal() {

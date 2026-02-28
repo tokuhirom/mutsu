@@ -14,7 +14,7 @@ fn is_superscript_digit(c: char) -> bool {
     )
 }
 
-use super::super::expr::{expression, or_expr_pub};
+use super::super::expr::{expression, expression_no_sequence, or_expr_pub};
 use super::super::helpers::{is_loop_label_name, normalize_raku_identifier, ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
@@ -473,6 +473,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "dir"
             | "first"
             | "make"
+            | "take"
             | "set"
             | "bag"
             | "mix"
@@ -1412,7 +1413,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Check for listop: bareword followed by space and argument (but not statement modifier)
     // e.g., shift @a, push @a, 42, etc.
-    // Skip when followed by '.' — `func.method` is `(func()).method`, not `func(.method)`.
+    // Skip when directly followed by '.' — `func.method` is `(func()).method`,
+    // but `func .method` is a listop call with topic-method-call argument.
     if is_listop(&name)
         && !r.is_empty()
         && !r.starts_with(';')
@@ -1420,7 +1422,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
-        && !r.starts_with('.')
+        && !rest.starts_with('.')
     {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
@@ -1477,13 +1479,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
-        && !r.starts_with('.')
+        && !rest.starts_with('.')
         && !is_stmt_modifier_ahead(r)
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
+        let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);
+        let call_name = if is_user_prefix_sub {
+            format!("prefix:<{}>", name)
+        } else {
+            name.clone()
+        };
         let next = r.chars().next().unwrap();
         let hyphen_forward_call = !is_user_sub && name.contains('-');
-        if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
+        if is_user_prefix_sub {
+            if let Ok((r2, arg)) = expression_no_sequence(r) {
+                return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
+            }
+        } else if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone()) {
             return Ok((r2, expr));
         }
         if hyphen_forward_call && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
@@ -1514,8 +1526,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r2, method_call));
             }
             // For user subs, collect comma-separated args
+            if is_user_prefix_sub {
+                let (r2, arg) = expression_no_sequence(r)?;
+                return Ok((r2, make_call_expr(call_name, input, vec![arg])));
+            }
             if is_user_sub {
-                return parse_expr_listop_args(r, name);
+                return parse_expr_listop_args(r, call_name);
             }
             let mut args = vec![arg];
             let mut rest_after = r2;
@@ -1537,7 +1553,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 args.push(next_arg);
                 rest_after = r3;
             }
-            return Ok((rest_after, make_call_expr(name, input, args)));
+            return Ok((rest_after, make_call_expr(call_name, input, args)));
         }
     }
 

@@ -666,6 +666,7 @@ pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
 mod tests {
     use super::*;
     use crate::ast::{CallArg, Expr};
+    use crate::token_kind::TokenKind;
     use crate::value::Value;
 
     #[test]
@@ -800,6 +801,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_for_loop_with_parenthesized_pointy_params() {
+        let (rest, stmts) = program("for @a, @b -> ($x, $y) { say $x; say $y; }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::For {
+                param: Some(name),
+                param_def,
+                ..
+            } if name == "__for_unpack"
+                && matches!(
+                    param_def.as_ref(),
+                    Some(def) if def.sub_signature.as_ref().is_some_and(|sig| sig.len() == 2)
+                )
+        ));
+    }
+
+    #[test]
     fn parse_compound_assign_on_method_lhs() {
         let (rest, stmts) = program("for @a -> { .key //= ++$i }").unwrap();
         assert_eq!(rest, "");
@@ -811,6 +831,38 @@ mod tests {
         let (rest, stmts) = program(".key = 1 for @a;").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_statement_modifier_for_with_trailing_comma() {
+        let (rest, stmts) = program("my @x = gather { take $_ for 1, 2, }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_user_prefix_sub_with_looser_trait_as_full_rhs_expression() {
+        let src = "sub prefix:<pIO> ($p) is looser(&[~]) { $p.IO }\nmy $pre = 'foo';\nsay pIO  $pre ~ '_BAR';";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 3);
+        match &stmts[2] {
+            Stmt::Say(args) => {
+                assert_eq!(args.len(), 1);
+                assert!(matches!(
+                    &args[0],
+                    Expr::Call { name, args }
+                        if name == "prefix:<pIO>"
+                            && args.len() == 1
+                            && matches!(
+                                &args[0],
+                                Expr::Binary { op, .. } if matches!(op, TokenKind::Tilde)
+                            )
+                ));
+            }
+            _ => panic!("expected say statement"),
+        }
     }
 
     #[test]
@@ -970,6 +1022,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_my_class_expr_in_parens() {
+        let (rest, stmts) =
+            program("(my class :: does Real { method Num { 42e0 } }.new.Bridge);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Expr(_)));
+    }
+
+    #[test]
     fn parse_gather_for_expression() {
         let (rest, stmts) = program("my $x = (gather for ^5 { take 1 });").unwrap();
         assert_eq!(rest, "");
@@ -1005,6 +1066,15 @@ mod tests {
     #[test]
     fn parse_block_valued_colonpair() {
         let (rest, stmts) = program("my $x = :out{ .contains('ok') };").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_block_valued_colonpair_with_topic_amp_call_colon_args() {
+        let (rest, stmts) =
+            program("my $x = :out{ .&output-has: :0noks, :0fails, :0todos };").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
@@ -1386,6 +1456,99 @@ mod tests {
         let (rest, stmt) = assign::assign_stmt("$a Z+= 2;").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(stmt, Stmt::Assign { .. }));
+    }
+
+    #[test]
+    fn assign_expr_parses_reverse_bracket_metaop_assign() {
+        let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "y");
+                match *expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "R");
+                        assert_eq!(op, "/");
+                        assert!(matches!(*left, Expr::Var(ref n) if n == "y"));
+                        assert!(matches!(*right, Expr::Literal(Value::Int(1))));
+                    }
+                    other => panic!("expected meta-op assignment expr, got {other:?}"),
+                }
+            }
+            other => panic!("expected AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_expr_bracket_metaop_leaves_following_call_args() {
+        let (rest, _) = assign::try_parse_assign_expr("$y [R/]= 1, 1/5, 'desc'").unwrap();
+        assert_eq!(rest, ", 1/5, 'desc'");
+    }
+
+    #[test]
+    fn assign_stmt_parses_nested_bracket_metaop_assign() {
+        let (rest, stmt) = assign::assign_stmt("$x [R[+]]= 1;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { expr, .. } => match expr {
+                Expr::MetaOp { meta, op, .. } => {
+                    assert_eq!(meta, "R");
+                    assert_eq!(op, "+");
+                }
+                other => panic!("expected meta-op assignment stmt, got {other:?}"),
+            },
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn known_call_stmt_accepts_bracket_metaop_assign_argument() {
+        simple::register_module_exports("Test");
+        let parsed = simple::known_call_stmt("is $y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";");
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn statement_accepts_known_call_with_bracket_metaop_assign_argument() {
+        simple::register_module_exports("Test");
+        let parsed = statement("is $y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";");
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn expr_stmt_parses_reverse_assignment_into_var_decl() {
+        let (rest, stmt) = simple::expr_stmt("1 R= my $x").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::VarDecl { name, expr, .. } => {
+                assert_eq!(name, "x");
+                assert!(matches!(expr, Expr::Literal(Value::Int(1))));
+            }
+            other => panic!("expected VarDecl, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn expr_stmt_rejects_reverse_bind_assignment() {
+        let err = simple::expr_stmt("5 R:= $x").unwrap_err();
+        assert!(err.message().contains("Cannot reverse the args of :="));
+    }
+
+    #[test]
+    fn expr_stmt_non_lvalue_assignment_is_not_silently_ignored() {
+        let (rest, stmt) = simple::expr_stmt("(\"a\" R~ \"b\") = 1").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Expr(Expr::Call { name, .. }) => {
+                assert_eq!(name, "__mutsu_assign_callable_lvalue");
+            }
+            other => panic!("expected assignment call expression, got {other:?}"),
+        }
     }
 
     #[test]

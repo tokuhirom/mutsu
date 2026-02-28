@@ -621,6 +621,8 @@ impl Interpreter {
         supersede: bool,
         custom_traits: &[String],
     ) -> Result<(), RuntimeError> {
+        let is_method_value_decl = custom_traits.iter().any(|t| t == "__mutsu_method_decl");
+        let allow_redeclare = supersede || is_method_value_decl;
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
@@ -699,10 +701,14 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
+        let allow_lexical_shadow = self.block_scope_depth > 0;
         let code_var_key = format!("&{}", name);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration
-            if !matches!(existing, Value::Mixin(..)) {
+            if !matches!(existing, Value::Mixin(..))
+                && !allow_lexical_shadow
+                && !is_method_value_decl
+            {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as code variable",
                     name
@@ -743,13 +749,16 @@ impl Interpreter {
             .get(&single_key)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
-            if has_single && !has_proto && !supersede {
+            if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as non-multi",
                     name
                 )));
             }
-        } else if !supersede && ((has_multi && !has_proto) || (has_single && !existing_is_stub)) {
+        } else if !allow_redeclare
+            && !allow_lexical_shadow
+            && ((has_multi && !has_proto) || (has_single && !existing_is_stub))
+        {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
@@ -835,6 +844,20 @@ impl Interpreter {
             callable_key,
             Value::Int(crate::value::next_instance_id() as i64),
         );
+        if is_method_value_decl {
+            let sub_val = Value::make_sub(
+                self.current_package.clone(),
+                name.to_string(),
+                params.to_vec(),
+                param_defs.to_vec(),
+                body.to_vec(),
+                is_rw,
+                self.env.clone(),
+            );
+            self.env.insert(format!("&{}", name), sub_val);
+            self.env
+                .insert(format!("__mutsu_method_value::{}", name), Value::Bool(true));
+        }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if trait_mod:<is> is defined)
         if !custom_traits.is_empty()
             && (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
@@ -1545,6 +1568,7 @@ impl Interpreter {
             return Ok(());
         }
         let saved_package = self.current_package.clone();
+        let saved_env = self.env.clone();
         self.current_package = name.to_string();
         for stmt in body {
             match stmt {
@@ -1714,6 +1738,18 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
+                        if !class_def.parents.iter().any(|p| p == role_name) {
+                            class_def.parents.insert(0, role_name.clone());
+                            class_def.mro.clear();
+                        }
+                        continue;
+                    }
                     let role =
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
@@ -1760,6 +1796,12 @@ impl Interpreter {
                     // Also execute the statement so the code variable is set
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    for outer_name in saved_env.keys() {
+                        let class_scoped_name = format!("{}::{}", name, outer_name);
+                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                            self.env.insert(outer_name.clone(), updated);
+                        }
+                    }
                     if let Some(updated) = self.classes.get(name).cloned() {
                         class_def = updated;
                     }
@@ -1767,6 +1809,12 @@ impl Interpreter {
                 _ => {
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    for outer_name in saved_env.keys() {
+                        let class_scoped_name = format!("{}::{}", name, outer_name);
+                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                            self.env.insert(outer_name.clone(), updated);
+                        }
+                    }
                     if let Some(updated) = self.classes.get(name).cloned() {
                         class_def = updated;
                     }
@@ -1860,6 +1908,18 @@ impl Interpreter {
                         continue;
                     }
                     if self.classes.contains_key(role_name) {
+                        self.role_parents
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(role_name.clone());
+                        continue;
+                    }
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
                         self.role_parents
                             .entry(name.to_string())
                             .or_default()

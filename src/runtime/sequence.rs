@@ -22,6 +22,16 @@ impl Interpreter {
         err
     }
 
+    fn sequence_empty_endpoint_error() -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("action".to_string(), Value::Str("endpoint".to_string()));
+        attrs.insert("what".to_string(), Value::Str("list".to_string()));
+        let ex = Value::make_instance("X::Cannot::Empty".to_string(), attrs);
+        let mut err = RuntimeError::new("X::Cannot::Empty");
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     fn collect_sequence_args_fixed(
         result: &[Value],
         arity: usize,
@@ -187,7 +197,7 @@ impl Interpreter {
 
         let seeds_raw = Self::value_to_list(&left);
         if seeds_raw.is_empty() {
-            return Err(RuntimeError::new("X::Cannot::Empty"));
+            return Err(Self::sequence_empty_endpoint_error());
         }
 
         // Separate seed values from generator closure
@@ -228,9 +238,7 @@ impl Interpreter {
             }
             Value::Array(items, ..) => {
                 if items.is_empty() {
-                    return Err(RuntimeError::new(
-                        "Cannot use an empty list as endpoint of a sequence".to_string(),
-                    ));
+                    return Err(Self::sequence_empty_endpoint_error());
                 }
                 let first = &items[0];
                 let rest: Vec<Value> = items[1..].to_vec();
@@ -262,9 +270,7 @@ impl Interpreter {
             | Value::GenericRange { .. } => {
                 let items = super::utils::value_to_list(&right);
                 if items.is_empty() {
-                    return Err(RuntimeError::new(
-                        "Cannot use an empty list as endpoint of a sequence".to_string(),
-                    ));
+                    return Err(Self::sequence_empty_endpoint_error());
                 }
                 let first = items[0].clone();
                 let rest: Vec<Value> = items[1..].to_vec();

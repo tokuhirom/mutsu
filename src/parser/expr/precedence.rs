@@ -1235,6 +1235,21 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             r,
         ));
     }
+    // Detect R. metaop misuse.
+    if r.starts_with("R.") && !r.starts_with("R..") {
+        let after = &r[2..];
+        let after_trimmed = after.trim_start();
+        if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+            return Err(PError::expected_at(
+                "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                r,
+            ));
+        }
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot reverse the args of . because it is too fiddly",
+            r,
+        ));
+    }
     if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
@@ -1738,11 +1753,13 @@ fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
     const META_SET_OPS: &[(&str, &str)] = &[
         ("(|)", "(|)"),
         ("(&)", "(&)"),
+        ("(-)", "(-)"),
         ("(^)", "(^)"),
         ("(elem)", "(elem)"),
         ("(cont)", "(cont)"),
         ("∪", "∪"),
         ("∩", "∩"),
+        ("∖", "(-)"),
         ("⊖", "⊖"),
         ("∈", "∈"),
         ("∋", "∋"),
@@ -1783,10 +1800,17 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         return Some((meta.to_string(), op, 1 + inner_len));
     }
 
+    // Set operators in parenthesized and unicode form used by meta ops:
+    // Z(&), Z∩, X(|), X∪, etc.
+    if let Some((op, len)) = parse_meta_set_op(r) {
+        return Some((meta.to_string(), op.to_string(), 1 + len));
+    }
+
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
-        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "+&", "+|",
-        "+^", "+<", "+>", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">",
+        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "&&", "||",
+        "+&", "+|", "+^", "+<", "+>", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">",
+        ",",
     ];
     for op in ops {
         if r.starts_with(op) {
@@ -1916,6 +1940,8 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetIntersect, '∩'.len_utf8()))
     } else if input.starts_with("(-)") {
         Some((TokenKind::SetDiff, 3))
+    } else if input.starts_with('∖') {
+        Some((TokenKind::SetDiff, '∖'.len_utf8()))
     } else if input.starts_with("(^)") {
         Some((TokenKind::SetSymDiff, 3))
     } else if input.starts_with('⊖') {

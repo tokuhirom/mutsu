@@ -81,6 +81,7 @@ roast/S03-buf/read-num.t
 roast/S03-buf/read-write-bits.t
 roast/S03-feeds/basic.t
 roast/S03-metaops/not.t
+roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/autovivification.t
@@ -104,6 +105,7 @@ roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/reduce-le1arg.t
+roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/set_union.t
@@ -114,6 +116,7 @@ roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
 roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
+roast/S03-sequence/basic.t
 roast/S03-sequence/exhaustive.t
 roast/S03-sequence/misc.t
 roast/S03-sequence/nonnumeric.t
@@ -289,6 +292,7 @@ roast/S12-methods/chaining.t
 roast/S12-methods/fallback.t
 roast/S12-methods/how.t
 roast/S12-methods/indirect_notation.t
+roast/S12-methods/instance.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
 roast/S12-methods/parallel-dispatch.t
@@ -428,6 +432,7 @@ roast/S19-command-line/repl.t
 roast/S22-package-format/local.t
 roast/S24-testing/0-compile.t
 roast/S24-testing/11-plan-skip-all.t
+roast/S24-testing/12-subtest-todo.t
 roast/S24-testing/13-cmp-ok.t
 roast/S24-testing/14-like-unlike.t
 roast/S24-testing/2-force_todo.t
@@ -479,10 +484,12 @@ roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
+roast/S32-io/io-path-extension.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/batch.t
+roast/S32-list/combinations.t
 roast/S32-list/cross.t
 roast/S32-list/first-end-k.t
 roast/S32-list/first-end-kv.t
@@ -497,6 +504,7 @@ roast/S32-list/flat.t
 roast/S32-list/grep.t
 roast/S32-list/map_function_return_values.t
 roast/S32-list/produce.t
+roast/S32-list/roll.t
 roast/S32-list/rotor.t
 roast/S32-list/squish.t
 roast/S32-list/unique.t
@@ -510,6 +518,8 @@ roast/S32-num/negative-zero.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
 roast/S32-num/power.t
+roast/S32-num/real-bridge.t
+roast/S32-num/rshift_pos_amount.t
 roast/S32-num/sqrt.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t

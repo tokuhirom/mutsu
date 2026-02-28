@@ -477,9 +477,7 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
-    if let Some(assoc) = traits.associativity.as_ref()
-        && name.starts_with("infix:<")
-    {
+    if let Some(assoc) = traits.associativity.as_ref() {
         super::simple::register_user_infix_assoc(&name, assoc);
     }
     if traits.is_test_assertion {
@@ -747,6 +745,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
                 is_rw = true;
+            } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
+                associativity = Some(trait_name.to_string());
             } else if trait_name != "assoc"
                 && trait_name != "equiv"
                 && trait_name != "tighter"

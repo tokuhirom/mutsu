@@ -346,6 +346,7 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
         collect: bool,
+        isolate_topic: bool,
     },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.

@@ -435,7 +435,7 @@ impl VM {
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
                 self.sync_locals_from_env(code);
                 result
-            } else if let Some(native_result) = Self::try_native_function(name, &[]) {
+            } else if let Some(native_result) = self.try_native_function(name, &[]) {
                 native_result?
             } else {
                 let result = self.interpreter.call_function(name, Vec::new())?;
@@ -555,7 +555,7 @@ impl VM {
                     }
                 }
             }
-            (Value::Array(items, ..), Value::Range(a, b)) => {
+            (Value::Array(items, is_arr), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
                 let slice = if start >= items.len() {
@@ -564,9 +564,13 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::array(slice)
+                if is_arr {
+                    Value::array(slice)
+                } else {
+                    Value::Seq(Arc::new(slice))
+                }
             }
-            (Value::Array(items, ..), Value::RangeExcl(a, b)) => {
+            (Value::Array(items, is_arr), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
                 let slice = if start >= items.len() {
@@ -579,7 +583,11 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::array(slice)
+                if is_arr {
+                    Value::array(slice)
+                } else {
+                    Value::Seq(Arc::new(slice))
+                }
             }
             (Value::Seq(items), Value::Int(i)) => {
                 if i < 0 {
@@ -597,7 +605,7 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::array(slice)
+                Value::Seq(Arc::new(slice))
             }
             (Value::Seq(items), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
@@ -612,7 +620,7 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::array(slice)
+                Value::Seq(Arc::new(slice))
             }
             (Value::Hash(items), Value::Whatever) => {
                 Value::array(items.values().cloned().collect())

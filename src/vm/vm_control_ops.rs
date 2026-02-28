@@ -15,6 +15,7 @@ pub(super) struct WhileLoopSpec {
     pub(super) body_end: u32,
     pub(super) label: Option<String>,
     pub(super) collect: bool,
+    pub(super) isolate_topic: bool,
 }
 
 pub(super) struct CStyleLoopSpec {
@@ -88,9 +89,21 @@ impl VM {
             if !cond_val.truthy() {
                 break;
             }
+            let topic_before_body = if spec.isolate_topic {
+                Some(self.interpreter.env().get("_").cloned())
+            } else {
+                None
+            };
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
@@ -101,9 +114,23 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         continue 'body_redo;
                     }
                     Err(e)
@@ -125,6 +152,13 @@ impl VM {
                         break 'while_loop;
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         break 'body_redo;
                     }
                     Err(e) => return Err(e),

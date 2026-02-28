@@ -679,6 +679,38 @@ impl VM {
         }
     }
 
+    pub(super) fn coerce_numeric_bridge_value(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if !matches!(value, Value::Instance { .. }) {
+            return Ok(value);
+        }
+        if !(self.interpreter.type_matches_value("Real", &value)
+            || self.interpreter.type_matches_value("Numeric", &value))
+        {
+            return Ok(value);
+        }
+        self.interpreter
+            .call_method_with_values(value.clone(), "Numeric", vec![])
+            .or_else(|_| {
+                self.interpreter
+                    .call_method_with_values(value.clone(), "Bridge", vec![])
+            })
+            .or(Ok(value))
+    }
+
+    pub(super) fn coerce_numeric_bridge_pair(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        Ok((
+            self.coerce_numeric_bridge_value(left)?,
+            self.coerce_numeric_bridge_value(right)?,
+        ))
+    }
+
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
@@ -704,6 +736,7 @@ impl VM {
     }
 
     pub(super) fn try_native_method(
+        &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
@@ -732,11 +765,21 @@ impl VM {
             );
         let bypass_gist_fastpath =
             method == "gist" && args.is_empty() && collection_contains_instance(target);
+        let bypass_pickroll_type_fastpath = matches!(method, "pick" | "roll")
+            && args.len() <= 1
+            && matches!(target, Value::Package(_) | Value::Str(_));
         let bypass_squish_fastpath = method == "squish";
+        let bypass_numeric_bridge_instance_fastpath = matches!(target, Value::Instance { .. })
+            && (self.interpreter.type_matches_value("Real", target)
+                || self.interpreter.type_matches_value("Numeric", target)
+                || matches!(target, Value::Instance { class_name, .. }
+                    if self.interpreter.has_user_method(class_name, "Bridge")));
         if bypass_supply_extrema_fastpath
             || bypass_supplier_supply_fastpath
             || bypass_gist_fastpath
+            || bypass_pickroll_type_fastpath
             || bypass_squish_fastpath
+            || bypass_numeric_bridge_instance_fastpath
         {
             return None;
         }
@@ -753,9 +796,13 @@ impl VM {
     }
 
     pub(super) fn try_native_function(
+        &mut self,
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
+            return None;
+        }
         crate::builtins::native_function(name, args)
     }
 

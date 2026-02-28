@@ -192,6 +192,72 @@ pub(crate) fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, Stri
     None
 }
 
+fn find_matching_bracket(input: &str) -> Option<usize> {
+    if !input.starts_with('[') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (i, ch) in input.char_indices() {
+        if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+fn flatten_bracket_op(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    let first = s.as_bytes()[0];
+    if first == b'['
+        && let Some(end) = find_matching_bracket(s)
+    {
+        let inner = &s[1..end];
+        return flatten_bracket_op(inner);
+    }
+    if (first == b'R' || first == b'X' || first == b'Z')
+        && s.len() > 1
+        && s.as_bytes()[1] == b'['
+        && let Some(end) = find_matching_bracket(&s[1..])
+    {
+        let inner = &s[2..1 + end];
+        let flattened_inner = flatten_bracket_op(inner);
+        let rest = &s[1 + end + 1..];
+        return format!("{}{}{}", first as char, flattened_inner, rest);
+    }
+    s.to_string()
+}
+
+fn parse_bracket_meta_assign_op(input: &str) -> Option<(&str, String, String)> {
+    if !input.starts_with('[') {
+        return None;
+    }
+    let end = find_matching_bracket(input)?;
+    let inner = &input[1..end];
+    let after_bracket = &input[end + 1..];
+    if !after_bracket.starts_with('=') || after_bracket.starts_with("==") {
+        return None;
+    }
+    let flattened = flatten_bracket_op(inner);
+    let (meta, op) = if let Some(op) = flattened.strip_prefix('R') {
+        ("R", op)
+    } else if let Some(op) = flattened.strip_prefix('X') {
+        ("X", op)
+    } else if let Some(op) = flattened.strip_prefix('Z') {
+        ("Z", op)
+    } else {
+        return None;
+    };
+    let rest = &after_bracket[1..];
+    Some((rest, meta.to_string(), op.to_string()))
+}
+
 pub(super) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     // Try to parse a chained assignment: $var op= ...
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
@@ -431,6 +497,36 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, build_custom_compound_assign_expr(lhs, op_name, rhs)?));
     }
+    if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        let expr = match lhs {
+            Expr::Var(name) => Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            },
+            Expr::ArrayVar(name) => Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(rhs),
+            },
+            Expr::HashVar(name) => Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(rhs),
+            },
+            Expr::Index { target, index } => Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(rhs),
+            },
+            _ => return Err(PError::expected("assignment expression")),
+        };
+        return Ok((rest, expr));
+    }
     if (!rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>"))
         && !rest.starts_with("⚛=")
     {
@@ -542,6 +638,11 @@ fn looks_like_parenthesized_assignment(input: &str) -> bool {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     break;
+                }
+            }
+            ':' if depth == 1 => {
+                if input[idx + ch.len_utf8()..].starts_with('=') {
+                    return true;
                 }
             }
             '=' if depth == 1 => {
@@ -700,6 +801,31 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             },
         ));
     }
+    if let Some((stripped, meta, op)) = parse_bracket_meta_assign_op(r2) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        let var_expr = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(name.clone()),
+        };
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(Expr::MetaOp {
+                    meta,
+                    op,
+                    left: Box::new(var_expr),
+                    right: Box::new(rhs),
+                }),
+            },
+        ));
+    }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
@@ -717,6 +843,21 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     right: vec![rhs],
                     modifier: None,
                 }),
+            },
+        ));
+    }
+    if let Some(stripped) = r2.strip_prefix("::=").or_else(|| r2.strip_prefix(":=")) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
             },
         ));
     }
@@ -967,38 +1108,21 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
-    if let Some(rest_after_bracket) = rest.strip_prefix('[')
-        && let Some(bracket_end) = rest_after_bracket.find(']')
-    {
-        let meta_op_str = &rest_after_bracket[..bracket_end];
-        let after_bracket = &rest_after_bracket[bracket_end + 1..];
-        if after_bracket.starts_with('=') && !after_bracket.starts_with("==") {
-            let after_eq = &after_bracket[1..];
-            let (after_eq, _) = ws(after_eq)?;
-            let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
-            // Determine meta and op
-            let (meta, op) = if let Some(op_str) = meta_op_str.strip_prefix('R') {
-                ("R", op_str)
-            } else if let Some(op_str) = meta_op_str.strip_prefix('X') {
-                ("X", op_str)
-            } else if let Some(op_str) = meta_op_str.strip_prefix('Z') {
-                ("Z", op_str)
-            } else {
-                return Err(PError::expected("meta operator (R/X/Z) in [op]="));
-            };
-            let expr = Expr::MetaOp {
-                meta: meta.to_string(),
-                op: op.to_string(),
-                left: Box::new(var_expr),
-                right: Box::new(rhs),
-            };
-            let stmt = Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-            };
-            return parse_statement_modifier(rest, stmt);
-        }
+    if let Some((after_eq, meta, op)) = parse_bracket_meta_assign_op(rest) {
+        let (after_eq, _) = ws(after_eq)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
+        let expr = Expr::MetaOp {
+            meta,
+            op,
+            left: Box::new(var_expr),
+            right: Box::new(rhs),
+        };
+        let stmt = Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+        };
+        return parse_statement_modifier(rest, stmt);
     }
 
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {

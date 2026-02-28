@@ -164,6 +164,9 @@ fn should_wrap_whatevercode(expr: &Expr) -> bool {
     if !contains_whatever(expr) || is_whatever(expr) {
         return false;
     }
+    if contains_xx_with_bare_whatever(expr) {
+        return false;
+    }
     match expr {
         Expr::Binary {
             op: TokenKind::SmartMatch | TokenKind::BangTilde,
@@ -173,7 +176,45 @@ fn should_wrap_whatevercode(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             ..
         } if name == "o" => false,
+        Expr::Binary {
+            op: TokenKind::Ident(name),
+            right,
+            ..
+        } if (name == "x" || name == "xx") && matches!(&**right, Expr::Whatever) => false,
         _ => true,
+    }
+}
+
+fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
+    match expr {
+        Expr::Binary {
+            left,
+            op: TokenKind::Ident(name),
+            right,
+            ..
+        } => {
+            (name == "xx" && matches!(&**right, Expr::Whatever))
+                || contains_xx_with_bare_whatever(left)
+                || contains_xx_with_bare_whatever(right)
+        }
+        Expr::Unary { expr, .. } => contains_xx_with_bare_whatever(expr),
+        Expr::MethodCall { target, args, .. } => {
+            contains_xx_with_bare_whatever(target)
+                || args.iter().any(contains_xx_with_bare_whatever)
+        }
+        Expr::Index { target, index } => {
+            contains_xx_with_bare_whatever(target) || contains_xx_with_bare_whatever(index)
+        }
+        Expr::Call { args, .. } => args.iter().any(contains_xx_with_bare_whatever),
+        Expr::CallOn { target, args } => {
+            contains_xx_with_bare_whatever(target)
+                || args.iter().any(contains_xx_with_bare_whatever)
+        }
+        Expr::ArrayLiteral(items) | Expr::BracketArray(items) => {
+            items.iter().any(contains_xx_with_bare_whatever)
+        }
+        Expr::CaptureLiteral(items) => items.iter().any(contains_xx_with_bare_whatever),
+        _ => false,
     }
 }
 
@@ -357,6 +398,30 @@ fn count_whatever(expr: &Expr) -> usize {
     match expr {
         e if is_whatever(e) => 1,
         Expr::Binary {
+            left,
+            op: TokenKind::AndAnd,
+            right,
+        } => {
+            if let (
+                Expr::Binary {
+                    left: ll,
+                    right: lr,
+                    ..
+                },
+                Expr::Binary {
+                    left: rl,
+                    right: rr,
+                    ..
+                },
+            ) = (left.as_ref(), right.as_ref())
+                && is_whatever(lr)
+                && is_whatever(rl)
+            {
+                return count_whatever(ll) + 1 + count_whatever(rr);
+            }
+            count_whatever(left) + count_whatever(right)
+        }
+        Expr::Binary {
             op:
                 TokenKind::DotDot
                 | TokenKind::DotDotCaret
@@ -386,6 +451,48 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             let var_name = format!("__wc_{}", counter);
             *counter += 1;
             Expr::Var(var_name)
+        }
+        Expr::Binary {
+            left,
+            op: TokenKind::AndAnd,
+            right,
+        } => {
+            if let (
+                Expr::Binary {
+                    left: ll,
+                    op: lop,
+                    right: lr,
+                },
+                Expr::Binary {
+                    left: rl,
+                    op: rop,
+                    right: rr,
+                },
+            ) = (left.as_ref(), right.as_ref())
+                && is_whatever(lr)
+                && is_whatever(rl)
+            {
+                let shared = format!("__wc_{}", counter);
+                *counter += 1;
+                return Expr::Binary {
+                    left: Box::new(Expr::Binary {
+                        left: Box::new(replace_whatever_numbered(ll, counter)),
+                        op: lop.clone(),
+                        right: Box::new(Expr::Var(shared.clone())),
+                    }),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Var(shared)),
+                        op: rop.clone(),
+                        right: Box::new(replace_whatever_numbered(rr, counter)),
+                    }),
+                };
+            }
+            Expr::Binary {
+                left: Box::new(replace_whatever_numbered(left, counter)),
+                op: TokenKind::AndAnd,
+                right: Box::new(replace_whatever_numbered(right, counter)),
+            }
         }
         // Unwrap a nested WhateverCode lambda: reuse its body with renumbered params
         Expr::Lambda { param, body } if param == "_" => {
@@ -868,6 +975,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_upto_with_infinity_literal() {
+        let (rest, expr) = expression("^∞").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Binary { left, op, right } => {
+                assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+                assert!(matches!(op, TokenKind::DotDotCaret));
+                assert!(matches!(
+                    *right,
+                    Expr::Literal(Value::Int(_))
+                        | Expr::Literal(Value::BigInt(_))
+                        | Expr::Literal(Value::Num(_))
+                ));
+            }
+            _ => panic!("expected upto range expression"),
+        }
+    }
+
+    #[test]
+    fn parse_topical_dot_angle_expression() {
+        let (rest, expr) = expression(".<a>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
     fn expression_memo_reuses_result() {
         reset_expression_memo();
         let (rest, expr) = expression("1 + 2").unwrap();
@@ -1143,6 +1276,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_upto_operator() {
+        let (rest, expr) = expression("|^2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_parenthesized_slip_prefix_with_method_chain() {
+        let (rest, expr) = expression("(|^2).Seq").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MethodCall { name, .. } if name == "Seq"
+        ));
+    }
+
+    #[test]
+    fn parse_take_listop_with_xx_expression_argument() {
+        let (rest, expr) = expression("take (@b.shift xx 2) xx 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Call { name, .. } if name == "take"));
+    }
+
+    #[test]
     fn parse_slip_prefix_with_quote_word_list() {
         let (rest, expr) = expression("|<a b>").unwrap();
         assert_eq!(rest, "");
@@ -1264,6 +1427,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_zip_meta_with_parenthesized_set_intersection() {
+        let (rest, expr) = expression("1..3 Z(&) 2..4").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "Z");
+                assert_eq!(op, "(&)");
+            }
+            _ => panic!("expected zip meta op"),
+        }
+    }
+
+    #[test]
+    fn parse_zip_meta_with_unicode_set_intersection() {
+        let (rest, expr) = expression("1..3 Z∩ 2..4").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "Z");
+                assert_eq!(op, "∩");
+            }
+            _ => panic!("expected zip meta op"),
+        }
+    }
+
+    #[test]
     fn parse_unicode_set_union_infix() {
         let (rest, expr) = expression("1 ∪ 2").unwrap();
         assert_eq!(rest, "");
@@ -1308,6 +1497,43 @@ mod tests {
             expr,
             Expr::MetaOp { ref meta, ref op, .. } if meta == "Z" && op == "∪"
         ));
+    }
+
+    #[test]
+    fn parse_cross_metaop_with_bitshift_right() {
+        let (rest, expr) = expression("1 X+> 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "X" && op == "+>"
+        ));
+    }
+
+    #[test]
+    fn parse_reverse_metaop_on_comma_list_operator() {
+        let (rest, expr) = expression("1 R, 2 R, 3 R, 4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MetaOp { .. }));
+    }
+
+    #[test]
+    fn parse_reverse_metaop_andand() {
+        let (rest, expr) = expression("$x R&& 0").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MetaOp { .. }));
+    }
+
+    #[test]
+    fn parse_reverse_metaop_oror() {
+        let (rest, expr) = expression("$x R|| 1").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MetaOp { .. }));
+    }
+
+    #[test]
+    fn parse_reverse_dot_concat_reports_obsolete() {
+        let err = expression("3 R. \"foo\"").unwrap_err();
+        assert!(err.message().contains("X::Obsolete"));
     }
 
     #[test]
@@ -1451,6 +1677,72 @@ mod tests {
                 ));
             }
             _ => panic!("expected is-deeply call"),
+        }
+    }
+
+    #[test]
+    fn parse_expr_listop_with_topic_method_first_arg() {
+        let (rest, expr) = expression("is-deeply .bool-only, True, 'ok'").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "is-deeply");
+                assert!(args.len() >= 3);
+                assert!(matches!(args[0], Expr::MethodCall { .. }));
+            }
+            _ => panic!("expected is-deeply call"),
+        }
+    }
+
+    #[test]
+    fn parse_x_with_bare_whatever_rhs_without_whatevercode_wrap() {
+        let (rest, expr) = expression("'a' x *").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::Ident(ref name),
+                ..
+            } if name == "x"
+        ));
+    }
+
+    #[test]
+    fn parse_xx_with_bare_whatever_rhs_without_whatevercode_wrap() {
+        let (rest, expr) = expression("42 xx *").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::Ident(ref name),
+                ..
+            } if name == "xx"
+        ));
+    }
+
+    #[test]
+    fn parse_xx_with_bare_whatever_and_postfix_index_without_wrap() {
+        let (rest, expr) = expression("((2,4,6) xx *)[^2]").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
+    fn parse_ternary_with_expr_listop_branches() {
+        let (rest, expr) =
+            expression(".can('bool-only') ?? is-deeply .bool-only, True, 'ok' !! skip 'x'")
+                .unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                assert!(matches!(*then_expr, Expr::Call { .. }));
+                assert!(matches!(*else_expr, Expr::Call { .. }));
+            }
+            _ => panic!("expected ternary expression"),
         }
     }
 

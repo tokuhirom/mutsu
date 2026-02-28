@@ -49,7 +49,14 @@ mod handle;
 mod io;
 mod metamodel;
 mod methods;
+mod methods_classhow;
+mod methods_collection;
+mod methods_collection_ops;
+mod methods_grammar;
 mod methods_mut;
+mod methods_object;
+mod methods_promise;
+mod methods_string;
 mod methods_trans;
 mod native_io;
 mod native_methods;
@@ -316,6 +323,7 @@ pub struct Interpreter {
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
+    block_scope_depth: usize,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
     cunion_classes: HashSet<String>,
@@ -1255,6 +1263,7 @@ impl Interpreter {
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: 0,
             enum_types: HashMap::new(),
             classes,
             cunion_classes: HashSet::new(),
@@ -2182,6 +2191,7 @@ impl Interpreter {
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: self.block_scope_depth,
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
             cunion_classes: self.cunion_classes.clone(),
@@ -2311,7 +2321,14 @@ struct TestState {
     planned: Option<usize>,
     ran: usize,
     failed: usize,
-    force_todo: Vec<(usize, usize)>,
+    force_todo: Vec<TodoRange>,
+}
+
+#[derive(Debug, Clone)]
+struct TodoRange {
+    start: usize,
+    end: usize,
+    reason: String,
 }
 
 impl TestState {

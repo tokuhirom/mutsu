@@ -629,7 +629,8 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
             kind: crate::value::JunctionKind::One,
             values: std::sync::Arc::new(Vec::new()),
         },
-        "(|)" | "∪" => Value::set(HashSet::new()),
+        // Set operators: empty set
+        "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         // Comma/zip: empty list
         "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), false),
         _ => Value::Nil,
@@ -755,6 +756,12 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
             .collect(),
         Value::Slip(items) => items.to_vec(),
+        Value::Instance { attributes, .. } => {
+            if let Some(Value::Array(items, ..)) = attributes.get("__array_items") {
+                return items.to_vec();
+            }
+            vec![val.clone()]
+        }
         Value::Nil => vec![],
         other => vec![other.clone()],
     }
@@ -896,6 +903,205 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
                 s.insert(sv);
             }
             s
+        }
+    }
+}
+
+/// Coerce a value to a QuantHash (Set/Bag/Mix) for use as a single operand to set operators.
+/// - Set/Bag/Mix pass through as-is
+/// - Hash: include keys with truthy values as Set elements
+/// - List/Array: convert items to Set (excluding Pairs with falsy value)
+/// - Pair with falsy value → empty Set
+/// - Other scalars → Set with one element
+pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
+    match val {
+        Value::Set(_) | Value::Bag(_) | Value::Mix(_) => val.clone(),
+        Value::Hash(h) => {
+            let mut set = HashSet::new();
+            for (k, v) in h.iter() {
+                if v.truthy() {
+                    set.insert(k.clone());
+                }
+            }
+            Value::set(set)
+        }
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            let mut set = HashSet::new();
+            for item in items.iter() {
+                match item {
+                    Value::Pair(k, v) => {
+                        if v.truthy() {
+                            set.insert(k.clone());
+                        }
+                    }
+                    other => {
+                        set.insert(other.to_string_value());
+                    }
+                }
+            }
+            Value::set(set)
+        }
+        Value::Pair(k, v) => {
+            let mut set = HashSet::new();
+            if v.truthy() {
+                set.insert(k.clone());
+            }
+            Value::set(set)
+        }
+        _ => {
+            let mut set = HashSet::new();
+            let sv = val.to_string_value();
+            if !sv.is_empty() {
+                set.insert(sv);
+            }
+            Value::set(set)
+        }
+    }
+}
+
+/// Determine the promotion level for set operations: 0=Set, 1=Bag, 2=Mix
+fn set_type_level(v: &Value) -> u8 {
+    match v {
+        Value::Mix(_) => 2,
+        Value::Bag(_) => 1,
+        _ => 0,
+    }
+}
+
+/// Convert a value to a Mix-level HashMap (key → f64 count)
+fn to_mix_map(v: &Value) -> HashMap<String, f64> {
+    match v {
+        Value::Mix(m) => (**m).clone(),
+        Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+        Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        Value::Hash(h) => {
+            let mut result = HashMap::new();
+            for (k, v) in h.iter() {
+                let w = match v {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(n) => *n,
+                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                    Value::Bool(b) => {
+                        if *b {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
+                    _ => {
+                        if v.truthy() {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
+                };
+                if w != 0.0 {
+                    result.insert(k.clone(), w);
+                }
+            }
+            result
+        }
+        _ => {
+            let s = coerce_to_set(v);
+            s.into_iter().map(|k| (k, 1.0)).collect()
+        }
+    }
+}
+
+/// Convert a value to a Bag-level HashMap (key → i64 count)
+fn to_bag_map(v: &Value) -> HashMap<String, i64> {
+    match v {
+        Value::Bag(b) => (**b).clone(),
+        Value::Set(s) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
+        Value::Hash(h) => {
+            let mut result = HashMap::new();
+            for (k, v) in h.iter() {
+                let count = match v {
+                    Value::Int(i) => *i,
+                    Value::Num(n) => *n as i64,
+                    Value::Bool(b) => i64::from(*b),
+                    _ => i64::from(v.truthy()),
+                };
+                if count > 0 {
+                    result.insert(k.clone(), count);
+                }
+            }
+            result
+        }
+        _ => {
+            let s = coerce_to_set(v);
+            s.into_iter().map(|k| (k, 1i64)).collect()
+        }
+    }
+}
+
+/// Standalone set difference: left (-) right
+/// Implements Raku type promotion: Mix > Bag > Set
+pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
+    let level = set_type_level(left).max(set_type_level(right));
+    match level {
+        2 => {
+            // Mix-level difference: include all keys, keep non-zero results
+            let a = to_mix_map(left);
+            let b = to_mix_map(right);
+            let mut result = HashMap::new();
+            for (k, v) in &a {
+                let bv = b.get(k).copied().unwrap_or(0.0);
+                let diff = v - bv;
+                if diff != 0.0 {
+                    result.insert(k.clone(), diff);
+                }
+            }
+            for (k, v) in &b {
+                if !a.contains_key(k) && *v != 0.0 {
+                    result.insert(k.clone(), -*v);
+                }
+            }
+            Value::mix(result)
+        }
+        1 => {
+            // Bag-level difference: only positive results
+            let a = to_bag_map(left);
+            let b = to_bag_map(right);
+            let mut result = HashMap::new();
+            for (k, v) in &a {
+                let bv = b.get(k).copied().unwrap_or(0);
+                if *v > bv {
+                    result.insert(k.clone(), *v - bv);
+                }
+            }
+            Value::bag(result)
+        }
+        _ => {
+            // Set-level difference
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            Value::set(a.difference(&b).cloned().collect())
+        }
+    }
+}
+
+/// Standalone set intersection: left (&) right
+pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
+    match (left, right) {
+        (Value::Set(a), Value::Set(b)) => Value::set(a.intersection(b).cloned().collect()),
+        _ => {
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            Value::set(a.intersection(&b).cloned().collect())
+        }
+    }
+}
+
+/// Standalone set symmetric difference: left (^) right
+pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
+    match (left, right) {
+        (Value::Set(a), Value::Set(b)) => Value::set(a.symmetric_difference(b).cloned().collect()),
+        _ => {
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            Value::set(a.symmetric_difference(&b).cloned().collect())
         }
     }
 }
