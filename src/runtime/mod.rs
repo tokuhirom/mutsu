@@ -1034,6 +1034,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Named".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1045,6 +1046,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Heading".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
