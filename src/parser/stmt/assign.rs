@@ -1061,6 +1061,25 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             (r, a)
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = expression(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = expression(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (r, Vec::new())
         };
