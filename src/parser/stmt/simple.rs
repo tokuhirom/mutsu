@@ -31,6 +31,9 @@ struct LexicalScope {
     term_symbols: HashMap<String, TermBinding>,
     /// Compile-time constants (name → string value) for resolving `<<$x>>` in operator names.
     compile_time_constants: HashMap<String, String>,
+    /// Operator precedence levels. Key is full operator name (e.g. "infix:<add>"),
+    /// value is numeric precedence level.
+    op_precedence: HashMap<String, i32>,
 }
 
 thread_local! {
@@ -282,24 +285,92 @@ pub(in crate::parser) fn register_user_infix_assoc(name: &str, assoc: &str) {
     });
 }
 
-pub(in crate::parser) fn lookup_user_infix_assoc(symbol: &str) -> Option<String> {
-    let key = format!("infix:<{}>", symbol);
+/// Numeric precedence levels for built-in operator categories.
+/// Higher values mean tighter binding.
+pub(in crate::parser) const PREC_SEQUENCE: i32 = 10;
+pub(in crate::parser) const PREC_STRUCTURAL: i32 = 20;
+pub(in crate::parser) const PREC_CONCAT: i32 = 30;
+pub(in crate::parser) const PREC_ADDITIVE: i32 = 40;
+pub(in crate::parser) const PREC_MULTIPLICATIVE: i32 = 50;
+pub(in crate::parser) const PREC_POWER: i32 = 60;
+pub(in crate::parser) const PREC_PREFIX: i32 = 70;
+
+/// Resolve a reference operator to its numeric precedence level.
+pub(in crate::parser) fn resolve_op_precedence(ref_op: &str) -> Option<i32> {
+    // Strip &-sigil if present: &infix:<+> -> infix:<+>
+    let op = ref_op.strip_prefix('&').unwrap_or(ref_op);
+
+    // Full categorical name: infix:<+>, prefix:<foo>, etc.
+    if let Some(symbol) = op.strip_prefix("infix:<").and_then(|s| s.strip_suffix('>')) {
+        return resolve_infix_symbol_precedence(symbol);
+    }
+    if op.starts_with("prefix:<") || op.starts_with("postfix:<") {
+        return Some(PREC_PREFIX);
+    }
+
+    // Bare symbol: +, *, **, ~
+    resolve_infix_symbol_precedence(op)
+}
+
+fn resolve_infix_symbol_precedence(symbol: &str) -> Option<i32> {
+    match symbol {
+        "+" | "-" => Some(PREC_ADDITIVE),
+        "*" | "/" | "%" | "div" | "mod" | "gcd" | "lcm" => Some(PREC_MULTIPLICATIVE),
+        "**" => Some(PREC_POWER),
+        "~" => Some(PREC_CONCAT),
+        "but" | "does" => Some(PREC_STRUCTURAL),
+        _ => {
+            // Check if it's a user-defined op with a registered level
+            lookup_op_precedence(&format!("infix:<{}>", symbol))
+        }
+    }
+}
+
+/// Register a numeric precedence level for an operator.
+pub(in crate::parser) fn register_op_precedence(name: &str, level: i32) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current.op_precedence.insert(name.to_string(), level);
+    });
+}
+
+/// Look up the numeric precedence level for an operator.
+pub(in crate::parser) fn lookup_op_precedence(name: &str) -> Option<i32> {
     SCOPES.with(|s| {
         let scopes = s.borrow();
         for scope in scopes.iter().rev() {
-            if let Some(v) = scope.infix_assoc.get(&key) {
-                return Some(v.clone());
+            if let Some(v) = scope.op_precedence.get(name) {
+                return Some(*v);
             }
         }
         None
     })
 }
 
-pub(in crate::parser) fn lookup_user_sub_assoc(name: &str) -> Option<String> {
+/// Look up the precedence level for a custom infix word operator by its bare name.
+pub(in crate::parser) fn lookup_custom_infix_precedence(symbol: &str) -> Option<i32> {
+    lookup_op_precedence(&format!("infix:<{}>", symbol))
+}
+
+/// Look up the precedence level for a custom prefix operator by its full name.
+pub(in crate::parser) fn lookup_prefix_precedence(full_name: &str) -> Option<i32> {
+    lookup_op_precedence(full_name)
+}
+
+/// Look up the precedence level for a custom postfix operator by its full name.
+pub(in crate::parser) fn lookup_postfix_precedence(full_name: &str) -> Option<i32> {
+    lookup_op_precedence(full_name)
+}
+
+pub(in crate::parser) fn lookup_user_infix_assoc(symbol: &str) -> Option<String> {
+    let key = format!("infix:<{}>", symbol);
     SCOPES.with(|s| {
         let scopes = s.borrow();
         for scope in scopes.iter().rev() {
-            if let Some(v) = scope.infix_assoc.get(name) {
+            if let Some(v) = scope.infix_assoc.get(&key) {
                 return Some(v.clone());
             }
         }
