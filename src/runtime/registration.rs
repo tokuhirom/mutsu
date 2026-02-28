@@ -699,10 +699,11 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
+        let allow_lexical_shadow = self.block_scope_depth > 0;
         let code_var_key = format!("&{}", name);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration
-            if !matches!(existing, Value::Mixin(..)) {
+            if !matches!(existing, Value::Mixin(..)) && !allow_lexical_shadow {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as code variable",
                     name
@@ -743,13 +744,16 @@ impl Interpreter {
             .get(&single_key)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
-            if has_single && !has_proto && !supersede {
+            if has_single && !has_proto && !supersede && !allow_lexical_shadow {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as non-multi",
                     name
                 )));
             }
-        } else if !supersede && ((has_multi && !has_proto) || (has_single && !existing_is_stub)) {
+        } else if !supersede
+            && !allow_lexical_shadow
+            && ((has_multi && !has_proto) || (has_single && !existing_is_stub))
+        {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name

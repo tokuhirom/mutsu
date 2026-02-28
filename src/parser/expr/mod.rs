@@ -1264,6 +1264,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_reverse_metaop_on_comma_list_operator() {
+        let (rest, expr) = expression("1 R, 2 R, 3 R, 4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MetaOp { .. }));
+    }
+
+    #[test]
+    fn parse_reverse_metaop_andand() {
+        let (rest, expr) = expression("$x R&& 0").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MetaOp { .. }));
+    }
+
+    #[test]
+    fn parse_reverse_metaop_oror() {
+        let (rest, expr) = expression("$x R|| 1").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MetaOp { .. }));
+    }
+
+    #[test]
+    fn parse_reverse_dot_concat_reports_obsolete() {
+        let err = expression("3 R. \"foo\"").unwrap_err();
+        assert!(err.message().contains("X::Obsolete"));
+    }
+
+    #[test]
     fn parse_pair_lvalue_colonparen_form() {
         let (rest, expr) = expression(":(:$a is raw)").unwrap();
         assert_eq!(rest, "");

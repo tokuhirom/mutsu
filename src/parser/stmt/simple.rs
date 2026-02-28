@@ -1684,6 +1684,119 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
+    // Reverse bind assignment is intentionally unsupported in Raku.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && (rest.starts_with("R:=") || rest.starts_with("R::="))
+    {
+        return Err(PError::fatal(
+            "Cannot reverse the args of := because list assignment operators are too fiddly"
+                .to_string(),
+        ));
+    }
+
+    // Reverse assignment: `value R= target` means `target = value`.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && rest.starts_with("R=")
+        && !rest.starts_with("R==")
+    {
+        let r = &rest[2..];
+        let (r, _) = ws(r)?;
+        let (r, target_expr) =
+            super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected assignable expression after 'R='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
+            })?;
+        if let Expr::DoStmt(stmt) = &target_expr
+            && let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                ..
+            } = stmt.as_ref()
+        {
+            let stmt = Stmt::VarDecl {
+                name: name.clone(),
+                expr,
+                type_constraint: type_constraint.clone(),
+                is_state: *is_state,
+                is_our: *is_our,
+                is_dynamic: *is_dynamic,
+                is_export: *is_export,
+                export_tags: export_tags.clone(),
+                custom_traits: custom_traits.clone(),
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } = &target_expr
+        {
+            let target_var_name = match target.as_ref() {
+                Expr::Var(var_name) => Some(var_name.clone()),
+                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
+                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                _ => None,
+            };
+            let assigned = method_lvalue_assign_expr(
+                (**target).clone(),
+                target_var_name,
+                name.clone(),
+                args.clone(),
+                expr,
+            );
+            let stmt = Stmt::Expr(assigned);
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::Call { name, args } = &target_expr {
+            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
+                name.clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::CallOn { target, args } = &target_expr {
+            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
+                (**target).clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        let stmt = match target_expr {
+            Expr::Var(name) => Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::ArrayVar(name) => Stmt::Assign {
+                name: format!("@{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::HashVar(name) => Stmt::Assign {
+                name: format!("%{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr)),
+        };
+        return parse_statement_modifier(r, stmt);
+    }
+
     // Generic assignment on non-variable lhs (e.g. `.key = 1`).
     // TODO: Introduce a dedicated assignment AST form for arbitrary lvalues.
     // Current fallback consumes `lhs = rhs` and preserves both sides as expressions.
@@ -1750,7 +1863,12 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ));
             return parse_statement_modifier(r, stmt);
         }
-        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        let stmt = match expr {
+            Expr::Literal(_) | Expr::BareWord(_) => {
+                Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
+            }
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs)),
+        };
         return parse_statement_modifier(r, stmt);
     }
 

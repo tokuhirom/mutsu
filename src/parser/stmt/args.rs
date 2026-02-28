@@ -465,3 +465,30 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         })?;
     Ok((rest, CallArg::Positional(expr)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_call_args_accepts_bracket_metaop_assign_expr() {
+        let (rest, args) = parse_stmt_call_args("$y [R/]= 1, 1/5, \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_call_args_no_paren_accepts_bracket_metaop_assign_expr() {
+        let (rest, args) = parse_stmt_call_args_no_paren("$y [R/]= 1, 1/5, \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_call_args_no_paren_accepts_bracket_metaop_assign_expr_with_bracket_desc() {
+        let input = "$y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";";
+        let (rest, args) = parse_stmt_call_args_no_paren(input).unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+}

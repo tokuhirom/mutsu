@@ -598,6 +598,16 @@ impl Interpreter {
             return Ok(Value::Nil);
         }
         let let_mark = self.let_saves_len();
+        let saved_functions = self.functions.clone();
+        let saved_proto_subs = self.proto_subs.clone();
+        let saved_proto_functions = self.proto_functions.clone();
+        let saved_operator_assoc = self.operator_assoc.clone();
+        let saved_code_env: std::collections::HashMap<String, Value> = self
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with('&') || k.starts_with("__mutsu_callable_id::"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         let mut compiler = crate::compiler::Compiler::new();
         let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
             format!("{}::&{}", pkg, routine)
@@ -606,7 +616,19 @@ impl Interpreter {
         };
         compiler.set_current_package(scope);
         let (code, compiled_fns) = compiler.compile(body);
+        self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
+        self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
+        // Sub/proto declarations in block scope are lexical; restore registries on block exit.
+        self.functions = saved_functions;
+        self.proto_subs = saved_proto_subs;
+        self.proto_functions = saved_proto_functions;
+        self.operator_assoc = saved_operator_assoc;
+        self.env
+            .retain(|k, _| !(k.starts_with('&') || k.starts_with("__mutsu_callable_id::")));
+        for (k, v) in saved_code_env {
+            self.env.insert(k, v);
+        }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
         result
