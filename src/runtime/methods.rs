@@ -1113,6 +1113,7 @@ impl Interpreter {
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         );
         let bypass_native_fastpath = skip_pseudo
+            || method == "squish"
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
@@ -2483,6 +2484,28 @@ impl Interpreter {
                 {
                     return Ok(target);
                 }
+                if let Value::Seq(items) = &target {
+                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
+                        for key in meta.revert_remove {
+                            self.env.remove(&key);
+                        }
+                        for (key, value) in meta.revert_values {
+                            self.env.insert(key, value);
+                        }
+                        let mut attrs = HashMap::new();
+                        attrs.insert("squish_source".to_string(), Value::array(meta.source_items));
+                        attrs.insert("squish_as".to_string(), meta.as_func.unwrap_or(Value::Nil));
+                        attrs.insert(
+                            "squish_with".to_string(),
+                            meta.with_func.unwrap_or(Value::Nil),
+                        );
+                        attrs.insert("squish_scan_index".to_string(), Value::Int(0));
+                        attrs.insert("squish_prev_key".to_string(), Value::Nil);
+                        attrs.insert("squish_initialized".to_string(), Value::Bool(false));
+                        return Ok(Value::make_instance("Iterator".to_string(), attrs));
+                    }
+                }
                 let items = crate::runtime::utils::value_to_list(&target);
                 let mut attrs = HashMap::new();
                 attrs.insert("items".to_string(), Value::array(items));
@@ -2601,6 +2624,9 @@ impl Interpreter {
             }
             "unique" => {
                 return self.dispatch_unique(target, &args);
+            }
+            "squish" => {
+                return self.dispatch_squish(target, &args);
             }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
@@ -6242,7 +6268,6 @@ impl Interpreter {
             | Value::GenericRange { .. }) => Self::value_to_list(&v),
             other => vec![other],
         };
-
         let mut seen_keys: Vec<Value> = Vec::new();
         let mut unique_items: Vec<Value> = Vec::new();
         for item in items {
@@ -6273,6 +6298,124 @@ impl Interpreter {
         }
 
         Ok(Value::array(unique_items))
+    }
+
+    pub(crate) fn dispatch_squish(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut as_func: Option<Value> = None;
+        let mut with_func: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "as" && value.truthy() {
+                    as_func = Some(value.as_ref().clone());
+                    continue;
+                }
+                if key == "with" && value.truthy() {
+                    with_func = Some(value.as_ref().clone());
+                    continue;
+                }
+            }
+        }
+
+        if as_func.is_none()
+            && with_func.is_none()
+            && matches!(
+                target,
+                Value::Range(_, _)
+                    | Value::RangeExcl(_, _)
+                    | Value::RangeExclStart(_, _)
+                    | Value::RangeExclBoth(_, _)
+                    | Value::GenericRange { .. }
+            )
+        {
+            return Ok(target);
+        }
+
+        let items: Vec<Value> = match target {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+            v @ (Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. }) => Self::value_to_list(&v),
+            other => vec![other],
+        };
+        let source_items = items.clone();
+
+        if items.is_empty() {
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+        }
+
+        let env_before_callbacks = if as_func.is_some() || with_func.is_some() {
+            Some(self.env.clone())
+        } else {
+            None
+        };
+
+        let mut squished_items: Vec<Value> = Vec::new();
+        squished_items.push(items[0].clone());
+
+        let mut prev_key = if let Some(func) = as_func.clone() {
+            self.call_sub_value(func, vec![items[0].clone()], true)?
+        } else {
+            items[0].clone()
+        };
+
+        for item in items.iter().skip(1) {
+            let key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            } else {
+                item.clone()
+            };
+
+            let duplicate = if let Some(func) = with_func.clone() {
+                self.call_sub_value(func, vec![prev_key.clone(), key.clone()], true)?
+                    .truthy()
+            } else {
+                values_identical(&prev_key, &key)
+            };
+
+            if !duplicate {
+                squished_items.push(item.clone());
+            }
+            prev_key = key;
+        }
+
+        let result = Value::Seq(std::sync::Arc::new(squished_items));
+        if (as_func.is_some() || with_func.is_some())
+            && let Value::Seq(items) = &result
+        {
+            let mut revert_values = HashMap::new();
+            let mut revert_remove = Vec::new();
+            if let Some(before) = env_before_callbacks {
+                for (k, old_v) in &before {
+                    if self.env.get(k) != Some(old_v) {
+                        revert_values.insert(k.clone(), old_v.clone());
+                    }
+                }
+                for k in self.env.keys() {
+                    if !before.contains_key(k) {
+                        revert_remove.push(k.clone());
+                    }
+                }
+            }
+            let seq_id = std::sync::Arc::as_ptr(items) as usize;
+            self.squish_iterator_meta.insert(
+                seq_id,
+                super::SquishIteratorMeta {
+                    source_items,
+                    as_func: as_func.clone(),
+                    with_func: with_func.clone(),
+                    revert_values,
+                    revert_remove,
+                },
+            );
+        }
+        Ok(result)
     }
 
     fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
