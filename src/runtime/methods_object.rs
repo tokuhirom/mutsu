@@ -535,7 +535,20 @@ impl Interpreter {
                     let mut weights: HashMap<String, f64> = HashMap::new();
                     for arg in &args {
                         for item in Self::value_to_list(arg) {
-                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                            match &item {
+                                Value::Pair(k, v) => {
+                                    let w = match v.as_ref() {
+                                        Value::Int(i) => *i as f64,
+                                        Value::Num(n) => *n,
+                                        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                                        _ => 1.0,
+                                    };
+                                    *weights.entry(k.clone()).or_insert(0.0) += w;
+                                }
+                                _ => {
+                                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                                }
+                            }
                         }
                     }
                     return Ok(Value::mix(weights));

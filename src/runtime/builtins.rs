@@ -738,8 +738,32 @@ impl Interpreter {
     }
 
     fn call_infix_routine(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
-        // 1-arg Iterable gets flattened (like +@foo slurpy)
-        let args: Vec<Value> = if args.len() == 1 {
+        let is_set_op = matches!(
+            op,
+            "(-)"
+                | "∖"
+                | "(|)"
+                | "∪"
+                | "(&)"
+                | "∩"
+                | "(^)"
+                | "⊖"
+                | "(elem)"
+                | "∈"
+                | "(cont)"
+                | "∋"
+                | "(<=)"
+                | "⊆"
+                | "(>=)"
+                | "⊇"
+                | "(<)"
+                | "⊂"
+                | "(>)"
+                | "⊃"
+        );
+        // 1-arg Iterable gets flattened (like +@foo slurpy), but not for set operators
+        // which coerce their single argument to a QuantHash instead
+        let args: Vec<Value> = if args.len() == 1 && !is_set_op {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
                 _ => args.to_vec(),
@@ -776,6 +800,10 @@ impl Interpreter {
             }
             if op == "~" {
                 return Ok(Value::Str(crate::runtime::utils::coerce_to_str(&args[0])));
+            }
+            // Set operators with single arg: coerce to appropriate set type
+            if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
+                return Ok(coerce_value_to_quanthash(&args[0]));
             }
             return Ok(args[0].clone());
         }
@@ -849,6 +877,11 @@ impl Interpreter {
                 return Ok(acc);
             }
             _ => {}
+        }
+        // Set operators: promote all args to the highest type, then reduce
+        if is_set_op && matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖")
+        {
+            return self.reduce_set_op(op, &args);
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
@@ -1085,6 +1118,44 @@ impl Interpreter {
         )
     }
 
+    /// Reduce set operators with proper type promotion across all operands.
+    /// All operands are promoted to the highest type level before reduction.
+    fn reduce_set_op(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Determine the highest type level among all args
+        let mut max_level: u8 = 0;
+        for arg in args {
+            let level = match arg {
+                Value::Mix(_) => 2,
+                Value::Bag(_) => 1,
+                _ => 0,
+            };
+            max_level = max_level.max(level);
+        }
+        // Convert all args to the promoted level
+        let promoted: Vec<Value> = args
+            .iter()
+            .map(|arg| match max_level {
+                2 if !matches!(arg, Value::Mix(_)) => self
+                    .call_method_with_values(arg.clone(), "Mix", vec![])
+                    .unwrap_or_else(|_| arg.clone()),
+                1 if !matches!(arg, Value::Bag(_)) => self
+                    .call_method_with_values(arg.clone(), "Bag", vec![])
+                    .unwrap_or_else(|_| arg.clone()),
+                _ => arg.clone(),
+            })
+            .collect();
+        // Reduce left-to-right using apply_reduction_op
+        let mut acc = promoted[0].clone();
+        for rhs in &promoted[1..] {
+            acc = Self::apply_reduction_op(op, &acc, rhs).unwrap_or_else(|_| {
+                let expr = Self::build_infix_expr(op, acc.clone(), rhs.clone());
+                self.eval_block_value(&[crate::ast::Stmt::Expr(expr)])
+                    .unwrap_or(Value::Nil)
+            });
+        }
+        Ok(acc)
+    }
+
     fn call_repeat_infix(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             if op == "xx" {
@@ -1270,6 +1341,7 @@ impl Interpreter {
             "+^" => TokenKind::BitXor,
             "(|)" | "∪" => TokenKind::SetUnion,
             "(&)" | "∩" => TokenKind::SetIntersect,
+            "(-)" | "∖" => TokenKind::SetDiff,
             "(^)" | "⊖" => TokenKind::SetSymDiff,
             "(elem)" | "∈" => TokenKind::SetElem,
             "(cont)" | "∋" => TokenKind::SetCont,

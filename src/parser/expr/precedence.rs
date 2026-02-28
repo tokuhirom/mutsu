@@ -1701,11 +1701,13 @@ fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
     const META_SET_OPS: &[(&str, &str)] = &[
         ("(|)", "(|)"),
         ("(&)", "(&)"),
+        ("(-)", "(-)"),
         ("(^)", "(^)"),
         ("(elem)", "(elem)"),
         ("(cont)", "(cont)"),
         ("∪", "∪"),
         ("∩", "∩"),
+        ("∖", "(-)"),
         ("⊖", "⊖"),
         ("∈", "∈"),
         ("∋", "∋"),
@@ -1883,6 +1885,8 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetIntersect, '∩'.len_utf8()))
     } else if input.starts_with("(-)") {
         Some((TokenKind::SetDiff, 3))
+    } else if input.starts_with('∖') {
+        Some((TokenKind::SetDiff, '∖'.len_utf8()))
     } else if input.starts_with("(^)") {
         Some((TokenKind::SetSymDiff, 3))
     } else if input.starts_with('⊖') {

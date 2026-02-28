@@ -104,6 +104,32 @@ fn is_valid_reduction_op(op: &str) -> bool {
     if REDUCTION_OPS.contains(&s) {
         return true;
     }
+    // Set operators in parenthesized and unicode form
+    if matches!(
+        s,
+        "(-)"
+            | "(|)"
+            | "(&)"
+            | "(^)"
+            | "(elem)"
+            | "(cont)"
+            | "∪"
+            | "∩"
+            | "∖"
+            | "⊖"
+            | "∈"
+            | "∋"
+            | "(<=)"
+            | "(>=)"
+            | "(<)"
+            | "(>)"
+            | "⊆"
+            | "⊇"
+            | "⊂"
+            | "⊃"
+    ) {
+        return true;
+    }
     if let Some(stripped) = s.strip_prefix('!')
         && REDUCTION_OPS.contains(&stripped)
     {
