@@ -1482,6 +1482,17 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     // Slurpy: *@arr or *%hash or *$scalar or *[...] (slurpy unpack)
     let mut slurpy_sigil = None;
     let mut double_slurpy = false;
+    // Unary plus marker on parameters (e.g. +@a). Keep parsing semantics
+    // aligned with regular sigiled params for now.
+    if rest.starts_with('+')
+        && rest.len() > 1
+        && (rest.as_bytes()[1] == b'@'
+            || rest.as_bytes()[1] == b'%'
+            || rest.as_bytes()[1] == b'$'
+            || rest.as_bytes()[1] == b'&')
+    {
+        rest = &rest[1..];
+    }
     if rest.starts_with('*')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@'

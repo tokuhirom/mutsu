@@ -1,6 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::token_kind::TokenKind;
@@ -8,6 +9,20 @@ use crate::token_kind::TokenKind;
 use super::decl::parse_array_shape_suffix;
 use super::sub;
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
+
+static IF_BIND_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Clone)]
+struct IfChainClause {
+    cond: Expr,
+    then_branch: Vec<Stmt>,
+    binding_var: Option<String>,
+}
+
+struct ElseClause {
+    binding_params: Option<Vec<ParamDef>>,
+    body: Vec<Stmt>,
+}
 
 fn condition_has_assignment_tail(rest: &str) -> bool {
     if rest.starts_with(":=") || rest.starts_with("::=") || rest.starts_with("⚛=") {
@@ -35,67 +50,248 @@ fn condition_expr(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+fn conditional_expr(input: &str) -> PResult<'_, Expr> {
+    match parse_comma_or_expr(input) {
+        Ok((rest, cond)) => {
+            let (tail, _) = ws(rest)?;
+            if condition_has_assignment_tail(tail)
+                && let Ok((assign_rest, assign_cond)) = super::assign::try_parse_assign_expr(input)
+            {
+                return Ok((assign_rest, assign_cond));
+            }
+            Ok((rest, cond))
+        }
+        Err(_) => condition_expr(input),
+    }
+}
+
 pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("if", input).ok_or_else(|| PError::expected("if statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = condition_expr(rest)?;
+    let (rest, cond) = conditional_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    // Optional binding: `if EXPR -> $var { }`
-    let (rest, binding_var) = parse_binding_var(rest)?;
+    let (rest, binding_params) = parse_if_binding_params(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, then_branch) = block(rest)?;
+    let (rest, raw_then_branch) = block(rest)?;
     let (rest, _) = ws(rest)?;
+    let (binding_var, then_branch) = lower_if_clause_binding(binding_params, raw_then_branch);
 
-    // elsif chain
-    let (rest, else_branch) = parse_elsif_chain(rest)?;
+    let mut clauses = vec![IfChainClause {
+        cond,
+        then_branch,
+        binding_var,
+    }];
+    let (rest, (mut elsif_clauses, else_clause)) = parse_elsif_chain(rest)?;
+    clauses.append(&mut elsif_clauses);
 
-    Ok((
-        rest,
-        Stmt::If {
+    let stmt = lower_if_chain(clauses, else_clause);
+    Ok((rest, stmt))
+}
+
+fn parse_if_binding_params(input: &str) -> PResult<'_, Option<Vec<ParamDef>>> {
+    let Some(rest) = input.strip_prefix("->") else {
+        return Ok((input, None));
+    };
+    let (rest, _) = ws(rest)?;
+    // Zero-parameter pointy block: `if EXPR -> { ... }`
+    if rest.starts_with('{') {
+        return Ok((rest, Some(Vec::new())));
+    }
+
+    let (rest, params) = if let Some(rest) = rest.strip_prefix('(') {
+        let (rest, _) = ws(rest)?;
+        let (rest, params) = super::parse_param_list_pub(rest)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        (rest, params)
+    } else {
+        super::parse_param_list_pub(rest)?
+    };
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = if let Some(after_arrow) = rest.strip_prefix("-->") {
+        let (rest, _) = super::parse_return_type_annotation_pub(after_arrow)?;
+        let (rest, _) = ws(rest)?;
+        (rest, ())
+    } else {
+        (rest, ())
+    };
+    Ok((rest, Some(params)))
+}
+
+fn is_simple_if_binding(param: &ParamDef) -> bool {
+    param.traits.is_empty()
+        && param.shape_constraints.is_none()
+        && !param.named
+        && !param.slurpy
+        && !param.double_slurpy
+        && param.default.is_none()
+        && !param.optional_marker
+        && param.type_constraint.is_none()
+        && param.sub_signature.is_none()
+        && param.outer_sub_signature.is_none()
+        && param.code_signature.is_none()
+}
+
+fn next_if_bind_tmp_name() -> String {
+    let tmp_idx = IF_BIND_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("$__mutsu_if_bind_{tmp_idx}")
+}
+
+fn lower_if_clause_binding(
+    binding_params: Option<Vec<ParamDef>>,
+    then_branch: Vec<Stmt>,
+) -> (Option<String>, Vec<Stmt>) {
+    let Some(param_defs) = binding_params else {
+        return (None, then_branch);
+    };
+    if param_defs.is_empty() {
+        return (None, then_branch);
+    }
+    if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
+        return (Some(param_defs[0].name.clone()), then_branch);
+    }
+
+    let source_binding = next_if_bind_tmp_name();
+    let source_expr = Expr::Var(source_binding.trim_start_matches('$').to_string());
+    let call_expr = Expr::CallOn {
+        target: Box::new(Expr::AnonSubParams {
+            params: param_defs.iter().map(|p| p.name.clone()).collect(),
+            param_defs,
+            return_type: None,
+            body: then_branch,
+            is_rw: false,
+        }),
+        args: vec![Expr::Unary {
+            op: TokenKind::Pipe,
+            expr: Box::new(source_expr),
+        }],
+    };
+    (Some(source_binding), vec![Stmt::Expr(call_expr)])
+}
+
+fn ensure_last_clause_binding_var(clauses: &mut [IfChainClause]) -> Option<String> {
+    let last_clause = clauses.last_mut()?;
+    Some(if let Some(existing) = &last_clause.binding_var {
+        existing.clone()
+    } else {
+        let generated = next_if_bind_tmp_name();
+        last_clause.binding_var = Some(generated.clone());
+        generated
+    })
+}
+
+fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt> {
+    let Some(param_defs) = else_clause.binding_params else {
+        return else_clause.body;
+    };
+    if param_defs.is_empty() {
+        return else_clause.body;
+    }
+    if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
+        let mut body = Vec::with_capacity(else_clause.body.len() + 1);
+        body.push(Stmt::VarDecl {
+            name: param_defs[0].name.clone(),
+            expr: Expr::Var(source_binding.trim_start_matches('$').to_string()),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+        });
+        body.extend(else_clause.body);
+        return body;
+    }
+
+    let call_expr = Expr::CallOn {
+        target: Box::new(Expr::AnonSubParams {
+            params: param_defs.iter().map(|p| p.name.clone()).collect(),
+            param_defs,
+            return_type: None,
+            body: else_clause.body,
+            is_rw: false,
+        }),
+        args: vec![Expr::Unary {
+            op: TokenKind::Pipe,
+            expr: Box::new(Expr::Var(
+                source_binding.trim_start_matches('$').to_string(),
+            )),
+        }],
+    };
+    vec![Stmt::Expr(call_expr)]
+}
+
+fn parse_elsif_chain(input: &str) -> PResult<'_, (Vec<IfChainClause>, Option<ElseClause>)> {
+    let mut rest = input;
+    let mut clauses = Vec::new();
+
+    while let Some(r) = keyword("elsif", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, cond) = conditional_expr(r)?;
+        let (r, _) = ws(r)?;
+        let (r, binding_params) = parse_if_binding_params(r)?;
+        let (r, _) = ws(r)?;
+        let (r, raw_then_branch) = block(r)?;
+        let (r, _) = ws(r)?;
+        let (binding_var, then_branch) = lower_if_clause_binding(binding_params, raw_then_branch);
+        clauses.push(IfChainClause {
             cond,
             then_branch,
-            else_branch,
             binding_var,
-        },
-    ))
-}
-
-/// Parse optional `-> $var` binding after an if/elsif/with condition.
-fn parse_binding_var(input: &str) -> PResult<'_, Option<String>> {
-    if let Some(rest) = input.strip_prefix("->") {
-        let (rest, _) = ws(rest)?;
-        let (rest, name) = var_name(rest)?;
-        let (rest, _) = ws(rest)?;
-        Ok((rest, Some(name.to_string())))
-    } else {
-        Ok((input, None))
+        });
+        rest = r;
     }
-}
 
-pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
-    if let Some(r) = keyword("elsif", input) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
+    if let Some(r) = keyword("else", rest) {
         let (r, _) = ws(r)?;
-        let (r, then_branch) = block(r)?;
-        let (r, _) = ws(r)?;
-        let (r, else_branch) = parse_elsif_chain(r)?;
-        return Ok((
-            r,
-            vec![Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                binding_var: None,
-            }],
-        ));
-    }
-    if let Some(r) = keyword("else", input) {
+        let (r, binding_params) = parse_if_binding_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
-        return Ok((r, body));
+        return Ok((
+            r,
+            (
+                clauses,
+                Some(ElseClause {
+                    binding_params,
+                    body,
+                }),
+            ),
+        ));
     }
-    Ok((input, Vec::new()))
+
+    Ok((rest, (clauses, None)))
+}
+
+fn lower_if_chain(mut clauses: Vec<IfChainClause>, else_clause: Option<ElseClause>) -> Stmt {
+    let mut else_branch = if let Some(else_clause) = else_clause {
+        lower_else_clause(&mut clauses, else_clause)
+    } else {
+        Vec::new()
+    };
+
+    while let Some(clause) = clauses.pop() {
+        else_branch = vec![Stmt::If {
+            cond: clause.cond,
+            then_branch: clause.then_branch,
+            else_branch,
+            binding_var: clause.binding_var,
+        }];
+    }
+
+    else_branch
+        .pop()
+        .expect("if chain must have at least one clause")
+}
+
+fn lower_else_clause(clauses: &mut [IfChainClause], else_clause: ElseClause) -> Vec<Stmt> {
+    if else_clause.binding_params.is_none() {
+        return else_clause.body;
+    }
+    let Some(source_binding) = ensure_last_clause_binding_var(clauses) else {
+        return else_clause.body;
+    };
+    lower_else_binding(&source_binding, else_clause)
 }
 
 /// Parse `unless` statement.
