@@ -148,9 +148,12 @@ build_history_prompt() {
     cat <<EOF
 Update roast history on branch $branch_name.
 
-Follow the repository PR workflow in CLAUDE.md and handle this end-to-end:
-1. Checkout main and sync latest origin/main
-2. Create and switch to branch: $branch_name
+Steps:
+1. Sync to the latest main:
+   git fetch origin
+   git checkout main
+   git reset --hard origin/main
+2. Create and switch to branch: git checkout -b $branch_name
 3. Run ./scripts/roast-history.sh --commit
 4. If there are no changes, report and stop (do not open a PR)
 5. Otherwise push the branch and open a PR with gh pr create
