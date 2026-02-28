@@ -13,6 +13,31 @@ fn as_bigint(value: &Value) -> Option<NumBigInt> {
     }
 }
 
+fn instance_days(value: &Value) -> Option<i64> {
+    match value {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Date" => match attributes.get("days") {
+            Some(Value::Int(days)) => Some(*days),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn instance_instant_value(value: &Value) -> Option<f64> {
+    match value {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Instant" => attributes.get("value").and_then(runtime::to_float_value),
+        _ => None,
+    }
+}
+
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
     // Range + Int: shift both bounds
@@ -90,6 +115,52 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
 }
 
 pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
+    if let (Some(a), Some(b)) = (
+        instance_instant_value(&left),
+        instance_instant_value(&right),
+    ) {
+        return Value::Num(a - b);
+    }
+    if let Some(a) = instance_instant_value(&left)
+        && right.is_numeric()
+    {
+        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(a - delta));
+        return Value::make_instance("Instant".to_string(), attrs);
+    }
+    if let (Some(a), Some(b)) = (instance_days(&left), instance_days(&right)) {
+        return Value::Int(a - b);
+    }
+    if let Some(days) = instance_days(&left)
+        && let Value::Int(delta) = right
+    {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("days".to_string(), Value::Int(days - delta));
+        return Value::make_instance("Date".to_string(), attrs);
+    }
+    match (&left, &right) {
+        (Value::Range(a, b), Value::Int(n)) => return Value::Range(a - n, b - n),
+        (Value::RangeExcl(a, b), Value::Int(n)) => return Value::RangeExcl(a - n, b - n),
+        (Value::RangeExclStart(a, b), Value::Int(n)) => return Value::RangeExclStart(a - n, b - n),
+        (Value::RangeExclBoth(a, b), Value::Int(n)) => return Value::RangeExclBoth(a - n, b - n),
+        (Value::Range(a, b), rhs)
+        | (Value::RangeExcl(a, b), rhs)
+        | (Value::RangeExclStart(a, b), rhs)
+        | (Value::RangeExclBoth(a, b), rhs)
+            if rhs.is_numeric() =>
+        {
+            let excl_start = matches!(&left, Value::RangeExclStart(..) | Value::RangeExclBoth(..));
+            let excl_end = matches!(&left, Value::RangeExcl(..) | Value::RangeExclBoth(..));
+            return Value::GenericRange {
+                start: Box::new(arith_sub(Value::Int(*a), rhs.clone())),
+                end: Box::new(arith_sub(Value::Int(*b), rhs.clone())),
+                excl_start,
+                excl_end,
+            };
+        }
+        _ => {}
+    }
     let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
@@ -551,9 +622,9 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
             } else if let Ok(f) = s.trim().parse::<f64>() {
                 Ok(Value::Num(-f))
             } else {
-                Err(RuntimeError::new("Unary - expects numeric"))
+                Ok(Value::Int(0))
             }
         }
-        _ => Err(RuntimeError::new("Unary - expects numeric")),
+        other => Ok(Value::Int(-runtime::to_int(&other))),
     }
 }
