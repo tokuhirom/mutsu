@@ -72,6 +72,62 @@ fn all_permutations(items: &[Value]) -> Vec<Value> {
     out
 }
 
+/// Generate all combinations of `k` items from `items`.
+pub(crate) fn combinations_k(items: &[Value], k: usize) -> Vec<Value> {
+    let n = items.len();
+    if k == 0 {
+        return vec![Value::array(Vec::new())];
+    }
+    if k > n {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    let mut indices: Vec<usize> = (0..k).collect();
+    loop {
+        let combo: Vec<Value> = indices.iter().map(|&i| items[i].clone()).collect();
+        result.push(Value::array(combo));
+        // Find rightmost index that can be incremented
+        let mut i = k;
+        while i > 0 {
+            i -= 1;
+            if indices[i] != i + n - k {
+                break;
+            }
+            if i == 0 && indices[0] == n - k {
+                return result;
+            }
+        }
+        indices[i] += 1;
+        for j in (i + 1)..k {
+            indices[j] = indices[j - 1] + 1;
+        }
+    }
+}
+
+/// Generate powerset (all combinations for k=0..n).
+pub(crate) fn combinations_all(items: &[Value]) -> Vec<Value> {
+    let mut result = Vec::new();
+    for k in 0..=items.len() {
+        result.extend(combinations_k(items, k));
+    }
+    result
+}
+
+/// Generate combinations for a range of k values, clamped to [0, n].
+pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec<Value> {
+    let n = items.len() as i64;
+    let lo = min_k.max(0);
+    let hi = max_k.min(n);
+    if lo > hi {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    for k in (lo as usize)..=(hi as usize) {
+        result.extend(combinations_k(items, k));
+    }
+    result
+}
+
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
@@ -402,6 +458,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 _ => runtime::value_to_list(target),
             };
             Some(Ok(Value::Seq(all_permutations(&items).into())))
+        }
+        "combinations" => {
+            let items = match target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+                _ => runtime::value_to_list(target),
+            };
+            Some(Ok(Value::Seq(combinations_all(&items).into())))
+        }
+        "cache" => {
+            let items = match target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+                _ => runtime::value_to_list(target),
+            };
+            Some(Ok(Value::array(items)))
         }
         _ => None,
     }

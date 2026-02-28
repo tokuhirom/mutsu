@@ -1185,6 +1185,12 @@ impl VM {
                 args.push(other);
             }
         }
+        // Try native function first (same as non-slip call path)
+        if let Some(native_result) = self.try_native_function(&name, &args) {
+            self.stack.push(native_result?);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.sync_locals_from_env(code);
         Ok(())

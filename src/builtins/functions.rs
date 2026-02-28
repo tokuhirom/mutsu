@@ -93,6 +93,25 @@ fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
 
 fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "combinations" => {
+            // combinations($n) where $n is Int => (^$n).combinations (powerset)
+            // combinations($iterable) => $iterable.combinations
+            let items = match arg {
+                Value::Int(n) => {
+                    if *n < 0 {
+                        return Some(Ok(Value::Seq(Vec::new().into())));
+                    }
+                    let items: Vec<Value> = (0..*n).map(Value::Int).collect();
+                    return Some(Ok(Value::Seq(
+                        super::methods_0arg::collection::combinations_all(&items).into(),
+                    )));
+                }
+                _ => runtime::value_to_list(arg),
+            };
+            Some(Ok(Value::Seq(
+                super::methods_0arg::collection::combinations_all(&items).into(),
+            )))
+        }
         "srand" => {
             let seed = match arg {
                 Value::Int(n) => *n as u64,
@@ -579,6 +598,31 @@ fn native_function_2arg(
     }
 
     match name {
+        "combinations" => {
+            // combinations($n_or_iterable, $k_or_range)
+            // If first arg is an iterable, use its elements; otherwise treat as numeric n
+            let items = match arg1 {
+                Value::Array(..)
+                | Value::Seq(..)
+                | Value::Slip(..)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }
+                | Value::Hash(..) => runtime::value_to_list(arg1),
+                _ => {
+                    let n = runtime::to_int(arg1);
+                    if n <= 0 {
+                        Vec::new()
+                    } else {
+                        (0..n).map(Value::Int).collect()
+                    }
+                }
+            };
+            // Dispatch based on $k type (Int or Range)
+            super::native_method_1arg(&Value::array(items), "combinations", arg2)
+        }
         "roll" => {
             let count = match arg1 {
                 Value::Int(i) if *i > 0 => Some(*i as usize),
