@@ -523,11 +523,12 @@ impl VM {
         if let Stmt::RoleDecl {
             name,
             type_params,
+            type_param_defs,
             body,
         } = stmt
         {
             self.interpreter
-                .register_role_decl(name, type_params, body)?;
+                .register_role_decl(name, type_params, type_param_defs, body)?;
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(name.clone()));
