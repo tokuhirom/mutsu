@@ -1198,6 +1198,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_subscript_adverb_does_not_become_call_adverb() {
+        let (rest, expr) = expression("say @a[0]:p").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "say");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Index { .. }));
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_hash_subscript_adverb_does_not_become_call_adverb() {
+        let (rest, expr) = expression("say %h<a>:kv").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "say");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Index { .. }));
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
     fn parse_listop_block_then_colon_args() {
         let (rest, expr) = expression("map { $_ * 2 }: @list").unwrap();
         assert_eq!(rest, "");
