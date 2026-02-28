@@ -1301,6 +1301,7 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
 /// Parse hash literal body: key => val, :name(val), ... }
 fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
     let mut pairs = Vec::new();
+    let mut spread_args = Vec::new();
     let mut rest = input;
     let mut pending_key: Option<String> = None;
     loop {
@@ -1309,7 +1310,18 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             if pending_key.is_some() {
                 return Err(PError::expected("hash value"));
             }
-            return Ok((rest, Expr::Hash(pairs)));
+            if spread_args.is_empty() {
+                return Ok((rest, Expr::Hash(pairs)));
+            }
+            let mut args = hash_args_from_pairs(pairs);
+            args.append(&mut spread_args);
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: "hash".to_string(),
+                    args,
+                },
+            ));
         }
 
         // Try colon pair syntax: :name(expr), :name, :!name, :$var, etc.
@@ -1374,22 +1386,41 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         }
 
         let (r, item) = super::super::expr::expression(r)?;
-        if let Some((key, val)) = hash_pair_from_expr(&item)? {
-            pairs.push((key, Some(val)));
-        } else if let Expr::ArrayLiteral(elems) = &item {
-            // Flatten word lists like <a b c d> into pairs: a => "b", c => "d"
-            let mut i = 0;
-            while i + 1 < elems.len() {
-                let key = hash_key_from_expr(elems[i].clone())?;
-                pairs.push((key, Some(elems[i + 1].clone())));
-                i += 2;
+        match item {
+            Expr::HashVar(name) => {
+                spread_args.push(Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: Box::new(Expr::HashVar(name)),
+                });
             }
-            if i < elems.len() {
-                // Odd element becomes a pending key
-                pending_key = Some(hash_key_from_expr(elems[i].clone())?);
+            Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr,
+            } => {
+                spread_args.push(Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr,
+                });
             }
-        } else {
-            pending_key = Some(hash_key_from_expr(item)?);
+            other => {
+                if let Some((key, val)) = hash_pair_from_expr(&other)? {
+                    pairs.push((key, Some(val)));
+                } else if let Expr::ArrayLiteral(elems) = &other {
+                    // Flatten word lists like <a b c d> into pairs: a => "b", c => "d"
+                    let mut i = 0;
+                    while i + 1 < elems.len() {
+                        let key = hash_key_from_expr(elems[i].clone())?;
+                        pairs.push((key, Some(elems[i + 1].clone())));
+                        i += 2;
+                    }
+                    if i < elems.len() {
+                        // Odd element becomes a pending key
+                        pending_key = Some(hash_key_from_expr(elems[i].clone())?);
+                    }
+                } else {
+                    pending_key = Some(hash_key_from_expr(other)?);
+                }
+            }
         }
 
         let (r, _) = ws_inner(r);
@@ -1401,6 +1432,17 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             rest = r;
         }
     }
+}
+
+fn hash_args_from_pairs(pairs: Vec<(String, Option<Expr>)>) -> Vec<Expr> {
+    pairs
+        .into_iter()
+        .map(|(key, val_opt)| Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(key))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(val_opt.unwrap_or(Expr::Literal(Value::Nil))),
+        })
+        .collect()
 }
 
 fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
