@@ -50,7 +50,9 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     }
 
     // Read the directive keyword
-    let (rest, keyword) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '-')?;
+    let (rest, keyword) = take_while1(rest, |c: char| {
+        c.is_ascii_alphanumeric() || c == '-' || c == '_'
+    })?;
     if let Some(ch) = rest.chars().next() {
         if !ch.is_whitespace() {
             return Err(PError::expected("pod directive"));
@@ -130,7 +132,7 @@ fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
 
     let mut end = 0usize;
     for (idx, ch) in rest.char_indices() {
-        if ch.is_alphanumeric() || ch == '-' {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
             end = idx + ch.len_utf8();
         } else {
             break;

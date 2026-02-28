@@ -763,7 +763,18 @@ impl Interpreter {
             None => return Ok(Value::hash(HashMap::new())),
         };
         let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
-        for item in args.iter().skip(1) {
+        // Flatten list/array arguments into individual items
+        let mut items = Vec::new();
+        for arg in args.iter().skip(1) {
+            match arg {
+                Value::Array(values, ..) => items.extend(values.iter().cloned()),
+                v if v.is_range() => {
+                    items.extend(crate::runtime::utils::value_to_list(v));
+                }
+                other => items.push(other.clone()),
+            }
+        }
+        for item in &items {
             let keys = match self.call_lambda_with_arg(&func, item.clone()) {
                 Ok(Value::Array(values, ..)) => values.to_vec(),
                 Ok(value) => vec![value],

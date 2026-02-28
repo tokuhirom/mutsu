@@ -369,6 +369,8 @@ impl Value {
                     if class_name == "Pod::Block"
                         || class_name == "Pod::Block::Comment"
                         || class_name == "Pod::Block::Para"
+                        || class_name == "Pod::Block::Named"
+                        || class_name == "Pod::Heading"
                         || class_name == "Pod::Block::Table"
                         || class_name == "Pod::Item"
             ),

@@ -60,18 +60,18 @@ if [[ ! -d "$CLONE_DIR" ]]; then
   UPSTREAM_URL="$(git -C "$REPO_ROOT" remote get-url origin)"
 
   echo "Cloning into sandbox for branch '${BRANCH}'..."
-  git clone "$UPSTREAM_URL" "$CLONE_DIR"
+  git clone --depth 1 "$UPSTREAM_URL" "$CLONE_DIR"
 
   cd "$CLONE_DIR"
 
   # ブランチが既にリモートにあれば checkout、なければ新規作成
-  if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
-    git checkout -b "$BRANCH" "origin/${BRANCH}"
+  if git fetch --depth 1 origin "$BRANCH" 2>/dev/null; then
+    git checkout -b "$BRANCH" FETCH_HEAD
   else
     git checkout -b "$BRANCH"
   fi
 
-  git submodule update --init --recursive
+  git submodule update --init --recursive --depth 1
   cd "$REPO_ROOT"
 fi
 

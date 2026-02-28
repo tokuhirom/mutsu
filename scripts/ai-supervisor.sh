@@ -208,28 +208,89 @@ collect_candidates_tsv() {
         '
 }
 
+fetch_ci_failure_summary() {
+    local pr_number="$1"
+    local run_id job_id log_text summary
+
+    # Get the latest failed check run URL from PR status
+    run_id="$(gh pr view "$pr_number" \
+        --json statusCheckRollup \
+        --jq '[.statusCheckRollup[] | select(.conclusion == "FAILURE")] | first | .detailsUrl' \
+        2>/dev/null | grep -oP '/runs/\K[0-9]+' | head -1)"
+
+    if [[ -z "$run_id" ]]; then
+        return
+    fi
+
+    # Get the failed job ID
+    job_id="$(gh api "repos/{owner}/{repo}/actions/runs/${run_id}/jobs" --jq '
+        [.jobs[] | select(.conclusion == "failure")] | first | .id
+    ' 2>/dev/null)"
+
+    if [[ -z "$job_id" ]]; then
+        return
+    fi
+
+    # Download job log and extract failure lines
+    log_text="$(gh api "repos/{owner}/{repo}/actions/jobs/${job_id}/logs" 2>/dev/null)"
+    if [[ -z "$log_text" ]]; then
+        return
+    fi
+
+    summary="$(printf '%s\n' "$log_text" | grep -E '(not ok |FAILED|Failed [1-9]|Wstat: [^0]|Result: FAIL|panicked)' | tail -30)"
+    if [[ -n "$summary" ]]; then
+        printf '%s\n' "$summary"
+    fi
+}
+
 build_prompt() {
     local pr_number="$1"
     local reason="$2"
     local head_ref="$3"
     local url="$4"
+    local ci_summary="$5"
+
     cat <<EOF
 Fix PR #$pr_number ($head_ref). Reason: $reason.
 PR URL: $url
+EOF
 
-Follow the PR workflow in CLAUDE.md and handle this end-to-end:
-1. Inspect PR checks and merge/conflict status
-2. If needed, rebase/merge main and resolve conflicts
-3. Reproduce failing checks locally
-4. Implement minimal, general fixes (no test-specific hacks)
-5. Run make test and make roast
-6. Commit and push fixes to the PR branch
-7. Ensure CI passes and merge the PR
+    if [[ "$reason" == "conflict" ]]; then
+        cat <<'EOF'
+
+This PR has merge conflicts with main. Steps:
+1. Rebase the branch onto origin/main and resolve conflicts
+2. Run make test and make roast to verify no regressions
+3. Force-push the rebased branch
+4. Verify CI passes
+EOF
+    elif [[ "$reason" == "ci-fail" ]]; then
+        cat <<'EOF'
+
+This PR has CI failures. Steps:
+1. First rebase onto origin/main (the failure may already be fixed on main)
+2. Build and reproduce the failure locally
+3. Fix the code (no test-specific hacks or hardcoded results)
+4. Run make test and make roast
+5. Push fixes and verify CI passes
+EOF
+        if [[ -n "$ci_summary" ]]; then
+            cat <<EOF
+
+CI failure log (key lines):
+$ci_summary
+EOF
+        fi
+    fi
+
+    cat <<'EOF'
+
+After fixing, push and ensure CI passes. If the PR already has auto-merge enabled, it will merge automatically.
 
 Constraints:
 - Do not modify anything under roast/
 - Keep changes focused on the PR scope
-- If PR is already merged/closed, report and stop for that PR
+- If PR is already merged/closed, report and stop
 EOF
 }
 
@@ -240,8 +301,14 @@ run_for_pr() {
     local url="$4"
     local prompt
     local cmd
+    local ci_summary=""
 
-    prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url")"
+    if [[ "$reason" == "ci-fail" ]]; then
+        echo "Fetching CI failure summary for PR #$pr_number..."
+        ci_summary="$(fetch_ci_failure_summary "$pr_number")"
+    fi
+
+    prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url" "$ci_summary")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
         cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" codex --full-auto "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
