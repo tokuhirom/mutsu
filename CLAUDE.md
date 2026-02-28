@@ -19,6 +19,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
   - Example: `cargo run -- -I lib script.raku`
   - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
 - Help: `cargo run -- --help`
+- Environment variables: secrets (e.g. `GH_TOKEN`) are stored in `.env` and loaded via `dotenvx run --`. Use `dotenvx run -- <command>` to run commands that need these secrets (e.g. `dotenvx run -- bash scripts/ai-supervisor.sh --list`).
 
 ## Architecture
 
