@@ -6,6 +6,20 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Str(ref name) = target
+            && self.enum_types.contains_key(name.as_str())
+        {
+            let msg = format!(
+                "Enum '{}' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
+                name
+            );
+            let mut attrs = HashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            let ex = Value::make_instance("X::Constructor::BadType".to_string(), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
         if let Value::ParametricRole {
             base_name,
             type_args,

@@ -2134,6 +2134,17 @@ impl Interpreter {
                     return Ok(Value::hash(map));
                 }
             }
+            "invert" => {
+                if let Value::Str(type_name) = &target
+                    && let Some(variants) = self.enum_types.get(type_name)
+                {
+                    let mut result = Vec::new();
+                    for (k, v) in variants {
+                        result.push(Value::Pair(v.to_string(), Box::new(Value::Str(k.clone()))));
+                    }
+                    return Ok(Value::array(result));
+                }
+            }
             "subparse" | "parse" | "parsefile" => {
                 if let Value::Package(ref package_name) = target {
                     return self.dispatch_package_parse(package_name, method, &args);
@@ -2955,6 +2966,20 @@ impl Interpreter {
                 }
                 "pair" => {
                     return Ok(Value::Pair(key.clone(), Box::new(Value::Int(*value))));
+                }
+                "ACCEPTS" => {
+                    if args.is_empty() {
+                        return Err(RuntimeError::new("ACCEPTS requires an argument"));
+                    }
+                    let other = &args[0];
+                    return Ok(Value::Bool(match other {
+                        Value::Enum {
+                            enum_type: other_type,
+                            key: other_key,
+                            ..
+                        } => enum_type == other_type && key == other_key,
+                        _ => false,
+                    }));
                 }
                 "pred" => {
                     if *index == 0 {

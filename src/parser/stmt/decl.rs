@@ -1538,6 +1538,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         Stmt::EnumDecl {
             name: String::new(),
             variants,
+            is_export: false,
         },
     ))
 }
@@ -1568,6 +1569,19 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
     let (rest, _) = ws(rest)?;
 
+    // Parse `is <trait>` clauses (e.g., `is export`)
+    let mut rest = rest;
+    let mut is_export = false;
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, trait_name) = ident(r)?;
+        if trait_name == "export" {
+            is_export = true;
+        }
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
+
     // Enum variants in <> or ()
     let (rest, variants) = if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
@@ -1588,11 +1602,33 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
     } else if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
+        // Handle `(@variable)` — dynamic enum body from a variable
+        if r.starts_with('@') {
+            let (r2, expr) = expression(r)?;
+            let (r2, _) = ws(r2)?;
+            if let Some(r2) = r2.strip_prefix(')') {
+                return Ok((
+                    r2,
+                    Stmt::EnumDecl {
+                        name,
+                        variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
+                        is_export,
+                    },
+                ));
+            }
+        }
         let mut variants = Vec::new();
         let mut r = r;
         loop {
             if let Some(r) = r.strip_prefix(')') {
-                return Ok((r, Stmt::EnumDecl { name, variants }));
+                return Ok((
+                    r,
+                    Stmt::EnumDecl {
+                        name,
+                        variants,
+                        is_export,
+                    },
+                ));
             }
             let (r2, variant) = parse_enum_variant_entry(r)?;
             variants.push(variant);
@@ -1610,7 +1646,14 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::EnumDecl { name, variants }))
+    Ok((
+        rest,
+        Stmt::EnumDecl {
+            name,
+            variants,
+            is_export,
+        },
+    ))
 }
 
 /// Parse `constant` declaration.

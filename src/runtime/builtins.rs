@@ -59,11 +59,14 @@ impl Interpreter {
             Value::Enum {
                 enum_type, index, ..
             } if enum_type == enum_name => by_index(index),
-            Value::Enum { value, .. } => variants
-                .iter()
-                .enumerate()
-                .find(|(_, (_, v))| *v == value)
-                .and_then(|(idx, _)| by_index(idx)),
+            Value::Enum { key, .. } => {
+                // For foreign enum types, look up by string name, not numeric value
+                variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (k, _))| *k == key)
+                    .and_then(|(idx, _)| by_index(idx))
+            }
             Value::Int(int_value) => variants
                 .iter()
                 .enumerate()
@@ -510,10 +513,20 @@ impl Interpreter {
             let Some(first) = args.first().cloned() else {
                 return Ok(Value::Nil);
             };
-            if let Some(enum_value) = self.coerce_to_enum_variant(name, &variants, first) {
+            if let Some(enum_value) = self.coerce_to_enum_variant(name, &variants, first.clone()) {
                 return Ok(enum_value);
             }
-            return Ok(Value::Nil);
+            // Throw X::Enum::NoValue
+            let value_str = first.to_string_value();
+            let msg = format!("No value '{}' found in enum {}", value_str, name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            attrs.insert("type".to_string(), Value::Str(name.to_string()));
+            attrs.insert("value".to_string(), first);
+            let ex = Value::make_instance("X::Enum::NoValue".to_string(), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
         }
         // Handle zip:with — zip with a custom combining function
         if name == "zip"
