@@ -570,6 +570,8 @@ pub(super) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
         Some((LogicalOp::OrElse, 6))
     } else if input.starts_with("or") && !is_ident_char(input.as_bytes().get(2).copied()) {
         Some((LogicalOp::Or, 2))
+    } else if input.starts_with("xor") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        Some((LogicalOp::XorXor, 3))
     } else if input.starts_with("andthen") && !is_ident_char(input.as_bytes().get(7).copied()) {
         Some((LogicalOp::AndThen, 7))
     } else if input.starts_with("notandthen") && !is_ident_char(input.as_bytes().get(10).copied()) {

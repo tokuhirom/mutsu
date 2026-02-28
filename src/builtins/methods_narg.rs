@@ -70,6 +70,19 @@ fn fmt_joinable_target(target: &Value) -> bool {
     )
 }
 
+fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
+    match needle {
+        Value::Junction { kind, values } => {
+            let mapped = values
+                .iter()
+                .map(|v| contains_value_recursive(hay, v))
+                .collect::<Vec<_>>();
+            Value::junction(kind.clone(), mapped)
+        }
+        _ => Value::Bool(hay.contains(&needle.to_string_value())),
+    }
+}
+
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
 pub(crate) fn native_method_1arg(
@@ -108,21 +121,8 @@ pub(crate) fn native_method_1arg(
                     type_name,
                 ))));
             }
-            // Junction auto-threading for arguments
-            if let Value::Junction { kind, values } = arg {
-                let s = target.to_string_value();
-                let results: Vec<Value> = values
-                    .iter()
-                    .map(|v| Value::Bool(s.contains(&v.to_string_value())))
-                    .collect();
-                return Some(Ok(Value::Junction {
-                    kind: kind.clone(),
-                    values: std::sync::Arc::new(results),
-                }));
-            }
             let s = target.to_string_value();
-            let needle = arg.to_string_value();
-            Some(Ok(Value::Bool(s.contains(&needle))))
+            Some(Ok(contains_value_recursive(&s, arg)))
         }
         // starts-with and ends-with are handled in runtime/methods.rs
         // to support named args (:i, :ignorecase, :m, :ignoremark)
