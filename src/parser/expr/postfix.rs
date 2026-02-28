@@ -69,6 +69,26 @@ fn parse_subscript_adverb(input: &str) -> Option<(&str, &'static str)> {
     None
 }
 
+fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
+    let Expr::Index { target, index } = expr else {
+        return expr;
+    };
+    let var_name = match target.as_ref() {
+        Expr::ArrayVar(name) => Expr::Literal(Value::Str(format!("@{}", name))),
+        Expr::HashVar(name) => Expr::Literal(Value::Str(format!("%{}", name))),
+        _ => Expr::Literal(Value::Nil),
+    };
+    Expr::Call {
+        name: "__mutsu_subscript_adverb".to_string(),
+        args: vec![
+            *target,
+            *index,
+            Expr::Literal(Value::Str(adverb.to_string())),
+            var_name,
+        ],
+    }
+}
+
 /// Try to parse :exists or :!exists adverb on a subscript expression.
 /// Returns (remaining_input, exists_expr) or None if no adverb found.
 fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
@@ -1146,18 +1166,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     index: Box::new(index_expr),
                 }
             };
-            if r.starts_with(":v") && !is_ident_char(r.as_bytes().get(2).copied()) {
+            if is_zen_angle && r.starts_with(":v") && !is_ident_char(r.as_bytes().get(2).copied()) {
                 let r = &r[2..];
-                expr = if is_zen_angle {
-                    Expr::MethodCall {
-                        target: Box::new(indexed_expr),
-                        name: "values".to_string(),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                    }
-                } else {
-                    indexed_expr
+                expr = Expr::MethodCall {
+                    target: Box::new(indexed_expr),
+                    name: "values".to_string(),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
                 };
                 rest = r;
                 continue;
@@ -1311,9 +1327,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // These can appear with whitespace after ] or } subscripts
         if matches!(&expr, Expr::Index { .. } | Expr::ZenSlice(_)) {
             let (r_adv2, _) = ws(rest)?;
-            if let Some((r_after_adv, _adv_name)) = parse_subscript_adverb(r_adv2) {
+            if let Some((r_after_adv, adv_name)) = parse_subscript_adverb(r_adv2) {
                 // Avoid consuming ternary `:v` separator in `?? !!` expressions.
                 if !has_ternary_else_after(r_after_adv) {
+                    expr = subscript_adverb_expr(expr, adv_name);
                     rest = r_after_adv;
                     continue;
                 }
