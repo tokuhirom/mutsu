@@ -102,7 +102,10 @@ After implementing:
 - Run cargo fmt to format the code
 - Run make test and make roast to check regressions (these use release build)
 - ONLY proceed to next steps if both make test and make roast pass (exit 0)
-- If it passes, append to roast-whitelist.txt while keeping sort order
+- If ALL subtests pass, append to roast-whitelist.txt while keeping sort order
+- Even if not all subtests pass, if you made meaningful progress (more subtests
+  passing than before) and make test/roast both pass, still open a PR with the
+  improvements. Do NOT add to whitelist in this case.
 - before opening a PR, merge the latest remote main with: git fetch origin && git merge origin/main
 - resolve merge conflicts if any, rerun relevant checks, then commit and push
 - open a PR with gh pr create
