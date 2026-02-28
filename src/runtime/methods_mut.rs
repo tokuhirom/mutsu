@@ -905,8 +905,15 @@ impl Interpreter {
             let key = target_var.to_string();
             match method {
                 "push" => {
-                    self.check_container_element_types(&key, &args)?;
-                    let result = self.push_to_shared_var(&key, args, &target);
+                    let normalized_args = args
+                        .into_iter()
+                        .map(|arg| match arg {
+                            Value::Scalar(inner) => *inner,
+                            other => other,
+                        })
+                        .collect::<Vec<_>>();
+                    self.check_container_element_types(&key, &normalized_args)?;
+                    let result = self.push_to_shared_var(&key, normalized_args, &target);
                     return Ok(result);
                 }
                 "append" => {
@@ -943,7 +950,13 @@ impl Interpreter {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let mut pref = args;
+                    let mut pref: Vec<Value> = args
+                        .into_iter()
+                        .map(|a| match a {
+                            Value::Scalar(inner) => *inner,
+                            other => other,
+                        })
+                        .collect();
                     pref.extend(items);
                     let result = Value::real_array(pref.clone());
                     self.env.insert(key, Value::real_array(pref));
@@ -1157,7 +1170,11 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     for (i, arg) in args.iter().enumerate() {
-                        items.insert(i, arg.clone());
+                        let val = match arg {
+                            Value::Scalar(inner) => *inner.clone(),
+                            other => other.clone(),
+                        };
+                        items.insert(i, val);
                     }
                     let result = Value::Array(Arc::new(items), array_flag);
                     self.env.insert(key, result.clone());

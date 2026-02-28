@@ -269,7 +269,13 @@ pub(crate) fn native_method_0arg(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.resolve();
     let method = method.as_str();
-    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner
+
+    // Scalar containers are transparent for method dispatch.
+    if let Value::Scalar(inner) = target {
+        return native_method_0arg(inner, method_sym);
+    }
+
+    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
@@ -1309,8 +1315,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
-                // LazyList needs interpreter to force; fall through to runtime
-                Value::LazyList(_) => return None,
+                // LazyList is lazy — .elems returns a Failure
+                Value::LazyList(_) => {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::Str("Cannot .elems a lazy list".to_string()),
+                    );
+                    let exception = Value::make_instance("X::Cannot::Lazy".to_string(), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    return Some(Ok(Value::make_instance(
+                        "Failure".to_string(),
+                        failure_attrs,
+                    )));
+                }
                 _ => Value::Int(1),
             };
             Some(Ok(result))
@@ -2501,7 +2521,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "item" => match target {
             Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
-            other => Some(Ok(other.clone())),
+            other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         },
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array

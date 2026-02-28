@@ -957,6 +957,9 @@ impl Interpreter {
                 }
                 Ok(Value::Str(s.clone()))
             }
+            Value::Seq(items) | Value::Slip(items) => {
+                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
+            }
             other => Ok(other),
         }
     }

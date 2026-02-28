@@ -1575,6 +1575,10 @@ impl Compiler {
                     self.code.emit(OpCode::MakeGather(idx));
                 }
             }
+            Expr::Eager(inner) => {
+                self.compile_expr(inner);
+                self.code.emit(OpCode::Eager);
+            }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::ContainerizePair);
