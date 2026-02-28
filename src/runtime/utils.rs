@@ -754,6 +754,12 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
             .collect(),
         Value::Slip(items) => items.to_vec(),
+        Value::Instance { attributes, .. } => {
+            if let Some(Value::Array(items, ..)) = attributes.get("__array_items") {
+                return items.to_vec();
+            }
+            vec![val.clone()]
+        }
         Value::Nil => vec![],
         other => vec![other.clone()],
     }

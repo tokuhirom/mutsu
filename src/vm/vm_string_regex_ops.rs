@@ -616,6 +616,27 @@ impl VM {
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
                         return self.interpreter.eval_call_on_value(code_val, Vec::new());
                     }
+                    let method_name = name
+                        .strip_prefix("infix:<")
+                        .and_then(|s| s.strip_suffix('>'))
+                        .unwrap_or(name);
+                    if !method_name.is_empty()
+                        && !call_args.is_empty()
+                        && call_args[0].to_string_value() == "method"
+                    {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("name".to_string(), Value::Str(method_name.to_string()));
+                        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+                        let mut sig_attrs = std::collections::HashMap::new();
+                        sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
+                        attrs.insert(
+                            "signature".to_string(),
+                            Value::make_instance("Signature".to_string(), sig_attrs),
+                        );
+                        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+                        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+                        return Ok(Value::make_instance("Method".to_string(), attrs));
+                    }
                     Err(RuntimeError::new(format!(
                         "Unknown infix function: {}",
                         name
@@ -631,6 +652,27 @@ impl VM {
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
                         self.interpreter.eval_call_on_value(code_val, call_args)
                     } else {
+                        let method_name = name
+                            .strip_prefix("infix:<")
+                            .and_then(|s| s.strip_suffix('>'))
+                            .unwrap_or(name);
+                        if !method_name.is_empty()
+                            && !call_args.is_empty()
+                            && call_args[0].to_string_value() == "method"
+                        {
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert("name".to_string(), Value::Str(method_name.to_string()));
+                            attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+                            let mut sig_attrs = std::collections::HashMap::new();
+                            sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
+                            attrs.insert(
+                                "signature".to_string(),
+                                Value::make_instance("Signature".to_string(), sig_attrs),
+                            );
+                            attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+                            attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+                            return Ok(Value::make_instance("Method".to_string(), attrs));
+                        }
                         Err(RuntimeError::new(format!(
                             "Unknown infix function: {}",
                             name

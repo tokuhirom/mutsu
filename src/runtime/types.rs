@@ -552,7 +552,7 @@ impl Interpreter {
         }
     }
 
-    fn captured_type_object(value: &Value) -> Value {
+    pub(crate) fn captured_type_object(value: &Value) -> Value {
         match value {
             Value::Package(name) => Value::Package(name.clone()),
             Value::Instance { class_name, .. } => Value::Package(class_name.clone()),
