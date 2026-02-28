@@ -157,6 +157,10 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
+            Stmt::MarkReadonly(name) => {
+                let idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::MarkVarReadonly(idx));
+            }
             Stmt::Say(exprs) => {
                 self.compile_exprs(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));

@@ -656,8 +656,14 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     };
 
     // Optional marker on pointy params: $x? / $x!
-    let mut rest = if rest.starts_with('?') || rest.starts_with('!') {
-        &rest[1..]
+    let mut optional_marker = false;
+    let mut required_marker = false;
+    let mut rest = if let Some(after) = rest.strip_prefix('?') {
+        optional_marker = true;
+        after
+    } else if let Some(after) = rest.strip_prefix('!') {
+        required_marker = true;
+        after
     } else {
         rest
     };
@@ -713,7 +719,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             name: param_name,
             default,
             multi_invocant: true,
-            required: false,
+            required: required_marker,
             named: false,
             slurpy,
             double_slurpy,
@@ -725,7 +731,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             code_signature: None,
             where_constraint: None,
             traits,
-            optional_marker: false,
+            optional_marker,
             is_invocant: false,
             shape_constraints,
         },

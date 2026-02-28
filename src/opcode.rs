@@ -333,6 +333,8 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
+    /// Mark a variable as readonly (for `:=` binding).
+    MarkVarReadonly(u32),
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).

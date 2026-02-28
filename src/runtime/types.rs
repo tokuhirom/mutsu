@@ -340,6 +340,11 @@ impl Interpreter {
         self.readonly_vars = saved;
     }
 
+    /// Mark a variable as readonly.
+    pub(crate) fn mark_readonly(&mut self, name: &str) {
+        self.readonly_vars.insert(name.to_string());
+    }
+
     /// Check if a variable is readonly and return an error if so.
     /// Returns Ok(()) if writable, Err with X::Multi::NoMatch for increment/decrement,
     /// or Err with a generic message for assignment.

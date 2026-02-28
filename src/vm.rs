@@ -1677,6 +1677,11 @@ impl VM {
                 self.interpreter.check_readonly_for_modify(name)?;
                 *ip += 1;
             }
+            OpCode::MarkVarReadonly(name_idx) => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.interpreter.mark_readonly(&name);
+                *ip += 1;
+            }
 
             // -- Let scope management --
             OpCode::LetSave {

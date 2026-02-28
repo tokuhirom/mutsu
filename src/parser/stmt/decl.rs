@@ -1016,15 +1016,44 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 }
 
 /// Parse destructuring: ($a, $b, $c) = expr
+/// Metadata for each variable in a destructuring declaration.
+struct DestructureVar {
+    /// Full variable name including sigil prefix for @/% (e.g. "@y", "x", "%h")
+    name: String,
+    /// Whether this is a slurpy parameter (*@rest)
+    is_slurpy: bool,
+    /// Whether this is an optional parameter ($x?)
+    #[allow(dead_code)]
+    is_optional: bool,
+    /// Whether this is a named parameter (:@even)
+    is_named: bool,
+}
+
 pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
-    let mut names = Vec::new();
+    let mut vars: Vec<DestructureVar> = Vec::new();
     let mut r = rest;
     loop {
         if r.starts_with(')') {
             break;
         }
+
+        let mut is_slurpy = false;
+        let mut is_named = false;
+
+        // Check for slurpy prefix '*'
+        if let Some(after) = r.strip_prefix('*') {
+            is_slurpy = true;
+            r = after;
+        }
+
+        // Check for named prefix ':'
+        if let Some(after) = r.strip_prefix(':') {
+            is_named = true;
+            r = after;
+        }
+
         let sigil = r.as_bytes().first().copied().unwrap_or(0);
         if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
             let prefix = match sigil {
@@ -1034,8 +1063,24 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 _ => "",
             };
             let (r2, n) = var_name(r)?;
-            names.push(format!("{}{}", prefix, n));
+            let full_name = format!("{}{}", prefix, n);
             let (r2, _) = ws(r2)?;
+
+            // Check for optional suffix '?'
+            let (r2, is_optional) = if let Some(after) = r2.strip_prefix('?') {
+                (after, true)
+            } else {
+                (r2, false)
+            };
+            let (r2, _) = ws(r2)?;
+
+            vars.push(DestructureVar {
+                name: full_name,
+                is_slurpy,
+                is_optional,
+                is_named,
+            });
+
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
                 let (r2, _) = ws(r2)?;
@@ -1049,6 +1094,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, _) = parse_char(r, ')')?;
     let (rest, _) = ws(rest)?;
+    let is_binding = rest.starts_with(":=") || rest.starts_with("::=");
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
         let rest = if let Some(stripped) = rest.strip_prefix("::=") {
             stripped
@@ -1058,10 +1104,71 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             &rest[1..]
         };
         let (rest, _) = ws(rest)?;
-        let (rest, rhs) = parse_comma_or_expr(rest)?;
+        let (rest, raw_rhs) = parse_comma_or_expr(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = opt_char(rest, ';');
-        // Desugar into block
+
+        let has_named = vars.iter().any(|v| v.is_named);
+
+        // For := binding with positional params, wrap the RHS in .list
+        // to handle Capture unpacking. Don't do this for named destructuring.
+        let rhs = if is_binding && !has_named {
+            Expr::MethodCall {
+                target: Box::new(raw_rhs),
+                name: "list".to_string(),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            }
+        } else {
+            raw_rhs
+        };
+
+        if has_named {
+            // Named destructuring: bind from a hash
+            // Desugar: my %__destructure_tmp__ = <rhs>; my @even = %tmp<even>; ...
+            let tmp_name = "%__destructure_tmp__".to_string();
+            let hash_bare = "__destructure_tmp__".to_string();
+            let mut stmts = vec![Stmt::VarDecl {
+                name: tmp_name,
+                expr: rhs,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+            }];
+            for dvar in &vars {
+                // Extract bare name (without sigil prefix)
+                let bare_name = if dvar.name.starts_with('@')
+                    || dvar.name.starts_with('%')
+                    || dvar.name.starts_with('&')
+                {
+                    &dvar.name[1..]
+                } else {
+                    &dvar.name
+                };
+                stmts.push(Stmt::VarDecl {
+                    name: dvar.name.clone(),
+                    expr: Expr::Index {
+                        target: Box::new(Expr::HashVar(hash_bare.clone())),
+                        index: Box::new(Expr::Literal(Value::Str(bare_name.to_string()))),
+                    },
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                });
+            }
+            return Ok((rest, Stmt::SyntheticBlock(stmts)));
+        }
+
+        // Positional destructuring
         let tmp_name = "@__destructure_tmp__".to_string();
         let array_bare = "__destructure_tmp__".to_string();
         let mut stmts = vec![Stmt::VarDecl {
@@ -1075,13 +1182,34 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
         }];
-        for (i, var_name) in names.iter().enumerate() {
-            stmts.push(Stmt::VarDecl {
-                name: var_name.clone(),
-                expr: Expr::Index {
+        let has_explicit_slurpy = vars.iter().any(|v| v.is_slurpy);
+        for (i, dvar) in vars.iter().enumerate() {
+            // An @-sigiled variable that is the last non-slurpy variable
+            // should consume all remaining elements (implicit slurpy behavior).
+            let is_implicit_slurpy = !has_explicit_slurpy
+                && dvar.name.starts_with('@')
+                && !vars[i + 1..].iter().any(|v| !v.is_slurpy);
+
+            let expr = if dvar.is_slurpy || is_implicit_slurpy {
+                // Slurpy: collect remaining elements from index i onward
+                // Desugar: @rest = @tmp[i..*]
+                Expr::Index {
+                    target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                    index: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Int(i as i64))),
+                        op: TokenKind::DotDot,
+                        right: Box::new(Expr::Whatever),
+                    }),
+                }
+            } else {
+                Expr::Index {
                     target: Box::new(Expr::ArrayVar(array_bare.clone())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
-                },
+                }
+            };
+            stmts.push(Stmt::VarDecl {
+                name: dvar.name.clone(),
+                expr,
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -1090,6 +1218,10 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
             });
+            // For := binding, mark scalar variables as readonly
+            if is_binding && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
+                stmts.push(Stmt::MarkReadonly(dvar.name.clone()));
+            }
         }
         return Ok((rest, Stmt::SyntheticBlock(stmts)));
     }
@@ -1097,9 +1229,9 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     let mut stmts = Vec::new();
-    for name in &names {
+    for dvar in &vars {
         stmts.push(Stmt::VarDecl {
-            name: name.clone(),
+            name: dvar.name.clone(),
             expr: Expr::Literal(Value::Nil),
             type_constraint: None,
             is_state: false,
