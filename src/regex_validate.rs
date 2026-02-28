@@ -132,6 +132,13 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Modifier colon in regex (e.g., :i, :s, :11, :my $var = expr;)
             ':' => {
                 prev_was_quantifier = false;
+                // Backtracking control modifier (e.g., [ ... ]:!).
+                // It applies to the preceding atom and is valid as a standalone
+                // modifier marker with no name.
+                if chars.peek() == Some(&'!') {
+                    chars.next();
+                    continue;
+                }
                 // Check if it's followed by digits only (unrecognized modifier)
                 let mut digits = String::new();
                 while let Some(&ch) = chars.peek() {

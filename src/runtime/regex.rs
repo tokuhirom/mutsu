@@ -303,7 +303,11 @@ impl Interpreter {
         env
     }
 
-    fn eval_regex_expr_value(&self, expr_src: &str, caps: &RegexCaptures) -> Option<Value> {
+    pub(super) fn eval_regex_expr_value(
+        &self,
+        expr_src: &str,
+        caps: &RegexCaptures,
+    ) -> Option<Value> {
         let source = format!("my $x = ({expr_src}); $x");
         let (stmts, _) = crate::parse_dispatch::parse_source(&source).ok()?;
         let mut interp = Interpreter {
@@ -797,6 +801,29 @@ impl Interpreter {
         result
     }
 
+    pub(super) fn regex_match_with_captures_full_from_start(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<RegexCaptures> {
+        let parsed = self.parse_regex(pattern)?;
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        let mut matches = self.regex_match_ends_from_caps_in_pkg(&parsed, &chars, 0, &pkg);
+        if matches.is_empty() {
+            return None;
+        }
+        matches.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
+        let (end, mut caps) = matches
+            .into_iter()
+            .rev()
+            .find(|(end, _)| *end == chars.len())?;
+        caps.from = caps.capture_start.unwrap_or(0);
+        caps.to = caps.capture_end.unwrap_or(end);
+        caps.matched = chars[caps.from..caps.to].iter().collect();
+        Some(caps)
+    }
+
     /// Match regex anchored at a specific character position.
     /// Returns captures only if the match starts exactly at `pos`.
     pub(crate) fn regex_match_with_captures_at(
@@ -1048,12 +1075,9 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Option<(usize, RegexCaptures)> {
-        let mut matches = self.regex_match_ends_from_caps_in_pkg(pattern, chars, start, pkg);
-        if matches.is_empty() {
-            return None;
-        }
-        matches.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
-        matches.pop()
+        self.regex_match_ends_from_caps_in_pkg(pattern, chars, start, pkg)
+            .into_iter()
+            .next()
     }
 
     fn regex_match_ends_from_caps_in_pkg(
@@ -1105,7 +1129,7 @@ impl Interpreter {
                             candidates = vec![best];
                         }
                     }
-                    for (next, new_caps) in candidates.into_iter().rev() {
+                    for (next, new_caps) in candidates {
                         stack.push((
                             idx + 1,
                             next,
@@ -1136,7 +1160,7 @@ impl Interpreter {
                     } else {
                         stack.push((idx + 1, pos, caps.clone()));
                     }
-                    for (next, new_caps) in candidates.into_iter().rev() {
+                    for (next, new_caps) in candidates {
                         stack.push((
                             idx + 1,
                             next,
@@ -1170,7 +1194,7 @@ impl Interpreter {
                     {
                         positions = vec![last];
                     }
-                    for (p, c) in positions.into_iter().rev() {
+                    for (p, c) in positions {
                         stack.push((idx + 1, p, c));
                     }
                 }
@@ -1213,7 +1237,7 @@ impl Interpreter {
                     {
                         positions = vec![last];
                     }
-                    for (p, c) in positions.into_iter().rev() {
+                    for (p, c) in positions {
                         stack.push((idx + 1, p, c));
                     }
                 }
@@ -1231,6 +1255,25 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        if let RegexAtom::Alternation(alternatives) = atom {
+            let mut out = Vec::new();
+            for alt in alternatives {
+                if let Some((next, mut inner_caps)) =
+                    self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
+                {
+                    let mut new_caps = current_caps.clone();
+                    for (k, v) in inner_caps.named.drain() {
+                        new_caps.named.entry(k).or_default().extend(v);
+                    }
+                    new_caps.positional.append(&mut inner_caps.positional);
+                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    out.push((next, new_caps));
+                }
+            }
+            // Stack matching is LIFO; reverse so the first alternative is explored first.
+            out.reverse();
+            return out;
+        }
         if let RegexAtom::Group(pattern) = atom {
             let mut out = Vec::new();
             for (end, mut inner_caps) in

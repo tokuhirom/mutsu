@@ -178,6 +178,7 @@ roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/interpolating-closure.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
+roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
