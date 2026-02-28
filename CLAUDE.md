@@ -201,11 +201,11 @@ Per-type method documentation — consult when implementing methods on specific 
 - Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
 - Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
 - When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
-- When investigating a roast test outside of "roast fix" mode and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`. (In "roast fix" mode, deferring is not allowed — implement everything needed.)
+- When investigating a roast test and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`.
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
 - When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
 - Never remove a previously passing test from the whitelist due to a regression. If a change causes a whitelisted test to fail, fix the regression so the test passes again.
-- When a roast test requires solving multiple unrelated prerequisites (outside of "roast fix" mode): fix what you can, update the relevant file under `TODO_roast/`, and move on. In "roast fix" mode, implement ALL prerequisites — do not move on until the test passes.
+- When a roast test requires solving multiple unrelated prerequisites: fix what you can, update the relevant file under `TODO_roast/`, and move on.
 
 ## Working on complex features
 
@@ -257,28 +257,52 @@ Before writing any code, always investigate the test in this order:
 4. **Run with `mutsu`**: `timeout 30 target/debug/mutsu <roast-test-path>`
 5. Compare outputs to identify what mutsu is doing wrong, then fix the interpreter.
 
-## roast fix workflow
+## AI fleet operations
 
-When the user says **"roast fix"**, execute this automated loop (serially, without sub-agents):
+Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI (or human) launches workers and a supervisor, then monitors their progress.
 
-1. If `tmp/roast-raku-pass.txt` does not exist, run `./scripts/roast-raku-check.sh` to generate it.
-2. Run `scripts/pick-next-roast.sh -n 1` to find the next failing roast test.
-3. Ensure you are on `main` and up to date: `git checkout main && git pull`.
-4. Create a feature branch: `git checkout -b <branch-name>`.
-5. Investigate the test (see "Investigating a failing roast test" above).
-6. Fix the interpreter so the roast test passes. **Implement ALL features required to pass the test, no matter how many or how complex.** Do NOT skip the test or move on because it requires multiple new features. This is the core work of the project.
-7. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
-8. Append the test path to `roast-whitelist.txt` (sorted).
-9. **Before committing**: run `make test` and `make roast` to ensure no regressions.
-10. Commit, push the branch, and create a PR with `gh pr create`.
-11. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
-12. Poll PR CI status every 60 seconds with `gh pr checks <pr-number>`:
-    - If CI fails: read the failure log, push fix commits, and retry.
-    - If PR has conflicts: rebase onto main (`git pull --rebase origin main`), force push, and wait for CI again.
-    - If CI passes and PR is merged: proceed to next step.
-13. Switch back to main and pull: `git checkout main && git pull`.
-14. Repeat from step 1 with the next failing test.
-15. Continue this loop indefinitely until stopped by the user.
+### Scripts
+
+- **`ai-sandbox.sh`** — Creates an isolated sandbox (via `bwrap`) with a fresh git clone of the repo per branch. Runs `claude`, `codex`, or `bash` inside the sandbox. Sandboxes share a cargo build cache under `.git/sandbox/.shared-target/`.
+- **`ai-run-roast.sh`** — Takes a single roast test file path, builds a prompt with investigation steps, and runs an agent in a sandbox to fix it. Retries up to 3 times on failure.
+- **`ai-next-roast.sh`** — Continuously picks random failing roast tests (via `pick-next-roast.sh`), coordinates with other instances via `wip.txt` to avoid duplicate work, and delegates each test to `ai-run-roast.sh`.
+- **`ai-supervisor.sh`** — Monitors open PRs for merge conflicts and CI failures. Dispatches agents to rebase/fix them. When idle, triggers roast history updates. Polls every 10 minutes.
+
+### Starting the fleet
+
+```bash
+# Launch N workers (each picks and fixes roast tests continuously)
+dotenvx run -- ./scripts/ai-next-roast.sh --agent codex &
+dotenvx run -- ./scripts/ai-next-roast.sh --agent codex &
+dotenvx run -- ./scripts/ai-next-roast.sh --agent codex &
+
+# Launch 1 supervisor (fixes broken PRs, updates history)
+dotenvx run -- ./scripts/ai-supervisor.sh --agent codex &
+```
+
+### Monitoring
+
+- **Worker status**: `ps aux | grep ai-next-roast`
+- **PR progress**: `gh pr list --state open`
+- **Supervisor status**: `dotenvx run -- ./scripts/ai-supervisor.sh --list`
+- **Agent logs** (claude): pipe through `python3 scripts/stream-json-pretty.py`
+- **Restart dead workers**: re-run the `ai-next-roast.sh` command
+
+### Parent AI responsibilities
+
+- Periodically check that child processes are alive and restart any that died
+- Review agent logs and identify patterns in failures
+- Improve prompts and scripts based on observed failure modes
+- Record failure reasons in `TODO_roast/` to accumulate knowledge
+- Monitor `wip.txt` for stale entries (agents that died mid-task)
+
+### Stopping
+
+```bash
+touch tmp/.stop
+```
+
+All scripts check for `tmp/.stop` and exit gracefully when it appears.
 
 ## Test::Util function workout
 
