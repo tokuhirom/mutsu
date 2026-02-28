@@ -1232,9 +1232,15 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            let (r, index) = parse_bracket_indices(r)?;
-            let (r, _) = ws(r)?;
-            let (r, _) = parse_char(r, '}')?;
+            // Empty hash subscript (%h{}) follows the same lookup path as %h{*}.
+            let (r, index) = if let Some(r) = r.strip_prefix('}') {
+                (r, Expr::Whatever)
+            } else {
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, '}')?;
+                (r, index)
+            };
             // Allow whitespace before adverbs
             let (r_adv, _) = ws(r)?;
             // Check for :exists / :!exists / :delete adverbs on curly-brace subscript
