@@ -856,13 +856,19 @@ impl Interpreter {
                 _ => {}
             }
         }
-        if matches!(method, "max" | "min" | "lines")
+        if matches!(method, "max" | "min" | "lines" | "delayed")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
                 "Cannot call .{} on a Supply type object",
                 method
             )));
+        }
+        if method == "delayed"
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+            && args.first().is_some_and(|delay| delay.to_f64() <= 0.0)
+        {
+            return Ok(target);
         }
         if let Value::Array(items, is_array) = &target {
             match (method, args.as_slice()) {
