@@ -296,7 +296,7 @@ impl Value {
             }
             Value::Array(items, ..) => items
                 .iter()
-                .map(|v| v.to_string_value())
+                .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::LazyList(_) => "LazyList".to_string(),
@@ -573,7 +573,7 @@ impl Value {
             }
             Value::Seq(items) | Value::Slip(items) => items
                 .iter()
-                .map(|v| v.to_string_value())
+                .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::Promise(p) => format!("Promise({})", p.status()),
@@ -614,6 +614,15 @@ impl Value {
                 }
             }
             Value::CustomTypeInstance { type_name, .. } => format!("{}()", type_name),
+        }
+    }
+
+    /// Stringify a value in Raku's Str context.
+    /// Type objects (Package) become empty string; everything else uses to_string_value.
+    pub(crate) fn to_str_context(&self) -> String {
+        match self {
+            Value::Package(_) => String::new(),
+            _ => self.to_string_value(),
         }
     }
 

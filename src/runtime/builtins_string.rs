@@ -50,6 +50,37 @@ impl Interpreter {
         Ok(Value::array(Vec::new()))
     }
 
+    pub(super) fn builtin_unival(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let Some(arg) = args.first() else {
+            return Ok(Value::Nil);
+        };
+        let ch = match arg {
+            Value::Int(i) if *i >= 0 => {
+                let Some(ch) = char::from_u32(*i as u32) else {
+                    return Ok(Value::Num(f64::NAN));
+                };
+                ch
+            }
+            _ => {
+                let s = arg.to_string_value();
+                let Some(ch) = s.chars().next() else {
+                    return Ok(Value::Nil);
+                };
+                ch
+            }
+        };
+        if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
+            return Ok(crate::value::make_rat(n, d));
+        }
+        if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
+            return Ok(Value::Int(n));
+        }
+        if let Some(n) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+            return Ok(Value::Int(n as i64));
+        }
+        Ok(Value::Num(f64::NAN))
+    }
+
     pub(super) fn builtin_flip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args
             .first()

@@ -93,6 +93,22 @@ impl VM {
         }
     }
 
+    /// Create a Thread instance with the current OS thread's ID.
+    pub(super) fn make_thread_instance() -> Value {
+        let thread_id = std::thread::current().id();
+        // Extract a numeric ID from ThreadId's Debug representation
+        let id_str = format!("{:?}", thread_id);
+        let numeric_id: i64 = id_str
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("id".to_string(), Value::Int(numeric_id));
+        Value::make_instance("Thread".to_string(), attrs)
+    }
+
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
         match &code.constants[idx as usize] {
             Value::Str(s) => s.as_str(),
@@ -297,7 +313,11 @@ impl VM {
 
     pub(super) fn increment_value(value: &Value) -> Value {
         match value {
-            Value::Int(i) => Value::Int(i + 1),
+            Value::Int(i) => i
+                .checked_add(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
             Value::Str(s) => {
@@ -320,7 +340,11 @@ impl VM {
 
     pub(super) fn decrement_value(value: &Value) -> Value {
         match value {
-            Value::Int(i) => Value::Int(i - 1),
+            Value::Int(i) => i
+                .checked_sub(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => {
@@ -462,6 +486,17 @@ impl VM {
                 | "CallFrame"
                 | "Backtrace"
                 | "array"
+                | "int8"
+                | "int16"
+                | "int32"
+                | "int64"
+                | "uint8"
+                | "uint16"
+                | "uint32"
+                | "uint64"
+                | "byte"
+                | "int"
+                | "uint"
         )
     }
 
@@ -669,6 +704,16 @@ impl VM {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        fn collection_contains_instance(value: &Value) -> bool {
+            match value {
+                Value::Instance { .. } => true,
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    items.iter().any(collection_contains_instance)
+                }
+                Value::Hash(map) => map.values().any(collection_contains_instance),
+                _ => false,
+            }
+        }
         let bypass_supply_extrema_fastpath = matches!(method, "max" | "min" | "lines")
             && args.len() <= 1
             && (matches!(
@@ -681,7 +726,10 @@ impl VM {
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supplier"
             );
-        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath {
+        let bypass_gist_fastpath =
+            method == "gist" && args.is_empty() && collection_contains_instance(target);
+        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath || bypass_gist_fastpath
+        {
             return None;
         }
         if args.len() == 2 {
@@ -986,5 +1034,37 @@ impl VM {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// If the variable has a native int type constraint, wrap the value.
+    /// Used by increment/decrement to implement overflow/underflow wrapping.
+    pub(super) fn maybe_wrap_native_int(
+        interp: &crate::runtime::Interpreter,
+        var_name: &str,
+        value: Value,
+    ) -> Value {
+        use crate::runtime::native_types;
+        use num_bigint::BigInt as NumBigInt;
+        use num_traits::ToPrimitive;
+
+        let constraint = match interp.var_type_constraint(var_name) {
+            Some(c) => c,
+            None => return value,
+        };
+        if !native_types::is_native_int_type(&constraint) {
+            return value;
+        }
+
+        let big_val = match &value {
+            Value::Int(n) => NumBigInt::from(*n),
+            Value::BigInt(n) => n.clone(),
+            _ => return value,
+        };
+
+        let wrapped = native_types::wrap_native_int(&constraint, &big_val);
+        wrapped
+            .to_i64()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::BigInt(wrapped))
     }
 }

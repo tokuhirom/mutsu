@@ -371,8 +371,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             let adverb_name = &r[..end];
             if adverb_name == "c" {
                 q_closure_interp = true;
-            }
-            if adverb_name == "o" || adverb_name == "format" {
+            } else if adverb_name == "o" || adverb_name == "format" {
                 q_format_quote = true;
             }
             r = &r[end..];
@@ -406,7 +405,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     } else if let Some(rest) = after_prefix.strip_prefix(":format") {
         (rest, true)
     } else {
-        (after_prefix, false)
+        (after_prefix, q_format_quote)
     };
     let is_format_quote = q_format_quote || is_format_adverb;
 
@@ -912,7 +911,7 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
     interpolate_string_content_with_modes(content, true, false)
 }
 
-fn interpolate_string_content_with_modes(
+pub(in crate::parser) fn interpolate_string_content_with_modes(
     content: &str,
     interpolate_vars: bool,
     interpolate_closures: bool,

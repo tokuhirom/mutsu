@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 7;
 
 # Labeled loop with next LABEL
 my $result = '';
@@ -53,4 +53,22 @@ is $sum, 7, 'plain last/next still works';
         redo FOO unless $count >= 3;
     }
     is $count, 3, 'redo LABEL unless works correctly';
+}
+
+# Digit-suffixed labels are valid and work in control-flow statements.
+{
+    my $seen = 0;
+    L1: for 1..3 {
+        for 1..3 {
+            $seen++;
+            last L1 if $seen == 2;
+        }
+    }
+    is $seen, 2, 'last LABEL accepts digit-suffixed loop labels';
+}
+
+# Labeled loop expressions inside parens should parse and execute.
+{
+    my @items = (L2: while False { 1 });
+    is +@items, 0, 'paren expression accepts labeled loop with digit label';
 }

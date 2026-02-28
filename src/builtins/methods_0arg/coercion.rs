@@ -265,7 +265,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 };
                 Some(Ok(Value::array(bytes)))
             }
-            Value::Array(..) => Some(Ok(target.clone())),
+            Value::Array(items, is_array) => {
+                if method == "Array" && !*is_array {
+                    Some(Ok(Value::real_array(items.to_vec())))
+                } else {
+                    Some(Ok(target.clone()))
+                }
+            }
             Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
