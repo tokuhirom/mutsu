@@ -1,13 +1,16 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_tag};
 
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::operators::*;
 use super::postfix::prefix_expr;
 use super::{contains_whatever, wrap_whatevercode};
+
+static CHAIN_CMP_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Ternary: expr ?? expr !! expr
 pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
@@ -93,7 +96,7 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     Ok((rest, cond))
 }
 
-/// Low-precedence: or / orelse
+/// Low-precedence: or / xor / orelse
 pub(super) fn or_expr(input: &str) -> PResult<'_, Expr> {
     or_expr_mode(input, ExprMode::Full)
 }
@@ -102,12 +105,18 @@ fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = assign_or_and_expr(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op @ (LogicalOp::Or | LogicalOp::OrElse), len)) = parse_word_logical_op(r) {
+        if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
+            parse_word_logical_op(r)
+        {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
                 assign_or_and_expr(r, mode).map_err(|err| {
-                    enrich_expected_error(err, "expected expression after 'or'/'orelse'", r.len())
+                    enrich_expected_error(
+                        err,
+                        "expected expression after 'or'/'xor'/'orelse'",
+                        r.len(),
+                    )
                 })?
             } else {
                 assign_or_and_expr(r, mode)?
@@ -128,74 +137,12 @@ fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 /// Assignment expressions at the or/and level: $var = expr
 /// This sits between or/and and not in precedence.
 fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    // Try to parse: $var = expr (simple variable assignment as expression)
-    if let Ok((rest, expr)) = and_expr_mode(input, mode) {
-        let (r, _) = ws(rest)?;
-        if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
-            // Check if LHS is a variable
-            if let Expr::Var(name) = &expr {
-                let r = &r[1..];
-                let (r, _) = ws(r)?;
-                let (r, rhs) = and_expr_mode(r, mode)?;
-                return Ok((
-                    r,
-                    Expr::AssignExpr {
-                        name: name.clone(),
-                        expr: Box::new(rhs),
-                    },
-                ));
-            }
-            // Check if LHS is a subscripted variable: @a[1] = ..., %h{k} = ...
-            if let Expr::Index { target, index } = expr {
-                let r = &r[1..];
-                let (r, _) = ws(r)?;
-                let (r, rhs) = and_expr_mode(r, mode)?;
-                return Ok((
-                    r,
-                    Expr::IndexAssign {
-                        target,
-                        index,
-                        value: Box::new(rhs),
-                    },
-                ));
-            }
-            if let Expr::Call { name, args } = expr {
-                let r = &r[1..];
-                let (r, _) = ws(r)?;
-                let (r, rhs) = and_expr_mode(r, mode)?;
-                return Ok((
-                    r,
-                    Expr::Call {
-                        name: "__mutsu_assign_named_sub_lvalue".to_string(),
-                        args: vec![
-                            Expr::Literal(Value::Str(name)),
-                            Expr::ArrayLiteral(args),
-                            rhs,
-                        ],
-                    },
-                ));
-            }
-            if let Expr::CallOn { target, args } = expr {
-                let r = &r[1..];
-                let (r, _) = ws(r)?;
-                let (r, rhs) = and_expr_mode(r, mode)?;
-                return Ok((
-                    r,
-                    Expr::Call {
-                        name: "__mutsu_assign_callable_lvalue".to_string(),
-                        args: vec![*target, Expr::ArrayLiteral(args), rhs],
-                    },
-                ));
-            }
-        }
-        return Ok((rest, expr));
-    }
     and_expr_mode(input, mode)
 }
 
 /// Low-precedence: and / andthen / notandthen
 fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = not_expr_mode(input, mode)?;
+    let (mut rest, mut left) = assign_not_expr_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
@@ -204,7 +151,7 @@ fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
-                not_expr_mode(r, mode).map_err(|err| {
+                assign_not_expr_mode(r, mode).map_err(|err| {
                     enrich_expected_error(
                         err,
                         "expected expression after 'and'/'andthen'/'notandthen'",
@@ -212,7 +159,7 @@ fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     )
                 })?
             } else {
-                not_expr_mode(r, mode)?
+                assign_not_expr_mode(r, mode)?
             };
             left = Expr::Binary {
                 left: Box::new(left),
@@ -225,6 +172,55 @@ fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         break;
     }
     Ok((rest, left))
+}
+
+fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (rest, expr) = not_expr_mode(input, mode)?;
+    let (r, _) = ws(rest)?;
+    if !(r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>")) {
+        return Ok((rest, expr));
+    }
+
+    let r = &r[1..];
+    let (r, _) = ws(r)?;
+    let (r, rhs) = assign_not_expr_mode(r, mode)?;
+
+    match expr {
+        Expr::Var(name) => Ok((
+            r,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            },
+        )),
+        Expr::Index { target, index } => Ok((
+            r,
+            Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(rhs),
+            },
+        )),
+        Expr::Call { name, args } => Ok((
+            r,
+            Expr::Call {
+                name: "__mutsu_assign_named_sub_lvalue".to_string(),
+                args: vec![
+                    Expr::Literal(Value::Str(name)),
+                    Expr::ArrayLiteral(args),
+                    rhs,
+                ],
+            },
+        )),
+        Expr::CallOn { target, args } => Ok((
+            r,
+            Expr::Call {
+                name: "__mutsu_assign_callable_lvalue".to_string(),
+                args: vec![*target, Expr::ArrayLiteral(args), rhs],
+            },
+        )),
+        _ => Ok((rest, expr)),
+    }
 }
 
 fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
@@ -1303,13 +1299,8 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
             right = wrap_smartmatch_rhs(right);
         }
-        let mut result = Expr::Binary {
-            left: Box::new(left),
-            op: op.token_kind(),
-            right: Box::new(right.clone()),
-        };
-        // Chained comparisons: 2 < $_ < 4 → (2 < $_) && ($_ < 4)
-        let mut prev_right = right;
+        let mut operands = vec![left, right];
+        let mut chain_ops: Vec<(TokenKind, bool)> = vec![(op.token_kind(), false)];
         let mut r = r;
         loop {
             let (r2, _) = ws(r)?;
@@ -1324,20 +1315,8 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     remaining_len: err.remaining_len.or(Some(r2.len())),
                     exception: None,
                 })?;
-                let next_cmp = Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(Expr::Binary {
-                        left: Box::new(prev_right),
-                        op: cop.token_kind(),
-                        right: Box::new(next_right.clone()),
-                    }),
-                };
-                result = Expr::Binary {
-                    left: Box::new(result),
-                    op: TokenKind::AndAnd,
-                    right: Box::new(next_cmp),
-                };
-                prev_right = next_right;
+                chain_ops.push((cop.token_kind(), true));
+                operands.push(next_right);
                 r = r2;
                 continue;
             }
@@ -1352,26 +1331,117 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     remaining_len: err.remaining_len.or(Some(r2.len())),
                     exception: None,
                 })?;
-                let next_cmp = Expr::Binary {
-                    left: Box::new(prev_right),
-                    op: cop.token_kind(),
-                    right: Box::new(next_right.clone()),
-                };
-                result = Expr::Binary {
-                    left: Box::new(result),
-                    op: TokenKind::AndAnd,
-                    right: Box::new(next_cmp),
-                };
-                prev_right = next_right;
+                let next_right =
+                    if matches!(cop, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
+                        wrap_smartmatch_rhs(next_right)
+                    } else {
+                        next_right
+                    };
+                chain_ops.push((cop.token_kind(), false));
+                operands.push(next_right);
                 r = r2;
                 continue;
             }
             break;
         }
+        if chain_ops.len() == 1 {
+            return Ok((
+                r,
+                make_chain_cmp(
+                    operands[0].clone(),
+                    chain_ops[0].0.clone(),
+                    operands[1].clone(),
+                    false,
+                ),
+            ));
+        }
+        let result = if operands.iter().any(contains_whatever) {
+            // Keep the historical `lhs < * && * < rhs` shape so WhateverCode wrapping
+            // can preserve placeholder semantics in expression arguments.
+            build_chain_cmp_expr_with_repeated_middle(&operands, &chain_ops)
+        } else {
+            build_chain_cmp_expr(&operands, &chain_ops, 0, operands[0].clone())
+        };
         return Ok((r, result));
     }
 
     Ok((rest, left))
+}
+
+fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bool) -> Expr {
+    let cmp = Expr::Binary {
+        left: Box::new(left),
+        op,
+        right: Box::new(right),
+    };
+    if negated {
+        Expr::Unary {
+            op: TokenKind::Bang,
+            expr: Box::new(cmp),
+        }
+    } else {
+        cmp
+    }
+}
+
+fn build_chain_cmp_expr(
+    operands: &[Expr],
+    ops: &[(TokenKind, bool)],
+    index: usize,
+    left: Expr,
+) -> Expr {
+    let (op, negated) = ops[index].clone();
+    if index == ops.len() - 1 {
+        return make_chain_cmp(left, op, operands[index + 1].clone(), negated);
+    }
+
+    let tmp_idx = CHAIN_CMP_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_name = format!("__mutsu_chain_cmp_{tmp_idx}");
+    let tmp_var = Expr::Var(tmp_name.clone());
+    let cmp = make_chain_cmp(left, op, tmp_var.clone(), negated);
+    let rest = build_chain_cmp_expr(operands, ops, index + 1, tmp_var.clone());
+    Expr::DoBlock {
+        body: vec![
+            Stmt::VarDecl {
+                name: tmp_name,
+                expr: operands[index + 1].clone(),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+            },
+            Stmt::Expr(Expr::Binary {
+                left: Box::new(cmp),
+                op: TokenKind::AndAnd,
+                right: Box::new(rest),
+            }),
+        ],
+        label: None,
+    }
+}
+
+fn build_chain_cmp_expr_with_repeated_middle(operands: &[Expr], ops: &[(TokenKind, bool)]) -> Expr {
+    let mut result = make_chain_cmp(
+        operands[0].clone(),
+        ops[0].0.clone(),
+        operands[1].clone(),
+        ops[0].1,
+    );
+    let mut prev_right = operands[1].clone();
+    for (idx, (op, negated)) in ops.iter().enumerate().skip(1) {
+        let next_right = operands[idx + 1].clone();
+        let next_cmp = make_chain_cmp(prev_right, op.clone(), next_right.clone(), *negated);
+        result = Expr::Binary {
+            left: Box::new(result),
+            op: TokenKind::AndAnd,
+            right: Box::new(next_cmp),
+        };
+        prev_right = next_right;
+    }
+    result
 }
 
 fn wrap_smartmatch_rhs(right: Expr) -> Expr {

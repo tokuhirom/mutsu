@@ -819,8 +819,10 @@ mod tests {
     #[test]
     fn parse_word_logical_op_all() {
         assert_eq!(parse_word_logical_op("or "), Some((LogicalOp::Or, 2)));
+        assert_eq!(parse_word_logical_op("xor "), Some((LogicalOp::XorXor, 3)));
         assert_eq!(parse_word_logical_op("and "), Some((LogicalOp::And, 3)));
         assert_eq!(parse_word_logical_op("or_foo"), None);
+        assert_eq!(parse_word_logical_op("xor_foo"), None);
         assert_eq!(parse_word_logical_op("and_bar"), None);
         assert_eq!(parse_word_logical_op("oracle"), None);
     }
@@ -844,6 +846,24 @@ mod tests {
             expr,
             Expr::Binary {
                 op: TokenKind::AndAnd,
+                ..
+            }
+        ));
+
+        let (rest, expr) = expression("1 and $x = 2").unwrap();
+        assert_eq!(rest, "");
+        if let Expr::Binary { right, .. } = expr {
+            assert!(matches!(*right, Expr::AssignExpr { .. }));
+        } else {
+            panic!("Expected Binary expression");
+        }
+
+        let (rest, expr) = expression("1 xor 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::XorXor,
                 ..
             }
         ));

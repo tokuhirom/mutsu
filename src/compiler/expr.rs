@@ -302,10 +302,8 @@ impl Compiler {
                         return;
                     }
                     TokenKind::XorXor => {
-                        // a ^^ b: return truthy value if exactly one is truthy, else Nil/last falsy
-                        self.compile_expr(left);
-                        self.compile_expr(right);
-                        self.code.emit(OpCode::XorXor);
+                        // a ^^ b ^^ c ... : evaluate left-to-right, short-circuit on second truthy.
+                        self.compile_xor_chain(left, right);
                         return;
                     }
                     TokenKind::SlashSlash | TokenKind::OrElse => {
@@ -1866,6 +1864,93 @@ impl Compiler {
                 | Expr::AnonSubParams { .. }
                 | Expr::Lambda { .. }
         )
+    }
+
+    fn flatten_xor_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+        if let Expr::Binary { left, op, right } = expr
+            && *op == TokenKind::XorXor
+        {
+            Self::flatten_xor_terms(left, out);
+            Self::flatten_xor_terms(right, out);
+            return;
+        }
+        out.push(expr);
+    }
+
+    fn compile_xor_chain(&mut self, left: &Expr, right: &Expr) {
+        let mut terms = Vec::new();
+        Self::flatten_xor_terms(left, &mut terms);
+        Self::flatten_xor_terms(right, &mut terms);
+        if terms.len() == 2 {
+            self.compile_expr(terms[0]);
+            self.compile_expr(terms[1]);
+            self.code.emit(OpCode::XorXor);
+            return;
+        }
+
+        self.tmp_counter += 1;
+        let acc_slot = self.alloc_local(&format!("__mutsu_xor_acc_{}", self.tmp_counter));
+        self.tmp_counter += 1;
+        let seen_slot = self.alloc_local(&format!("__mutsu_xor_seen_{}", self.tmp_counter));
+
+        self.compile_expr(terms[0]);
+        self.code.emit(OpCode::Dup);
+        self.code.emit(OpCode::SetLocal(acc_slot));
+        let first_truthy = self.code.emit(OpCode::JumpIfTrue(0));
+        self.code.emit(OpCode::LoadFalse);
+        let first_done = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(first_truthy);
+        self.code.emit(OpCode::LoadTrue);
+        self.code.patch_jump(first_done);
+        self.code.emit(OpCode::SetLocal(seen_slot));
+        self.code.emit(OpCode::Pop);
+
+        let mut early_end_jumps = Vec::new();
+        for term in terms.iter().skip(1) {
+            self.compile_expr(term);
+
+            self.code.emit(OpCode::GetLocal(seen_slot));
+            let seen_false = self.code.emit(OpCode::JumpIfFalse(0));
+
+            self.code.emit(OpCode::Dup);
+            let second_truthy = self.code.emit(OpCode::JumpIfTrue(0));
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::Pop);
+            let next_after_seen_true = self.code.emit(OpCode::Jump(0));
+
+            self.code.patch_jump(second_truthy);
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::LoadNil);
+            self.code.emit(OpCode::Dup);
+            self.code.emit(OpCode::SetLocal(acc_slot));
+            self.code.emit(OpCode::LoadTrue);
+            self.code.emit(OpCode::SetLocal(seen_slot));
+            early_end_jumps.push(self.code.emit(OpCode::Jump(0)));
+
+            self.code.patch_jump(seen_false);
+
+            self.code.emit(OpCode::Dup);
+            let became_truthy = self.code.emit(OpCode::JumpIfTrue(0));
+            self.code.emit(OpCode::Dup);
+            self.code.emit(OpCode::SetLocal(acc_slot));
+            self.code.emit(OpCode::Pop);
+            let next_after_seen_false = self.code.emit(OpCode::Jump(0));
+
+            self.code.patch_jump(became_truthy);
+            self.code.emit(OpCode::SetLocal(acc_slot));
+            self.code.emit(OpCode::LoadTrue);
+            self.code.emit(OpCode::SetLocal(seen_slot));
+            self.code.emit(OpCode::Pop);
+
+            self.code.patch_jump(next_after_seen_true);
+            self.code.patch_jump(next_after_seen_false);
+        }
+
+        for jump in early_end_jumps {
+            self.code.patch_jump(jump);
+        }
+        self.code.emit(OpCode::GetLocal(acc_slot));
     }
 
     /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_

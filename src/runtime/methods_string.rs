@@ -276,8 +276,8 @@ impl Interpreter {
         }
         let needle = positional
             .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
+            .cloned()
+            .unwrap_or(Value::Str(String::new()));
         let start = if let Some(pos) = positional.get(1) {
             match pos {
                 Value::Int(i) => *i,
@@ -300,12 +300,28 @@ impl Interpreter {
             return Err(RuntimeError::new("X::OutOfRange"));
         }
         let hay: String = text.chars().skip(start as usize).collect();
-        let ok = if ignore_case {
-            hay.to_lowercase().contains(&needle.to_lowercase())
-        } else {
-            hay.contains(&needle)
-        };
-        Ok(Value::Bool(ok))
+        Ok(Self::contains_value(&hay, &needle, ignore_case))
+    }
+
+    fn contains_value(hay: &str, needle: &Value, ignore_case: bool) -> Value {
+        match needle {
+            Value::Junction { kind, values } => {
+                let mapped = values
+                    .iter()
+                    .map(|v| Self::contains_value(hay, v, ignore_case))
+                    .collect::<Vec<_>>();
+                Value::junction(kind.clone(), mapped)
+            }
+            _ => {
+                let needle = needle.to_string_value();
+                let ok = if ignore_case {
+                    hay.to_lowercase().contains(&needle.to_lowercase())
+                } else {
+                    hay.contains(&needle)
+                };
+                Value::Bool(ok)
+            }
+        }
     }
 
     pub(super) fn dispatch_starts_with(
