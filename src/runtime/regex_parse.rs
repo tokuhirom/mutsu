@@ -1478,9 +1478,9 @@ impl Interpreter {
                         match elt {
                             Value::Regex(pat) => out.push_str(pat),
                             Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
-                            other => {
-                                out.push_str(&Self::escape_regex_scalar_literal(&other.to_string_value()))
-                            }
+                            other => out.push_str(&Self::escape_regex_scalar_literal(
+                                &other.to_string_value(),
+                            )),
                         }
                     }
                     out.push(']');
@@ -1512,9 +1512,8 @@ impl Interpreter {
                         match elt {
                             Value::Regex(pat) => alts.push(pat.clone()),
                             Value::RegexWithAdverbs { pattern, .. } => alts.push(pattern.clone()),
-                            other => {
-                                alts.push(Self::escape_regex_scalar_literal(&other.to_string_value()))
-                            }
+                            other => alts
+                                .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
                         }
                     }
                     out.push_str(&alts.join("||"));
@@ -1929,7 +1928,6 @@ impl Interpreter {
             Err(e) => e.return_value.unwrap_or(Value::Nil),
         }
     }
-
 }
 
 #[cfg(test)]
