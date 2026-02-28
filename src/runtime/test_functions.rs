@@ -1548,23 +1548,48 @@ impl Interpreter {
 
     fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "warns-like expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.clone(),
-            _ => return Err(RuntimeError::new("warns-like expects string code")),
-        };
         let test_pattern = Self::positional_value(args, 1)
             .cloned()
             .unwrap_or(Value::Nil);
         let desc = Self::positional_string(args, 2);
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        nested.set_program_path("<warns-like>");
-        let result = nested.run(&program);
-        let warn_message = nested.warn_output.clone();
+        let warn_message = match program_val {
+            Value::Str(program) => {
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.set_program_path("<warns-like>");
+                let _ = nested.run(program);
+                nested.warn_output.clone()
+            }
+            Value::Sub(data) => {
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                self.push_caller_env();
+                let _ = self.eval_block_value(&data.body);
+                self.pop_caller_env();
+                let warn_message = self.warn_output.clone();
+                self.warn_output = saved_warn;
+                warn_message
+            }
+            Value::WeakSub(weak) => {
+                let Some(data) = weak.upgrade() else {
+                    return Err(RuntimeError::new("warns-like expects live callable"));
+                };
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                self.push_caller_env();
+                let _ = self.eval_block_value(&data.body);
+                self.pop_caller_env();
+                let warn_message = self.warn_output.clone();
+                self.warn_output = saved_warn;
+                warn_message
+            }
+            _ => {
+                return Err(RuntimeError::new(
+                    "warns-like expects string code or callable",
+                ));
+            }
+        };
         let did_warn = !warn_message.is_empty();
-        let _ = result;
         let label = if desc.is_empty() {
             "warns-like".to_string()
         } else {

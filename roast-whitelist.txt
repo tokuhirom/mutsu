@@ -104,6 +104,7 @@ roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/reduce-le1arg.t
+roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/so.t

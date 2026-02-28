@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 
 impl VM {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
@@ -303,35 +302,34 @@ impl VM {
         self.stack.push(if ord.is_ge() { left } else { right });
     }
 
-    pub(super) fn exec_string_repeat_op(&mut self) {
+    pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let s = left.to_string_value();
-        let n = match right {
-            Value::Int(n) => n.max(0) as usize,
-            _ => 0,
-        };
-        self.stack.push(Value::Str(s.repeat(n)));
+        let result = self
+            .interpreter
+            .call_function("infix:<x>", vec![left, right])?;
+        self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_list_repeat_op(&mut self) {
+    pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let n = match right {
-            Value::Int(n) => n.max(0) as usize,
-            _ => 0,
-        };
-        // When repeating a Slip, flatten its items into the result
-        if let Value::Slip(ref slip_items) = left {
-            let mut items = Vec::with_capacity(slip_items.len() * n);
-            for _ in 0..n {
-                items.extend(slip_items.iter().cloned());
-            }
-            self.stack.push(Value::Seq(Arc::new(items)));
-        } else {
-            let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
-            self.stack.push(Value::Seq(Arc::new(items)));
+        if matches!(
+            left,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+        ) && let Value::Int(n) = right
+        {
+            let repeat = n.max(0) as usize;
+            let items: Vec<Value> = std::iter::repeat_n(left, repeat).collect();
+            self.stack.push(Value::Seq(std::sync::Arc::new(items)));
+            return Ok(());
         }
+        let result = self
+            .interpreter
+            .call_function("infix:<xx>", vec![left, right])?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_function_compose_op(&mut self) {

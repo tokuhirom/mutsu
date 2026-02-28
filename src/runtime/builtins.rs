@@ -1,5 +1,6 @@
 use super::*;
 use crate::token_kind::TokenKind;
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -286,6 +287,11 @@ impl Interpreter {
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
+            "take" => {
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                self.take_value(value);
+                Ok(Value::Nil)
+            }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
@@ -718,6 +724,9 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
+        if op == "x" || op == "xx" {
+            return self.call_repeat_infix(op, &args);
+        }
         if args.is_empty() {
             return Ok(reduction_identity(op));
         }
@@ -811,6 +820,245 @@ impl Interpreter {
                     acc,
                     rhs.clone(),
                 ))])?;
+            }
+        }
+        Ok(acc)
+    }
+
+    fn repeat_error(class_name: &str, message: String) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(message.clone()));
+        let ex = Value::make_instance(class_name.to_string(), attrs);
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
+        let mut current = value;
+        while let Value::Mixin(inner, _) = current {
+            current = inner;
+        }
+        match current {
+            Value::Whatever => Ok(None),
+            Value::Int(i) => Ok(Some(*i)),
+            Value::BigInt(n) => {
+                use num_traits::ToPrimitive;
+                Ok(Some(n.to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Num(f) => {
+                if f.is_nan() {
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert NaN to Int".to_string(),
+                    ));
+                }
+                if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        return Ok(None);
+                    }
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert -Inf to Int".to_string(),
+                    ));
+                }
+                Ok(Some(f.trunc() as i64))
+            }
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    if *n > 0 {
+                        return Ok(None);
+                    }
+                    let msg = if *n < 0 {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                Ok(Some(n / d))
+            }
+            Value::FatRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    let msg = if n.is_negative() {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    let msg = if n.is_negative() {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                use num_traits::ToPrimitive;
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Str(s) => {
+                let parsed = s.trim().parse::<f64>().map_err(|_| {
+                    Self::repeat_error(
+                        "X::Str::Numeric",
+                        format!("Cannot convert string '{}' to a number", s),
+                    )
+                })?;
+                Self::parse_repeat_count(&Value::Num(parsed))
+            }
+            Value::Array(items, ..) => Ok(Some(items.len() as i64)),
+            Value::Seq(items) => Ok(Some(items.len() as i64)),
+            Value::LazyList(ll) => Ok(Some(
+                ll.cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map_or(0usize, |v| v.len()) as i64,
+            )),
+            Value::Package(_) => Ok(Some(0)),
+            _ => Ok(Some(0)),
+        }
+    }
+
+    fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
+        Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+            body: Vec::new(),
+            env: std::collections::HashMap::new(),
+            cache: std::sync::Mutex::new(Some(items)),
+        }))
+    }
+
+    fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
+        match left {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                self.eval_call_on_value(left.clone(), Vec::new())
+            }
+            _ => Ok(left.clone()),
+        }
+    }
+
+    fn make_x_whatevercode(&self, left: Value) -> Value {
+        let mut env = std::collections::HashMap::new();
+        env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::Str("WhateverCode".to_string()),
+        );
+        let param = "__wc_0".to_string();
+        let body = vec![Stmt::Expr(Expr::Binary {
+            left: Box::new(Expr::Literal(left)),
+            op: TokenKind::Ident("x".to_string()),
+            right: Box::new(Expr::Var(param.clone())),
+        })];
+        Value::make_sub(
+            self.current_package.clone(),
+            "<whatevercode-x>".to_string(),
+            vec![param],
+            Vec::new(),
+            body,
+            false,
+            env,
+        )
+    }
+
+    fn call_repeat_infix(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            if op == "xx" {
+                return Err(Self::repeat_error(
+                    "Exception",
+                    "xx with no args throws".to_string(),
+                ));
+            }
+            return Ok(reduction_identity(op));
+        }
+        if args.len() == 1 {
+            return Ok(args[0].clone());
+        }
+
+        let mut acc = args[0].clone();
+        for rhs in &args[1..] {
+            match op {
+                "x" => {
+                    if let Value::Package(name) = rhs
+                        && name == "Int"
+                        && !self.warning_suppressed()
+                    {
+                        self.write_warn_to_stderr(&format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        ));
+                    }
+                    if matches!(rhs, Value::Whatever) {
+                        acc = self.make_x_whatevercode(acc);
+                        continue;
+                    }
+                    let Some(n_raw) = Self::parse_repeat_count(rhs)? else {
+                        return Err(Self::repeat_error(
+                            "X::Numeric::CannotConvert",
+                            "Cannot convert Inf to Int".to_string(),
+                        ));
+                    };
+                    let n = n_raw.max(0) as usize;
+                    acc = Value::Str(crate::runtime::utils::coerce_to_str(&acc).repeat(n));
+                }
+                "xx" => {
+                    const EAGER_LIMIT: usize = 10_000;
+                    const LAZY_CACHE: usize = 4_096;
+                    if let Value::Package(name) = rhs
+                        && name == "Int"
+                        && !self.warning_suppressed()
+                    {
+                        self.write_warn_to_stderr(&format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        ));
+                    }
+                    let count = Self::parse_repeat_count(rhs)?;
+                    let (repeat, lazy) = match count {
+                        Some(n) if n <= 0 => (0usize, false),
+                        Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
+                        Some(n) => ((n as usize).min(LAZY_CACHE), true),
+                        None => (LAZY_CACHE, true),
+                    };
+                    let mut items = Vec::with_capacity(repeat);
+                    if let Value::Slip(slip_items) = &acc {
+                        if slip_items.is_empty() {
+                            items.extend(std::iter::repeat_n(Value::Nil, repeat));
+                        } else {
+                            for _ in 0..repeat {
+                                items.extend(slip_items.iter().cloned());
+                            }
+                        }
+                    } else {
+                        for _ in 0..repeat {
+                            items.push(self.repeat_lhs_once(&acc)?);
+                        }
+                    }
+                    acc = if lazy {
+                        Self::make_repeat_lazy_cache(items)
+                    } else {
+                        Value::Seq(std::sync::Arc::new(items))
+                    };
+                }
+                _ => unreachable!(),
             }
         }
         Ok(acc)

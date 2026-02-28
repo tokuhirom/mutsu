@@ -473,6 +473,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "dir"
             | "first"
             | "make"
+            | "take"
             | "set"
             | "bag"
             | "mix"
@@ -1412,7 +1413,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Check for listop: bareword followed by space and argument (but not statement modifier)
     // e.g., shift @a, push @a, 42, etc.
-    // Skip when followed by '.' — `func.method` is `(func()).method`, not `func(.method)`.
+    // Skip when directly followed by '.' — `func.method` is `(func()).method`,
+    // but `func .method` is a listop call with topic-method-call argument.
     if is_listop(&name)
         && !r.is_empty()
         && !r.starts_with(';')
@@ -1420,7 +1422,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
-        && !r.starts_with('.')
+        && !rest.starts_with('.')
     {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
@@ -1477,7 +1479,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
-        && !r.starts_with('.')
+        && !rest.starts_with('.')
         && !is_stmt_modifier_ahead(r)
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
