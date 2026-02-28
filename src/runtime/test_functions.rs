@@ -333,7 +333,19 @@ impl Interpreter {
         // Clone values before they might be consumed by callable operator
         let left_diag = left.clone();
         let right_diag = right.clone();
-        let op_diag = op_val.to_string_value();
+        let op_diag = match &op_val {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                format!("'{}'", crate::value::what_type_name(&op_val))
+            }
+            _ => {
+                let s = op_val.to_string_value();
+                if s.is_empty() {
+                    crate::value::what_type_name(&op_val).to_string()
+                } else {
+                    s
+                }
+            }
+        };
         let ok = match &op_val {
             Value::Str(op) => match op.as_str() {
                 "~~" => self.smart_match(&left, &right),

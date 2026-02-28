@@ -113,6 +113,7 @@ roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-operators/spaceship.t
+roast/S03-operators/subscript-adverbs.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
 roast/S03-operators/u2212-minus.t
@@ -433,6 +434,7 @@ roast/S19-command-line/help.t
 roast/S19-command-line/repl.t
 roast/S22-package-format/local.t
 roast/S24-testing/0-compile.t
+roast/S24-testing/1-basic.t
 roast/S24-testing/11-plan-skip-all.t
 roast/S24-testing/12-subtest-todo.t
 roast/S24-testing/13-cmp-ok.t

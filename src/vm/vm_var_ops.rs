@@ -322,6 +322,17 @@ impl VM {
         self.interpreter.env_mut().insert(key, Value::hash(map));
     }
 
+    fn mark_initialized_index(&mut self, var_name: &str, encoded: String) {
+        let key = format!("__mutsu_initialized_index::{}", var_name);
+        if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+            Arc::make_mut(map).insert(encoded, Value::Bool(true));
+            return;
+        }
+        let mut map = std::collections::HashMap::new();
+        map.insert(encoded, Value::Bool(true));
+        self.interpreter.env_mut().insert(key, Value::hash(map));
+    }
+
     pub(super) fn exec_get_bare_word_op(
         &mut self,
         code: &CompiledCode,
@@ -1690,12 +1701,14 @@ impl VM {
                     && matches!(container, Value::Array(..))
                 {
                     let is_shaped = crate::runtime::utils::is_shaped_array(container);
+                    let mut initialized_marks: Vec<String> = Vec::new();
                     if is_shaped {
                         if bind_mode && is_bound_index {
                             return Err(RuntimeError::new("X::Assignment::RO"));
                         }
                         // Multidimensional indexing: @arr[0;0] = 'x'
                         Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                        initialized_marks.push(encoded_idx.clone());
                     } else {
                         // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
                         // Auto-extend the array to accommodate all indices
@@ -1718,7 +1731,11 @@ impl VM {
                         for (i, key) in keys.iter().enumerate() {
                             let v = vals.get(i).cloned().unwrap_or(Value::Nil);
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
+                            initialized_marks.push(Self::encode_bound_index(key));
                         }
+                    }
+                    for encoded in initialized_marks {
+                        self.mark_initialized_index(&var_name, encoded);
                     }
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
@@ -1804,6 +1821,7 @@ impl VM {
                             } else {
                                 return Err(RuntimeError::new("Index out of bounds"));
                             }
+                            self.mark_initialized_index(&var_name, encoded_idx.clone());
                             if bind_mode {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }

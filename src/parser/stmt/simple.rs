@@ -1684,6 +1684,19 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         if let Expr::Index { target, index } = expr {
+            if let Expr::Call { name, args } = target.as_ref()
+                && name == "__mutsu_subscript_adverb"
+                && args.len() >= 3
+                && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
+                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode == "kv" || mode == "not-kv")
+            {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target: Box::new(args[0].clone()),
+                    index: Box::new(args[1].clone()),
+                    value: Box::new(value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
             let stmt = Stmt::Expr(Expr::IndexAssign {
                 target,
                 index,

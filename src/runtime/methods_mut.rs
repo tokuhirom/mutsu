@@ -413,44 +413,86 @@ impl Interpreter {
             self.overwrite_hash_bindings_by_identity(source_hash, replacement);
             return Ok(value);
         }
-        if method == "value"
-            && let Value::Pair(key, current_value) = &target
-        {
-            let mut selected_hash: Option<
-                std::sync::Arc<std::collections::HashMap<String, Value>>,
-            > = None;
-
-            if let Some(var_name) = target_var
-                && let Some(Value::Hash(candidate)) = self.env.get(var_name)
-                && candidate.contains_key(key)
-            {
-                selected_hash = Some(candidate.clone());
-            }
-
-            if selected_hash.is_none() {
-                let mut candidates = self.env.values().filter_map(|bound| match bound {
-                    Value::Hash(map)
-                        if map
-                            .get(key)
-                            .is_some_and(|existing| existing == current_value.as_ref()) =>
-                    {
-                        Some(map.clone())
-                    }
-                    _ => None,
-                });
-                if let Some(first) = candidates.next()
-                    && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
-                {
-                    selected_hash = Some(first);
+        if method == "value" {
+            let pair_data = match &target {
+                Value::Pair(key, current_value) => Some((key.clone(), current_value.clone())),
+                Value::ValuePair(key, current_value) => {
+                    Some((key.to_string_value(), current_value.clone()))
                 }
-            }
+                _ => None,
+            };
+            if let Some((key, current_value)) = pair_data {
+                let mut selected_hash: Option<
+                    std::sync::Arc<std::collections::HashMap<String, Value>>,
+                > = None;
+                let mut selected_array: Option<std::sync::Arc<Vec<Value>>> = None;
 
-            if let Some(source_hash) = selected_hash {
-                let mut updated = (*source_hash).clone();
-                updated.insert(key.clone(), value.clone());
-                let replacement = Value::hash(updated);
-                self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
-                return Ok(value);
+                if let Some(var_name) = target_var
+                    && let Some(Value::Hash(candidate)) = self.env.get(var_name)
+                    && candidate.contains_key(&key)
+                {
+                    selected_hash = Some(candidate.clone());
+                }
+                if selected_hash.is_none()
+                    && let Ok(i) = key.parse::<usize>()
+                    && let Some(var_name) = target_var
+                    && let Some(Value::Array(candidate, ..)) = self.env.get(var_name)
+                    && candidate.get(i) == Some(current_value.as_ref())
+                {
+                    selected_array = Some(candidate.clone());
+                }
+
+                if selected_hash.is_none() {
+                    let mut candidates = self.env.values().filter_map(|bound| match bound {
+                        Value::Hash(map)
+                            if map
+                                .get(&key)
+                                .is_some_and(|existing| existing == current_value.as_ref()) =>
+                        {
+                            Some(map.clone())
+                        }
+                        _ => None,
+                    });
+                    if let Some(first) = candidates.next()
+                        && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
+                    {
+                        selected_hash = Some(first);
+                    }
+                }
+                if selected_array.is_none()
+                    && let Ok(i) = key.parse::<usize>()
+                {
+                    let mut candidates = self.env.values().filter_map(|bound| match bound {
+                        Value::Array(arr, ..) if arr.get(i) == Some(current_value.as_ref()) => {
+                            Some(arr.clone())
+                        }
+                        _ => None,
+                    });
+                    if let Some(first) = candidates.next()
+                        && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
+                    {
+                        selected_array = Some(first);
+                    }
+                }
+
+                if let Some(source_hash) = selected_hash {
+                    let mut updated = (*source_hash).clone();
+                    updated.insert(key, value.clone());
+                    let replacement = Value::hash(updated);
+                    self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
+                    return Ok(value);
+                }
+                if let Some(source_array) = selected_array
+                    && let Ok(i) = key.parse::<usize>()
+                {
+                    let mut updated = (*source_array).clone();
+                    if i < updated.len() {
+                        updated[i] = value.clone();
+                        let replacement = Value::array(updated);
+                        self.overwrite_array_bindings_by_identity(&source_array, replacement);
+                        return Ok(value);
+                    }
+                }
             }
         }
 

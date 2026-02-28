@@ -193,14 +193,31 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 expr: Box::new(rhs),
             },
         )),
-        Expr::Index { target, index } => Ok((
-            r,
-            Expr::IndexAssign {
-                target,
-                index,
-                value: Box::new(rhs),
-            },
-        )),
+        Expr::Index { target, index } => {
+            if let Expr::Call { name, args } = target.as_ref()
+                && name == "__mutsu_subscript_adverb"
+                && args.len() >= 3
+                && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
+                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode == "kv" || mode == "not-kv")
+            {
+                return Ok((
+                    r,
+                    Expr::IndexAssign {
+                        target: Box::new(args[0].clone()),
+                        index: Box::new(args[1].clone()),
+                        value: Box::new(rhs),
+                    },
+                ));
+            }
+            Ok((
+                r,
+                Expr::IndexAssign {
+                    target,
+                    index,
+                    value: Box::new(rhs),
+                },
+            ))
+        }
         Expr::Call { name, args } => Ok((
             r,
             Expr::Call {
