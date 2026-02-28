@@ -814,6 +814,16 @@ impl Interpreter {
             }
         }
         if method == "gist" && args.is_empty() {
+            fn collection_contains_instance(value: &Value) -> bool {
+                match value {
+                    Value::Instance { .. } => true,
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        items.iter().any(collection_contains_instance)
+                    }
+                    Value::Hash(map) => map.values().any(collection_contains_instance),
+                    _ => false,
+                }
+            }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 match value {
                     Value::Nil => "Nil".to_string(),
@@ -833,7 +843,9 @@ impl Interpreter {
                 }
             }
             match &target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
+                    if items.iter().any(collection_contains_instance) =>
+                {
                     let inner = items
                         .iter()
                         .map(|item| gist_item(self, item))
