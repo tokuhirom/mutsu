@@ -84,17 +84,23 @@ pub fn wordcase_str(s: &str) -> String {
 }
 
 pub fn format_complex(r: f64, i: f64) -> String {
+    /// Format a float component of a Complex, preserving the sign of negative zero.
     fn fmt_num(v: f64) -> String {
         if v.is_nan() {
             "NaN".to_string()
         } else if v.is_infinite() {
-            if v > 0.0 {
+            if v.is_sign_positive() {
                 "Inf".to_string()
             } else {
                 "-Inf".to_string()
             }
         } else if v.fract() == 0.0 {
-            format!("{}", v as i64)
+            // Preserve sign of -0.0
+            if v.is_sign_negative() {
+                format!("-{}", (-v) as i64)
+            } else {
+                format!("{}", v as i64)
+            }
         } else {
             format!("{}", v)
         }
@@ -102,8 +108,10 @@ pub fn format_complex(r: f64, i: f64) -> String {
     // Use \i notation when imaginary part is Inf, -Inf, or NaN
     let imag_special = i.is_infinite() || i.is_nan();
     let suffix = if imag_special { "\\i" } else { "i" };
-    if i == 0.0 {
+    if i == 0.0 && !i.is_sign_negative() {
         format!("{}+0i", fmt_num(r))
+    } else if i == 0.0 && i.is_sign_negative() {
+        format!("{}-0i", fmt_num(r))
     } else if i.is_nan() {
         format!("{}+NaN\\i", fmt_num(r))
     } else if i < 0.0 || (i.is_infinite() && i.is_sign_negative()) {

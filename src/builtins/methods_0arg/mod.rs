@@ -725,7 +725,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Num(f) => Value::Num(*f),
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
-                    if let Ok(f) = s.trim().parse::<f64>() {
+                    let trimmed = s.trim();
+                    // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
+                    let normalized = trimmed.replace('\u{2212}', "-");
+                    if let Ok(f) = normalized.parse::<f64>() {
                         Value::Num(f)
                     } else {
                         return Some(Err(RuntimeError::new(format!(
