@@ -106,6 +106,21 @@ impl VM {
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         continue 'body_redo;
                     }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                        }
+                        break 'while_loop;
+                    }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'while_loop;
                     }
@@ -255,6 +270,21 @@ impl VM {
                         }
                         continue 'body_redo;
                     }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                        }
+                        break 'for_loop;
+                    }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
@@ -316,6 +346,21 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         continue 'body_redo;
+                    }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                        }
+                        break 'c_loop;
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'c_loop;
@@ -553,6 +598,17 @@ impl VM {
                     Ok(()) => break 'body_redo,
                     Err(e) if e.is_redo && Self::label_matches(&e.label, label) => {
                         continue 'body_redo;
+                    }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            self.interpreter.env_mut().insert("_".to_string(), v);
+                        }
+                        break 'repeat_loop;
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, label) => {
                         break 'repeat_loop;

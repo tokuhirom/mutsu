@@ -854,11 +854,12 @@ impl VM {
         );
         self.interpreter.push_block(sub_val);
 
+        let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
             let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
-            let callable_id = self
+            let resolved_callable_id = self
                 .interpreter
                 .env()
                 .get(&callable_key)
@@ -867,9 +868,11 @@ impl VM {
                     _ => None,
                 })
                 .unwrap_or(0);
-            self.interpreter
-                .env_mut()
-                .insert("__mutsu_callable_id".to_string(), Value::Int(callable_id));
+            callable_id = (resolved_callable_id != 0).then_some(resolved_callable_id as u64);
+            self.interpreter.env_mut().insert(
+                "__mutsu_callable_id".to_string(),
+                Value::Int(resolved_callable_id),
+            );
         }
         let is_test_assertion = if fn_name.is_empty() {
             false
@@ -937,6 +940,30 @@ impl VM {
         while ip < cf.code.ops.len() {
             match self.exec_one(&cf.code, &mut ip, compiled_fns) {
                 Ok(()) => {}
+                Err(mut e) if e.is_leave => {
+                    let routine_key = format!("{fn_package}::{fn_name}");
+                    let matches_frame = if let Some(target_id) = e.leave_callable_id {
+                        Some(target_id) == callable_id
+                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
+                        target_routine == &routine_key
+                    } else {
+                        e.label.is_none()
+                    };
+                    if matches_frame {
+                        e.is_leave = false;
+                        e.is_last = false;
+                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        explicit_return = Some(ret_val.clone());
+                        self.stack.truncate(saved_stack_depth);
+                        self.stack.push(ret_val);
+                        self.interpreter.discard_let_saves(let_mark);
+                        result = Ok(());
+                        break;
+                    }
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
                 Err(e) if e.return_value.is_some() => {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
