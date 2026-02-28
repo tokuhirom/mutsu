@@ -251,6 +251,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_brace_hash_literal_with_hash_spread() {
+        let (rest, expr) = primary("{year => 1984, %args}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "hash");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(
+                    &args[0],
+                    Expr::Binary {
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        ..
+                    }
+                ));
+                assert!(matches!(
+                    &args[1],
+                    Expr::Unary {
+                        op: crate::token_kind::TokenKind::Pipe,
+                        expr
+                    } if matches!(expr.as_ref(), Expr::HashVar(n) if n == "args")
+                ));
+            }
+            _ => panic!("expected hash() call lowering"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");

@@ -2,6 +2,75 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
+        match item {
+            Value::Capture { positional, named } => {
+                args.extend(positional.iter().cloned());
+                for (k, v) in named.iter() {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+            }
+            Value::Hash(map) => {
+                for (k, v) in map.iter() {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                args.extend(crate::runtime::utils::value_to_list(item));
+            }
+            other => args.push(other.clone()),
+        }
+    }
+
+    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value) {
+        match arg {
+            Value::Slip(items) => {
+                for item in items.iter() {
+                    Self::append_slip_item(args, item);
+                }
+            }
+            other => args.push(other),
+        }
+    }
+
+    fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
+        match slip_val {
+            Value::Array(elements, ..) => {
+                args.extend(elements.iter().cloned());
+            }
+            Value::Capture { positional, named } => {
+                args.extend(positional);
+                for (k, v) in named {
+                    args.push(Value::Pair(k, Box::new(v)));
+                }
+            }
+            Value::Slip(items) => {
+                for item in items.iter() {
+                    Self::append_slip_item(args, item);
+                }
+            }
+            Value::Hash(map) => {
+                for (k, v) in map.iter() {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                args.extend(crate::runtime::utils::value_to_list(&slip_val));
+            }
+            other => {
+                args.push(other);
+            }
+        }
+    }
+
     fn decode_arg_sources(
         &self,
         code: &CompiledCode,
@@ -138,22 +207,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            match arg {
-                Value::Slip(items) => {
-                    for item in items.iter() {
-                        match item {
-                            Value::Capture { positional, named } => {
-                                args.extend(positional.iter().cloned());
-                                for (k, v) in named.iter() {
-                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                                }
-                            }
-                            other => args.push(other.clone()),
-                        }
-                    }
-                }
-                other => args.push(other),
-            }
+            Self::append_flattened_call_arg(&mut args, arg);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -232,47 +286,7 @@ impl VM {
         let slip_val = self.stack.pop().unwrap();
         let regular_start = self.stack.len() - regular_arity as usize;
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
-        // Flatten the slip value into args
-        match slip_val {
-            Value::Array(elements, ..) => {
-                args.extend(elements.iter().cloned());
-            }
-            Value::Capture { positional, named } => {
-                args.extend(positional);
-                for (k, v) in named {
-                    args.push(Value::Pair(k, Box::new(v)));
-                }
-            }
-            Value::Slip(items) => {
-                for item in items.iter() {
-                    match item {
-                        Value::Capture { positional, named } => {
-                            args.extend(positional.iter().cloned());
-                            for (k, v) in named.iter() {
-                                args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                            }
-                        }
-                        other => args.push(other.clone()),
-                    }
-                }
-            }
-            Value::Hash(map) => {
-                for (k, v) in map.iter() {
-                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                }
-            }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
-                let items = crate::runtime::utils::value_to_list(&slip_val);
-                args.extend(items);
-            }
-            other => {
-                args.push(other);
-            }
-        }
+        Self::append_slip_value(&mut args, slip_val);
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
@@ -315,22 +329,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            match arg {
-                Value::Slip(items) => {
-                    for item in items.iter() {
-                        match item {
-                            Value::Capture { positional, named } => {
-                                args.extend(positional.iter().cloned());
-                                for (k, v) in named.iter() {
-                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                                }
-                            }
-                            other => args.push(other.clone()),
-                        }
-                    }
-                }
-                other => args.push(other),
-            }
+            Self::append_flattened_call_arg(&mut args, arg);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
@@ -465,10 +464,7 @@ impl VM {
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         let mut args = Vec::new();
         for arg in raw_args {
-            match arg {
-                Value::Slip(items) => args.extend(items.iter().cloned()),
-                other => args.push(other),
-            }
+            Self::append_flattened_call_arg(&mut args, arg);
         }
         let name_val = self
             .stack
@@ -522,22 +518,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            match arg {
-                Value::Slip(items) => {
-                    for item in items.iter() {
-                        match item {
-                            Value::Capture { positional, named } => {
-                                args.extend(positional.iter().cloned());
-                                for (k, v) in named.iter() {
-                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                                }
-                            }
-                            other => args.push(other.clone()),
-                        }
-                    }
-                }
-                other => args.push(other),
-            }
+            Self::append_flattened_call_arg(&mut args, arg);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
@@ -650,22 +631,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            match arg {
-                Value::Slip(items) => {
-                    for item in items.iter() {
-                        match item {
-                            Value::Capture { positional, named } => {
-                                args.extend(positional.iter().cloned());
-                                for (k, v) in named.iter() {
-                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                                }
-                            }
-                            other => args.push(other.clone()),
-                        }
-                    }
-                }
-                other => args.push(other),
-            }
+            Self::append_flattened_call_arg(&mut args, arg);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -1144,47 +1110,7 @@ impl VM {
         let slip_val = self.stack.pop().unwrap();
         let regular_start = self.stack.len() - regular_arity as usize;
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
-        // Flatten the slip value into args
-        match slip_val {
-            Value::Array(elements, ..) => {
-                args.extend(elements.iter().cloned());
-            }
-            Value::Capture { positional, named } => {
-                args.extend(positional);
-                for (k, v) in named {
-                    args.push(Value::Pair(k, Box::new(v)));
-                }
-            }
-            Value::Slip(items) => {
-                for item in items.iter() {
-                    match item {
-                        Value::Capture { positional, named } => {
-                            args.extend(positional.iter().cloned());
-                            for (k, v) in named.iter() {
-                                args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                            }
-                        }
-                        other => args.push(other.clone()),
-                    }
-                }
-            }
-            Value::Hash(map) => {
-                for (k, v) in map.iter() {
-                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                }
-            }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => {
-                let items = crate::runtime::utils::value_to_list(&slip_val);
-                args.extend(items);
-            }
-            other => {
-                args.push(other);
-            }
-        }
+        Self::append_slip_value(&mut args, slip_val);
         // Try native function first (same as non-slip call path)
         if let Some(native_result) = self.try_native_function(&name, &args) {
             self.stack.push(native_result?);

@@ -1269,6 +1269,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_hash_literal_with_hash_spread_expr() {
+        let (rest, expr) = expression("{year => 1984, %args}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "hash");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("expected lowered hash() call"),
+        }
+    }
+
+    #[test]
     fn parse_slip_prefix_with_parenthesized_expr() {
         let (rest, expr) = expression("|(f)").unwrap();
         assert_eq!(rest, "");
