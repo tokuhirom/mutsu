@@ -52,6 +52,44 @@ fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &Big
 }
 
 impl Interpreter {
+    fn normalize_incdec_source_for_mut(value: Value) -> Value {
+        match value {
+            Value::Nil | Value::Package(_) => Value::Int(0),
+            other => other,
+        }
+    }
+
+    fn increment_mut_target_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => i
+                .checked_add(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n + 1),
+            Value::Bool(_) => Value::Bool(true),
+            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
+            Value::Str(s) => Value::Str(Self::string_succ(s)),
+            _ => Value::Int(1),
+        }
+    }
+
+    fn decrement_mut_target_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => i
+                .checked_sub(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n - 1),
+            Value::Bool(_) => Value::Bool(false),
+            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
+            Value::Str(s) => match Self::string_pred(s) {
+                Ok(prev) => Value::Str(prev),
+                Err(_) => Value::Str(s.clone()),
+            },
+            _ => Value::Int(-1),
+        }
+    }
+
     fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
         match value {
             Value::Int(i) => Some(*i),
@@ -508,7 +546,51 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+        let has_sigilless_meta =
+            self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+        let scalar_like_target = target_var.starts_with('$')
+            || (!target_var.starts_with('@')
+                && !target_var.starts_with('%')
+                && !target_var.starts_with('&')
+                && !has_sigilless_meta);
+        if scalar_like_target
+            && let Value::Array(_, is_array) = &target
+            && !*is_array
+            && matches!(
+                method,
+                "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
+            )
+        {
+            return Err(RuntimeError::new(
+                "X::Immutable: Cannot modify an immutable List",
+            ));
+        }
+        if scalar_like_target
+            && args.is_empty()
+            && matches!(method, "postfix:<++>" | "postfix:<-->")
+        {
+            self.check_readonly_for_increment(target_var)?;
+            let current = self.env.get(target_var).cloned().unwrap_or(target);
+            let current = Self::normalize_incdec_source_for_mut(current);
+            let updated = if method == "postfix:<++>" {
+                Self::increment_mut_target_value(&current)
+            } else {
+                Self::decrement_mut_target_value(&current)
+            };
+            self.env.insert(target_var.to_string(), updated);
+            return Ok(current);
+        }
         if method == "VAR" && args.is_empty() {
+            if let Value::Instance { attributes, .. } = &target
+                && matches!(attributes.get("__mutsu_var_target"), Some(Value::Str(_)))
+            {
+                return Ok(target);
+            }
+            if let Some(existing) = self.var_meta_value(target_var) {
+                return Ok(existing);
+            }
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
             let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
             let has_sigilless_meta =
@@ -541,10 +623,16 @@ impl Interpreter {
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::Str(display_name));
             attributes.insert(
+                "__mutsu_var_target".to_string(),
+                Value::Str(target_var.to_string()),
+            );
+            attributes.insert(
                 "dynamic".to_string(),
                 Value::Bool(self.is_var_dynamic(target_var)),
             );
-            return Ok(Value::make_instance(class_name.to_string(), attributes));
+            let meta = Value::make_instance(class_name.to_string(), attributes);
+            self.set_var_meta_value(target_var, meta.clone());
+            return Ok(meta);
         }
         // .of returns the element type constraint of a container
         if method == "of"
@@ -825,6 +913,13 @@ impl Interpreter {
         // Handle push/append/pop/shift/unshift on sigilless array bindings
         if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
             let key = target_var.to_string();
+            let array_flag = match self.env.get(&key) {
+                Some(Value::Array(_, is_array)) => *is_array,
+                _ => match &target {
+                    Value::Array(_, is_array) => *is_array,
+                    _ => false,
+                },
+            };
             match method {
                 "push" | "append" => {
                     let mut items = match &target {
@@ -843,8 +938,9 @@ impl Interpreter {
                     } else {
                         items.extend(args);
                     }
-                    let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(result);
                 }
                 "pop" => {
@@ -853,7 +949,8 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
-                    self.env.insert(key, Value::array(items));
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 "unshift" | "prepend" => {
@@ -864,8 +961,9 @@ impl Interpreter {
                     for (i, arg) in args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(result);
                 }
                 "shift" => {
@@ -878,7 +976,8 @@ impl Interpreter {
                     } else {
                         items.remove(0)
                     };
-                    self.env.insert(key, Value::array(items));
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 _ => {}

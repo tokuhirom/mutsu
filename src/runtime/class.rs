@@ -264,12 +264,25 @@ impl Interpreter {
             Err(e) => Err(e),
         };
         for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
             let env_key = format!("!{}", attr_name);
+            let public_env_key = format!(".{}", attr_name);
+            let env_private = self.env.get(&env_key).cloned();
+            let env_public = self.env.get(&public_env_key).cloned();
+            if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
+                // `$.attr` aliases (public) should still write back when only the
+                // public mirror changed (e.g. `$.count++`).
+                if *private_val == original && *public_val != original {
+                    attributes.insert(attr_name, public_val.clone());
+                } else {
+                    attributes.insert(attr_name, private_val.clone());
+                }
+                continue;
+            }
             if let Some(val) = self.env.get(&env_key) {
                 attributes.insert(attr_name, val.clone());
                 continue;
             }
-            let public_env_key = format!(".{}", attr_name);
             if let Some(val) = self.env.get(&public_env_key) {
                 attributes.insert(attr_name, val.clone());
             }

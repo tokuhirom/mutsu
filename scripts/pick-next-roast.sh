@@ -58,13 +58,21 @@ for entry in "${CATEGORIES[@]}"; do
         filtered=$(comm -12 <(echo "$filtered" | sort) <(sort "$RAKU_PASS"))
     fi
 
+    # Sort candidates: first by whether they contain #?rakudo skip (0=no, 1=yes),
+    # then by line count (shorter files first).
+    # Files with #?rakudo skip are deprioritized as they are harder to pass.
     candidates=$(echo "$filtered" \
         | while read -r f; do
             if [[ -n "$f" ]] && [[ -f "$f" ]]; then
-                echo "$(wc -l < "$f") $f"
+                if grep -q '#?rakudo skip' "$f" 2>/dev/null; then
+                    echo "1 $(wc -l < "$f") $f"
+                else
+                    echo "0 $(wc -l < "$f") $f"
+                fi
             fi
         done \
-        | sort -n)
+        | sort -n -k1,1 -k2,2 \
+        | sed 's/^[01] //')
 
     if [[ -z "$candidates" ]]; then
         continue

@@ -146,6 +146,7 @@ impl Interpreter {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
@@ -259,6 +260,7 @@ impl Interpreter {
             "dd" => self.builtin_dd(&args),
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
+            "end" => self.builtin_end(&args),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
@@ -270,8 +272,10 @@ impl Interpreter {
             "kv" => self.builtin_kv(&args),
             "pairs" => self.builtin_pairs(&args),
             "abs" => self.builtin_abs(&args),
+            "val" => Ok(super::builtins_collection::builtin_val(&args)),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
+            "minmax" => self.builtin_minmax(&args),
             "cross" => self.builtin_cross(args),
             "roundrobin" => self.builtin_roundrobin(&args),
             // List operations
@@ -285,6 +289,7 @@ impl Interpreter {
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
+            "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
@@ -319,6 +324,7 @@ impl Interpreter {
             "chr" => self.builtin_chr(&args),
             "ord" => self.builtin_ord(&args),
             "ords" => self.builtin_ords(&args),
+            "unival" => self.builtin_unival(&args),
             "flip" => self.builtin_flip(&args),
             "lc" => self.builtin_lc(&args),
             "uc" => self.builtin_uc(&args),
@@ -351,7 +357,30 @@ impl Interpreter {
                 // sink evaluates args and returns Nil.
                 // If the argument is a block/sub, call it first.
                 if let Some(func @ Value::Sub(_)) = args.first() {
-                    self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    let value = self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = &value
+                        && class_name == "Failure"
+                        && let Some(ex) = attributes.get("exception")
+                    {
+                        let mut err = RuntimeError::new(ex.to_string_value());
+                        err.exception = Some(Box::new(ex.clone()));
+                        return Err(err);
+                    }
+                } else if let Some(Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                }) = args.first()
+                    && class_name == "Failure"
+                    && let Some(ex) = attributes.get("exception")
+                {
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex.clone()));
+                    return Err(err);
                 }
                 Ok(Value::Nil)
             }
@@ -485,6 +514,11 @@ impl Interpreter {
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;
         }
+        if name == "substr"
+            && let Some((target, rest)) = args.split_first()
+        {
+            return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
+        }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
         if Self::is_builtin_function(name)
             && args.iter().any(|a| matches!(a, Value::Instance { .. }))
@@ -587,6 +621,16 @@ impl Interpreter {
             self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
+            for (k, v) in self.env.iter() {
+                if k != "_"
+                    && k != "@_"
+                    && ((restored_env.contains_key(k)
+                        && matches!(v, Value::Array(..) | Value::Hash(..)))
+                        || k.starts_with("__mutsu_var_meta::"))
+                {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+            }
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
@@ -911,6 +955,93 @@ impl Interpreter {
             return_value: Some(value),
             ..RuntimeError::new("")
         })
+    }
+
+    fn leave_return_value(args: &[Value]) -> Option<Value> {
+        match args {
+            [] => None,
+            [single] => Some(single.clone()),
+            _ => Some(Value::Slip(std::sync::Arc::new(args.to_vec()))),
+        }
+    }
+
+    pub(crate) fn builtin_leave(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_leave_with_target(None, args)
+    }
+
+    pub(crate) fn builtin_leave_method(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.builtin_leave_with_target(Some(target), args)
+    }
+
+    fn builtin_leave_with_target(
+        &mut self,
+        target: Option<Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut sig = RuntimeError::last_signal();
+        sig.is_leave = true;
+        sig.return_value = Self::leave_return_value(args);
+
+        let current_callable_id = self.env.get("__mutsu_callable_id").and_then(|v| match v {
+            Value::Int(i) if *i > 0 => Some(*i as u64),
+            _ => None,
+        });
+        let current_block_id = self.env.get("&?BLOCK").and_then(|v| match v {
+            Value::WeakSub(weak) => weak.upgrade().map(|sub| sub.id),
+            Value::Sub(sub) => Some(sub.id),
+            _ => None,
+        });
+
+        match target {
+            None => {}
+            Some(Value::WeakSub(weak)) => {
+                if let Some(sub) = weak.upgrade() {
+                    if Some(sub.id) != current_callable_id && Some(sub.id) != current_block_id {
+                        sig.leave_callable_id = Some(sub.id);
+                    }
+                } else {
+                    return Err(RuntimeError::new("Callable has been freed"));
+                }
+            }
+            Some(Value::Sub(data)) => {
+                if Some(data.id) != current_callable_id && Some(data.id) != current_block_id {
+                    sig.leave_callable_id = Some(data.id);
+                }
+            }
+            Some(Value::Routine { package, name, .. }) => {
+                sig.leave_routine = Some(format!("{package}::{name}"));
+            }
+            Some(Value::Nil) => {}
+            Some(Value::Package(name)) if name == "Any" => {}
+            Some(Value::Package(name)) if name == "Sub" => {
+                let caller_callable_id = self
+                    .caller_env_stack
+                    .last()
+                    .and_then(|env| env.get("__mutsu_callable_id"))
+                    .and_then(|v| match v {
+                        Value::Int(i) if *i > 0 => Some(*i as u64),
+                        _ => None,
+                    });
+                if let Some(id) = caller_callable_id {
+                    sig.leave_callable_id = Some(id);
+                } else if let Some((package, routine)) = self.routine_stack_top() {
+                    sig.leave_routine = Some(format!("{package}::{routine}"));
+                }
+            }
+            Some(Value::Package(name)) if name == "Block" => {}
+            Some(Value::Str(label)) => {
+                sig.label = Some(label);
+            }
+            Some(other) => {
+                sig.label = Some(other.to_string_value());
+            }
+        }
+
+        Err(sig)
     }
 
     fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1705,6 +1836,7 @@ impl Interpreter {
                 | "quietly"
                 | "exit"
                 | "abs"
+                | "val"
                 | "sqrt"
                 | "floor"
                 | "ceiling"
@@ -1738,6 +1870,7 @@ impl Interpreter {
                 | "acotanh"
                 | "chr"
                 | "ord"
+                | "unival"
                 | "chars"
                 | "chomp"
                 | "chop"
@@ -1747,6 +1880,7 @@ impl Interpreter {
                 | "tc"
                 | "trim"
                 | "elems"
+                | "end"
                 | "keys"
                 | "values"
                 | "pairs"
@@ -1805,6 +1939,128 @@ impl Interpreter {
             return result;
         }
         Err(RuntimeError::new("Expected callable"))
+    }
+
+    fn callable_produce_arity(&self, callable: &Value) -> usize {
+        let (params, param_defs) = self.callable_signature(callable);
+        if !param_defs.is_empty() {
+            let mut total = 0usize;
+            let mut required = 0usize;
+            for pd in &param_defs {
+                if pd.named
+                    || pd.slurpy
+                    || pd.double_slurpy
+                    || pd.traits.iter().any(|t| t == "invocant")
+                {
+                    continue;
+                }
+                total += 1;
+                let is_required = pd.required || (!pd.optional_marker && pd.default.is_none());
+                if is_required {
+                    required += 1;
+                }
+            }
+            if required >= 2 {
+                return required;
+            }
+            if total >= 2 {
+                return total;
+            }
+        }
+        params.len().max(2)
+    }
+
+    fn callable_produce_assoc(&self, callable: &Value) -> OpAssoc {
+        let callable_name = match callable {
+            Value::Sub(data) => Some(data.name.as_str()),
+            Value::Routine { name, .. } => Some(name.as_str()),
+            _ => None,
+        };
+        if let Some(name) = callable_name
+            && let Some(assoc) = self.infix_associativity(name)
+        {
+            return match assoc.as_str() {
+                "right" => OpAssoc::Right,
+                "chain" => OpAssoc::Chain,
+                _ => OpAssoc::Left,
+            };
+        }
+        Self::op_associativity(callable)
+    }
+
+    fn eval_produce_over_items(
+        &mut self,
+        callable: Value,
+        items: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        if items.len() == 1 {
+            return Ok(vec![items[0].clone()]);
+        }
+
+        let arity = self.callable_produce_arity(&callable);
+        let step = arity.saturating_sub(1).max(1);
+        let assoc = self.callable_produce_assoc(&callable);
+
+        match assoc {
+            OpAssoc::Right => {
+                let mut out = Vec::new();
+                let mut acc = items.last().cloned().unwrap_or(Value::Nil);
+                out.push(acc.clone());
+                let mut right_edge = items.len().saturating_sub(1);
+                while right_edge >= step {
+                    let start = right_edge - step;
+                    let mut call_args = items[start..right_edge].to_vec();
+                    call_args.push(acc);
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    out.push(acc.clone());
+                    right_edge = start;
+                }
+                Ok(out)
+            }
+            _ => {
+                let mut out = Vec::new();
+                let mut acc = items[0].clone();
+                out.push(acc.clone());
+                let mut idx = 1usize;
+                while idx + step <= items.len() {
+                    let mut call_args = vec![acc];
+                    call_args.extend(items[idx..idx + step].iter().cloned());
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    out.push(acc.clone());
+                    idx += step;
+                }
+                Ok(out)
+            }
+        }
+    }
+
+    fn builtin_produce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let callable = args
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("produce expects a callable as first argument"))?;
+        if !matches!(
+            callable,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            return Err(RuntimeError::new(
+                "produce expects a callable as first argument",
+            ));
+        }
+
+        let mut items = Vec::new();
+        for arg in args.iter().skip(1) {
+            if matches!(arg, Value::Hash(_)) {
+                items.push(arg.clone());
+            } else {
+                items.extend(crate::runtime::value_to_list(arg));
+            }
+        }
+        let out = self.eval_produce_over_items(callable, items)?;
+        Ok(Value::array(out))
     }
 
     /// zip:with — zip lists using a custom combining function.

@@ -49,6 +49,10 @@ pub(super) fn set_eval_operator_assoc_preseed(assoc: std::collections::HashMap<S
     simple::set_eval_operator_assoc_preseed(assoc);
 }
 
+pub(super) fn set_eval_imported_function_preseed(names: Vec<String>) {
+    simple::set_eval_imported_function_preseed(names);
+}
+
 pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
     STMT_MEMO.stats()
 }
@@ -567,6 +571,8 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::unless_stmt,
     control::with_stmt,
     control::labeled_loop_stmt,
+    control::race_for_stmt,
+    control::hyper_for_stmt,
     control::for_stmt,
     control::while_stmt,
     control::until_stmt,
@@ -630,10 +636,14 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         match simple::expr_stmt(input) {
             Ok(r) => Ok(r),
             Err(err) => {
-                update_best_error(&mut best_error, err, input_len);
-                Err(best_error
-                    .map(|(_, err)| err)
-                    .unwrap_or_else(|| PError::expected_at("statement", input)))
+                if err.is_fatal() {
+                    Err(err)
+                } else {
+                    update_best_error(&mut best_error, err, input_len);
+                    Err(best_error
+                        .map(|(_, err)| err)
+                        .unwrap_or_else(|| PError::expected_at("statement", input)))
+                }
             }
         }
     };
@@ -855,6 +865,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_for_with_parenthesized_positional_destructuring_param() {
+        let (rest, stmts) = program("for @pairs -> ($a, $b) { $a }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::For {
+                param: Some(param),
+                param_def,
+                ..
+            } => {
+                assert_eq!(param, "__for_unpack");
+                let def = param_def.as_ref().as_ref().expect("for param_def");
+                let sub = def.sub_signature.as_ref().expect("for sub_signature");
+                assert_eq!(sub.len(), 2);
+            }
+            _ => panic!("expected for statement with destructuring param"),
+        }
+    }
+
+    #[test]
+    fn parse_for_with_parenthesized_iterable_expression() {
+        let (rest, stmts) = program("for (@a) { .say }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::For { iterable, .. } => {
+                assert!(matches!(iterable, Expr::ArrayVar(name) if name == "a"));
+            }
+            _ => panic!("expected for statement"),
+        }
+    }
+
+    #[test]
     fn parse_chained_inline_modifiers_in_paren_expr() {
         let (rest, stmts) = program("my @odd = ($_ * $_ if $_ % 2 for 0..10);").unwrap();
         assert_eq!(rest, "");
@@ -876,6 +919,17 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
+    }
+
+    #[test]
+    fn parse_paren_expr_mutating_method_stmt() {
+        let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::Expr(Expr::Call { name, .. }) if name == "sink"
+        ));
     }
 
     #[test]
@@ -1288,6 +1342,13 @@ mod tests {
     fn assign_stmt_reports_missing_method_name_for_mutating_call() {
         let err = assign::assign_stmt("$x .=").unwrap_err();
         assert!(err.message().contains("method name after '.='"));
+    }
+
+    #[test]
+    fn assign_stmt_parses_zip_compound_assign() {
+        let (rest, stmt) = assign::assign_stmt("$a Z+= 2;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(stmt, Stmt::Assign { .. }));
     }
 
     #[test]

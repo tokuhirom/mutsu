@@ -1,5 +1,6 @@
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/array.t
+roast/S01-perl-5-integration/basic.t
 roast/S01-perl-5-integration/class.t
 roast/S01-perl-5-integration/context.t
 roast/S01-perl-5-integration/eval_lex.t
@@ -21,10 +22,12 @@ roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
 roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
+roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
+roast/S02-literals/listquote.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
 roast/S02-literals/version.t
@@ -36,10 +39,12 @@ roast/S02-magicals/RAKU.t
 roast/S02-magicals/USER.t
 roast/S02-magicals/args.t
 roast/S02-magicals/block.t
+roast/S02-magicals/dollar_bang.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
 roast/S02-names-vars/list_array_perl.t
+roast/S02-names-vars/signature.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/caller.t
@@ -55,6 +60,7 @@ roast/S02-types/built-in.t
 roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
+roast/S02-types/int-uint.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_pairs.t
@@ -77,6 +83,7 @@ roast/S03-feeds/basic.t
 roast/S03-metaops/not.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
+roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
@@ -92,6 +99,7 @@ roast/S03-operators/increment.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
+roast/S03-operators/minmax.t
 roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
@@ -106,6 +114,7 @@ roast/S03-operators/ternary.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
 roast/S03-sequence/misc.t
+roast/S03-sequence/nonnumeric.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-callable.t
@@ -136,11 +145,14 @@ roast/S04-statement-parsing/hash.t
 roast/S04-statements/for-scope.t
 roast/S04-statements/for_with_only_one_item.t
 roast/S04-statements/goto.t
+roast/S04-statements/label.t
 roast/S04-statements/last.t
+roast/S04-statements/leave.t
 roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/quietly.t
 roast/S04-statements/repeat.t
+roast/S04-statements/sink.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S04-statements/when.t
@@ -153,6 +165,7 @@ roast/S05-grammar/parse_and_parsefile-6e.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
+roast/S05-interpolation/regex-in-variable.t
 roast/S05-mass/charsets.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t
@@ -168,13 +181,16 @@ roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/interpolating-closure.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
+roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/Perl_2.t
+roast/S05-modifier/Perl_5.t
 roast/S05-modifier/Perl_6.t
+roast/S05-modifier/exhaustive.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
@@ -204,7 +220,9 @@ roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
+roast/S06-signature/arity.t
 roast/S06-signature/closure-over-parameters.t
+roast/S06-signature/closure-parameters.t
 roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
@@ -224,6 +242,7 @@ roast/S06-traits/is-readonly.t
 roast/S06-traits/is-rw.t
 roast/S06-traits/misc.t
 roast/S06-traits/native-is-copy.t
+roast/S07-hyperrace/for.t
 roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
 roast/S09-multidim/indexing.t
@@ -248,6 +267,7 @@ roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
+roast/S12-class/mro-6e.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
@@ -266,8 +286,10 @@ roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/fallback.t
 roast/S12-methods/how.t
+roast/S12-methods/indirect_notation.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/parallel-dispatch.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
@@ -283,7 +305,9 @@ roast/S14-roles/generic-subtyping.t
 roast/S14-roles/instantiation.t
 roast/S14-roles/parameter-subtyping.t
 roast/S14-roles/stubs.t
+roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
+roast/S15-literals/numbers.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
 roast/S15-nfg/grapheme-break.t
@@ -353,6 +377,7 @@ roast/S16-io/cwd.t
 roast/S16-io/home.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
+roast/S16-io/prompt.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
@@ -376,6 +401,7 @@ roast/S17-supply/Seq.t
 roast/S17-supply/act.t
 roast/S17-supply/collate.t
 roast/S17-supply/decode.t
+roast/S17-supply/delayed.t
 roast/S17-supply/do.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
@@ -407,6 +433,7 @@ roast/S24-testing/7-bail_out.t
 roast/S24-testing/8-die_on_fail.t
 roast/S24-testing/9-is_deeply.t
 roast/S24-testing/line-numbers.t
+roast/S26-documentation/03-abbreviated.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
@@ -428,6 +455,7 @@ roast/S29-conversions/hash.t
 roast/S32-array/bool.t
 roast/S32-array/create.t
 roast/S32-array/elems.t
+roast/S32-array/end.t
 roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t
@@ -463,7 +491,9 @@ roast/S32-list/first-kv.t
 roast/S32-list/first-p.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
+roast/S32-list/grep.t
 roast/S32-list/map_function_return_values.t
+roast/S32-list/produce.t
 roast/S32-list/rotor.t
 roast/S32-list/unique.t
 roast/S32-num/abs.t
@@ -472,8 +502,10 @@ roast/S32-num/exp.t
 roast/S32-num/expmod.t
 roast/S32-num/is-prime.t
 roast/S32-num/log.t
+roast/S32-num/negative-zero.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
+roast/S32-num/power.t
 roast/S32-num/sqrt.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t

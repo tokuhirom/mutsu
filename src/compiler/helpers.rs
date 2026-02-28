@@ -291,7 +291,8 @@ impl Compiler {
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_placeholder),
             Expr::MethodCall { target, args, .. }
             | Expr::DynamicMethodCall { target, args, .. }
-            | Expr::HyperMethodCall { target, args, .. } => {
+            | Expr::HyperMethodCall { target, args, .. }
+            | Expr::HyperMethodCallDynamic { target, args, .. } => {
                 Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
             Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
@@ -849,7 +850,24 @@ impl Compiler {
         body: &[Stmt],
         label: &Option<String>,
     ) {
-        let (_pre_stmts, mut loop_body, _post_stmts) = self.expand_loop_phasers(body);
+        // Parser currently lowers labeled `do { ... }` / labeled bare blocks into
+        // a dummy single-iteration `for Nil` with a label. Preserve block semantics
+        // here so control flow like `LABEL.leave(...)` returns the block value.
+        if param.is_none()
+            && params.is_empty()
+            && matches!(
+                iterable,
+                Expr::ArrayLiteral(items)
+                    if items.len() == 1
+                        && matches!(items[0], Expr::Literal(Value::Nil))
+            )
+        {
+            self.compile_do_block_expr(body, label);
+            return;
+        }
+
+        let (_pre_stmts, mut loop_body, _post_stmts) =
+            self.expand_loop_phasers(body, label.as_deref());
         let param_idx = param
             .as_ref()
             .map(|p| self.code.add_constant(Value::Str(p.clone())));
@@ -876,6 +894,7 @@ impl Compiler {
             label: label.clone(),
             arity,
             collect: true,
+            threaded: false,
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);
@@ -888,7 +907,7 @@ impl Compiler {
         body: &[Stmt],
         label: &Option<String>,
     ) {
-        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body, label.as_deref());
         for stmt in &pre_stmts {
             self.compile_stmt(stmt);
         }
@@ -916,7 +935,7 @@ impl Compiler {
         body: &[Stmt],
         label: &Option<String>,
     ) {
-        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body, label.as_deref());
         if let Some(init_stmt) = init {
             self.compile_stmt(init_stmt);
         }
@@ -1039,7 +1058,9 @@ impl Compiler {
             Expr::Try { body, .. } => Self::has_let_deep(body),
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_let_deep),
             Expr::MethodCall { args, target, .. }
-            | Expr::DynamicMethodCall { args, target, .. } => {
+            | Expr::DynamicMethodCall { args, target, .. }
+            | Expr::HyperMethodCall { args, target, .. }
+            | Expr::HyperMethodCallDynamic { args, target, .. } => {
                 Self::expr_has_let_deep(target) || args.iter().any(Self::expr_has_let_deep)
             }
             _ => false,
@@ -1052,9 +1073,139 @@ impl Compiler {
         name
     }
 
+    fn next_targets_current_loop(
+        next_label: &Option<String>,
+        current_loop_label: Option<&str>,
+        in_nested_loop: bool,
+    ) -> bool {
+        match next_label {
+            Some(lbl) => current_loop_label == Some(lbl.as_str()),
+            None => !in_nested_loop,
+        }
+    }
+
+    fn rewrite_next_targets_in_stmt(
+        stmt: &Stmt,
+        current_loop_label: Option<&str>,
+        next_ph: &[Stmt],
+        in_nested_loop: bool,
+    ) -> Stmt {
+        match stmt {
+            Stmt::Next(label)
+                if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop) =>
+            {
+                let mut wrapped = next_ph.to_vec();
+                wrapped.push(stmt.clone());
+                Stmt::SyntheticBlock(wrapped)
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+            } => Stmt::If {
+                cond: cond.clone(),
+                then_branch: Self::rewrite_next_targets_in_stmts(
+                    then_branch,
+                    current_loop_label,
+                    next_ph,
+                    in_nested_loop,
+                ),
+                else_branch: Self::rewrite_next_targets_in_stmts(
+                    else_branch,
+                    current_loop_label,
+                    next_ph,
+                    in_nested_loop,
+                ),
+                binding_var: binding_var.clone(),
+            },
+            Stmt::Block(body) => Stmt::Block(Self::rewrite_next_targets_in_stmts(
+                body,
+                current_loop_label,
+                next_ph,
+                in_nested_loop,
+            )),
+            Stmt::SyntheticBlock(body) => {
+                Stmt::SyntheticBlock(Self::rewrite_next_targets_in_stmts(
+                    body,
+                    current_loop_label,
+                    next_ph,
+                    in_nested_loop,
+                ))
+            }
+            Stmt::Label { name, stmt } => Stmt::Label {
+                name: name.clone(),
+                stmt: Box::new(Self::rewrite_next_targets_in_stmt(
+                    stmt,
+                    current_loop_label,
+                    next_ph,
+                    in_nested_loop,
+                )),
+            },
+            Stmt::While { cond, body, label } => Stmt::While {
+                cond: cond.clone(),
+                body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
+                label: label.clone(),
+            },
+            Stmt::For {
+                iterable,
+                param,
+                param_def,
+                params,
+                body,
+                label,
+                mode,
+            } => Stmt::For {
+                iterable: iterable.clone(),
+                param: param.clone(),
+                param_def: param_def.clone(),
+                params: params.clone(),
+                body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
+                label: label.clone(),
+                mode: *mode,
+            },
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                repeat,
+                label,
+            } => Stmt::Loop {
+                init: init.clone(),
+                cond: cond.clone(),
+                step: step.clone(),
+                body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
+                repeat: *repeat,
+                label: label.clone(),
+            },
+            other => other.clone(),
+        }
+    }
+
+    fn rewrite_next_targets_in_stmts(
+        stmts: &[Stmt],
+        current_loop_label: Option<&str>,
+        next_ph: &[Stmt],
+        in_nested_loop: bool,
+    ) -> Vec<Stmt> {
+        stmts
+            .iter()
+            .map(|stmt| {
+                Self::rewrite_next_targets_in_stmt(
+                    stmt,
+                    current_loop_label,
+                    next_ph,
+                    in_nested_loop,
+                )
+            })
+            .collect()
+    }
+
     pub(super) fn expand_loop_phasers(
         &mut self,
         body: &[Stmt],
+        label: Option<&str>,
     ) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
         if !Self::has_phasers(body) {
             return (Vec::new(), body.to_vec(), Vec::new());
@@ -1103,6 +1254,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
@@ -1113,6 +1265,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
         ];
         if let Some(result_var) = result_var.clone() {
@@ -1125,6 +1278,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             });
         }
 
@@ -1135,7 +1289,13 @@ impl Compiler {
             op: AssignOp::Assign,
         });
         loop_body.extend(enter_ph);
-        if !first_ph.is_empty() || !next_ph.is_empty() {
+        let body_main = if next_ph.is_empty() {
+            body_main
+        } else {
+            Self::rewrite_next_targets_in_stmts(&body_main, label, &next_ph, false)
+        };
+
+        if !first_ph.is_empty() {
             let mut then_branch = first_ph;
             then_branch.push(Stmt::Assign {
                 name: first_var.clone(),
@@ -1145,7 +1305,7 @@ impl Compiler {
             loop_body.push(Stmt::If {
                 cond: Expr::Var(first_var.clone()),
                 then_branch,
-                else_branch: next_ph,
+                else_branch: Vec::new(),
                 binding_var: None,
             });
         }
@@ -1177,6 +1337,7 @@ impl Compiler {
         } else {
             loop_body.extend(body_main);
         }
+        loop_body.extend(next_ph);
         loop_body.extend(leave_ph);
         if let Some(result_var) = result_var.clone() {
             if !keep_ph.is_empty() || !undo_ph.is_empty() {

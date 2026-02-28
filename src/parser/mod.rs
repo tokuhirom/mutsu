@@ -171,6 +171,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // Fatal parse errors (e.g. bare say/print/put) pass through directly
                 let mut err = RuntimeError::new(format!("{}", e));
                 err.code = Some(RuntimeErrorCode::ParseGeneric);
+                if let Some(ex) = e.exception {
+                    err.exception = Some(ex);
+                }
                 return Err(err);
             }
             if let Some(consumed) = e.consumed_from(source.len()) {
@@ -235,14 +238,17 @@ pub(crate) fn parse_program_with_operators(
     input: &str,
     operator_names: &[String],
     operator_assoc: &std::collections::HashMap<String, String>,
+    imported_function_names: &[String],
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
     stmt::set_eval_operator_preseed(operator_names.to_vec());
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
+    stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     let result = parse_program(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
+    stmt::set_eval_imported_function_preseed(Vec::new());
     result
 }
 

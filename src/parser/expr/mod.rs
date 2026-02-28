@@ -71,7 +71,17 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         // Smartmatch handles RHS WhateverCode in precedence parsing, and LHS should
         // remain a normal expression (e.g. `(*) ~~ HyperWhatever:D`).
         if should_wrap_whatevercode(&expr) {
-            expr = wrap_whatevercode(&expr);
+            expr = match expr {
+                Expr::CallOn { target, args }
+                    if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+                {
+                    Expr::CallOn {
+                        target: Box::new(wrap_whatevercode(&target)),
+                        args,
+                    }
+                }
+                other => wrap_whatevercode(&other),
+            };
         }
         Ok((rest, expr))
     })();
@@ -110,7 +120,19 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     expr = wrap_composition_operands(expr);
     // Keep bare `*` as Whatever (Inf). Only wrap true WhateverCode expressions.
     if should_wrap_whatevercode(&expr) {
-        expr = wrap_whatevercode(&expr);
+        expr = match expr {
+            // Preserve call-on semantics for forms like *²(3):
+            // wrap the callable target as WhateverCode, then invoke it.
+            Expr::CallOn { target, args }
+                if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+            {
+                Expr::CallOn {
+                    target: Box::new(wrap_whatevercode(&target)),
+                    args,
+                }
+            }
+            other => wrap_whatevercode(&other),
+        };
     }
     Ok((rest, expr))
 }
@@ -479,6 +501,16 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
 
 /// Build a WhateverCode lambda from an expression containing Whatever placeholders.
 fn wrap_whatevercode(expr: &Expr) -> Expr {
+    if let Expr::CallOn { target, args } = expr
+        && should_wrap_whatevercode(target)
+        && !args.iter().any(contains_whatever)
+    {
+        return Expr::CallOn {
+            target: Box::new(wrap_whatevercode(target)),
+            args: args.clone(),
+        };
+    }
+
     let wc_count = count_whatever(expr);
 
     if wc_count <= 1 {
@@ -1111,6 +1143,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_quote_word_list() {
+        let (rest, expr) = expression("|<a b>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_hyper_prefix_slip_left_on_angle_list() {
+        let (rest, expr) = expression("|<< <a x y z>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_hyper_prefix_slip_right_on_angle_list() {
+        let (rest, expr) = expression("|>> <a x y z>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_prefix_boolify_codevar_method_call() {
         let (rest, expr) = expression("?&foo.cando($c)").unwrap();
         assert_eq!(rest, "");
@@ -1227,6 +1298,22 @@ mod tests {
                 assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
             }
             _ => panic!("expected dot-postfix increment"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_hyper_postfix_increment() {
+        let (rest, expr) = expression("$x.>>++").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall {
+                target, name, args, ..
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n == "x"));
+                assert_eq!(name, "postfix:<++>");
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected hyper postfix increment"),
         }
     }
 

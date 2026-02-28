@@ -103,6 +103,10 @@ pub(crate) fn native_method_0arg(
         }
         return native_method_0arg(inner, method);
     }
+    // Native int coercer methods (.byte(), .int8(), .uint16(), etc.)
+    if runtime::native_types::is_native_int_type(method) {
+        return Some(native_int_coerce_method(target, method));
+    }
     // Uni types: override .chars, .codes, .comb to work on codepoints
     if let Value::Uni { text, .. } = target {
         match method {
@@ -481,7 +485,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes.get("to").cloned().unwrap_or(Value::Int(0))));
             }
             "gist" => {
-                let mut gist = target.to_string_value();
+                let matched = target.to_string_value();
+                let mut gist = format!("｢{}｣", matched);
                 if let Some(Value::Hash(named)) = attributes.get("named")
                     && !named.is_empty()
                 {
@@ -489,7 +494,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     keys.sort();
                     for key in keys {
                         if let Some(value) = named.get(key) {
-                            gist.push_str(&format!("\n {} => {}", key, value.to_string_value()));
+                            gist.push_str(&format!("\n {} => ｢{}｣", key, value.to_string_value()));
                         }
                     }
                 }
@@ -525,6 +530,85 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let str_val = Value::Str(target.to_string_value());
                 return native_method_0arg(&str_val, method);
             }
+        }
+    }
+    // Native int type .Range method
+    if let Value::Package(name) = target
+        && crate::runtime::native_types::is_native_int_type(name)
+        && method == "Range"
+        && let Some((min_big, max_big)) = crate::runtime::native_types::native_int_bounds(name)
+    {
+        let min_i64 = min_big.to_i64();
+        let max_i64 = max_big.to_i64();
+        if let (Some(min_v), Some(max_v)) = (min_i64, max_i64) {
+            return Some(Ok(Value::Range(min_v, max_v)));
+        } else {
+            // For types where bounds don't fit in i64 (e.g. uint64)
+            let min_val = min_i64
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(min_big));
+            let max_val = max_i64
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(max_big));
+            return Some(Ok(Value::GenericRange {
+                start: Box::new(min_val),
+                end: Box::new(max_val),
+                excl_start: false,
+                excl_end: false,
+            }));
+        }
+    }
+    // .int-bounds on Range values
+    if method == "int-bounds" {
+        match target {
+            Value::Range(start, end) => {
+                return Some(Ok(Value::array(vec![Value::Int(*start), Value::Int(*end)])));
+            }
+            Value::RangeExcl(start, end) => {
+                return Some(Ok(Value::array(vec![
+                    Value::Int(*start + 1),
+                    Value::Int(*end - 1),
+                ])));
+            }
+            Value::RangeExclStart(start, end) => {
+                return Some(Ok(Value::array(vec![
+                    Value::Int(*start + 1),
+                    Value::Int(*end),
+                ])));
+            }
+            Value::RangeExclBoth(start, end) => {
+                return Some(Ok(Value::array(vec![
+                    Value::Int(*start + 1),
+                    Value::Int(*end - 1),
+                ])));
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let s = if *excl_start {
+                    match start.as_ref() {
+                        Value::Int(n) => Value::Int(n + 1),
+                        Value::BigInt(n) => Value::BigInt(n + 1),
+                        other => Value::Int(other.to_f64() as i64 + 1),
+                    }
+                } else {
+                    start.as_ref().clone()
+                };
+                let e = if *excl_end {
+                    match end.as_ref() {
+                        Value::Int(n) => Value::Int(n - 1),
+                        Value::BigInt(n) => Value::BigInt(n - 1),
+                        other => Value::Int(other.to_f64() as i64 - 1),
+                    }
+                } else {
+                    end.as_ref().clone()
+                };
+                return Some(Ok(Value::array(vec![s, e])));
+            }
+            _ => {}
         }
     }
     // Kernel type object methods
@@ -619,7 +703,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else if let Ok(f) = s.trim().parse::<f64>() {
                         Value::Int(f as i64)
                     } else {
-                        return None;
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
                     }
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
@@ -638,10 +725,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Num(f) => Value::Num(*f),
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
-                    if let Ok(f) = s.trim().parse::<f64>() {
+                    let trimmed = s.trim();
+                    // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
+                    let normalized = trimmed.replace('\u{2212}', "-");
+                    if let Ok(f) = normalized.parse::<f64>() {
                         Value::Num(f)
                     } else {
-                        return None;
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
                     }
                 }
                 Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
@@ -662,7 +755,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else if let Ok(f) = s.trim().parse::<f64>() {
                         Value::Num(f)
                     } else {
-                        return None;
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
                     }
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
@@ -808,8 +904,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(result))
         }
         "end" => match target {
-            Value::Array(items, ..) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-            _ => None,
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Some(Ok(Value::Int(items.len() as i64 - 1)))
+            }
+            Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Set(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Bag(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Mix(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Junction { values, .. } => Some(Ok(Value::Int(values.len() as i64 - 1))),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf" || class_name == "Blob" => {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Int(bytes.len() as i64 - 1)))
+                } else {
+                    Some(Ok(Value::Int(-1)))
+                }
+            }
+            Value::LazyList(_) => None,
+            _ => Some(Ok(Value::Int(0))),
         },
         "flat" => match target {
             Value::Array(items, ..) => {
@@ -846,6 +961,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let mut reversed = (**items).clone();
                 reversed.reverse();
                 Some(Ok(Value::Array(std::sync::Arc::new(reversed), *is_array)))
+            }
+            Value::Range(a, b)
+            | Value::RangeExcl(a, b)
+            | Value::RangeExclStart(a, b)
+            | Value::RangeExclBoth(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    None
+                } else {
+                    let mut reversed = crate::runtime::utils::value_to_list(target);
+                    reversed.reverse();
+                    Some(Ok(Value::array(reversed)))
+                }
             }
             Value::Str(s) => Some(Ok(Value::Str(s.chars().rev().collect()))),
             _ => None,
@@ -1025,7 +1152,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 let joined = items
                     .iter()
-                    .map(|v| v.to_string_value())
+                    .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()
                     .join("");
                 Some(Ok(Value::Str(joined)))
@@ -1157,15 +1284,65 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Seq(_) if method == "raku" || method == "perl" => {
                 Some(Ok(Value::Str(raku_value(target))))
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
-                if method == "gist" =>
-            {
+            Value::Array(items, is_array) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
                     match v {
                         Value::Nil => "Nil".to_string(),
-                        Value::Array(inner, ..) | Value::Seq(inner) | Value::Slip(inner) => {
+                        Value::Array(inner, is_array) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            if *is_array {
+                                format!("[{}]", elems)
+                            } else {
+                                format!("({})", elems)
+                            }
+                        }
+                        Value::Seq(inner) | Value::Slip(inner) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                             format!("({})", elems)
+                        }
+                        Value::Hash(map) => {
+                            let mut sorted_keys: Vec<&String> = map.keys().collect();
+                            sorted_keys.sort();
+                            let parts: Vec<String> = sorted_keys
+                                .iter()
+                                .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
+                                .collect();
+                            format!("{{{}}}", parts.join(" "))
+                        }
+                        other => other.to_string_value(),
+                    }
+                }
+                let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                if *is_array {
+                    Some(Ok(Value::Str(format!("[{}]", inner))))
+                } else {
+                    Some(Ok(Value::Str(format!("({})", inner))))
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) if method == "gist" => {
+                fn gist_item(v: &Value) -> String {
+                    match v {
+                        Value::Nil => "Nil".to_string(),
+                        Value::Array(inner, is_array) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            if *is_array {
+                                format!("[{}]", elems)
+                            } else {
+                                format!("({})", elems)
+                            }
+                        }
+                        Value::Seq(inner) | Value::Slip(inner) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            format!("({})", elems)
+                        }
+                        Value::Hash(map) => {
+                            let mut sorted_keys: Vec<&String> = map.keys().collect();
+                            sorted_keys.sort();
+                            let parts: Vec<String> = sorted_keys
+                                .iter()
+                                .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
+                                .collect();
+                            format!("{{{}}}", parts.join(" "))
                         }
                         other => other.to_string_value(),
                     }
@@ -1283,6 +1460,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
@@ -1295,6 +1473,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
@@ -1527,7 +1706,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             attrs.insert("bytes".to_string(), Value::array(bytes));
             Some(Ok(Value::make_instance("Buf".to_string(), attrs)))
         }
-        "sink" => Some(Ok(Value::Nil)),
+        "sink" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => {
+                if let Some(ex) = attributes.get("exception") {
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex.clone()));
+                    Some(Err(err))
+                } else {
+                    Some(Ok(Value::Nil))
+                }
+            }
+            _ => Some(Ok(Value::Nil)),
+        },
         "item" => Some(Ok(target.clone())),
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array
@@ -1715,4 +1909,61 @@ fn complex_atan(a: f64, b: f64) -> (f64, f64) {
     let (lr, li) = complex_ln(qr, qi);
     // i/2 * (lr + li*i) = (i*lr + i*li*i)/2 = (-li/2 + lr/2*i) => (-li/2, lr/2)
     (-li / 2.0, lr / 2.0)
+}
+
+/// Coerce a value to a native integer type (e.g. `.byte()`, `.int8()`, `.uint32()`).
+/// Wraps out-of-range values using modular arithmetic.
+fn native_int_coerce_method(target: &Value, type_name: &str) -> Result<Value, RuntimeError> {
+    use num_bigint::BigInt as NumBigInt;
+
+    let big_val: NumBigInt = match target {
+        Value::Int(i) => NumBigInt::from(*i),
+        Value::BigInt(n) => n.clone(),
+        Value::Num(f) => {
+            if f.is_nan() || f.is_infinite() {
+                return Err(RuntimeError::new(format!(
+                    "Cannot coerce {} to {}",
+                    f, type_name
+                )));
+            }
+            NumBigInt::from(*f as i128)
+        }
+        Value::Str(s) => {
+            if let Ok(i) = s.parse::<i128>() {
+                NumBigInt::from(i)
+            } else if let Ok(f) = s.parse::<f64>() {
+                NumBigInt::from(f as i128)
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "Cannot coerce '{}' to {}",
+                    s, type_name
+                )));
+            }
+        }
+        Value::Bool(b) => NumBigInt::from(if *b { 1 } else { 0 }),
+        Value::Rat(n, d) => {
+            if *d == 0 {
+                return Err(RuntimeError::new("Division by zero in Rat coercion"));
+            }
+            NumBigInt::from(*n / *d)
+        }
+        _ => {
+            // Try to coerce through string → parse
+            let s = target.to_string_value();
+            if let Ok(i) = s.parse::<i128>() {
+                NumBigInt::from(i)
+            } else {
+                NumBigInt::from(0)
+            }
+        }
+    };
+
+    let wrapped = runtime::native_types::wrap_native_int(type_name, &big_val);
+
+    // Convert back to Value
+    if let Some(i) = wrapped.to_i64() {
+        Ok(Value::Int(i))
+    } else {
+        Ok(Value::BigInt(wrapped))
+    }
 }

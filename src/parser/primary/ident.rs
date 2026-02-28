@@ -15,7 +15,7 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, or_expr_pub};
-use super::super::helpers::{normalize_raku_identifier, ws, ws1};
+use super::super::helpers::{is_loop_label_name, normalize_raku_identifier, ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
@@ -441,6 +441,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "split"
             | "index"
             | "join"
+            | "abs"
             | "reverse"
             | "min"
             | "max"
@@ -450,6 +451,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "sleep"
             | "dir"
             | "elems"
+            | "end"
     ) || is_expr_listop(name)
 }
 
@@ -463,6 +465,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
         "EVAL"
             | "flat"
             | "slip"
+            | "produce"
             | "run"
             | "shell"
             | "cross"
@@ -536,6 +539,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
         let (r, arg) = or_expr_pub(input).map_err(|err| PError {
             messages: merge_expected_messages("expected listop argument expression", &err.messages),
             remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: None,
         })?;
         return Ok((r, make_call_expr(name, input, vec![arg])));
     }
@@ -546,6 +550,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
         let (r, first) = expression(input).map_err(|err| PError {
             messages: merge_expected_messages("expected listop argument expression", &err.messages),
             remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: None,
         })?;
         let mut exprs = vec![first];
         let mut r = r;
@@ -570,6 +575,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             exprs.push(expr);
             r = r2;
@@ -585,7 +591,12 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
     let (r, first) = expression(input).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
+        exception: None,
     })?;
+    let (r, invocant_colon_call) = try_parse_no_paren_invocant_colon_call(&name, first.clone(), r)?;
+    if let Some(method_call) = invocant_colon_call {
+        return Ok((r, method_call));
+    }
     let mut args = vec![first];
     let mut r = r;
     loop {
@@ -610,11 +621,89 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r2.len())),
+            exception: None,
         })?;
         args.push(arg);
         r = r2;
     }
     Ok((r, make_call_expr(name, input, args)))
+}
+
+fn try_parse_no_paren_invocant_colon_call<'a>(
+    name: &str,
+    first_arg: Expr,
+    rest_after_first_arg: &'a str,
+) -> PResult<'a, Option<Expr>> {
+    let (r_ws, _) = ws(rest_after_first_arg)?;
+    if !r_ws.starts_with(':') || r_ws.starts_with("::") {
+        return Ok((rest_after_first_arg, None));
+    }
+
+    let after_colon = &r_ws[1..];
+    let (mut r, _) = ws(after_colon)?;
+
+    if let Some(after_comma) = r.strip_prefix(',') {
+        let (after_ws, _) = ws(after_comma)?;
+        r = after_ws;
+    }
+
+    let mut args = Vec::new();
+    if !(r.is_empty()
+        || r.starts_with(';')
+        || r.starts_with('}')
+        || r.starts_with(')')
+        || r.starts_with(']')
+        || is_stmt_modifier_ahead(r))
+    {
+        let (r2, first_method_arg) = expression(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected method argument after invocant colon",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
+        })?;
+        args.push(first_method_arg);
+        r = r2;
+        loop {
+            let (r2, _) = ws(r)?;
+            if !r2.starts_with(',') {
+                break;
+            }
+            let r2 = &r2[1..];
+            let (r2, _) = ws(r2)?;
+            if r2.is_empty()
+                || r2.starts_with(';')
+                || r2.starts_with('}')
+                || r2.starts_with(')')
+                || r2.starts_with(']')
+                || is_stmt_modifier_ahead(r2)
+            {
+                break;
+            }
+            let (r2, arg) = expression(r2).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected method argument after ','",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
+            })?;
+            args.push(arg);
+            r = r2;
+        }
+    }
+
+    Ok((
+        r,
+        Some(Expr::MethodCall {
+            target: Box::new(first_arg),
+            name: name.to_string(),
+            args,
+            modifier: None,
+            quoted: false,
+        }),
+    ))
 }
 
 fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
@@ -849,6 +938,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             &err.messages,
                         ),
                         remaining_len: err.remaining_len.or(Some(r.len())),
+                        exception: None,
                     })?;
                     return Ok((r, params_body));
                 }
@@ -865,6 +955,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r.len())),
+                                exception: None,
                             })?;
                         return Ok((r, params_body));
                     }
@@ -910,6 +1001,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r.len())),
+                                exception: None,
                             });
                         }
                     }
@@ -926,18 +1018,19 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // Anonymous method in expression context: method () { ... } or method { ... }
             let (r, _) = ws(rest)?;
             if r.starts_with('(') {
-                let (r, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                let (r, params_body) = parse_anon_method_with_params(r).map_err(|err| PError {
                     messages: merge_expected_messages(
                         "expected anonymous method parameter list/body",
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r.len())),
+                    exception: None,
                 })?;
                 return Ok((r, params_body));
             }
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
-                return Ok((r, make_anon_sub(body)));
+                return Ok((r, make_anon_method(body)));
             }
         }
         "token" | "regex" | "rule" => {
@@ -1060,7 +1153,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Labeled loop in expression context, e.g. `MEOW: for ^10 { ... }`
-    if name.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
+    if is_loop_label_name(&name) {
         let (r_ws, _) = ws(rest)?;
         if r_ws.starts_with(':')
             && let Ok((r, stmt)) = super::super::stmt::labeled_loop_stmt_pub(input)
@@ -1291,7 +1384,13 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
+            let (r2, invocant_colon_call) =
+                try_parse_no_paren_invocant_colon_call(&name, arg.clone(), r2)?;
+            if let Some(method_call) = invocant_colon_call {
+                return Ok((r2, method_call));
+            }
             let mut args = vec![arg];
             let mut rest_after = r2;
             loop {
@@ -1358,6 +1457,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || is_user_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
+            let (r2, invocant_colon_call) =
+                try_parse_no_paren_invocant_colon_call(&name, arg.clone(), r2)?;
+            if let Some(method_call) = invocant_colon_call {
+                return Ok((r2, method_call));
+            }
             // For user subs, collect comma-separated args
             if is_user_sub {
                 return parse_expr_listop_args(r, name);
@@ -1430,6 +1534,50 @@ pub(super) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
     let (r, (param_defs, return_type)) = super::super::stmt::parse_param_list_with_return_pub(r)?;
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
     parse_anon_sub_rest(r, params, param_defs, return_type)
+}
+
+fn invocant_param_def() -> crate::ast::ParamDef {
+    crate::ast::ParamDef {
+        name: "self".to_string(),
+        default: None,
+        multi_invocant: true,
+        required: false,
+        named: false,
+        slurpy: false,
+        double_slurpy: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: true,
+        shape_constraints: None,
+    }
+}
+
+fn make_anon_method(body: Vec<Stmt>) -> Expr {
+    Expr::AnonSubParams {
+        params: vec!["self".to_string()],
+        param_defs: vec![invocant_param_def()],
+        return_type: None,
+        body,
+        is_rw: false,
+    }
+}
+
+fn parse_anon_method_with_params(input: &str) -> PResult<'_, Expr> {
+    let (r, _) = parse_char(input, '(')?;
+    let (r, _) = ws(r)?;
+    let (r, (param_defs, return_type)) = super::super::stmt::parse_param_list_with_return_pub(r)?;
+    let mut params = vec!["self".to_string()];
+    params.extend(param_defs.iter().map(|p| p.name.clone()));
+    let mut method_param_defs = vec![invocant_param_def()];
+    method_param_defs.extend(param_defs);
+    parse_anon_sub_rest(r, params, method_param_defs, return_type)
 }
 
 fn parse_anon_sub_rest(

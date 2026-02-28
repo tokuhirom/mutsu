@@ -43,17 +43,20 @@ jobs:
       - name: Unit tests
         run: cargo test
 
-      - name: Build
+      - name: Build (debug, for TAP tests)
         run: cargo build
 
-      - name: TAP tests (make test)
-        run: make test
+      - name: TAP tests (prove t/)
+        run: prove -e 'target/debug/mutsu' t/
+
+      - name: Build (release, for roast)
+        run: cargo build --release
 
       - name: Roast whitelist is sorted
         run: make check-roast-whitelist
 
       - name: Roast tests (make roast)
-        run: make roast
+        run: prove -e 'timeout 30 target/release/mutsu' $(cat roast-whitelist.txt)
 
   wasm-e2e:
     runs-on: ubuntu-latest

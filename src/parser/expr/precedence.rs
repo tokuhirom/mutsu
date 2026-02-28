@@ -264,6 +264,7 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 /// || , ^^ , and //
 fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_and_expr_mode(input, mode)?;
+    let mut last_list_assoc_op: Option<LogicalOp> = None;
     loop {
         let (r, _) = ws(rest)?;
         // Check for negated logical ops first: !|| , !^^
@@ -283,6 +284,26 @@ fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         } else {
             break;
         };
+        if matches!(op, LogicalOp::Min | LogicalOp::Max) {
+            if let Some(prev) = last_list_assoc_op
+                && prev != op
+            {
+                return Err(PError::fatal(format!(
+                    "Only identical operators may be list associative; since '{}' and '{}' differ, they are non-associative and you need to clarify with parentheses",
+                    match prev {
+                        LogicalOp::Min => "min",
+                        LogicalOp::Max => "max",
+                        _ => unreachable!(),
+                    },
+                    match op {
+                        LogicalOp::Min => "min",
+                        LogicalOp::Max => "max",
+                        _ => unreachable!(),
+                    }
+                )));
+            }
+            last_list_assoc_op = Some(op);
+        }
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
@@ -1172,6 +1193,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?
         } else {
             junctive_expr_mode(r, mode)?
@@ -1199,6 +1221,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Unary {
                     op: TokenKind::Bang,
@@ -1227,6 +1250,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Binary {
                     left: Box::new(prev_right),
@@ -1256,6 +1280,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?
         } else {
             junctive_expr_mode(r, mode)?
@@ -1282,6 +1307,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Unary {
                     op: TokenKind::Bang,
@@ -1309,6 +1335,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Binary {
                     left: Box::new(prev_right),
