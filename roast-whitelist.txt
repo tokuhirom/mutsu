@@ -439,6 +439,7 @@ roast/S32-container/zip.t
 roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/delete.t
+roast/S32-hash/exists-adverb.t
 roast/S32-hash/exists.t
 roast/S32-hash/hyperslice.t
 roast/S32-hash/invert.t
