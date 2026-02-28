@@ -254,7 +254,13 @@ mod tests {
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::CaptureLiteral(ref items) if items.len() == 1));
+        match expr {
+            Expr::MethodCall { name, args, .. } => {
+                assert_eq!(name, "item");
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected MethodCall(.item)"),
+        }
     }
 
     #[test]

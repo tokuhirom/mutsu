@@ -485,12 +485,23 @@ pub(in crate::parser) fn match_user_declared_postfix_op(input: &str) -> Option<(
 }
 
 /// Register a user-declared term symbol.
-/// The canonical name must be in `term:<...>` form.
+/// The canonical name can be in `term:<...>` form or a plain identifier
+/// (for sigilless variables declared with `my \name`).
 pub(in crate::parser) fn register_user_term_symbol(name: &str) {
-    let Some(symbol) = name
+    let symbol = if let Some(s) = name
         .strip_prefix("term:<")
         .and_then(|s| s.strip_suffix('>'))
-    else {
+    {
+        s.to_string()
+    } else if !name.starts_with('$')
+        && !name.starts_with('@')
+        && !name.starts_with('%')
+        && !name.starts_with('&')
+    {
+        // Plain identifier (sigilless variable): use name as both symbol and canonical name
+        name.to_string()
+    } else {
+        // Sigiled variables ($x, @x, %x) are not term symbols
         return;
     };
     SCOPES.with(|s| {
@@ -500,7 +511,7 @@ pub(in crate::parser) fn register_user_term_symbol(name: &str) {
             .expect("scope stack should never be empty");
         current
             .term_symbols
-            .insert(symbol.to_string(), TermBinding::Value(name.to_string()));
+            .insert(symbol, TermBinding::Value(name.to_string()));
     });
 }
 

@@ -622,6 +622,7 @@ impl Value {
                 }
             }
             Value::CustomTypeInstance { type_name, .. } => format!("{}()", type_name),
+            Value::Scalar(inner) => inner.to_string_value(),
         }
     }
 

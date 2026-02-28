@@ -625,6 +625,15 @@ impl Interpreter {
                     Self::flat_into(item, out);
                 }
             }
+            Value::LazyList(ll) => {
+                if let Some(cached) = ll.cache.lock().unwrap().clone() {
+                    for item in &cached {
+                        Self::flat_into(item, out);
+                    }
+                } else {
+                    out.push(val.clone());
+                }
+            }
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)

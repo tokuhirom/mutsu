@@ -90,6 +90,9 @@ pub(crate) fn native_method_1arg(
     method: &str,
     arg: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    if let Value::Scalar(inner) = target {
+        return native_method_1arg(inner, method, arg);
+    }
     match method {
         "chop" => {
             // Type objects (Package) should throw
@@ -1031,6 +1034,9 @@ pub(crate) fn native_method_2arg(
     arg1: &Value,
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    if let Value::Scalar(inner) = target {
+        return native_method_2arg(inner, method, arg1, arg2);
+    }
     if method == "flat" {
         let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
             (Some(depth), is_hammer_pair(arg2))

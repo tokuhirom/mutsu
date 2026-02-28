@@ -99,6 +99,11 @@ pub(crate) fn native_method_0arg(
     target: &Value,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
+    // Scalar containers are transparent for method dispatch
+    if let Value::Scalar(inner) = target {
+        return native_method_0arg(inner, method);
+    }
+
     // For Mixin values, handle Bool method specially, then delegate to inner
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
@@ -939,8 +944,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
-                // LazyList needs interpreter to force; fall through to runtime
-                Value::LazyList(_) => return None,
+                // LazyList is lazy — .elems returns a Failure
+                Value::LazyList(_) => {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::Str("Cannot .elems a lazy list".to_string()),
+                    );
+                    let exception = Value::make_instance("X::Cannot::Lazy".to_string(), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    return Some(Ok(Value::make_instance(
+                        "Failure".to_string(),
+                        failure_attrs,
+                    )));
+                }
                 _ => Value::Int(1),
             };
             Some(Ok(result))
@@ -1951,7 +1970,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             _ => Some(Ok(Value::Nil)),
         },
-        "item" => Some(Ok(target.clone())),
+        "item" => Some(Ok(Value::Scalar(Box::new(target.clone())))),
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array
             let items = runtime::value_to_list(target);

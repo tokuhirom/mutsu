@@ -174,6 +174,7 @@ impl Value {
             Value::Proxy { .. } => true,
             Value::CustomType { .. } => false,
             Value::CustomTypeInstance { .. } => true,
+            Value::Scalar(inner) => inner.truthy(),
         }
     }
 
@@ -247,6 +248,7 @@ impl Value {
             Value::ParametricRole { base_name, .. } => base_name.as_str(),
             Value::CustomType { name, .. } => name.as_str(),
             Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
+            Value::Scalar(inner) => return inner.isa_check(type_name),
         };
         if my_type == type_name {
             return true;

@@ -241,6 +241,9 @@ pub enum Value {
         attributes: Arc<HashMap<String, Value>>,
         id: u64,
     },
+    /// A Scalar container wrapping a value (from `.item` or `$()`).
+    /// Prevents one level of flattening in list/array context.
+    Scalar(Box<Value>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -740,6 +743,15 @@ impl Value {
     }
     pub fn hash(map: HashMap<String, Value>) -> Self {
         Value::Hash(Arc::new(map))
+    }
+
+    /// Unwrap a Scalar container, returning the inner value.
+    /// For non-Scalar values, returns self unchanged.
+    pub fn decontainerize(&self) -> &Value {
+        match self {
+            Value::Scalar(inner) => inner.decontainerize(),
+            other => other,
+        }
     }
     pub fn set(s: HashSet<String>) -> Self {
         Value::Set(Arc::new(s))
