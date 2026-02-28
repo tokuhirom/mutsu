@@ -215,12 +215,59 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
+        let role_context = if self.roles.contains_key(owner_class) {
+            Some(owner_class.to_string())
+        } else if let Some(composed) = self.class_composed_roles.get(receiver_class_name) {
+            let target_fp = crate::ast::function_body_fingerprint(
+                &method_def.params,
+                &method_def.param_defs,
+                &method_def.body,
+            );
+            composed.iter().find_map(|role_name| {
+                let base_role = role_name
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(role_name.as_str());
+                self.roles.get(base_role).and_then(|role_def| {
+                    role_def
+                        .methods
+                        .values()
+                        .flatten()
+                        .any(|candidate| {
+                            crate::ast::function_body_fingerprint(
+                                &candidate.params,
+                                &candidate.param_defs,
+                                &candidate.body,
+                            ) == target_fp
+                        })
+                        .then(|| base_role.to_string())
+                })
+            })
+        } else {
+            None
+        };
         // Set ::?CLASS / ::?ROLE compile-time variable for the method body
         self.env.insert(
             "?CLASS".to_string(),
             Value::Package(owner_class.to_string()),
         );
+        if let Some(role_name) = role_context {
+            self.env
+                .insert("?ROLE".to_string(), Value::Package(role_name));
+        } else {
+            self.env.remove("?ROLE");
+        }
         self.env.insert("self".to_string(), base.clone());
+        if let Some(role_bindings) = self.class_role_param_bindings.get(owner_class) {
+            for (name, value) in role_bindings {
+                self.env.insert(name.clone(), value.clone());
+            }
+        } else if let Some(role_bindings) = self.class_role_param_bindings.get(receiver_class_name)
+        {
+            for (name, value) in role_bindings {
+                self.env.insert(name.clone(), value.clone());
+            }
+        }
 
         let mut bind_params = Vec::new();
         let mut bind_param_defs = Vec::new();

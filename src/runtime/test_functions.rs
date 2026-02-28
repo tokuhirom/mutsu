@@ -646,7 +646,7 @@ impl Interpreter {
         // but the first arg could be a Pair value being tested.
         let (value, type_name, desc) = Self::extract_isa_ok_args(args);
         let todo = Self::named_bool(args, "todo");
-        let ok = value.isa_check(&type_name);
+        let ok = value.isa_check(&type_name) || self.type_matches_value(&type_name, value);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
     }
@@ -721,7 +721,13 @@ impl Interpreter {
         nested.lib_paths = self.lib_paths.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
+        nested.class_composed_roles = self.class_composed_roles.clone();
         nested.roles = self.roles.clone();
+        nested.role_candidates = self.role_candidates.clone();
+        nested.role_parents = self.role_parents.clone();
+        nested.role_hides = self.role_hides.clone();
+        nested.role_type_params = self.role_type_params.clone();
+        nested.class_role_param_bindings = self.class_role_param_bindings.clone();
         nested.subsets = self.subsets.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
@@ -754,7 +760,13 @@ impl Interpreter {
         nested.lib_paths = self.lib_paths.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
+        nested.class_composed_roles = self.class_composed_roles.clone();
         nested.roles = self.roles.clone();
+        nested.role_candidates = self.role_candidates.clone();
+        nested.role_parents = self.role_parents.clone();
+        nested.role_hides = self.role_hides.clone();
+        nested.role_type_params = self.role_type_params.clone();
+        nested.class_role_param_bindings = self.class_role_param_bindings.clone();
         nested.subsets = self.subsets.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
@@ -794,7 +806,13 @@ impl Interpreter {
                 nested.proto_tokens = self.proto_tokens.clone();
                 nested.classes = self.classes.clone();
                 nested.class_trusts = self.class_trusts.clone();
+                nested.class_composed_roles = self.class_composed_roles.clone();
                 nested.roles = self.roles.clone();
+                nested.role_candidates = self.role_candidates.clone();
+                nested.role_parents = self.role_parents.clone();
+                nested.role_hides = self.role_hides.clone();
+                nested.role_type_params = self.role_type_params.clone();
+                nested.class_role_param_bindings = self.class_role_param_bindings.clone();
                 nested.subsets = self.subsets.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
@@ -978,7 +996,13 @@ impl Interpreter {
                 nested.proto_tokens = self.proto_tokens.clone();
                 nested.classes = self.classes.clone();
                 nested.class_trusts = self.class_trusts.clone();
+                nested.class_composed_roles = self.class_composed_roles.clone();
                 nested.roles = self.roles.clone();
+                nested.role_candidates = self.role_candidates.clone();
+                nested.role_parents = self.role_parents.clone();
+                nested.role_hides = self.role_hides.clone();
+                nested.role_type_params = self.role_type_params.clone();
+                nested.class_role_param_bindings = self.class_role_param_bindings.clone();
                 nested.subsets = self.subsets.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
@@ -1205,9 +1229,12 @@ impl Interpreter {
         let value = Self::positional_value(args, 0)
             .cloned()
             .unwrap_or(Value::Nil);
-        let role_name = match Self::positional_value(args, 1) {
-            Some(Value::Package(name)) => name.clone(),
-            _ => Self::positional_string(args, 1),
+        let role_val = Self::positional_value(args, 1)
+            .cloned()
+            .unwrap_or_else(|| Value::Package(Self::positional_string(args, 1)));
+        let role_name = match &role_val {
+            Value::Package(name) => name.clone(),
+            other => other.to_string_value(),
         };
         let desc = {
             let explicit = Self::positional_string(args, 2);
@@ -1218,8 +1245,7 @@ impl Interpreter {
             }
         };
         let todo = Self::named_bool(args, "todo");
-        // NOTE: does_check currently delegates to isa_check (issue #91)
-        let ok = value.does_check(&role_name);
+        let ok = self.smart_match(&value, &role_val);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
     }

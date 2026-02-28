@@ -2,8 +2,94 @@ use super::*;
 use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
 #[cfg(feature = "pcre2")]
 use pcre2::bytes::{Regex as PcreRegex, RegexBuilder as PcreRegexBuilder};
+use std::collections::HashMap;
 
 impl Interpreter {
+    fn parse_parametric_spec(spec: &str) -> (String, Vec<String>) {
+        if let Some((base, rest)) = spec.split_once('[') {
+            let inner = rest.strip_suffix(']').unwrap_or(rest);
+            let mut args = Vec::new();
+            let mut depth = 0i32;
+            let mut start = 0usize;
+            for (i, ch) in inner.char_indices() {
+                match ch {
+                    '[' | '(' => depth += 1,
+                    ']' | ')' => depth -= 1,
+                    ',' if depth == 0 => {
+                        let part = inner[start..i].trim();
+                        if !part.is_empty() {
+                            args.push(part.to_string());
+                        }
+                        start = i + 1;
+                    }
+                    _ => {}
+                }
+            }
+            let tail = inner[start..].trim();
+            if !tail.is_empty() {
+                args.push(tail.to_string());
+            }
+            (base.to_string(), args)
+        } else {
+            (spec.to_string(), Vec::new())
+        }
+    }
+
+    pub(super) fn role_parent_args_for(
+        &self,
+        role_name: &str,
+        role_args: &[Value],
+        target_base: &str,
+    ) -> Option<Vec<Value>> {
+        let candidate_param_names = self.role_candidates.get(role_name).and_then(|candidates| {
+            candidates
+                .iter()
+                .find(|c| c.type_params.len() == role_args.len())
+                .map(|c| c.type_params.clone())
+        })?;
+        let param_map: HashMap<String, Value> = candidate_param_names
+            .into_iter()
+            .zip(role_args.iter().cloned())
+            .collect();
+        let parents = self.role_parents.get(role_name)?;
+        for parent in parents {
+            let resolved_parent = if let Some(v) = param_map.get(parent) {
+                match v {
+                    Value::Package(name) => name.clone(),
+                    other => other
+                        .to_string_value()
+                        .trim_start_matches('(')
+                        .trim_end_matches(')')
+                        .to_string(),
+                }
+            } else {
+                parent.clone()
+            };
+            let (parent_base, parent_arg_specs) = Self::parse_parametric_spec(&resolved_parent);
+            if parent_base != target_base {
+                continue;
+            }
+            let resolved = parent_arg_specs
+                .iter()
+                .map(|spec| {
+                    param_map
+                        .get(spec)
+                        .cloned()
+                        .or_else(|| param_map.get(spec.trim_start_matches("::")).cloned())
+                        .unwrap_or_else(|| {
+                            if let Ok(i) = spec.parse::<i64>() {
+                                Value::Int(i)
+                            } else {
+                                Value::Package(spec.to_string())
+                            }
+                        })
+                })
+                .collect();
+            return Some(resolved);
+        }
+        None
+    }
+
     fn signature_capture_like(value: &Value) -> Option<(Vec<Value>, HashMap<String, Value>)> {
         match value {
             Value::Capture { positional, named } => Some((positional.clone(), named.clone())),
@@ -1278,14 +1364,21 @@ impl Interpreter {
                     type_args: rhs_args,
                 },
             ) => {
-                if lhs_args.len() != rhs_args.len() {
+                let comparable_lhs_args: Vec<Value> = if lhs_base == rhs_base {
+                    lhs_args.to_vec()
+                } else if let Some(parent_args) =
+                    self.role_parent_args_for(lhs_base, lhs_args, rhs_base)
+                {
+                    parent_args
+                } else if self.role_is_subtype(lhs_base, rhs_base) {
+                    lhs_args.to_vec()
+                } else {
+                    return false;
+                };
+                if comparable_lhs_args.len() != rhs_args.len() {
                     return false;
                 }
-                if lhs_base != rhs_base && !self.role_is_subtype(lhs_base, rhs_base) {
-                    return false;
-                }
-                // Each LHS type arg must be a subtype of (or equal to) the corresponding RHS type arg
-                for (l_arg, r_arg) in lhs_args.iter().zip(rhs_args.iter()) {
+                for (l_arg, r_arg) in comparable_lhs_args.iter().zip(rhs_args.iter()) {
                     if !self.parametric_arg_subtypes(l_arg, r_arg) {
                         return false;
                     }
@@ -1296,10 +1389,16 @@ impl Interpreter {
             (
                 Value::ParametricRole {
                     base_name: lhs_base,
-                    ..
+                    type_args: lhs_args,
                 },
                 Value::Package(rhs_name),
-            ) => lhs_base == rhs_name,
+            ) => {
+                lhs_base == rhs_name
+                    || self
+                        .role_parent_args_for(lhs_base, lhs_args, rhs_name)
+                        .is_some()
+                    || self.role_is_subtype(lhs_base, rhs_name)
+            }
             // Value instance/mixin ~~ parametric role: check composed role + type arguments.
             (
                 left_value,
@@ -1591,7 +1690,7 @@ impl Interpreter {
         }
     }
 
-    fn role_is_subtype(&self, lhs_role: &str, rhs_role: &str) -> bool {
+    pub(super) fn role_is_subtype(&self, lhs_role: &str, rhs_role: &str) -> bool {
         if lhs_role == rhs_role {
             return true;
         }

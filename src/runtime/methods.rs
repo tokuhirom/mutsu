@@ -1545,6 +1545,7 @@ impl Interpreter {
                     | "mro"
                     | "mro_unhidden"
                     | "methods"
+                    | "candidates"
                     | "concretization"
                     | "curried_role"
             )
@@ -2733,6 +2734,12 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name) {
+                    let saved_role_param_env = self.env.clone();
+                    if let Some(role_bindings) = self.class_role_param_bindings.get(&class_name) {
+                        for (name, value) in role_bindings {
+                            self.env.insert(name.clone(), value.clone());
+                        }
+                    }
                     for (attr_name, _is_public, default, _is_rw) in
                         self.collect_class_attributes(&class_name)
                     {
@@ -2743,6 +2750,7 @@ impl Interpreter {
                         };
                         attributes.insert(attr_name, val);
                     }
+                    self.env = saved_role_param_env;
                 }
                 // Override with named args from bless call
                 for arg in &args {
@@ -4258,6 +4266,7 @@ impl Interpreter {
                 | "find_method"
                 | "add_method"
                 | "methods"
+                | "candidates"
                 | "concretization"
                 | "curried_role"
         ) {
@@ -4517,6 +4526,30 @@ impl Interpreter {
                 )))
             }
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
+            "candidates" if !args.is_empty() => {
+                let role_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    other => value_type_name(other).to_string(),
+                };
+                let base_role_name = role_name
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(role_name.as_str());
+                if let Some(candidates) = self.role_candidates.get(base_role_name) {
+                    let values = candidates
+                        .iter()
+                        .map(|_| Value::Package(base_role_name.to_string()))
+                        .collect();
+                    return Ok(Value::array(values));
+                }
+                if self.roles.contains_key(base_role_name) {
+                    return Ok(Value::array(vec![Value::Package(
+                        base_role_name.to_string(),
+                    )]));
+                }
+                Ok(Value::array(Vec::new()))
+            }
             "concretization" if args.len() >= 2 => {
                 let class_name = match &args[0] {
                     Value::Package(name) => name.clone(),
@@ -6338,50 +6371,139 @@ impl Interpreter {
             base_name,
             type_args,
         } = &target
-            && let Some(role) = self.roles.get(base_name).cloned()
         {
-            let mut named_args: HashMap<String, Value> = HashMap::new();
-            let mut positional_args: Vec<Value> = Vec::new();
-            for arg in &args {
-                if let Value::Pair(key, value) = arg {
-                    named_args.insert(key.clone(), *value.clone());
-                } else {
-                    positional_args.push(arg.clone());
+            let mut selected_role = self.roles.get(base_name).cloned();
+            let mut selected_param_names = self
+                .role_type_params
+                .get(base_name)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(candidates) = self.role_candidates.get(base_name).cloned() {
+                let mut matching: Vec<(super::RoleCandidateDef, i32, usize)> = candidates
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(idx, candidate)| {
+                        let candidate_param_names = candidate
+                            .type_param_defs
+                            .iter()
+                            .map(|pd| pd.name.clone())
+                            .collect::<Vec<_>>();
+                        let positional_params = candidate
+                            .type_param_defs
+                            .iter()
+                            .filter(|pd| !pd.named)
+                            .collect::<Vec<_>>();
+                        let has_positional_slurpy = positional_params
+                            .iter()
+                            .any(|pd| pd.slurpy && !pd.name.starts_with('%'));
+                        let required = positional_params
+                            .iter()
+                            .filter(|pd| !pd.slurpy && pd.default.is_none() && !pd.optional_marker)
+                            .count();
+                        let arity_ok = if candidate.type_param_defs.is_empty() {
+                            type_args.is_empty()
+                        } else {
+                            type_args.len() >= required
+                                && (has_positional_slurpy
+                                    || type_args.len() <= positional_params.len())
+                        };
+                        let ok = if arity_ok {
+                            let saved_env = self.env.clone();
+                            let ok = self
+                                .bind_function_args_values(
+                                    &candidate.type_param_defs,
+                                    &candidate_param_names,
+                                    type_args,
+                                )
+                                .is_ok();
+                            self.env = saved_env;
+                            ok
+                        } else {
+                            false
+                        };
+                        if ok {
+                            let score = candidate
+                                .type_param_defs
+                                .iter()
+                                .filter(|pd| !pd.named)
+                                .map(|pd| {
+                                    let mut s = if let Some(tc) = pd.type_constraint.as_deref() {
+                                        if tc.starts_with("::") || tc == "Any" || tc == "Mu" {
+                                            1
+                                        } else {
+                                            5
+                                        }
+                                    } else {
+                                        0
+                                    };
+                                    if pd.where_constraint.is_some() {
+                                        s += 20;
+                                    }
+                                    if pd.literal_value.is_some() {
+                                        s += 30;
+                                    }
+                                    s
+                                })
+                                .sum();
+                            Some((candidate, score, idx))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                matching.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+                if let Some((candidate, _, _)) = matching.into_iter().next() {
+                    selected_param_names = candidate.type_params.clone();
+                    selected_role = Some(candidate.role_def.clone());
                 }
             }
+            if let Some(role) = selected_role {
+                let mut named_args: HashMap<String, Value> = HashMap::new();
+                let mut positional_args: Vec<Value> = Vec::new();
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        named_args.insert(key.clone(), *value.clone());
+                    } else {
+                        positional_args.push(arg.clone());
+                    }
+                }
 
-            let mut mixins = HashMap::new();
-            mixins.insert(format!("__mutsu_role__{}", base_name), Value::Bool(true));
-            mixins.insert(
-                format!("__mutsu_role_typeargs__{}", base_name),
-                Value::array(type_args.clone()),
-            );
-            if let Some(param_names) = self.role_type_params.get(base_name) {
-                for (param_name, type_arg) in param_names.iter().zip(type_args.iter()) {
+                let mut mixins = HashMap::new();
+                mixins.insert(format!("__mutsu_role__{}", base_name), Value::Bool(true));
+                mixins.insert(
+                    format!("__mutsu_role_typeargs__{}", base_name),
+                    Value::array(type_args.clone()),
+                );
+                for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     mixins.insert(
                         format!("__mutsu_role_param__{}", param_name),
                         type_arg.clone(),
                     );
                 }
+                let saved_role_param_env = self.env.clone();
+                for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
+                    self.env.insert(param_name.clone(), type_arg.clone());
+                }
+                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                    role.attributes.iter().enumerate()
+                {
+                    let value = if let Some(v) = named_args.get(attr_name) {
+                        v.clone()
+                    } else if let Some(v) = positional_args.get(idx) {
+                        v.clone()
+                    } else if let Some(expr) = default_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                    } else {
+                        Value::Nil
+                    };
+                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                }
+                self.env = saved_role_param_env;
+                return Ok(Value::Mixin(
+                    Box::new(Value::make_instance(base_name.clone(), HashMap::new())),
+                    mixins,
+                ));
             }
-            for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
-                role.attributes.iter().enumerate()
-            {
-                let value = if let Some(v) = named_args.get(attr_name) {
-                    v.clone()
-                } else if let Some(v) = positional_args.get(idx) {
-                    v.clone()
-                } else if let Some(expr) = default_expr {
-                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-                } else {
-                    Value::Nil
-                };
-                mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
-            }
-            return Ok(Value::Mixin(
-                Box::new(Value::make_instance(base_name.clone(), HashMap::new())),
-                mixins,
-            ));
         }
 
         if let Value::Package(class_name) = &target {
@@ -7086,6 +7208,12 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
+                let saved_role_param_env = self.env.clone();
+                if let Some(role_bindings) = self.class_role_param_bindings.get(class_key) {
+                    for (name, value) in role_bindings {
+                        self.env.insert(name.clone(), value.clone());
+                    }
+                }
                 for (attr_name, _is_public, default, _is_rw) in
                     self.collect_class_attributes(class_key)
                 {
@@ -7096,6 +7224,7 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
+                self.env = saved_role_param_env;
                 let class_mro = self.class_mro(class_key);
                 for val in &args {
                     match val {
