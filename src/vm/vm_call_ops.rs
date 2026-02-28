@@ -873,6 +873,21 @@ impl VM {
                 items.clone(),
                 *is_array,
             );
+            if let Some((source, indices, source_is_array)) =
+                crate::runtime::utils::get_grep_view_binding(existing)
+            {
+                let mut source_items = source.to_vec();
+                for (filtered_idx, source_idx) in indices.iter().enumerate() {
+                    if filtered_idx < items.len() && *source_idx < source_items.len() {
+                        source_items[*source_idx] = items[filtered_idx].clone();
+                    }
+                }
+                self.interpreter.overwrite_array_items_by_identity_for_vm(
+                    &source,
+                    source_items,
+                    source_is_array,
+                );
+            }
             self.sync_locals_from_env(code);
         }
         self.stack.push(Value::array(results));

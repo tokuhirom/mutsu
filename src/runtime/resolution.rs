@@ -815,11 +815,11 @@ impl Interpreter {
         Ok(Value::array(list_items))
     }
 
-    pub(super) fn eval_grep_over_items(
+    pub(super) fn eval_grep_over_items_with_mutated(
         &mut self,
         func: Option<Value>,
-        list_items: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
+        mut list_items: Vec<Value>,
+    ) -> Result<(Value, Vec<Value>), RuntimeError> {
         if let Some(Value::Sub(data)) = func {
             let mut result = Vec::new();
             let arity = if !data.params.is_empty() {
@@ -855,7 +855,7 @@ impl Interpreter {
                     }
                     i += arity;
                 }
-                return Ok(Value::array(result));
+                return Ok((Value::array(result), list_items));
             }
 
             // Compile once, reuse VM for every iteration
@@ -864,10 +864,11 @@ impl Interpreter {
 
             let underscore = "_".to_string();
 
-            let mut touched_keys: Vec<String> =
-                Vec::with_capacity(data.env.len() + data.params.len() + 1);
+            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
             for k in data.env.keys() {
-                touched_keys.push(k.clone());
+                if !self.env.contains_key(k) {
+                    touched_keys.push(k.clone());
+                }
             }
             for p in &data.params {
                 if !touched_keys.contains(p) {
@@ -876,6 +877,10 @@ impl Interpreter {
             }
             if !touched_keys.iter().any(|k| k == "_") {
                 touched_keys.push(underscore.clone());
+            }
+            let topic_source_key = "__mutsu_grep_topic_source".to_string();
+            if !touched_keys.iter().any(|k| k == &topic_source_key) {
+                touched_keys.push(topic_source_key.clone());
             }
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
@@ -892,6 +897,7 @@ impl Interpreter {
             let mut vm = crate::vm::VM::new(interp);
 
             let mut i = 0usize;
+            let mut stop = false;
             while i < list_items.len() {
                 if arity > 1 && i + arity > list_items.len() {
                     break;
@@ -901,58 +907,84 @@ impl Interpreter {
                 } else {
                     list_items[i..i + arity].to_vec()
                 };
-                {
-                    let interp = vm.interpreter_mut();
-                    let assumed_count = data.assumed_positional.len();
-                    for (idx, val) in data.assumed_positional.iter().enumerate() {
-                        if let Some(p) = data.params.get(idx) {
-                            interp.env_insert(p.clone(), val.clone());
-                        }
-                    }
-                    if arity == 1 {
-                        if let Some(p) = data.params.get(assumed_count) {
-                            interp.env_insert(p.clone(), chunk[0].clone());
-                        }
-                        interp.env_insert(underscore.clone(), chunk[0].clone());
-                    } else {
-                        for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
-                            if idx < chunk.len() {
-                                interp.env_insert(p.clone(), chunk[idx].clone());
+                'body_redo: loop {
+                    {
+                        let interp = vm.interpreter_mut();
+                        let assumed_count = data.assumed_positional.len();
+                        for (idx, val) in data.assumed_positional.iter().enumerate() {
+                            if let Some(p) = data.params.get(idx) {
+                                interp.env_insert(p.clone(), val.clone());
                             }
                         }
-                        interp.env_insert(underscore.clone(), chunk[0].clone());
+                        if arity == 1 {
+                            if let Some(p) = data.params.get(assumed_count) {
+                                interp.env_insert(p.clone(), chunk[0].clone());
+                            }
+                            interp.env_insert(underscore.clone(), chunk[0].clone());
+                            interp.env_insert(topic_source_key.clone(), chunk[0].clone());
+                        } else {
+                            for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                                if idx < chunk.len() {
+                                    interp.env_insert(p.clone(), chunk[idx].clone());
+                                }
+                            }
+                            interp.env_insert(underscore.clone(), chunk[0].clone());
+                        }
+                    }
+                    vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));
+                    match vm.run_reuse(&code, &compiled_fns) {
+                        Ok(()) => {
+                            let pred = vm
+                                .interpreter()
+                                .env()
+                                .get("_")
+                                .cloned()
+                                .unwrap_or(Value::Nil);
+                            let updated_item = if arity == 1 {
+                                vm.interpreter()
+                                    .env()
+                                    .get(&topic_source_key)
+                                    .cloned()
+                                    .unwrap_or_else(|| chunk[0].clone())
+                            } else {
+                                chunk[0].clone()
+                            };
+                            if arity == 1 {
+                                list_items[i] = updated_item.clone();
+                            }
+                            if pred.truthy() {
+                                if arity == 1 {
+                                    result.push(updated_item);
+                                } else {
+                                    result.push(Value::array(chunk));
+                                }
+                            }
+                            break 'body_redo;
+                        }
+                        Err(e) if e.is_redo => continue 'body_redo,
+                        Err(e) if e.is_next => break 'body_redo,
+                        Err(e) if e.is_last => {
+                            stop = true;
+                            break 'body_redo;
+                        }
+                        Err(e) => {
+                            *self = vm.into_interpreter();
+                            for (k, orig) in &saved {
+                                match orig {
+                                    Some(v) => {
+                                        self.env.insert(k.clone(), v.clone());
+                                    }
+                                    None => {
+                                        self.env.remove(k);
+                                    }
+                                }
+                            }
+                            return Err(e);
+                        }
                     }
                 }
-                match vm.run_reuse(&code, &compiled_fns) {
-                    Ok(()) => {
-                        let val = vm
-                            .interpreter()
-                            .env()
-                            .get("_")
-                            .cloned()
-                            .unwrap_or(Value::Nil);
-                        if val.truthy() {
-                            if arity == 1 {
-                                result.push(chunk[0].clone());
-                            } else {
-                                result.push(Value::array(chunk));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        *self = vm.into_interpreter();
-                        for (k, orig) in &saved {
-                            match orig {
-                                Some(v) => {
-                                    self.env.insert(k.clone(), v.clone());
-                                }
-                                None => {
-                                    self.env.remove(k);
-                                }
-                            }
-                        }
-                        return Err(e);
-                    }
+                if stop {
+                    break;
                 }
                 i += arity;
             }
@@ -968,28 +1000,40 @@ impl Interpreter {
                     }
                 }
             }
-            return Ok(Value::array(result));
+            return Ok((Value::array(result), list_items));
         }
         if let Some(pattern) = func {
+            if matches!(pattern, Value::Bool(_)) {
+                return Err(RuntimeError::new("X::Match::Bool"));
+            }
             let mut result = Vec::new();
-            for item in list_items {
-                if self.smart_match(&item, &pattern) {
-                    result.push(item);
+            for item in &list_items {
+                if self.smart_match(item, &pattern) {
+                    result.push(item.clone());
                 }
             }
-            return Ok(Value::array(result));
+            return Ok((Value::array(result), list_items));
         }
         if let Some(func) = func {
             let mut result = Vec::new();
-            for item in list_items {
+            for item in &list_items {
                 let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
                 if pred.truthy() {
-                    result.push(item);
+                    result.push(item.clone());
                 }
             }
-            return Ok(Value::array(result));
+            return Ok((Value::array(result), list_items));
         }
-        Ok(Value::array(list_items))
+        Ok((Value::array(list_items.clone()), list_items))
+    }
+
+    pub(super) fn eval_grep_over_items(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let (result, _) = self.eval_grep_over_items_with_mutated(func, list_items)?;
+        Ok(result)
     }
 
     pub(super) fn find_first_match_over_items(

@@ -638,6 +638,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if r.starts_with('=') {
                 break;
             }
+            // Allow `.>>...` / `.»...` chains by deferring to the dedicated hyper
+            // postfix parser below.
+            if r.starts_with(">>") || r.starts_with('\u{00BB}') {
+                rest = r;
+                continue;
+            }
             // Check for .[index] syntax: object.[expr]
             if let Some(r) = r.strip_prefix('[') {
                 let (r, _) = ws(r)?;
@@ -1320,6 +1326,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             // Hyper `.=` assignment is handled by statement-level assignment parsing.
             if after_hyper.starts_with(".=") {
                 break;
+            }
+            // Hyper postfix update: expr>>++ / expr>>--
+            if let Some((op, len)) = parse_postfix_update_op(after_hyper) {
+                let name = match op.token_kind() {
+                    TokenKind::PlusPlus => "postfix:<++>",
+                    TokenKind::MinusMinus => "postfix:<-->",
+                    _ => unreachable!("postfix update parser returned unexpected token"),
+                };
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: name.to_string(),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                rest = &after_hyper[len..];
+                continue;
             }
             // Check for hyper + superscript exponent: »²
             if let Some((exp, len)) = parse_superscript_exp(after_hyper) {

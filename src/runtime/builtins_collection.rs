@@ -669,6 +669,23 @@ impl Interpreter {
 
     pub(super) fn builtin_grep(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let func = args.first().cloned();
+        if args.len() == 1
+            && matches!(
+                args[0],
+                Value::Bool(_) | Value::Int(_) | Value::Num(_) | Value::Str(_)
+            )
+        {
+            return Err(RuntimeError::new("X::Match::Bool"));
+        }
+        if args.len() == 2
+            && let Value::GenericRange { end, .. } = &args[1]
+        {
+            let end_f = end.to_f64();
+            if end_f.is_infinite() && end_f.is_sign_positive() {
+                let method_args: Vec<Value> = func.into_iter().collect();
+                return self.call_method_with_values(args[1].clone(), "grep", method_args);
+            }
+        }
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
