@@ -214,6 +214,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::Int(i) => Value::Int(i.abs()),
             Value::Num(f) => Value::Num(f.abs()),
             Value::Rat(n, d) => Value::Rat(n.abs(), *d),
+            Value::Complex(re, im) => Value::Num((re * re + im * im).sqrt()),
             Value::Str(s) => {
                 if let Ok(i) = s.parse::<i64>() {
                     Value::Int(i.abs())

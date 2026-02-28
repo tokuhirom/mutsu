@@ -353,6 +353,27 @@ impl Interpreter {
                 "===" => left == right,
                 "!===" => left != right,
                 "=:=" => left == right,
+                "\u{2245}" => {
+                    // ≅ approximately equal
+                    let (lr, li) = match &left {
+                        Value::Complex(r, i) => (*r, *i),
+                        _ => (super::to_float_value(&left).unwrap_or(0.0), 0.0),
+                    };
+                    let (rr, ri) = match &right {
+                        Value::Complex(r, i) => (*r, *i),
+                        _ => (super::to_float_value(&right).unwrap_or(0.0), 0.0),
+                    };
+                    let tol = 1e-15;
+                    let approx = |a: f64, b: f64| {
+                        let max = a.abs().max(b.abs());
+                        if max == 0.0 {
+                            true
+                        } else {
+                            (a - b).abs() / max <= tol
+                        }
+                    };
+                    approx(lr, rr) && approx(li, ri)
+                }
                 _ => {
                     return Err(RuntimeError::new(format!(
                         "cmp-ok: unsupported string operator '{}'",
@@ -597,7 +618,16 @@ impl Interpreter {
             }
         };
 
-        let ok = match (got, expected) {
+        // Unwrap Mixin wrappers (e.g. from angle-bracket literals like <1+3i>)
+        let got_inner = match got {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        let expected_inner = match expected {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        let ok = match (got_inner, expected_inner) {
             (Value::Complex(gr, gi), Value::Complex(er, ei)) => {
                 approx_eq(*gr, *er) && approx_eq(*gi, *ei)
             }

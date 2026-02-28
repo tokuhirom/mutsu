@@ -477,6 +477,14 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+        // Special case: 0 ** anything = 0+0i (except 0**0 = 1+0i)
+        if ar == 0.0 && ai == 0.0 {
+            return if br == 0.0 && bi == 0.0 {
+                Value::Complex(1.0, 0.0)
+            } else {
+                Value::Complex(0.0, 0.0)
+            };
+        }
         let ln_r = (ar * ar + ai * ai).sqrt().ln();
         let ln_i = ai.atan2(ar);
         let wr = br * ln_r - bi * ln_i;

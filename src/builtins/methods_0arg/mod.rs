@@ -8,6 +8,11 @@ use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::builtin_rand;
+
+/// Raku-style rounding: round half toward positive infinity (ceiling).
+fn raku_round(x: f64) -> f64 {
+    (x + 0.5).floor()
+}
 use super::unicode::titlecase_string;
 
 pub(crate) mod coercion;
@@ -764,6 +769,38 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "Real" => {
+            let result = match target {
+                Value::Int(i) => Value::Int(*i),
+                Value::BigInt(_) => target.clone(),
+                Value::Num(f) => Value::Num(*f),
+                Value::Rat(n, d) => Value::Rat(*n, *d),
+                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+                Value::Complex(r, im) => {
+                    if im.abs() <= 1e-15 {
+                        Value::Num(*r)
+                    } else {
+                        return Some(Err(RuntimeError::new(
+                            "Cannot convert Complex to Real: imaginary part not zero",
+                        )));
+                    }
+                }
+                Value::Str(s) => {
+                    if let Ok(i) = s.trim().parse::<i64>() {
+                        Value::Int(i)
+                    } else if let Ok(f) = s.trim().parse::<f64>() {
+                        Value::Num(f)
+                    } else {
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
+                    }
+                }
+                _ => return None,
+            };
+            Some(Ok(result))
+        }
         "Numeric" => {
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
@@ -1147,6 +1184,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Int(q)))
                 }
             }
+            Value::Complex(re, im) => Some(Ok(Value::Complex(re.floor(), im.floor()))),
             _ => None,
         },
         "ceiling" | "ceil" => match target {
@@ -1162,16 +1200,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Int(q)))
                 }
             }
+            Value::Complex(re, im) => Some(Ok(Value::Complex(re.ceil(), im.ceil()))),
             _ => None,
         },
         "round" => match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
-            Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
+            Value::Num(f) => Some(Ok(Value::Int(raku_round(*f) as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::Rat(n, d) if *d != 0 => {
                 let f = *n as f64 / *d as f64;
-                Some(Ok(Value::Int(f.round() as i64)))
+                Some(Ok(Value::Int(raku_round(f) as i64)))
             }
+            Value::Complex(re, im) => Some(Ok(Value::Complex(raku_round(*re), raku_round(*im)))),
             _ => None,
         },
         "truncate" => match target {
@@ -1179,6 +1219,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Num(f) => Some(Ok(Value::Int(f.trunc() as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
+            Value::Complex(re, im) => Some(Ok(Value::Complex(re.trunc(), im.trunc()))),
             _ => None,
         },
         "narrow" => match target {
@@ -1843,6 +1884,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 } else {
                     let n = s.trim().parse::<i64>().unwrap_or(0);
                     Some(Ok(make_rat(n, 1)))
+                }
+            }
+            Value::Complex(r, im) => {
+                if im.abs() <= 1e-15 {
+                    let denom = 1_000_000i64;
+                    let numer = (r * denom as f64).round() as i64;
+                    Some(Ok(make_rat(numer, denom)))
+                } else {
+                    Some(Err(RuntimeError::new(
+                        "Cannot convert Complex to Real: imaginary part not zero",
+                    )))
                 }
             }
             Value::Instance { .. } => None,
