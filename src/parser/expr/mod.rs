@@ -1143,6 +1143,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyper_prefix_slip_left_on_angle_list() {
+        let (rest, expr) = expression("|<< <a x y z>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_hyper_prefix_slip_right_on_angle_list() {
+        let (rest, expr) = expression("|>> <a x y z>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_prefix_boolify_codevar_method_call() {
         let (rest, expr) = expression("?&foo.cando($c)").unwrap();
         assert_eq!(rest, "");

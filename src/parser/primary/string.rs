@@ -374,9 +374,6 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             } else if adverb_name == "o" || adverb_name == "format" {
                 q_format_quote = true;
             }
-            if adverb_name == "o" || adverb_name == "format" {
-                q_format_quote = true;
-            }
             r = &r[end..];
             if let Some(next) = r.strip_prefix(':') {
                 r = next;

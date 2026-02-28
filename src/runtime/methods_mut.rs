@@ -508,6 +508,27 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+        let has_sigilless_meta =
+            self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+        let scalar_like_target = target_var.starts_with('$')
+            || (!target_var.starts_with('@')
+                && !target_var.starts_with('%')
+                && !target_var.starts_with('&')
+                && !has_sigilless_meta);
+        if scalar_like_target
+            && let Value::Array(_, is_array) = &target
+            && !*is_array
+            && matches!(
+                method,
+                "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
+            )
+        {
+            return Err(RuntimeError::new(
+                "X::Immutable: Cannot modify an immutable List",
+            ));
+        }
         if method == "VAR" && args.is_empty() {
             if let Value::Instance { attributes, .. } = &target
                 && matches!(attributes.get("__mutsu_var_target"), Some(Value::Str(_)))
@@ -839,6 +860,13 @@ impl Interpreter {
         // Handle push/append/pop/shift/unshift on sigilless array bindings
         if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
             let key = target_var.to_string();
+            let array_flag = match self.env.get(&key) {
+                Some(Value::Array(_, is_array)) => *is_array,
+                _ => match &target {
+                    Value::Array(_, is_array) => *is_array,
+                    _ => false,
+                },
+            };
             match method {
                 "push" | "append" => {
                     let mut items = match &target {
@@ -857,8 +885,9 @@ impl Interpreter {
                     } else {
                         items.extend(args);
                     }
-                    let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(result);
                 }
                 "pop" => {
@@ -867,7 +896,8 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
-                    self.env.insert(key, Value::array(items));
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 "unshift" | "prepend" => {
@@ -878,8 +908,9 @@ impl Interpreter {
                     for (i, arg) in args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(result);
                 }
                 "shift" => {
@@ -892,7 +923,8 @@ impl Interpreter {
                     } else {
                         items.remove(0)
                     };
-                    self.env.insert(key, Value::array(items));
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 _ => {}
