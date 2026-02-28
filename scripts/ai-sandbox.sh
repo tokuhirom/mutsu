@@ -134,6 +134,7 @@ BWRAP_ARGS+=(
   --chdir "${CLONE_DIR}"
   --setenv HOME "${HOME}"
   --setenv GH_TOKEN "${GH_TOKEN:-}"
+  --unsetenv CLAUDECODE
 )
 
 # tmux のウィンドウ名をブランチ名に設定 (--set-window-title 指定時のみ)
