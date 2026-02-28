@@ -908,6 +908,45 @@ impl Interpreter {
             }
             _ => {}
         }
+        // Set operators: check for Failure and lazy list values
+        if is_set_op {
+            let is_lazy_value = |v: &Value| -> bool {
+                match v {
+                    Value::LazyList(_) => true,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                    Value::GenericRange { end, .. } => match end.as_ref() {
+                        Value::HyperWhatever => true,
+                        Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+                        _ => {
+                            let n = end.to_f64();
+                            n.is_infinite() && n.is_sign_positive()
+                        }
+                    },
+                    _ => false,
+                }
+            };
+            for arg in &args {
+                if let Value::Instance { class_name, .. } = arg
+                    && class_name == "Failure"
+                {
+                    return Err(RuntimeError::new("Exception"));
+                }
+                if is_lazy_value(arg) {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::Str("Cannot coerce a lazy list onto a Set".to_string()),
+                    );
+                    let ex = Value::make_instance("X::Cannot::Lazy".to_string(), attrs);
+                    let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+            }
+        }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
             let pair_args = vec![acc.clone(), rhs.clone()];

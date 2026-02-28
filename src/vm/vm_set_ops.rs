@@ -398,21 +398,93 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_set_intersect_op(&mut self) {
+    fn is_lazy_value(value: &Value) -> bool {
+        match value {
+            Value::LazyList(_) => true,
+            Value::Range(_, end)
+            | Value::RangeExcl(_, end)
+            | Value::RangeExclStart(_, end)
+            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            Value::GenericRange { end, .. } => match end.as_ref() {
+                Value::HyperWhatever => true,
+                Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+                _ => {
+                    let n = end.to_f64();
+                    n.is_infinite() && n.is_sign_positive()
+                }
+            },
+            _ => false,
+        }
+    }
+
+    /// Coerce a value to a Bag (HashMap<String, i64>)
+    fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
+        match val {
+            Value::Bag(b) => (**b).clone(),
+            Value::Set(s) => s.iter().map(|k| (k.clone(), 1)).collect(),
+            Value::Mix(m) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+            _ => {
+                let set = runtime::coerce_to_set(val);
+                set.into_iter().map(|k| (k, 1)).collect()
+            }
+        }
+    }
+
+    /// Coerce a value to a Mix (HashMap<String, f64>)
+    fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
+        match val {
+            Value::Mix(m) => (**m).clone(),
+            Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+            Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+            _ => {
+                let set = runtime::coerce_to_set(val);
+                set.into_iter().map(|k| (k, 1.0)).collect()
+            }
+        }
+    }
+
+    /// Determine the result type level for set operations:
+    /// 0 = Set, 1 = Bag, 2 = Mix
+    fn set_type_level(val: &Value) -> u8 {
+        match val {
+            Value::Mix(_) => 2,
+            Value::Bag(_) => 1,
+            _ => 0,
+        }
+    }
+
+    pub(super) fn exec_set_intersect_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = match (left, right) {
-            (Value::Set(a), Value::Set(b)) => Value::set(a.intersection(&b).cloned().collect()),
-            (Value::Bag(a), Value::Bag(b)) => {
-                let mut result = HashMap::new();
-                for (k, v) in a.iter() {
-                    if let Some(bv) = b.get(k) {
-                        result.insert(k.clone(), (*v).min(*bv));
-                    }
-                }
-                Value::bag(result)
-            }
-            (Value::Mix(a), Value::Mix(b)) => {
+
+        // Check for Failure values
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+
+        // Check for lazy lists
+        if Self::is_lazy_value(&left) || Self::is_lazy_value(&right) {
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str("Cannot coerce a lazy list onto a Set".to_string()),
+            );
+            let ex = Value::make_instance("X::Cannot::Lazy".to_string(), attrs);
+            let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+
+        // Determine result type based on the "highest" type
+        let left_level = Self::set_type_level(&left);
+        let right_level = Self::set_type_level(&right);
+        let result_level = left_level.max(right_level);
+
+        let result = match result_level {
+            2 => {
+                // Result is Mix
+                let a = Self::coerce_to_mix(&left);
+                let b = Self::coerce_to_mix(&right);
                 let mut result = HashMap::new();
                 for (k, v) in a.iter() {
                     if let Some(bv) = b.get(k) {
@@ -421,13 +493,27 @@ impl VM {
                 }
                 Value::mix(result)
             }
-            (l, r) => {
-                let a = runtime::coerce_to_set(&l);
-                let b = runtime::coerce_to_set(&r);
+            1 => {
+                // Result is Bag
+                let a = Self::coerce_to_bag(&left);
+                let b = Self::coerce_to_bag(&right);
+                let mut result = HashMap::new();
+                for (k, v) in a.iter() {
+                    if let Some(bv) = b.get(k) {
+                        result.insert(k.clone(), (*v).min(*bv));
+                    }
+                }
+                Value::bag(result)
+            }
+            _ => {
+                // Result is Set
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 Value::set(a.intersection(&b).cloned().collect())
             }
         };
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_set_diff_op(&mut self) {

@@ -1084,11 +1084,11 @@ impl Compiler {
                     // Push key as string constant
                     let key_idx = self.code.add_constant(Value::Str(key.clone()));
                     self.code.emit(OpCode::LoadConst(key_idx));
-                    // Push value (or Nil if none)
+                    // Push value (or True if none, for bare colonpairs like :a)
                     if let Some(val_expr) = val_opt {
                         self.compile_expr(val_expr);
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.code.emit(OpCode::LoadTrue);
                     }
                 }
                 self.code.emit(OpCode::MakeHash(n));

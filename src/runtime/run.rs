@@ -302,6 +302,7 @@ impl Interpreter {
             // they indicate known spec issues that also affect mutsu.
             if trimmed.starts_with("#?rakudo")
                 && !trimmed.contains(".jvm")
+                && !trimmed.contains(".js")
                 && trimmed.contains("todo")
             {
                 let after = trimmed.trim_start_matches("#?rakudo").trim_start();

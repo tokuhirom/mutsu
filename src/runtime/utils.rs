@@ -1084,12 +1084,68 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
 
 /// Standalone set intersection: left (&) right
 pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
-    match (left, right) {
-        (Value::Set(a), Value::Set(b)) => Value::set(a.intersection(b).cloned().collect()),
+    // Determine result type level: 0=Set, 1=Bag, 2=Mix
+    let type_level = |v: &Value| -> u8 {
+        match v {
+            Value::Mix(_) => 2,
+            Value::Bag(_) => 1,
+            _ => 0,
+        }
+    };
+    let result_level = type_level(left).max(type_level(right));
+    match result_level {
+        2 => {
+            let a = coerce_to_mix(left);
+            let b = coerce_to_mix(right);
+            let mut result = HashMap::new();
+            for (k, v) in a.iter() {
+                if let Some(bv) = b.get(k) {
+                    result.insert(k.clone(), v.min(*bv));
+                }
+            }
+            Value::mix(result)
+        }
+        1 => {
+            let a = coerce_to_bag(left);
+            let b = coerce_to_bag(right);
+            let mut result = HashMap::new();
+            for (k, v) in a.iter() {
+                if let Some(bv) = b.get(k) {
+                    result.insert(k.clone(), (*v).min(*bv));
+                }
+            }
+            Value::bag(result)
+        }
         _ => {
             let a = coerce_to_set(left);
             let b = coerce_to_set(right);
             Value::set(a.intersection(&b).cloned().collect())
+        }
+    }
+}
+
+/// Coerce a value to a Bag (HashMap<String, i64>)
+fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
+    match val {
+        Value::Bag(b) => (**b).clone(),
+        Value::Set(s) => s.iter().map(|k| (k.clone(), 1)).collect(),
+        Value::Mix(m) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+        _ => {
+            let set = coerce_to_set(val);
+            set.into_iter().map(|k| (k, 1)).collect()
+        }
+    }
+}
+
+/// Coerce a value to a Mix (HashMap<String, f64>)
+fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
+    match val {
+        Value::Mix(m) => (**m).clone(),
+        Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+        Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        _ => {
+            let set = coerce_to_set(val);
+            set.into_iter().map(|k| (k, 1.0)).collect()
         }
     }
 }
