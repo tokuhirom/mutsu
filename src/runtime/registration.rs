@@ -1,5 +1,7 @@
 use super::*;
 
+type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
+
 /// Parse role type arguments from a string like "Str:D(Numeric), Bool(Any)".
 fn parse_role_type_args(input: &str) -> Vec<String> {
     let mut args = Vec::new();
@@ -21,6 +23,26 @@ fn parse_role_type_args(input: &str) -> Vec<String> {
         args.push(last.to_string());
     }
     args
+}
+
+fn looks_like_type_arg_expr(input: &str) -> bool {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    trimmed.chars().all(|ch| {
+        ch.is_ascii_alphanumeric()
+            || matches!(
+                ch,
+                ':' | '?' | '_' | '[' | ']' | '(' | ')' | ',' | ' ' | '\t'
+            )
+    })
+}
+
+fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
+    let trimmed = input.trim();
+    looks_like_type_arg_expr(trimmed)
+        && (trimmed.contains(':') || trimmed.contains('(') || trimmed.contains("::"))
 }
 
 /// Substitute type parameters in a method definition.
@@ -1236,6 +1258,152 @@ impl Interpreter {
         }
     }
 
+    fn eval_role_arg_values(&mut self, arg_exprs: &[String]) -> Result<Vec<Value>, RuntimeError> {
+        let mut values = Vec::with_capacity(arg_exprs.len());
+        for expr in arg_exprs {
+            if should_treat_role_arg_as_type_expr(expr) {
+                values.push(Value::Package(expr.trim().to_string()));
+                continue;
+            }
+            match crate::parse_dispatch::parse_source(expr)
+                .and_then(|(stmts, _)| self.eval_block_value(&stmts))
+            {
+                Ok(value) => values.push(value),
+                Err(_) if looks_like_type_arg_expr(expr) => {
+                    values.push(Value::Package(expr.trim().to_string()));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(values)
+    }
+
+    fn role_constraint_specificity(&self, constraint: Option<&str>) -> i32 {
+        let Some(constraint) = constraint else {
+            return 0;
+        };
+        if constraint.starts_with("::") {
+            return 1;
+        }
+        if constraint == "Any" || constraint == "Mu" {
+            return 2;
+        }
+        if let Some(def) = self.classes.get(constraint) {
+            return 10 + def.parents.len() as i32;
+        }
+        if self.roles.contains_key(constraint) {
+            return 9;
+        }
+        8
+    }
+
+    fn role_candidate_specificity_score(&self, param_defs: &[ParamDef]) -> i32 {
+        let mut score = 0i32;
+        for pd in param_defs.iter().filter(|pd| !pd.named) {
+            score += self.role_constraint_specificity(pd.type_constraint.as_deref());
+            if pd.where_constraint.is_some() {
+                score += 20;
+            }
+            if pd.literal_value.is_some() {
+                score += 30;
+            }
+        }
+        score
+    }
+
+    fn role_candidate_arity_ok(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        if param_defs.is_empty() {
+            return args.is_empty();
+        }
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
+        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|pd| !pd.named).collect();
+        let has_positional_slurpy = positional_params
+            .iter()
+            .any(|pd| pd.slurpy && !pd.name.starts_with('%'));
+        let required = positional_params
+            .iter()
+            .filter(|pd| !pd.slurpy && pd.default.is_none() && !pd.optional_marker)
+            .count();
+        if positional_arg_count < required {
+            return false;
+        }
+        if !has_positional_slurpy && positional_arg_count > positional_params.len() {
+            return false;
+        }
+        true
+    }
+
+    fn resolve_role_candidate(
+        &mut self,
+        parent: &str,
+    ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
+        let base_role_name = if let Some(bracket) = parent.find('[') {
+            &parent[..bracket]
+        } else {
+            parent
+        };
+        let Some(candidates) = self.role_candidates.get(base_role_name).cloned() else {
+            if let Some(role) = self.roles.get(base_role_name).cloned() {
+                return Ok(Some((role, Vec::new(), Vec::new())));
+            }
+            return Ok(None);
+        };
+
+        let arg_exprs = if let Some(bracket_start) = parent.find('[') {
+            let args_str = &parent[bracket_start + 1..parent.len() - 1];
+            parse_role_type_args(args_str)
+        } else {
+            Vec::new()
+        };
+        let arg_values = self.eval_role_arg_values(&arg_exprs)?;
+
+        let mut matches: Vec<(RoleCandidateDef, i32, usize)> = candidates
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, candidate)| {
+                let candidate_param_names = candidate
+                    .type_param_defs
+                    .iter()
+                    .map(|pd| pd.name.clone())
+                    .collect::<Vec<_>>();
+                let ok = if self.role_candidate_arity_ok(&arg_values, &candidate.type_param_defs) {
+                    let saved_env = self.env.clone();
+                    let ok = self
+                        .bind_function_args_values(
+                            &candidate.type_param_defs,
+                            &candidate_param_names,
+                            &arg_values,
+                        )
+                        .is_ok();
+                    self.env = saved_env;
+                    ok
+                } else {
+                    false
+                };
+                if ok {
+                    Some((
+                        candidate.clone(),
+                        self.role_candidate_specificity_score(&candidate.type_param_defs),
+                        idx,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if matches.is_empty() {
+            return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+        }
+
+        matches.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+        let selected = matches.remove(0).0;
+        Ok(Some((selected.role_def, selected.type_params, arg_values)))
+    }
+
     pub(crate) fn register_class_decl(
         &mut self,
         name: &str,
@@ -1245,6 +1413,41 @@ impl Interpreter {
         does_parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        let prev_class = self.classes.get(name).cloned();
+        let prev_hidden = self.hidden_classes.contains(name);
+        let prev_hidden_defer = self.hidden_defer_parents.get(name).cloned();
+        let prev_composed_roles = self.class_composed_roles.get(name).cloned();
+        let prev_role_param_bindings = self.class_role_param_bindings.get(name).cloned();
+
+        let restore_previous_state = |this: &mut Self| {
+            if let Some(class_def) = prev_class.clone() {
+                this.classes.insert(name.to_string(), class_def);
+            } else {
+                this.classes.remove(name);
+            }
+            if prev_hidden {
+                this.hidden_classes.insert(name.to_string());
+            } else {
+                this.hidden_classes.remove(name);
+            }
+            if let Some(hidden) = prev_hidden_defer.clone() {
+                this.hidden_defer_parents.insert(name.to_string(), hidden);
+            } else {
+                this.hidden_defer_parents.remove(name);
+            }
+            if let Some(composed) = prev_composed_roles.clone() {
+                this.class_composed_roles.insert(name.to_string(), composed);
+            } else {
+                this.class_composed_roles.remove(name);
+            }
+            if let Some(bindings) = prev_role_param_bindings.clone() {
+                this.class_role_param_bindings
+                    .insert(name.to_string(), bindings);
+            } else {
+                this.class_role_param_bindings.remove(name);
+            }
+        };
+
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap
         const BUILTIN_TYPES: &[&str] = &[
@@ -1349,14 +1552,16 @@ impl Interpreter {
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let mut composed_roles_list = Vec::new();
         let mut punned_roles = Vec::new();
+        let mut hidden_punned_role_bases: HashSet<String> = HashSet::new();
+        let mut class_role_param_bindings: HashMap<String, Value> = HashMap::new();
         for parent in parents {
-            // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
-            let base_role_name = if let Some(bracket) = parent.find('[') {
-                &parent[..bracket]
-            } else {
-                parent.as_str()
-            };
-            if let Some(role) = self.roles.get(base_role_name).cloned() {
+            let base_role_name = parent
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(parent.as_str());
+            if let Some((role, role_param_names, role_arg_values)) =
+                self.resolve_role_candidate(parent)?
+            {
                 if role.is_stub_role {
                     return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                 }
@@ -1364,25 +1569,30 @@ impl Interpreter {
                 let is_punned = !does_parents.contains(parent);
                 if is_punned {
                     punned_roles.push(parent.clone());
+                    if role.is_hidden {
+                        hidden_punned_role_bases.insert(base_role_name.to_string());
+                    }
                 }
                 composed_roles_list.push(parent.clone());
-                // Collect type parameter substitutions if this is a parametric role
-                let type_subs: Vec<(String, String)> =
-                    if let Some(role_type_params) = self.role_type_params.get(base_role_name) {
-                        if let Some(bracket_start) = parent.find('[') {
-                            let args_str = &parent[bracket_start + 1..parent.len() - 1];
-                            let type_args = parse_role_type_args(args_str);
-                            role_type_params
-                                .iter()
-                                .zip(type_args.iter())
-                                .map(|(p, a)| (p.clone(), a.clone()))
-                                .collect()
-                        } else {
-                            Vec::new()
-                        }
-                    } else {
-                        Vec::new()
-                    };
+                // Collect type parameter substitutions for method type constraints.
+                let type_subs: Vec<(String, String)> = role_param_names
+                    .iter()
+                    .zip(role_arg_values.iter())
+                    .map(|(p, v)| {
+                        let value_name = match v {
+                            Value::Package(name) => name.clone(),
+                            other => other
+                                .to_string_value()
+                                .trim_start_matches('(')
+                                .trim_end_matches(')')
+                                .to_string(),
+                        };
+                        (p.clone(), value_name)
+                    })
+                    .collect();
+                for (p, v) in role_param_names.iter().zip(role_arg_values.iter()) {
+                    class_role_param_bindings.insert(p.clone(), v.clone());
+                }
                 for attr in &role.attributes {
                     if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                         class_def.attributes.push(attr.clone());
@@ -1403,7 +1613,105 @@ impl Interpreter {
                         .or_default()
                         .extend(composed);
                 }
+                let role_param_values: HashMap<String, Value> = role_param_names
+                    .iter()
+                    .cloned()
+                    .zip(role_arg_values.iter().cloned())
+                    .collect();
+                if let Some(parent_specs) = self.role_parents.get(base_role_name).cloned() {
+                    for parent_spec in parent_specs {
+                        let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
+                            match v {
+                                Value::Package(name) => name.clone(),
+                                other => other
+                                    .to_string_value()
+                                    .trim_start_matches('(')
+                                    .trim_end_matches(')')
+                                    .to_string(),
+                            }
+                        } else if let Some((pbase, _)) = parent_spec.split_once('[') {
+                            let p_args_str = &parent_spec[pbase.len() + 1..parent_spec.len() - 1];
+                            let p_args = parse_role_type_args(p_args_str)
+                                .into_iter()
+                                .map(|arg| {
+                                    role_param_values
+                                        .get(&arg)
+                                        .map(|v| match v {
+                                            Value::Package(name) => name.clone(),
+                                            other => other
+                                                .to_string_value()
+                                                .trim_start_matches('(')
+                                                .trim_end_matches(')')
+                                                .to_string(),
+                                        })
+                                        .unwrap_or(arg)
+                                })
+                                .collect::<Vec<_>>();
+                            format!("{pbase}[{}]", p_args.join(","))
+                        } else {
+                            parent_spec.clone()
+                        };
+                        let parent_base = resolved_parent
+                            .split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(resolved_parent.as_str());
+                        if let Some(parent_role) = self.roles.get(parent_base).cloned() {
+                            if !composed_roles_list.contains(&resolved_parent) {
+                                composed_roles_list.push(resolved_parent.clone());
+                            }
+                            let parent_type_subs: Vec<(String, String)> =
+                                if let Some(parent_tps) = self.role_type_params.get(parent_base) {
+                                    if let Some(bracket_start) = resolved_parent.find('[') {
+                                        let args_str = &resolved_parent
+                                            [bracket_start + 1..resolved_parent.len() - 1];
+                                        let args = parse_role_type_args(args_str);
+                                        parent_tps
+                                            .iter()
+                                            .zip(args.iter())
+                                            .map(|(p, a)| (p.clone(), a.clone()))
+                                            .collect()
+                                    } else {
+                                        Vec::new()
+                                    }
+                                } else {
+                                    Vec::new()
+                                };
+                            for attr in &parent_role.attributes {
+                                if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
+                                    class_def.attributes.push(attr.clone());
+                                }
+                            }
+                            for (mname, overloads) in &parent_role.methods {
+                                let composed: Vec<MethodDef> = if parent_type_subs.is_empty() {
+                                    overloads.clone()
+                                } else {
+                                    overloads
+                                        .iter()
+                                        .map(|md| {
+                                            substitute_type_params_in_method(md, &parent_type_subs)
+                                        })
+                                        .collect()
+                                };
+                                class_def
+                                    .methods
+                                    .entry(mname.clone())
+                                    .or_default()
+                                    .extend(composed);
+                            }
+                        } else if self.classes.contains_key(parent_base)
+                            && !class_def.parents.iter().any(|p| p == &resolved_parent)
+                        {
+                            class_def.parents.push(resolved_parent.clone());
+                        }
+                    }
+                }
             }
+        }
+        if class_role_param_bindings.is_empty() {
+            self.class_role_param_bindings.remove(name);
+        } else {
+            self.class_role_param_bindings
+                .insert(name.to_string(), class_role_param_bindings);
         }
         // Handle role punning: `is Role` creates a punned class from the role
         for punned_role in &punned_roles {
@@ -1462,11 +1770,17 @@ impl Interpreter {
                 {
                     self.hidden_classes.insert(base_role.to_string());
                 }
+                if hidden_punned_role_bases.contains(base_role) {
+                    self.hidden_classes.insert(base_role.to_string());
+                }
                 // Recompute MRO for the punned class
                 let mro = self.class_mro(base_role);
                 if let Some(cd) = self.classes.get_mut(base_role) {
                     cd.mro = mro;
                 }
+            }
+            if hidden_punned_role_bases.contains(base_role) {
+                self.hidden_classes.insert(base_role.to_string());
             }
         }
         // Clear stale composed roles from previous registration
@@ -1823,10 +2137,16 @@ impl Interpreter {
             self.classes.insert(name.to_string(), class_def.clone());
         }
         self.current_package = saved_package;
-        self.resolve_class_stub_requirements(name, &mut class_def)?;
+        if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
+            restore_previous_state(self);
+            return Err(err);
+        }
         self.classes.insert(name.to_string(), class_def);
         let mut stack = Vec::new();
-        let _ = self.compute_class_mro(name, &mut stack)?;
+        if let Err(err) = self.compute_class_mro(name, &mut stack) {
+            restore_previous_state(self);
+            return Err(err);
+        }
         Ok(())
     }
 
@@ -1834,16 +2154,13 @@ impl Interpreter {
         &mut self,
         name: &str,
         type_params: &[String],
+        type_param_defs: &[ParamDef],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        // Clean up stale punned class entry from previous registration
-        // (e.g., role R was previously used as `is R` creating a punned class)
-        if self.roles.contains_key(name) {
-            self.classes.remove(name);
-            self.hidden_classes.remove(name);
-            self.class_composed_roles.remove(name);
-        }
-        // Clear stale role parents and hides
+        // Clean up stale punned class entry for this role name.
+        self.classes.remove(name);
+        self.hidden_classes.remove(name);
+        self.class_composed_roles.remove(name);
         self.role_parents.remove(name);
         self.role_hides.remove(name);
         let mut role_def = RoleDef {
@@ -1914,11 +2231,13 @@ impl Interpreter {
                             .push(role_name.clone());
                         continue;
                     }
-                    if !self.roles.contains_key(role_name)
-                        && matches!(
-                            role_name.as_str(),
-                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
-                        )
+                    let base_role_name = role_name
+                        .split_once('[')
+                        .map(|(b, _)| b)
+                        .unwrap_or(role_name.as_str());
+                    if type_params.iter().any(|tp| tp == base_role_name)
+                        || (!self.roles.contains_key(base_role_name)
+                            && matches!(base_role_name, "Real" | "Numeric" | "Cool" | "Any" | "Mu"))
                     {
                         self.role_parents
                             .entry(name.to_string())
@@ -1927,7 +2246,7 @@ impl Interpreter {
                         continue;
                     }
                     let role =
-                        self.roles.get(role_name).cloned().ok_or_else(|| {
+                        self.roles.get(base_role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
                         })?;
                     if role.is_stub_role {
@@ -1937,13 +2256,38 @@ impl Interpreter {
                         .entry(name.to_string())
                         .or_default()
                         .push(role_name.clone());
+                    let type_subs: Vec<(String, String)> = if let Some(parent_type_params) =
+                        self.role_type_params.get(base_role_name)
+                    {
+                        if let Some(bracket_start) = role_name.find('[') {
+                            let args_str = &role_name[bracket_start + 1..role_name.len() - 1];
+                            let type_args = parse_role_type_args(args_str);
+                            parent_type_params
+                                .iter()
+                                .zip(type_args.iter())
+                                .map(|(p, a)| (p.clone(), a.clone()))
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
                     for attr in &role.attributes {
                         if !role_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                             role_def.attributes.push(attr.clone());
                         }
                     }
                     for (mname, overloads) in role.methods {
-                        role_def.methods.entry(mname).or_default().extend(overloads);
+                        let composed: Vec<MethodDef> = if type_subs.is_empty() {
+                            overloads
+                        } else {
+                            overloads
+                                .iter()
+                                .map(|md| substitute_type_params_in_method(md, &type_subs))
+                                .collect()
+                        };
+                        role_def.methods.entry(mname).or_default().extend(composed);
                     }
                 }
                 Stmt::MethodDecl {
@@ -1958,6 +2302,17 @@ impl Interpreter {
                     is_our: _,
                     return_type,
                 } => {
+                    if *multi
+                        && (param_defs.iter().any(|pd| {
+                            pd.type_constraint
+                                .as_deref()
+                                .is_some_and(|tc| tc.contains("?CLASS"))
+                        }) || return_type
+                            .as_deref()
+                            .is_some_and(|rt| rt.contains("?CLASS")))
+                    {
+                        return Err(RuntimeError::new("X::Role::Unimplemented::Multi"));
+                    }
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
@@ -1992,8 +2347,22 @@ impl Interpreter {
                 }
             }
         }
-        self.roles.insert(name.to_string(), role_def);
-        if !type_params.is_empty() {
+        self.role_candidates
+            .entry(name.to_string())
+            .or_default()
+            .push(RoleCandidateDef {
+                type_params: type_params.to_vec(),
+                type_param_defs: type_param_defs.to_vec(),
+                role_def: role_def.clone(),
+            });
+        if self
+            .roles
+            .get(name)
+            .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
+        {
+            self.roles.insert(name.to_string(), role_def);
+        }
+        if !type_params.is_empty() && !self.role_type_params.contains_key(name) {
             self.role_type_params
                 .insert(name.to_string(), type_params.to_vec());
         }

@@ -1454,6 +1454,47 @@ impl VM {
                 }
                 _ => Self::delete_array_multidim(container, std::slice::from_ref(&idx))?,
             },
+            Value::Set(set) => match idx {
+                Value::Array(keys, ..) => {
+                    let s = Arc::make_mut(set);
+                    let removed = keys
+                        .iter()
+                        .map(|key| Value::Bool(s.remove(&key.to_string_value())))
+                        .collect();
+                    Value::array(removed)
+                }
+                _ => Value::Bool(Arc::make_mut(set).remove(&idx.to_string_value())),
+            },
+            Value::Bag(bag) => match idx {
+                Value::Array(keys, ..) => {
+                    let b = Arc::make_mut(bag);
+                    let removed = keys
+                        .iter()
+                        .map(|key| Value::Int(b.remove(&key.to_string_value()).unwrap_or(0)))
+                        .collect();
+                    Value::array(removed)
+                }
+                _ => Value::Int(
+                    Arc::make_mut(bag)
+                        .remove(&idx.to_string_value())
+                        .unwrap_or(0),
+                ),
+            },
+            Value::Mix(mix) => match idx {
+                Value::Array(keys, ..) => {
+                    let m = Arc::make_mut(mix);
+                    let removed = keys
+                        .iter()
+                        .map(|key| Value::Num(m.remove(&key.to_string_value()).unwrap_or(0.0)))
+                        .collect();
+                    Value::array(removed)
+                }
+                _ => Value::Num(
+                    Arc::make_mut(mix)
+                        .remove(&idx.to_string_value())
+                        .unwrap_or(0.0),
+                ),
+            },
             _ => match idx {
                 Value::Array(keys, ..) => Value::array(vec![Value::Nil; keys.len()]),
                 _ => Value::Nil,

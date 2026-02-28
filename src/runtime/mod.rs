@@ -103,6 +103,13 @@ struct RoleDef {
 }
 
 #[derive(Debug, Clone)]
+struct RoleCandidateDef {
+    type_params: Vec<String>,
+    type_param_defs: Vec<ParamDef>,
+    role_def: RoleDef,
+}
+
+#[derive(Debug, Clone)]
 struct SubsetDef {
     base: String,
     predicate: Option<Expr>,
@@ -332,9 +339,11 @@ pub struct Interpreter {
     class_trusts: HashMap<String, HashSet<String>>,
     class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
     roles: HashMap<String, RoleDef>,
+    role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
     role_parents: HashMap<String, Vec<String>>,
     role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
+    class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -1302,9 +1311,11 @@ impl Interpreter {
                 );
                 roles
             },
+            role_candidates: HashMap::new(),
             role_parents: HashMap::new(),
             role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
+            class_role_param_bindings: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -2200,9 +2211,11 @@ impl Interpreter {
             class_trusts: self.class_trusts.clone(),
             class_composed_roles: self.class_composed_roles.clone(),
             roles: self.roles.clone(),
+            role_candidates: self.role_candidates.clone(),
             role_parents: self.role_parents.clone(),
             role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
+            class_role_param_bindings: self.class_role_param_bindings.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),

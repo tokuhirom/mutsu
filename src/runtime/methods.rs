@@ -1747,6 +1747,7 @@ impl Interpreter {
                     | "mro"
                     | "mro_unhidden"
                     | "methods"
+                    | "candidates"
                     | "concretization"
                     | "curried_role"
             )

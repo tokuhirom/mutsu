@@ -2,6 +2,200 @@ use super::*;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 impl Interpreter {
+    fn union_is_infinite_bound(value: &Value) -> bool {
+        match value {
+            Value::Num(n) => n.is_infinite(),
+            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+            Value::Mixin(inner, _) => Self::union_is_infinite_bound(inner),
+            _ => false,
+        }
+    }
+
+    fn union_is_lazy_input(value: &Value) -> bool {
+        match value {
+            Value::LazyList(_) => true,
+            Value::GenericRange { start, end, .. } => {
+                Self::union_is_infinite_bound(start) || Self::union_is_infinite_bound(end)
+            }
+            _ => false,
+        }
+    }
+
+    fn union_insert_set_elem(elems: &mut std::collections::HashSet<String>, value: &Value) {
+        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
+        match value {
+            Value::Set(items) => {
+                elems.extend(items.iter().cloned());
+            }
+            Value::Bag(items) => {
+                for (k, v) in items.iter() {
+                    if *v > 0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Mix(items) => {
+                for (k, v) in items.iter() {
+                    if *v != 0.0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Hash(items) => {
+                for (k, v) in items.iter() {
+                    if v.truthy() || matches!(v, Value::Nil) {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    Self::union_insert_set_elem(elems, item);
+                }
+            }
+            range if range.is_range() => {
+                for item in Self::value_to_list(range) {
+                    Self::union_insert_set_elem(elems, &item);
+                }
+            }
+            Value::Pair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.clone());
+                }
+            }
+            Value::ValuePair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.to_string_value());
+                }
+            }
+            other => {
+                let sv = other.to_string_value();
+                if !sv.is_empty() {
+                    elems.insert(sv);
+                }
+            }
+        }
+    }
+
+    fn union_set_keys(value: &Value) -> Result<std::collections::HashSet<String>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Set(s) => Ok((**s).clone()),
+            Value::Bag(b) => Ok(b.keys().cloned().collect()),
+            Value::Mix(m) => Ok(m.keys().cloned().collect()),
+            Value::Hash(h) => Ok(h
+                .iter()
+                .filter_map(|(k, v)| {
+                    if v.truthy() || matches!(v, Value::Nil) {
+                        Some(k.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()),
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                let mut elems = std::collections::HashSet::new();
+                for item in items.iter() {
+                    Self::union_insert_set_elem(&mut elems, item);
+                }
+                Ok(elems)
+            }
+            range if range.is_range() => {
+                let mut elems = std::collections::HashSet::new();
+                for item in Self::value_to_list(range) {
+                    Self::union_insert_set_elem(&mut elems, &item);
+                }
+                Ok(elems)
+            }
+            Value::Pair(_, _) | Value::ValuePair(_, _) => {
+                let mut elems = std::collections::HashSet::new();
+                Self::union_insert_set_elem(&mut elems, value);
+                Ok(elems)
+            }
+            other => {
+                let mut elems = std::collections::HashSet::new();
+                let sv = other.to_string_value();
+                if !sv.is_empty() {
+                    elems.insert(sv);
+                }
+                Ok(elems)
+            }
+        }
+    }
+
+    fn union_bag_counts(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Bag(b) => Ok((**b).clone()),
+            Value::Mix(m) => Ok(m
+                .iter()
+                .filter_map(|(k, w)| {
+                    if *w != 0.0 {
+                        Some((k.clone(), 1))
+                    } else {
+                        None
+                    }
+                })
+                .collect()),
+            other => {
+                let set = Self::union_set_keys(other)?;
+                Ok(set.into_iter().map(|k| (k, 1)).collect())
+            }
+        }
+    }
+
+    fn union_mix_weights(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Mix(m) => Ok((**m).clone()),
+            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            other => {
+                let set = Self::union_set_keys(other)?;
+                Ok(set.into_iter().map(|k| (k, 1.0)).collect())
+            }
+        }
+    }
+
+    fn apply_set_union(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        if matches!(left, Value::Instance { class_name, .. } if class_name == "Failure")
+            || matches!(right, Value::Instance { class_name, .. } if class_name == "Failure")
+        {
+            return Err(RuntimeError::new("Exception"));
+        }
+        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+            let mut l = Self::union_mix_weights(left)?;
+            let r = Self::union_mix_weights(right)?;
+            for (k, v) in r {
+                let e = l.entry(k).or_insert(0.0);
+                *e = e.max(v);
+            }
+            return Ok(Value::mix(l));
+        }
+        if matches!(left, Value::Bag(_)) || matches!(right, Value::Bag(_)) {
+            let mut l = Self::union_bag_counts(left)?;
+            let r = Self::union_bag_counts(right)?;
+            for (k, v) in r {
+                let e = l.entry(k).or_insert(0);
+                *e = (*e).max(v);
+            }
+            return Ok(Value::bag(l));
+        }
+        let mut l = Self::union_set_keys(left)?;
+        let r = Self::union_set_keys(right)?;
+        l.extend(r);
+        Ok(Value::set(l))
+    }
+
     fn reduction_repeat_error(class_name: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(message.to_string()));
@@ -611,8 +805,8 @@ impl Interpreter {
                 }
                 Ok(Value::array(items))
             }
+            "(|)" | "∪" => Self::apply_set_union(left, right),
             "(-)" | "∖" => Ok(set_diff_values(left, right)),
-            "(|)" | "∪" => Ok(set_union_values(left, right)),
             "(&)" | "∩" => Ok(set_intersect_values(left, right)),
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
             _ => Err(RuntimeError::new(format!(

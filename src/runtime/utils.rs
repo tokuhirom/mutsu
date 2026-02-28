@@ -814,41 +814,87 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
 }
 
 pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
+    fn insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
+        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
+        match value {
+            Value::Set(items) => {
+                elems.extend(items.iter().cloned());
+            }
+            Value::Bag(items) => {
+                for (k, v) in items.iter() {
+                    if *v > 0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Mix(items) => {
+                for (k, v) in items.iter() {
+                    if *v != 0.0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Hash(items) => {
+                for (k, v) in items.iter() {
+                    if v.truthy() || matches!(v, Value::Nil) {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    insert_set_elem(elems, item);
+                }
+            }
+            range if range.is_range() => {
+                for item in value_to_list(range) {
+                    insert_set_elem(elems, &item);
+                }
+            }
+            Value::Pair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.clone());
+                }
+            }
+            Value::ValuePair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.to_string_value());
+                }
+            }
+            other => {
+                let sv = other.to_string_value();
+                if !sv.is_empty() {
+                    elems.insert(sv);
+                }
+            }
+        }
+    }
+
     match val {
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
-        Value::Hash(h) => {
-            let mut s = HashSet::new();
-            for (k, v) in h.iter() {
-                if v.truthy() {
-                    s.insert(k.clone());
+        Value::Hash(items) => items
+            .iter()
+            .filter_map(|(k, v)| {
+                if v.truthy() || matches!(v, Value::Nil) {
+                    Some(k.clone())
+                } else {
+                    None
                 }
-            }
-            s
-        }
+            })
+            .collect(),
         Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-            let mut s = HashSet::new();
+            let mut elems = HashSet::new();
             for item in items.iter() {
-                match item {
-                    Value::Pair(k, v) => {
-                        if v.truthy() {
-                            s.insert(k.clone());
-                        }
-                    }
-                    other => {
-                        s.insert(other.to_string_value());
-                    }
-                }
+                insert_set_elem(&mut elems, item);
             }
-            s
+            elems
         }
-        Value::Pair(k, v) => {
-            let mut s = HashSet::new();
-            if v.truthy() {
-                s.insert(k.clone());
-            }
-            s
+        Value::Pair(_, _) | Value::ValuePair(_, _) => {
+            let mut elems = HashSet::new();
+            insert_set_elem(&mut elems, val);
+            elems
         }
         _ => {
             let mut s = HashSet::new();
@@ -1032,28 +1078,6 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
             let a = coerce_to_set(left);
             let b = coerce_to_set(right);
             Value::set(a.difference(&b).cloned().collect())
-        }
-    }
-}
-
-/// Standalone set union: left (|) right
-pub(crate) fn set_union_values(left: &Value, right: &Value) -> Value {
-    match (left, right) {
-        (Value::Set(a), Value::Set(b)) => {
-            let mut result = (**a).clone();
-            for elem in b.iter() {
-                result.insert(elem.clone());
-            }
-            Value::set(result)
-        }
-        _ => {
-            let a = coerce_to_set(left);
-            let b = coerce_to_set(right);
-            let mut result = a;
-            for elem in b {
-                result.insert(elem);
-            }
-            Value::set(result)
         }
     }
 }

@@ -1522,8 +1522,12 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         if let Some(r) = r.strip_prefix(':') {
             // This invocant marker is handled at parse_param_list level.
             let (r, _) = ws(r)?;
-            if r.starts_with(')') {
-                return Ok((r, make_param("self".to_string())));
+            if r.starts_with(')') || r.starts_with("-->") {
+                let mut p = make_param("self".to_string());
+                p.type_constraint = Some(tc);
+                p.is_invocant = true;
+                p.traits.push("invocant".to_string());
+                return Ok((r, p));
             }
             return parse_single_param(r);
         }
@@ -1551,7 +1555,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         type_constraint = Some(format!("::{}", capture_name));
         let (r, _) = ws(r)?;
         rest = r;
-        if rest.starts_with(')') || rest.starts_with(',') || rest.starts_with(';') {
+        if rest.starts_with(')')
+            || rest.starts_with(']')
+            || rest.starts_with(',')
+            || rest.starts_with(';')
+        {
             let mut p = make_param(format!("__type_capture__{}", capture_name));
             p.type_constraint = type_constraint;
             p.named = named;
