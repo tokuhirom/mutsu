@@ -1081,6 +1081,7 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
             &err.messages,
         ),
         remaining_len: err.remaining_len.or(Some(rest.len())),
+        exception: None,
     })?;
     let mut args = vec![first_arg];
     loop {
@@ -1128,6 +1129,7 @@ pub(super) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
         messages: merge_expected_messages("expected return value expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(rest.len())),
+        exception: None,
     })?;
     let stmt = Stmt::Return(expr);
     parse_statement_modifier(rest, stmt)
@@ -1403,18 +1405,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     let (rest, expr) = expression(input).map_err(|err| {
-        if err.is_fatal()
-            && err
-                .messages
-                .first()
-                .is_some_and(|m| m.contains("X::Comp::Trait::Unknown"))
-        {
-            err
-        } else {
-            PError {
-                messages: merge_expected_messages("expected expression statement", &err.messages),
-                remaining_len: err.remaining_len.or(Some(input.len())),
-            }
+        if err.is_fatal() {
+            return err;
+        }
+        PError {
+            messages: merge_expected_messages("expected expression statement", &err.messages),
+            remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: err.exception,
         }
     })?;
 
@@ -1434,6 +1431,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(stripped.len())),
+            exception: None,
         })?;
         let method_name = method_name.to_string();
         let (r, method_args) = if r.starts_with('(') {
@@ -1525,6 +1523,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         .map_err(|err| PError {
             messages: merge_expected_messages("expected method name after '.='", &err.messages),
             remaining_len: err.remaining_len.or(Some(stripped.len())),
+            exception: None,
         })?;
         let method_name = method_name.to_string();
         let (r, method_args) = if r.starts_with('(') {
@@ -1623,6 +1622,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         if let Expr::Index { target, index } = expr {
             let stmt = Stmt::Expr(Expr::IndexAssign {
@@ -1643,6 +1643,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Expr(Expr::IndexAssign {
             target,
@@ -1662,6 +1663,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         if let Expr::Index { target, index } = expr {
             let stmt = Stmt::Expr(Expr::IndexAssign {
@@ -1692,6 +1694,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         if let Expr::MethodCall {
             target,
@@ -1756,6 +1759,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
         return parse_statement_modifier(r, stmt);
@@ -1773,6 +1777,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let stmts = vec![
                 Stmt::Expr(expr),
@@ -1793,6 +1798,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let var_expr = Expr::Var(var_name.clone());
             let stmts = vec![
@@ -1824,6 +1830,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         if let Expr::Index { target, index } = &expr {
             let tmp_idx = format!(
@@ -2166,11 +2173,13 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         parse_stmt_call_args_no_paren(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?
     } else {
         parse_stmt_call_args(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?
     };
     let mut args = args;

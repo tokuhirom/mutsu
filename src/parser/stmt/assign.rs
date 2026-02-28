@@ -1009,6 +1009,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let expr = compound_assigned_value_expr(Expr::Var(name.clone()), op, rhs);
         let stmt = Stmt::Assign {
@@ -1026,6 +1027,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Assign {
             name: name.clone(),
@@ -1049,6 +1051,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         .map_err(|err| PError {
             messages: merge_expected_messages("expected method name after '.='", &err.messages),
             remaining_len: err.remaining_len.or(Some(stripped.len())),
+            exception: None,
         })?;
         let method_name = method_name.to_string();
         let (r, args) = if r.starts_with('(') {
@@ -1057,6 +1060,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let (r, a) = parse_call_arg_list(r).map_err(|err| PError {
                 messages: merge_expected_messages("expected method call arguments", &err.messages),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
@@ -1128,6 +1132,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Expr(Expr::Call {
             name: "__mutsu_atomic_add_var".to_string(),
@@ -1152,6 +1157,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         if is_atomic {
             let stmt = Stmt::Expr(Expr::Call {
@@ -1176,6 +1182,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Assign {
             name,

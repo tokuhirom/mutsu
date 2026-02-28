@@ -164,6 +164,7 @@ roast/S05-grammar/parse_and_parsefile-6e.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
+roast/S05-interpolation/regex-in-variable.t
 roast/S05-mass/charsets.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t

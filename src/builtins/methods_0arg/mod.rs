@@ -485,7 +485,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes.get("to").cloned().unwrap_or(Value::Int(0))));
             }
             "gist" => {
-                let mut gist = target.to_string_value();
+                let matched = target.to_string_value();
+                let mut gist = format!("｢{}｣", matched);
                 if let Some(Value::Hash(named)) = attributes.get("named")
                     && !named.is_empty()
                 {
@@ -493,7 +494,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     keys.sort();
                     for key in keys {
                         if let Some(value) = named.get(key) {
-                            gist.push_str(&format!("\n {} => {}", key, value.to_string_value()));
+                            gist.push_str(&format!("\n {} => ｢{}｣", key, value.to_string_value()));
                         }
                     }
                 }

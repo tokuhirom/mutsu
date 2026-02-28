@@ -1193,6 +1193,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?
         } else {
             junctive_expr_mode(r, mode)?
@@ -1220,6 +1221,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Unary {
                     op: TokenKind::Bang,
@@ -1248,6 +1250,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Binary {
                     left: Box::new(prev_right),
@@ -1277,6 +1280,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?
         } else {
             junctive_expr_mode(r, mode)?
@@ -1303,6 +1307,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Unary {
                     op: TokenKind::Bang,
@@ -1330,6 +1335,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r2.len())),
+                    exception: None,
                 })?;
                 let next_cmp = Expr::Binary {
                     left: Box::new(prev_right),

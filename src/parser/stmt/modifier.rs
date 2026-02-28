@@ -90,6 +90,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok(Some((
@@ -110,6 +111,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok(Some((
@@ -150,6 +152,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         // Parse comma-separated list for `for` modifier: `expr for 1, 2, 3`
         let (r, iterable) = {
@@ -202,6 +205,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         return Ok(Some((
             r,
@@ -220,6 +224,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         return Ok(Some((
             r,
@@ -241,6 +246,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
         return Ok(Some((

@@ -539,6 +539,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
         let (r, arg) = or_expr_pub(input).map_err(|err| PError {
             messages: merge_expected_messages("expected listop argument expression", &err.messages),
             remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: None,
         })?;
         return Ok((r, make_call_expr(name, input, vec![arg])));
     }
@@ -549,6 +550,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
         let (r, first) = expression(input).map_err(|err| PError {
             messages: merge_expected_messages("expected listop argument expression", &err.messages),
             remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: None,
         })?;
         let mut exprs = vec![first];
         let mut r = r;
@@ -573,6 +575,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             exprs.push(expr);
             r = r2;
@@ -588,6 +591,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
     let (r, first) = expression(input).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
+        exception: None,
     })?;
     let (r, invocant_colon_call) = try_parse_no_paren_invocant_colon_call(&name, first.clone(), r)?;
     if let Some(method_call) = invocant_colon_call {
@@ -617,6 +621,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r2.len())),
+            exception: None,
         })?;
         args.push(arg);
         r = r2;
@@ -931,6 +936,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             &err.messages,
                         ),
                         remaining_len: err.remaining_len.or(Some(r.len())),
+                        exception: None,
                     })?;
                     return Ok((r, params_body));
                 }
@@ -947,6 +953,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r.len())),
+                                exception: None,
                             })?;
                         return Ok((r, params_body));
                     }
@@ -992,6 +999,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r.len())),
+                                exception: None,
                             });
                         }
                     }
@@ -1014,6 +1022,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r.len())),
+                    exception: None,
                 })?;
                 return Ok((r, params_body));
             }
@@ -1373,6 +1382,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let (r2, invocant_colon_call) =
                 try_parse_no_paren_invocant_colon_call(&name, arg.clone(), r2)?;
