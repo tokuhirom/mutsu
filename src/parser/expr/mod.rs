@@ -975,6 +975,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_upto_with_infinity_literal() {
+        let (rest, expr) = expression("^∞").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Binary { left, op, right } => {
+                assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+                assert!(matches!(op, TokenKind::DotDotCaret));
+                assert!(matches!(
+                    *right,
+                    Expr::Literal(Value::Int(_))
+                        | Expr::Literal(Value::BigInt(_))
+                        | Expr::Literal(Value::Num(_))
+                ));
+            }
+            _ => panic!("expected upto range expression"),
+        }
+    }
+
+    #[test]
+    fn parse_topical_dot_angle_expression() {
+        let (rest, expr) = expression(".<a>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
     fn expression_memo_reuses_result() {
         reset_expression_memo();
         let (rest, expr) = expression("1 + 2").unwrap();

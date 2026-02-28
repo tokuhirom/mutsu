@@ -17,7 +17,7 @@ fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
 }
 
 use super::super::expr::expression;
-use super::super::helpers::{consume_unspace, skip_balanced_parens, ws};
+use super::super::helpers::{consume_unspace, skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::assign::try_parse_assign_expr;
 
 #[derive(Default)]
@@ -239,6 +239,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             .or_else(|_| expression(input))
     }
 
+    let (input, _) = ws(input)?;
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
@@ -971,6 +972,52 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
                 args,
             },
         ));
+    }
+    // .<key> topical hash/associative lookup: equivalent to $_<key>
+    if r.starts_with('<') && !r.starts_with("<=") && !r.starts_with("<<") && !r.starts_with("<=>") {
+        let r2 = &r[1..];
+        if let Some(end) = r2.find('>') {
+            let content = &r2[..end];
+            let keys = split_angle_words(content);
+            if !keys.is_empty()
+                && keys.iter().all(|key| {
+                    !key.is_empty()
+                        && key.chars().all(|c| {
+                            c.is_alphanumeric()
+                                || c == '_'
+                                || c == '-'
+                                || c == '!'
+                                || c == '.'
+                                || c == ':'
+                                || c == '?'
+                                || c == '+'
+                                || c == '/'
+                                || c == '$'
+                                || c == '@'
+                                || c == '%'
+                                || c == '&'
+                        })
+                })
+            {
+                let rest = &r2[end + 1..];
+                let index_expr = if keys.len() == 1 {
+                    Expr::Literal(Value::Str(keys[0].to_string()))
+                } else {
+                    Expr::ArrayLiteral(
+                        keys.into_iter()
+                            .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                            .collect(),
+                    )
+                };
+                return Ok((
+                    rest,
+                    Expr::Index {
+                        target: Box::new(Expr::Var("_".to_string())),
+                        index: Box::new(index_expr),
+                    },
+                ));
+            }
+        }
     }
     // .[index] — topicalized index access on $_
     if let Some(r) = r.strip_prefix('[') {

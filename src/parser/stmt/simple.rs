@@ -266,6 +266,18 @@ pub(in crate::parser) fn lookup_user_infix_assoc(symbol: &str) -> Option<String>
     })
 }
 
+pub(in crate::parser) fn lookup_user_sub_assoc(name: &str) -> Option<String> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            if let Some(v) = scope.infix_assoc.get(name) {
+                return Some(v.clone());
+            }
+        }
+        None
+    })
+}
+
 /// Register a user-declared sub with `is test-assertion`.
 pub(in crate::parser) fn register_user_test_assertion_sub(name: &str) {
     SCOPES.with(|s| {
@@ -339,6 +351,11 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     })
 }
 
+pub(in crate::parser) fn is_user_declared_prefix_sub(symbol: &str) -> bool {
+    let op_name = format!("prefix:<{}>", symbol);
+    is_user_declared_sub(&op_name)
+}
+
 /// Match a user-declared prefix operator against the current input.
 /// Returns `(full_name, consumed_len)` when input begins with an in-scope
 /// `prefix:<...>` operator symbol.
@@ -356,6 +373,13 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
                     continue;
                 };
                 if !input.starts_with(op) {
+                    continue;
+                }
+                if scope
+                    .infix_assoc
+                    .get(name)
+                    .is_some_and(|assoc| assoc == "looser")
+                {
                     continue;
                 }
                 let consumed = op.len();

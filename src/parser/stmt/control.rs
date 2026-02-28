@@ -338,6 +338,40 @@ pub(super) fn parse_for_params(
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }
+        // Parenthesized pointy parameter list: -> ($a, $b) { ... }
+        if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, sub_params) = super::parse_param_list_pub(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let (r, _) = skip_pointy_return_type(r)?;
+            if sub_params.is_empty() {
+                return Ok((r, (None, None, Vec::new())));
+            }
+            let unpack_name = "__for_unpack".to_string();
+            let unpack_def = ParamDef {
+                name: unpack_name.clone(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                sigilless: false,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: Some(sub_params),
+                where_constraint: None,
+                traits: Vec::new(),
+                double_slurpy: false,
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+            };
+            return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
+        }
         // Positional destructuring pointy param: -> [$a, $b] { ... }
         if let Some(mut r) = r.strip_prefix('[') {
             let (r2, _) = ws(r)?;
