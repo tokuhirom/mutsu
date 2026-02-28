@@ -88,6 +88,8 @@ while true; do
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
         ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$FILE"
+        wip_remove "$FILE"
+        exit 0
     else
         ./scripts/ai-run-roast.sh --agent "$AGENT" "$FILE" || echo "Failed: $FILE" >&2
     fi
