@@ -120,7 +120,13 @@ def handle_result(data):
 
 
 def main():
-    for line in sys.stdin:
+    # Use readline() instead of `for line in sys.stdin:` to avoid
+    # Python's internal read-ahead buffering on piped stdin which
+    # delays output until ~8KB accumulates.
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break
         line = line.strip()
         if not line:
             continue
