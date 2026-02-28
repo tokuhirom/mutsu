@@ -1405,7 +1405,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     let (rest, expr) = expression(input).map_err(|err| {
-        if err.is_fatal() {
+        if err.is_fatal()
+            && (err.exception.is_some()
+                || err
+                    .messages
+                    .first()
+                    .is_some_and(|m| m.contains("X::Comp::Trait::Unknown")))
+        {
             return err;
         }
         PError {
