@@ -704,6 +704,16 @@ impl VM {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        fn collection_contains_instance(value: &Value) -> bool {
+            match value {
+                Value::Instance { .. } => true,
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    items.iter().any(collection_contains_instance)
+                }
+                Value::Hash(map) => map.values().any(collection_contains_instance),
+                _ => false,
+            }
+        }
         let bypass_supply_extrema_fastpath = matches!(method, "max" | "min" | "lines")
             && args.len() <= 1
             && (matches!(
@@ -716,7 +726,10 @@ impl VM {
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supplier"
             );
-        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath {
+        let bypass_gist_fastpath =
+            method == "gist" && args.is_empty() && collection_contains_instance(target);
+        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath || bypass_gist_fastpath
+        {
             return None;
         }
         if args.len() == 2 {
