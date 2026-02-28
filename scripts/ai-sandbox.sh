@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: ai-sandbox [--set-window-title] [--recreate] [--dry-run] <branch> [claude|codex|codex-fa|bash] [args...]" >&2
+  echo "Usage: ai-sandbox [--set-window-title] [--recreate] [--dry-run] <branch> [claude|codex|bash] [args...]" >&2
   exit 1
 }
 
@@ -60,7 +60,12 @@ if [[ ! -d "$CLONE_DIR" ]]; then
   DEFAULT_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "main")"
   echo "Fetching origin/${DEFAULT_BRANCH}..."
   if git -C "$REPO_ROOT" fetch origin "$DEFAULT_BRANCH" 2>/dev/null; then
-    git -C "$REPO_ROOT" update-ref "refs/heads/${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || true
+    # update-ref only when the working tree is clean to avoid confusing git status
+    if git -C "$REPO_ROOT" diff --quiet && git -C "$REPO_ROOT" diff --cached --quiet; then
+      git -C "$REPO_ROOT" update-ref "refs/heads/${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || true
+    else
+      echo "Warning: working tree has uncommitted changes, skipping update-ref" >&2
+    fi
   else
     echo "Warning: could not fetch from origin (offline?), using local state" >&2
   fi
@@ -87,10 +92,7 @@ if [[ ! -d "$CLONE_DIR" ]]; then
 fi
 
 case "$TOOL" in
-  claude) CMD_ARGS=("claude" "--dangerously-skip-permissions" "${EXTRA_ARGS[@]}") ;;
-  codex)     CMD_ARGS=("codex" "--dangerously-bypass-approvals-and-sandbox" "${EXTRA_ARGS[@]}") ;;
-  codex-fa)  CMD_ARGS=("codex" "--full-auto" "${EXTRA_ARGS[@]}") ;;
-  bash)      CMD_ARGS=("bash" "${EXTRA_ARGS[@]}") ;;
+  claude|codex|bash) CMD_ARGS=("$TOOL" "${EXTRA_ARGS[@]}") ;;
   *)         echo "Unknown tool: $TOOL" >&2; usage ;;
 esac
 
@@ -143,7 +145,6 @@ if [[ "$SET_WINDOW_TITLE" == true && -n "${TMUX:-}" ]]; then
   case "$TOOL" in
     claude)    TMUX_PREFIX="cl" ;;
     codex)     TMUX_PREFIX="cx" ;;
-    codex-fa)  TMUX_PREFIX="cf" ;;
     bash)      TMUX_PREFIX="sh" ;;
   esac
   tmux rename-window "${TMUX_PREFIX}:${BRANCH}"
