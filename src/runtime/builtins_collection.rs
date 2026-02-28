@@ -21,6 +21,28 @@ pub(super) fn format_first_result(
 }
 
 impl Interpreter {
+    pub(super) fn builtin_end(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 1 {
+            let msg = format!(
+                "Calling end({}) will never work with signature of the proto ($, *%)",
+                std::iter::repeat_n("Int", args.len())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let mut attrs = StdHashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            let ex = Value::make_instance("X::TypeCheck::Argument".to_string(), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        let elems = self.builtin_elems(args)?;
+        match elems {
+            Value::Int(n) => Ok(Value::Int(n - 1)),
+            _ => Ok(Value::Int(0)),
+        }
+    }
+
     pub(super) fn builtin_elems(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 1 {
             let msg = format!(

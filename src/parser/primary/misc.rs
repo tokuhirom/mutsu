@@ -917,7 +917,17 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
-        let simple_single = first.traits.is_empty() && first.shape_constraints.is_none();
+        let simple_single = first.traits.is_empty()
+            && first.shape_constraints.is_none()
+            && !first.named
+            && !first.slurpy
+            && !first.double_slurpy
+            && first.default.is_none()
+            && !first.optional_marker
+            && first.type_constraint.is_none()
+            && first.sub_signature.is_none()
+            && first.outer_sub_signature.is_none()
+            && first.code_signature.is_none();
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first
@@ -1089,6 +1099,18 @@ fn is_hash_literal_start(input: &str) -> bool {
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String> {
+    let (mut rest, first) = parse_ident_with_hyphens(input)?;
+    let mut full = first.to_string();
+    while let Some(after) = rest.strip_prefix("::") {
+        let (r2, part) = parse_ident_with_hyphens(after)?;
+        full.push_str("::");
+        full.push_str(part);
+        rest = r2;
+    }
+    Ok((rest, full))
+}
+
 /// Parse a class expression: `class { ... }`, `class Foo { ... }`, or `class :: is Parent { ... }`
 /// Named classes in expression context register the class AND return the type object.
 pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
@@ -1107,14 +1129,14 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         loop {
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, parent) = parse_ident_with_hyphens(r2)?;
-                parents.push(parent.to_string());
+                let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
+                parents.push(parent);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else if let Some(r2) = keyword("does", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, role) = parse_ident_with_hyphens(r2)?;
-                does_roles.push(role.to_string());
+                let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+                does_roles.push(role);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else {
@@ -1137,14 +1159,14 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         loop {
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, parent) = parse_ident_with_hyphens(r2)?;
-                parents.push(parent.to_string());
+                let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
+                parents.push(parent);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else if let Some(r2) = keyword("does", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, role) = parse_ident_with_hyphens(r2)?;
-                does_roles.push(role.to_string());
+                let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+                does_roles.push(role);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else {
@@ -1173,6 +1195,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             parents,
             is_hidden: false,
             hidden_parents: Vec::new(),
+            does_parents: Vec::new(),
             body,
         })),
     ))

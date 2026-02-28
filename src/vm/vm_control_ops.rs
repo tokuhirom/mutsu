@@ -32,6 +32,38 @@ impl VM {
         }
     }
 
+    fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
+        let class_name = if signal.is_last {
+            Some("CX::Last")
+        } else if signal.is_next {
+            Some("CX::Next")
+        } else if signal.is_redo {
+            Some("CX::Redo")
+        } else if signal.is_proceed {
+            Some("CX::Proceed")
+        } else if signal.is_succeed {
+            Some("CX::Succeed")
+        } else if signal.is_warn {
+            Some("CX::Warn")
+        } else {
+            None
+        }?;
+
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(if signal.message.is_empty() {
+                class_name.to_string()
+            } else {
+                signal.message.clone()
+            }),
+        );
+        if let Some(label) = signal.label.as_ref() {
+            attrs.insert("label".to_string(), Value::Str(label.clone()));
+        }
+        Some(Value::make_instance(class_name.to_string(), attrs))
+    }
+
     pub(super) fn exec_while_loop_op(
         &mut self,
         code: &CompiledCode,
@@ -553,11 +585,10 @@ impl VM {
                 self.interpreter.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
                 let saved_topic = self.interpreter.env().get("_").cloned();
-                if e.is_warn {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::Str(e.message.clone()));
-                    let warn_obj = Value::make_instance("CX::Warn".to_string(), attrs);
-                    self.interpreter.env_mut().insert("_".to_string(), warn_obj);
+                if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
+                    self.interpreter
+                        .env_mut()
+                        .insert("_".to_string(), signal_topic);
                 }
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
@@ -567,12 +598,10 @@ impl VM {
                     Err(e) => return Err(e),
                 }
                 self.interpreter.set_when_matched(saved_when);
-                if e.is_warn {
-                    if let Some(v) = saved_topic {
-                        self.interpreter.env_mut().insert("_".to_string(), v);
-                    } else {
-                        self.interpreter.env_mut().remove("_");
-                    }
+                if let Some(v) = saved_topic {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                } else {
+                    self.interpreter.env_mut().remove("_");
                 }
                 *ip = end;
                 Ok(())

@@ -445,6 +445,12 @@ pub(crate) enum OpCode {
     HyperMethodCall {
         name_idx: u32,
         arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+    },
+    HyperMethodCallDynamic {
+        arity: u32,
+        modifier_idx: Option<u32>,
     },
 
     // -- HyperOp (>>op<<) --

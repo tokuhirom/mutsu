@@ -1,5 +1,5 @@
 #![allow(clippy::result_large_err)]
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
 use crate::interpreter::Interpreter;
@@ -38,6 +38,22 @@ pub(crate) struct VM {
 }
 
 impl VM {
+    fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
+        let mut seen: HashSet<String> = HashSet::new();
+        for op in &code.ops {
+            if let OpCode::Label(name_idx) = op {
+                let label_name = Self::const_str(code, *name_idx);
+                if !seen.insert(label_name.to_string()) {
+                    return Err(RuntimeError::new(format!(
+                        "X::Redeclaration: Label '{}' already declared",
+                        label_name
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn runtime_error_from_exception_value(
         value: Value,
         default_message: &str,
@@ -89,6 +105,9 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
+        if let Err(e) = Self::validate_labels(code) {
+            return (self.interpreter, Err(e));
+        }
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -135,6 +154,7 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        Self::validate_labels(code)?;
         self.stack.clear();
         // Initialize local variable slots
         self.locals.resize(code.locals.len(), Value::Nil);
@@ -895,7 +915,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Pop => {
-                self.stack.pop();
+                if let Some(Value::LazyList(list)) = self.stack.pop() {
+                    // Sink context must realize lazy gathers for side effects.
+                    self.interpreter.force_lazy_list_bridge(&list)?;
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
 
@@ -1378,8 +1402,20 @@ impl VM {
             }
 
             // -- HyperMethodCall --
-            OpCode::HyperMethodCall { name_idx, arity } => {
-                self.exec_hyper_method_call_op(code, *name_idx, *arity)?;
+            OpCode::HyperMethodCall {
+                name_idx,
+                arity,
+                modifier_idx,
+                quoted,
+            } => {
+                self.exec_hyper_method_call_op(code, *name_idx, *arity, *modifier_idx, *quoted)?;
+                *ip += 1;
+            }
+            OpCode::HyperMethodCallDynamic {
+                arity,
+                modifier_idx,
+            } => {
+                self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx)?;
                 *ip += 1;
             }
 

@@ -110,6 +110,7 @@ impl Interpreter {
                 parents,
                 is_hidden,
                 hidden_parents,
+                does_parents,
                 body: _,
             } = &stmts[idx]
             {
@@ -120,6 +121,7 @@ impl Interpreter {
                     parents: parents.clone(),
                     is_hidden: *is_hidden,
                     hidden_parents: hidden_parents.clone(),
+                    does_parents: does_parents.clone(),
                     body,
                 });
             }

@@ -146,6 +146,20 @@ impl Interpreter {
                 if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
                 {
                     Self::eqv_with_junctions(left, right).truthy()
+                } else if matches!(
+                    left,
+                    Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                ) || matches!(
+                    right,
+                    Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                ) {
+                    crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }

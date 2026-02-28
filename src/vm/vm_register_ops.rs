@@ -440,6 +440,7 @@ impl VM {
             parents,
             is_hidden,
             hidden_parents,
+            does_parents,
             body,
         } = stmt
         {
@@ -455,6 +456,7 @@ impl VM {
                 parents,
                 *is_hidden,
                 hidden_parents,
+                does_parents,
                 body,
             )?;
             self.interpreter

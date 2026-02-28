@@ -255,6 +255,19 @@ pub(super) fn is_ident_char(b: Option<u8>) -> bool {
     }
 }
 
+/// Loop/control-flow labels use all-caps identifier style and may include digits.
+/// Examples: `OUTER`, `L1`, `_RETRY`.
+pub(super) fn is_loop_label_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_uppercase() && first != '_' {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
 /// Raku identifier start: underscore or Unicode alphabetic character.
 pub(super) fn is_raku_identifier_start(c: char) -> bool {
     c == '_' || c.is_alphabetic()
