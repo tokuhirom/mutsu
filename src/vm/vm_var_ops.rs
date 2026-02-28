@@ -1231,6 +1231,7 @@ impl VM {
             .unwrap_or(Value::Int(0));
         let val = Self::normalize_incdec_source(raw_val);
         let new_val = Self::increment_value(&val);
+        let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1259,6 +1260,7 @@ impl VM {
             .unwrap_or(Value::Int(0));
         let val = Self::normalize_incdec_source(raw_val);
         let new_val = Self::decrement_value(&val);
+        let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);

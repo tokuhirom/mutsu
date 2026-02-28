@@ -297,7 +297,11 @@ impl VM {
 
     pub(super) fn increment_value(value: &Value) -> Value {
         match value {
-            Value::Int(i) => Value::Int(i + 1),
+            Value::Int(i) => i
+                .checked_add(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
             Value::Str(s) => {
@@ -320,7 +324,11 @@ impl VM {
 
     pub(super) fn decrement_value(value: &Value) -> Value {
         match value {
-            Value::Int(i) => Value::Int(i - 1),
+            Value::Int(i) => i
+                .checked_sub(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => {
@@ -462,6 +470,17 @@ impl VM {
                 | "CallFrame"
                 | "Backtrace"
                 | "array"
+                | "int8"
+                | "int16"
+                | "int32"
+                | "int64"
+                | "uint8"
+                | "uint16"
+                | "uint32"
+                | "uint64"
+                | "byte"
+                | "int"
+                | "uint"
         )
     }
 
@@ -986,5 +1005,37 @@ impl VM {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// If the variable has a native int type constraint, wrap the value.
+    /// Used by increment/decrement to implement overflow/underflow wrapping.
+    pub(super) fn maybe_wrap_native_int(
+        interp: &crate::runtime::Interpreter,
+        var_name: &str,
+        value: Value,
+    ) -> Value {
+        use crate::runtime::native_types;
+        use num_bigint::BigInt as NumBigInt;
+        use num_traits::ToPrimitive;
+
+        let constraint = match interp.var_type_constraint(var_name) {
+            Some(c) => c,
+            None => return value,
+        };
+        if !native_types::is_native_int_type(&constraint) {
+            return value;
+        }
+
+        let big_val = match &value {
+            Value::Int(n) => NumBigInt::from(*n),
+            Value::BigInt(n) => n.clone(),
+            _ => return value,
+        };
+
+        let wrapped = native_types::wrap_native_int(&constraint, &big_val);
+        wrapped
+            .to_i64()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::BigInt(wrapped))
     }
 }

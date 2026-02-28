@@ -73,7 +73,7 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Buf"
             | "Blob"
             | "utf8"
-    )
+    ) || crate::runtime::native_types::is_native_int_type(name)
 }
 
 impl VM {
@@ -918,6 +918,13 @@ impl VM {
                 "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
             ));
         }
+        // Native integer type check: validate value is an integer in range
+        if crate::runtime::native_types::is_native_int_type(base_constraint) {
+            if !matches!(value, Value::Nil) {
+                self.validate_native_int_assignment(base_constraint, &value)?;
+            }
+            return Ok(());
+        }
         if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, &value)
@@ -1136,6 +1143,89 @@ impl VM {
             }
         }
         *ip = end;
+        Ok(())
+    }
+
+    /// Validate and coerce a value for native integer type assignment.
+    /// Throws on: string values, non-integer numerics (floats), NaN, out-of-range values.
+    pub(super) fn validate_native_int_assignment(
+        &mut self,
+        type_name: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        use crate::runtime::native_types;
+        use num_bigint::BigInt as NumBigInt;
+        use num_traits::ToPrimitive;
+
+        // Reject strings
+        if matches!(value, Value::Str(_)) {
+            return Err(RuntimeError::new(format!(
+                "Cannot convert string to native integer type '{}'",
+                type_name
+            )));
+        }
+        // Reject NaN
+        if let Value::Num(n) = value {
+            if n.is_nan() {
+                return Err(RuntimeError::new(format!(
+                    "Cannot convert NaN to native integer type '{}'",
+                    type_name
+                )));
+            }
+            // Reject non-integer floats
+            if n.fract() != 0.0 {
+                return Err(RuntimeError::new(format!(
+                    "Cannot convert non-integer value to native integer type '{}'",
+                    type_name
+                )));
+            }
+        }
+        // Reject Rat with non-integer value
+        if let Value::Rat(n, d) = value
+            && *d != 0
+            && *n % *d != 0
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot convert non-integer value to native integer type '{}'",
+                type_name
+            )));
+        }
+
+        // Convert value to BigInt for range checking
+        let big_val = match value {
+            Value::Int(n) => NumBigInt::from(*n),
+            Value::BigInt(n) => n.clone(),
+            Value::Num(n) => NumBigInt::from(*n as i64),
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    NumBigInt::from(0)
+                } else {
+                    NumBigInt::from(*n / *d)
+                }
+            }
+            Value::Bool(b) => NumBigInt::from(if *b { 1 } else { 0 }),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Cannot convert value to native integer type '{}'",
+                    type_name
+                )));
+            }
+        };
+
+        // Check range — throw if out of range
+        if !native_types::is_in_native_range(type_name, &big_val) {
+            return Err(RuntimeError::new(format!(
+                "Cannot assign value {} to native type '{}': value is outside the range",
+                big_val, type_name
+            )));
+        }
+
+        // Coerce to Int on the stack
+        let int_val = big_val.to_i64().map(Value::Int).unwrap_or_else(|| {
+            // For uint64 values that don't fit in i64, store as BigInt
+            Value::BigInt(big_val)
+        });
+        *self.stack.last_mut().unwrap() = int_val;
         Ok(())
     }
 }

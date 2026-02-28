@@ -94,6 +94,7 @@ impl Interpreter {
                 is_hidden,
                 hidden_parents,
                 does_parents,
+                repr,
                 body: _,
             } = &stmts[idx]
             {
@@ -105,6 +106,7 @@ impl Interpreter {
                     is_hidden: *is_hidden,
                     hidden_parents: hidden_parents.clone(),
                     does_parents: does_parents.clone(),
+                    repr: repr.clone(),
                     body,
                 });
             }

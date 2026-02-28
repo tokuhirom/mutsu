@@ -441,6 +441,7 @@ impl VM {
             is_hidden,
             hidden_parents,
             does_parents,
+            repr,
             body,
         } = stmt
         {
@@ -459,6 +460,12 @@ impl VM {
                 does_parents,
                 body,
             )?;
+            // Register CUnion repr if present
+            if let Some(repr_name) = repr
+                && repr_name == "CUnion"
+            {
+                self.interpreter.register_cunion_class(&resolved_name);
+            }
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(resolved_name));

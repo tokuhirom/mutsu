@@ -474,6 +474,7 @@ pub(crate) enum Stmt {
         is_hidden: bool,
         hidden_parents: Vec<String>,
         does_parents: Vec<String>,
+        repr: Option<String>,
         body: Vec<Stmt>,
     },
     HasDecl {
@@ -483,6 +484,7 @@ pub(crate) enum Stmt {
         handles: Vec<String>,
         #[allow(dead_code)]
         is_rw: bool,
+        type_constraint: Option<String>,
     },
     MethodDecl {
         name: String,

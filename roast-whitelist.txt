@@ -57,6 +57,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/int-uint.t
+roast/S02-types/int-uint.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_pairs.t

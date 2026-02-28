@@ -1236,6 +1236,7 @@ impl Interpreter {
         let mut class_def = ClassDef {
             parents: parents.to_vec(),
             attributes: Vec::new(),
+            attribute_types: HashMap::new(),
             methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: Vec::new(),
@@ -1351,6 +1352,7 @@ impl Interpreter {
                 let punned_class = ClassDef {
                     parents: punned_class_parents,
                     attributes: Vec::new(),
+                    attribute_types: HashMap::new(),
                     methods: HashMap::new(),
                     native_methods: HashSet::new(),
                     mro: Vec::new(),
@@ -1482,6 +1484,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    type_constraint,
                 } => {
                     class_def.attributes.push((
                         attr_name.clone(),
@@ -1489,6 +1492,11 @@ impl Interpreter {
                         default.clone(),
                         *is_rw,
                     ));
+                    if let Some(tc) = type_constraint {
+                        class_def
+                            .attribute_types
+                            .insert(attr_name.clone(), tc.clone());
+                    }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {
@@ -1734,6 +1742,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    type_constraint: _,
                 } => {
                     role_def.attributes.push((
                         attr_name.clone(),
@@ -1876,5 +1885,134 @@ impl Interpreter {
         );
         self.env
             .insert(name.to_string(), Value::Package(name.to_string()));
+    }
+
+    pub(crate) fn register_cunion_class(&mut self, name: &str) {
+        self.cunion_classes.insert(name.to_string());
+    }
+
+    /// Construct a CUnion instance: all native-int fields share the same
+    /// underlying bytes (little-endian), so setting one field also sets the
+    /// lower bits of the others.
+    pub(crate) fn construct_cunion_instance(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        use crate::runtime::native_types::native_int_bounds;
+
+        // Collect class attributes with their types
+        let class_attrs = self.collect_class_attributes(class_name);
+
+        // Parse named args
+        let mut named_args: HashMap<String, Value> = HashMap::new();
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                named_args.insert(key.clone(), *value.clone());
+            }
+        }
+
+        // Find the widest provided value and convert to bytes
+        let mut max_bytes = 0u32;
+        let mut raw_value: u64 = 0;
+
+        for (attr_name, _is_public, _default, _is_rw) in &class_attrs {
+            if let Some(val) = named_args.get(attr_name) {
+                let int_val = match val {
+                    Value::Int(i) => *i as u64,
+                    Value::BigInt(n) => {
+                        use num_traits::ToPrimitive;
+                        n.to_u64().unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                raw_value = int_val;
+                // Find the type of this attribute to determine byte width
+                if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name)
+                {
+                    let byte_width = Self::native_type_byte_width(&type_constraint);
+                    if byte_width > max_bytes {
+                        max_bytes = byte_width;
+                    }
+                }
+            }
+        }
+
+        // Build attributes from shared bytes
+        let bytes = raw_value.to_le_bytes();
+        let mut attrs = HashMap::new();
+        for (attr_name, _is_public, default, _is_rw) in &class_attrs {
+            if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name) {
+                let byte_width = Self::native_type_byte_width(&type_constraint);
+                let val = match byte_width {
+                    1 => Value::Int(bytes[0] as i64),
+                    2 => Value::Int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
+                    4 => Value::Int(
+                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64
+                    ),
+                    8 => {
+                        let v = u64::from_le_bytes(bytes);
+                        if let Some((_min, _max)) = native_int_bounds(&type_constraint) {
+                            if type_constraint.starts_with('u') || type_constraint == "byte" {
+                                // Unsigned: store as BigInt if needed
+                                if v > i64::MAX as u64 {
+                                    Value::BigInt(num_bigint::BigInt::from(v as u128))
+                                } else {
+                                    Value::Int(v as i64)
+                                }
+                            } else {
+                                // Signed: reinterpret as i64
+                                Value::Int(v as i64)
+                            }
+                        } else {
+                            Value::Int(v as i64)
+                        }
+                    }
+                    _ => {
+                        if let Some(v) = named_args.get(attr_name) {
+                            v.clone()
+                        } else if let Some(expr) = default {
+                            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                        } else {
+                            Value::Int(0)
+                        }
+                    }
+                };
+                attrs.insert(attr_name.clone(), val);
+            } else if let Some(v) = named_args.get(attr_name) {
+                attrs.insert(attr_name.clone(), v.clone());
+            } else if let Some(expr) = default {
+                attrs.insert(
+                    attr_name.clone(),
+                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?,
+                );
+            } else {
+                attrs.insert(attr_name.clone(), Value::Int(0));
+            }
+        }
+
+        Ok(Value::make_instance(class_name.to_string(), attrs))
+    }
+
+    /// Get the type constraint for a class attribute, searching MRO.
+    fn get_attr_type_constraint(&self, class_name: &str, attr_name: &str) -> Option<String> {
+        if let Some(class_def) = self.classes.get(class_name) {
+            for (name, _is_public, _default, _is_rw) in &class_def.attributes {
+                if name == attr_name {
+                    return class_def.attribute_types.get(attr_name).cloned();
+                }
+            }
+        }
+        None
+    }
+
+    fn native_type_byte_width(type_name: &str) -> u32 {
+        match type_name {
+            "uint8" | "int8" | "byte" => 1,
+            "uint16" | "int16" => 2,
+            "uint32" | "int32" => 4,
+            "uint64" | "int64" | "uint" | "int" => 8,
+            _ => 0,
+        }
     }
 }

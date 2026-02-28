@@ -6887,6 +6887,10 @@ impl Interpreter {
                     mixins,
                 ));
             }
+            // CUnion repr classes use byte-overlay construction
+            if self.cunion_classes.contains(class_name) {
+                return self.construct_cunion_instance(class_name, &args);
+            }
             if self.classes.contains_key(class_name)
                 || type_args
                     .as_ref()
