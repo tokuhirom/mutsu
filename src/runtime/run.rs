@@ -149,6 +149,8 @@ impl Interpreter {
             "is ",
             "ok ",
             "ok(",
+            "tap-ok ",
+            "tap-ok(",
             "nok ",
             "nok(",
             "isnt ",
@@ -652,6 +654,15 @@ mod tests {
         assert!(out.contains("skip 'reason', 1;"));
         assert!(!out.contains("is EVAL('$bar'), Any, 'x'"));
         assert!(out.contains("say 42;"));
+    }
+
+    #[test]
+    fn preprocess_block_skip_counts_tap_ok_as_test_assertion() {
+        let src = "#?rakudo skip 'reason'\n{\n    tap-ok $s, [1], 'tap';\n    ok True, 'ok';\n}\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert_eq!(out.matches("skip 'reason', 1;").count(), 2);
+        assert!(!out.contains("tap-ok $s, [1], 'tap';"));
+        assert!(!out.contains("ok True, 'ok';"));
     }
 
     // END phasers must run even after die() or exit().

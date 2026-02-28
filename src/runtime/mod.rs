@@ -531,6 +531,7 @@ impl Interpreter {
                     "reverse",
                     "split",
                     "tail",
+                    "delayed",
                     "min",
                     "collate",
                     "lines",

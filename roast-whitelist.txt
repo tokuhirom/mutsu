@@ -396,6 +396,7 @@ roast/S17-supply/Seq.t
 roast/S17-supply/act.t
 roast/S17-supply/collate.t
 roast/S17-supply/decode.t
+roast/S17-supply/delayed.t
 roast/S17-supply/do.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
