@@ -18,6 +18,22 @@ impl Interpreter {
         Value::make_instance("Pod::Block".to_string(), attrs)
     }
 
+    fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Block::Named".to_string(), attrs)
+    }
+
+    fn make_pod_heading(level: &str, contents: Vec<Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("level".to_string(), Value::Str(level.to_string()));
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Heading".to_string(), attrs)
+    }
+
     fn make_pod_comment(content: String) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -106,6 +122,14 @@ impl Interpreter {
         (text, idx)
     }
 
+    fn normalize_pod_text(parts: &[String]) -> String {
+        parts
+            .iter()
+            .flat_map(|part| part.split_whitespace())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     fn collect_pod_para(lines: &[&str], mut idx: usize) -> (Value, usize) {
         let mut para_lines = Vec::new();
         while idx < lines.len() {
@@ -113,10 +137,220 @@ impl Interpreter {
             if trimmed.is_empty() || trimmed.starts_with('=') {
                 break;
             }
-            para_lines.push(lines[idx].trim_end().to_string());
+            para_lines.push(lines[idx].trim().to_string());
             idx += 1;
         }
-        (Self::make_pod_para(para_lines), idx)
+        let text = Self::normalize_pod_text(&para_lines);
+        let payload = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![text]
+        };
+        (Self::make_pod_para(payload), idx)
+    }
+
+    fn collect_pod_para_with_inline(
+        lines: &[&str],
+        mut idx: usize,
+        inline: &str,
+    ) -> (Option<Value>, usize) {
+        let mut para_lines = Vec::new();
+        if !inline.trim().is_empty() {
+            para_lines.push(inline.trim().to_string());
+        }
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('=') {
+                break;
+            }
+            para_lines.push(lines[idx].trim().to_string());
+            idx += 1;
+        }
+        if para_lines.is_empty() {
+            return (None, idx);
+        }
+        let text = Self::normalize_pod_text(&para_lines);
+        let payload = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![text]
+        };
+        (Some(Self::make_pod_para(payload)), idx)
+    }
+
+    fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
+        let trimmed = line.trim_start();
+        let token = trimmed.split_whitespace().next()?;
+        let directive = token.strip_prefix('=')?;
+        let first = directive.as_bytes().first().copied()?;
+        if !first.is_ascii_alphabetic() {
+            return None;
+        }
+        if !directive
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return None;
+        }
+        let rest = trimmed[token.len()..].trim_start();
+        Some((directive, rest))
+    }
+
+    fn parse_heading_level(directive: &str) -> Option<&str> {
+        let level = directive.strip_prefix("head")?;
+        if level.is_empty() || !level.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        Some(level)
+    }
+
+    fn collect_pod_entries(
+        lines: &[&str],
+        mut idx: usize,
+        end_target: Option<&str>,
+    ) -> (Vec<Value>, usize) {
+        let mut entries = Vec::new();
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() {
+                idx += 1;
+                continue;
+            }
+            if let Some((directive, rest)) = Self::parse_pod_directive_line(trimmed) {
+                if directive == "end" {
+                    let target = rest.split_whitespace().next().unwrap_or_default();
+                    if end_target.is_some_and(|expected| expected == target) {
+                        return (entries, idx + 1);
+                    }
+                    idx += 1;
+                    continue;
+                }
+                if directive == "comment" {
+                    let (text, next_idx) = Self::collect_paragraph(lines, idx + 1);
+                    entries.push(Self::make_pod_comment(text));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "table" {
+                    let (rows, next_idx) = Self::collect_table_rows(lines, idx + 1);
+                    if !rows.is_empty() {
+                        entries.push(Self::make_pod_table(rows));
+                    }
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "for" {
+                    let target = rest.split_whitespace().next().unwrap_or_default();
+                    if target.is_empty() {
+                        idx += 1;
+                        continue;
+                    }
+                    let inline = rest
+                        .strip_prefix(target)
+                        .map(str::trim_start)
+                        .unwrap_or_default();
+                    if target == "comment" {
+                        let mut text = String::new();
+                        if !inline.is_empty() {
+                            text.push_str(inline);
+                            text.push('\n');
+                        }
+                        let (tail, next_idx) = Self::collect_paragraph(lines, idx + 1);
+                        text.push_str(&tail);
+                        entries.push(Self::make_pod_comment(text));
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
+                    let (para, next_idx) =
+                        Self::collect_pod_para_with_inline(lines, idx + 1, inline);
+                    let mut contents = Vec::new();
+                    if let Some(para) = para {
+                        contents.push(para);
+                    }
+                    if let Some(level) = Self::parse_heading_level(target) {
+                        entries.push(Self::make_pod_heading(level, contents));
+                    } else {
+                        entries.push(Self::make_pod_named(target, contents));
+                    }
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "begin" {
+                    let target = rest.split_whitespace().next().unwrap_or_default();
+                    if target.is_empty() {
+                        idx += 1;
+                        continue;
+                    }
+                    if target == "comment" {
+                        idx += 1;
+                        let mut raw = String::new();
+                        while idx < lines.len() {
+                            if let Some((end_directive, end_rest)) =
+                                Self::parse_pod_directive_line(lines[idx].trim_start())
+                                && end_directive == "end"
+                                && end_rest.split_whitespace().next().unwrap_or_default()
+                                    == "comment"
+                            {
+                                idx += 1;
+                                break;
+                            }
+                            raw.push_str(lines[idx]);
+                            raw.push('\n');
+                            idx += 1;
+                        }
+                        entries.push(Self::make_pod_block(vec![Value::Str(raw)]));
+                        continue;
+                    }
+                    if let Some(level) = Self::parse_item_level(target) {
+                        let (item_contents, next_idx) =
+                            Self::collect_pod_entries(lines, idx + 1, Some(target));
+                        entries.push(Self::make_pod_item(level, item_contents));
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
+                    let (contents, next_idx) =
+                        Self::collect_pod_entries(lines, idx + 1, Some(target));
+                    if target == "pod" {
+                        entries.push(Self::make_pod_block(contents));
+                    } else if let Some(level) = Self::parse_heading_level(target) {
+                        entries.push(Self::make_pod_heading(level, contents));
+                    } else {
+                        entries.push(Self::make_pod_named(target, contents));
+                    }
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if let Some((level, inline)) = Self::parse_item_directive(trimmed) {
+                    let (para, next_idx) =
+                        Self::collect_pod_para_with_inline(lines, idx + 1, inline);
+                    let mut item_contents = Vec::new();
+                    if let Some(para) = para {
+                        item_contents.push(para);
+                    }
+                    entries.push(Self::make_pod_item(level, item_contents));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+
+                let (para, next_idx) = Self::collect_pod_para_with_inline(lines, idx + 1, rest);
+                let mut contents = Vec::new();
+                if let Some(para) = para {
+                    contents.push(para);
+                }
+                if let Some(level) = Self::parse_heading_level(directive) {
+                    entries.push(Self::make_pod_heading(level, contents));
+                } else {
+                    entries.push(Self::make_pod_named(directive, contents));
+                }
+                idx = next_idx.max(idx + 1);
+                continue;
+            }
+
+            let (para, next_idx) = Self::collect_pod_para(lines, idx);
+            entries.push(para);
+            idx = next_idx.max(idx + 1);
+        }
+        (entries, idx)
     }
 
     fn parse_item_level(token: &str) -> Option<i64> {
@@ -151,99 +385,38 @@ impl Interpreter {
         let lines: Vec<&str> = input.lines().collect();
         let mut entries = Vec::new();
         let mut idx = 0usize;
-
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
-            let mut words = trimmed.split_whitespace();
-            let first = words.next();
-            let second = words.next();
-
-            if first == Some("=comment") {
-                let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
-                entries.push(Self::make_pod_comment(text));
-                idx = next_idx;
-                continue;
-            }
-
-            if first == Some("=table") {
-                let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
-                if !rows.is_empty() {
-                    entries.push(Self::make_pod_table(rows));
-                }
-                idx = next_idx;
-                continue;
-            }
-
-            if first == Some("=for") && second == Some("comment") {
-                let inline = trimmed
-                    .strip_prefix("=for")
-                    .map(str::trim_start)
-                    .and_then(|rest| rest.strip_prefix("comment"))
-                    .map(str::trim_start)
-                    .unwrap_or_default();
-                let mut text = String::new();
-                if !inline.is_empty() {
-                    text.push_str(inline);
-                    text.push('\n');
-                }
-                let (tail, next_idx) = Self::collect_paragraph(&lines, idx + 1);
-                text.push_str(&tail);
-                entries.push(Self::make_pod_comment(text));
-                idx = next_idx;
-                continue;
-            }
-
-            if first == Some("=begin") && second == Some("comment") {
-                idx += 1;
-                let mut raw = String::new();
-                while idx < lines.len() {
-                    let end_trimmed = lines[idx].trim_start();
-                    let mut end_words = end_trimmed.split_whitespace();
-                    if end_words.next() == Some("=end") && end_words.next() == Some("comment") {
-                        idx += 1;
-                        break;
-                    }
-                    raw.push_str(lines[idx]);
-                    raw.push('\n');
+            if let Some((directive, rest)) = Self::parse_pod_directive_line(trimmed) {
+                if directive == "end" {
                     idx += 1;
+                    continue;
                 }
-                entries.push(Self::make_pod_block(vec![Value::Str(raw)]));
-                continue;
-            }
-
-            if first == Some("=begin") && second == Some("pod") {
-                idx += 1;
-                let mut contents = Vec::new();
-                while idx < lines.len() {
-                    let inner = lines[idx].trim_start();
-                    let mut inner_words = inner.split_whitespace();
-                    let inner_first = inner_words.next();
-                    let inner_second = inner_words.next();
-                    if inner_first == Some("=end") && inner_second == Some("pod") {
+                if directive == "comment" {
+                    let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
+                    entries.push(Self::make_pod_comment(text));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "table" {
+                    let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
+                    if !rows.is_empty() {
+                        entries.push(Self::make_pod_table(rows));
+                    }
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "for" {
+                    let target = rest.split_whitespace().next().unwrap_or_default();
+                    if target.is_empty() {
                         idx += 1;
-                        break;
-                    }
-                    if inner_first == Some("=comment") {
-                        let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
-                        contents.push(Self::make_pod_comment(text));
-                        idx = next_idx;
                         continue;
                     }
-                    if inner_first == Some("=table") {
-                        let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
-                        if !rows.is_empty() {
-                            contents.push(Self::make_pod_table(rows));
-                        }
-                        idx = next_idx;
-                        continue;
-                    }
-                    if inner_first == Some("=for") && inner_second == Some("comment") {
-                        let inline = inner
-                            .strip_prefix("=for")
-                            .map(str::trim_start)
-                            .and_then(|rest| rest.strip_prefix("comment"))
-                            .map(str::trim_start)
-                            .unwrap_or_default();
+                    let inline = rest
+                        .strip_prefix(target)
+                        .map(str::trim_start)
+                        .unwrap_or_default();
+                    if target == "comment" {
                         let mut text = String::new();
                         if !inline.is_empty() {
                             text.push_str(inline);
@@ -251,65 +424,96 @@ impl Interpreter {
                         }
                         let (tail, next_idx) = Self::collect_paragraph(&lines, idx + 1);
                         text.push_str(&tail);
-                        contents.push(Self::make_pod_comment(text));
-                        idx = next_idx;
+                        entries.push(Self::make_pod_comment(text));
+                        idx = next_idx.max(idx + 1);
                         continue;
                     }
-                    if let Some((level, inline)) = Self::parse_item_directive(inner) {
-                        let mut item_contents = Vec::new();
-                        if !inline.is_empty() {
-                            item_contents.push(Self::make_pod_para(vec![inline.to_string()]));
-                        }
-                        contents.push(Self::make_pod_item(level, item_contents));
+                    let (para, next_idx) =
+                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline);
+                    let mut contents = Vec::new();
+                    if let Some(para) = para {
+                        contents.push(para);
+                    }
+                    if let Some(level) = Self::parse_heading_level(target) {
+                        entries.push(Self::make_pod_heading(level, contents));
+                    } else {
+                        entries.push(Self::make_pod_named(target, contents));
+                    }
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "begin" {
+                    let target = rest.split_whitespace().next().unwrap_or_default();
+                    if target.is_empty() {
                         idx += 1;
                         continue;
                     }
-                    if inner_first == Some("=begin")
-                        && let Some(level) = inner_second.and_then(Self::parse_item_level)
-                    {
+                    if target == "comment" {
                         idx += 1;
-                        let mut item_contents = Vec::new();
+                        let mut raw = String::new();
                         while idx < lines.len() {
-                            let item_line = lines[idx].trim_start();
-                            let mut item_words = item_line.split_whitespace();
-                            let item_first = item_words.next();
-                            let item_second = item_words.next();
-                            if item_first == Some("=end")
-                                && item_second.and_then(Self::parse_item_level) == Some(level)
+                            if let Some((end_directive, end_rest)) =
+                                Self::parse_pod_directive_line(lines[idx].trim_start())
+                                && end_directive == "end"
+                                && end_rest.split_whitespace().next().unwrap_or_default()
+                                    == "comment"
                             {
                                 idx += 1;
                                 break;
                             }
-                            if item_line.is_empty() {
-                                idx += 1;
-                                continue;
-                            }
-                            if !item_line.starts_with('=') {
-                                let (para, next_idx) = Self::collect_pod_para(&lines, idx);
-                                item_contents.push(para);
-                                idx = next_idx;
-                                continue;
-                            }
+                            raw.push_str(lines[idx]);
+                            raw.push('\n');
                             idx += 1;
                         }
-                        contents.push(Self::make_pod_item(level, item_contents));
+                        entries.push(Self::make_pod_block(vec![Value::Str(raw)]));
                         continue;
                     }
-                    if !inner.is_empty() && !inner.starts_with('=') {
-                        let (para, next_idx) = Self::collect_pod_para(&lines, idx);
-                        contents.push(para);
-                        idx = next_idx;
+                    if let Some(level) = Self::parse_item_level(target) {
+                        let (item_contents, next_idx) =
+                            Self::collect_pod_entries(&lines, idx + 1, Some(target));
+                        entries.push(Self::make_pod_item(level, item_contents));
+                        idx = next_idx.max(idx + 1);
                         continue;
                     }
-                    idx += 1;
+                    let (contents, next_idx) =
+                        Self::collect_pod_entries(&lines, idx + 1, Some(target));
+                    if target == "pod" {
+                        entries.push(Self::make_pod_block(contents));
+                    } else if let Some(level) = Self::parse_heading_level(target) {
+                        entries.push(Self::make_pod_heading(level, contents));
+                    } else {
+                        entries.push(Self::make_pod_named(target, contents));
+                    }
+                    idx = next_idx.max(idx + 1);
+                    continue;
                 }
-                entries.push(Self::make_pod_block(contents));
+                if let Some((level, inline)) = Self::parse_item_directive(trimmed) {
+                    let (para, next_idx) =
+                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline);
+                    let mut item_contents = Vec::new();
+                    if let Some(para) = para {
+                        item_contents.push(para);
+                    }
+                    entries.push(Self::make_pod_item(level, item_contents));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+
+                let (para, next_idx) = Self::collect_pod_para_with_inline(&lines, idx + 1, rest);
+                let mut contents = Vec::new();
+                if let Some(para) = para {
+                    contents.push(para);
+                }
+                if let Some(level) = Self::parse_heading_level(directive) {
+                    entries.push(Self::make_pod_heading(level, contents));
+                } else {
+                    entries.push(Self::make_pod_named(directive, contents));
+                }
+                idx = next_idx.max(idx + 1);
                 continue;
             }
-
             idx += 1;
         }
-
         self.env.insert("=pod".to_string(), Value::array(entries));
     }
 
@@ -422,6 +626,7 @@ impl Interpreter {
             mode,
             path: path.clone(),
             line_separators: self.default_line_separators(),
+            line_chomp: true,
             encoding: "utf-8".to_string(),
             file: None,
             socket: None,

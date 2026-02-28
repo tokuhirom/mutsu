@@ -93,6 +93,22 @@ impl VM {
         }
     }
 
+    /// Create a Thread instance with the current OS thread's ID.
+    pub(super) fn make_thread_instance() -> Value {
+        let thread_id = std::thread::current().id();
+        // Extract a numeric ID from ThreadId's Debug representation
+        let id_str = format!("{:?}", thread_id);
+        let numeric_id: i64 = id_str
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("id".to_string(), Value::Int(numeric_id));
+        Value::make_instance("Thread".to_string(), attrs)
+    }
+
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
         match &code.constants[idx as usize] {
             Value::Str(s) => s.as_str(),
@@ -297,7 +313,11 @@ impl VM {
 
     pub(super) fn increment_value(value: &Value) -> Value {
         match value {
-            Value::Int(i) => Value::Int(i + 1),
+            Value::Int(i) => i
+                .checked_add(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
             Value::Str(s) => {
@@ -320,7 +340,11 @@ impl VM {
 
     pub(super) fn decrement_value(value: &Value) -> Value {
         match value {
-            Value::Int(i) => Value::Int(i - 1),
+            Value::Int(i) => i
+                .checked_sub(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => {
@@ -462,6 +486,17 @@ impl VM {
                 | "CallFrame"
                 | "Backtrace"
                 | "array"
+                | "int8"
+                | "int16"
+                | "int32"
+                | "int64"
+                | "uint8"
+                | "uint16"
+                | "uint32"
+                | "uint64"
+                | "byte"
+                | "int"
+                | "uint"
         )
     }
 
@@ -558,6 +593,10 @@ impl VM {
                 | Value::Routine { is_regex: true, .. }
         );
         let matched = self.interpreter.smart_match_values(&left, &right);
+        // Check for pending regex security error (set by regex parse/match)
+        if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
+            return Err(err);
+        }
         if is_regex {
             // For regex smartmatch, return the Match object (from $/) or Nil
             if matched {
@@ -640,6 +679,38 @@ impl VM {
         }
     }
 
+    pub(super) fn coerce_numeric_bridge_value(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if !matches!(value, Value::Instance { .. }) {
+            return Ok(value);
+        }
+        if !(self.interpreter.type_matches_value("Real", &value)
+            || self.interpreter.type_matches_value("Numeric", &value))
+        {
+            return Ok(value);
+        }
+        self.interpreter
+            .call_method_with_values(value.clone(), "Numeric", vec![])
+            .or_else(|_| {
+                self.interpreter
+                    .call_method_with_values(value.clone(), "Bridge", vec![])
+            })
+            .or(Ok(value))
+    }
+
+    pub(super) fn coerce_numeric_bridge_pair(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        Ok((
+            self.coerce_numeric_bridge_value(left)?,
+            self.coerce_numeric_bridge_value(right)?,
+        ))
+    }
+
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
@@ -665,10 +736,21 @@ impl VM {
     }
 
     pub(super) fn try_native_method(
+        &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        fn collection_contains_instance(value: &Value) -> bool {
+            match value {
+                Value::Instance { .. } => true,
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    items.iter().any(collection_contains_instance)
+                }
+                Value::Hash(map) => map.values().any(collection_contains_instance),
+                _ => false,
+            }
+        }
         let bypass_supply_extrema_fastpath = matches!(method, "max" | "min" | "lines")
             && args.len() <= 1
             && (matches!(
@@ -681,7 +763,24 @@ impl VM {
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supplier"
             );
-        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath {
+        let bypass_gist_fastpath =
+            method == "gist" && args.is_empty() && collection_contains_instance(target);
+        let bypass_pickroll_type_fastpath = matches!(method, "pick" | "roll")
+            && args.len() <= 1
+            && matches!(target, Value::Package(_) | Value::Str(_));
+        let bypass_squish_fastpath = method == "squish";
+        let bypass_numeric_bridge_instance_fastpath = matches!(target, Value::Instance { .. })
+            && (self.interpreter.type_matches_value("Real", target)
+                || self.interpreter.type_matches_value("Numeric", target)
+                || matches!(target, Value::Instance { class_name, .. }
+                    if self.interpreter.has_user_method(class_name, "Bridge")));
+        if bypass_supply_extrema_fastpath
+            || bypass_supplier_supply_fastpath
+            || bypass_gist_fastpath
+            || bypass_pickroll_type_fastpath
+            || bypass_squish_fastpath
+            || bypass_numeric_bridge_instance_fastpath
+        {
             return None;
         }
         if args.len() == 2 {
@@ -697,9 +796,13 @@ impl VM {
     }
 
     pub(super) fn try_native_function(
+        &mut self,
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
+            return None;
+        }
         crate::builtins::native_function(name, args)
     }
 
@@ -806,11 +909,12 @@ impl VM {
         );
         self.interpreter.push_block(sub_val);
 
+        let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
             let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
-            let callable_id = self
+            let resolved_callable_id = self
                 .interpreter
                 .env()
                 .get(&callable_key)
@@ -819,9 +923,11 @@ impl VM {
                     _ => None,
                 })
                 .unwrap_or(0);
-            self.interpreter
-                .env_mut()
-                .insert("__mutsu_callable_id".to_string(), Value::Int(callable_id));
+            callable_id = (resolved_callable_id != 0).then_some(resolved_callable_id as u64);
+            self.interpreter.env_mut().insert(
+                "__mutsu_callable_id".to_string(),
+                Value::Int(resolved_callable_id),
+            );
         }
         let is_test_assertion = if fn_name.is_empty() {
             false
@@ -889,6 +995,30 @@ impl VM {
         while ip < cf.code.ops.len() {
             match self.exec_one(&cf.code, &mut ip, compiled_fns) {
                 Ok(()) => {}
+                Err(mut e) if e.is_leave => {
+                    let routine_key = format!("{fn_package}::{fn_name}");
+                    let matches_frame = if let Some(target_id) = e.leave_callable_id {
+                        Some(target_id) == callable_id
+                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
+                        target_routine == &routine_key
+                    } else {
+                        e.label.is_none()
+                    };
+                    if matches_frame {
+                        e.is_leave = false;
+                        e.is_last = false;
+                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        explicit_return = Some(ret_val.clone());
+                        self.stack.truncate(saved_stack_depth);
+                        self.stack.push(ret_val);
+                        self.interpreter.discard_let_saves(let_mark);
+                        result = Ok(());
+                        break;
+                    }
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
                 Err(e) if e.return_value.is_some() => {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
@@ -986,5 +1116,37 @@ impl VM {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// If the variable has a native int type constraint, wrap the value.
+    /// Used by increment/decrement to implement overflow/underflow wrapping.
+    pub(super) fn maybe_wrap_native_int(
+        interp: &crate::runtime::Interpreter,
+        var_name: &str,
+        value: Value,
+    ) -> Value {
+        use crate::runtime::native_types;
+        use num_bigint::BigInt as NumBigInt;
+        use num_traits::ToPrimitive;
+
+        let constraint = match interp.var_type_constraint(var_name) {
+            Some(c) => c,
+            None => return value,
+        };
+        if !native_types::is_native_int_type(&constraint) {
+            return value;
+        }
+
+        let big_val = match &value {
+            Value::Int(n) => NumBigInt::from(*n),
+            Value::BigInt(n) => n.clone(),
+            _ => return value,
+        };
+
+        let wrapped = native_types::wrap_native_int(&constraint, &big_val);
+        wrapped
+            .to_i64()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::BigInt(wrapped))
     }
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::token_kind::TokenKind;
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -146,6 +147,7 @@ impl Interpreter {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
@@ -154,6 +156,8 @@ impl Interpreter {
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
+            "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
+            "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(args.first().cloned().unwrap_or(Value::Nil)),
@@ -259,6 +263,7 @@ impl Interpreter {
             "dd" => self.builtin_dd(&args),
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
+            "end" => self.builtin_end(&args),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
@@ -270,8 +275,10 @@ impl Interpreter {
             "kv" => self.builtin_kv(&args),
             "pairs" => self.builtin_pairs(&args),
             "abs" => self.builtin_abs(&args),
+            "val" => Ok(super::builtins_collection::builtin_val(&args)),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
+            "minmax" => self.builtin_minmax(&args),
             "cross" => self.builtin_cross(args),
             "roundrobin" => self.builtin_roundrobin(&args),
             // List operations
@@ -282,9 +289,16 @@ impl Interpreter {
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
+            "take" => {
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                self.take_value(value.clone());
+                Ok(value)
+            }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
+            "squish" => self.builtin_squish(&args),
+            "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
@@ -319,6 +333,7 @@ impl Interpreter {
             "chr" => self.builtin_chr(&args),
             "ord" => self.builtin_ord(&args),
             "ords" => self.builtin_ords(&args),
+            "unival" => self.builtin_unival(&args),
             "flip" => self.builtin_flip(&args),
             "lc" => self.builtin_lc(&args),
             "uc" => self.builtin_uc(&args),
@@ -351,7 +366,30 @@ impl Interpreter {
                 // sink evaluates args and returns Nil.
                 // If the argument is a block/sub, call it first.
                 if let Some(func @ Value::Sub(_)) = args.first() {
-                    self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    let value = self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = &value
+                        && class_name == "Failure"
+                        && let Some(ex) = attributes.get("exception")
+                    {
+                        let mut err = RuntimeError::new(ex.to_string_value());
+                        err.exception = Some(Box::new(ex.clone()));
+                        return Err(err);
+                    }
+                } else if let Some(Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                }) = args.first()
+                    && class_name == "Failure"
+                    && let Some(ex) = attributes.get("exception")
+                {
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex.clone()));
+                    return Err(err);
                 }
                 Ok(Value::Nil)
             }
@@ -426,7 +464,8 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            return self.call_infix_routine(op, args);
+            let normalized = if op == "−" { "-" } else { op };
+            return self.call_infix_routine(normalized, args);
         }
         if let Some(op) = name
             .strip_prefix("prefix:<")
@@ -442,17 +481,18 @@ impl Interpreter {
                 return Ok(Value::Nil);
             }
             let arg = &args[0];
+            let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
-                "-" => crate::builtins::arith_negate(arg.clone()),
+                "-" | "−" => crate::builtins::arith_negate(arg.clone()),
                 "~" => Ok(Value::Str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
                 _ => Err(RuntimeError::new(format!(
                     "Unknown prefix operator: {}",
-                    op
+                    normalized
                 ))),
             };
         }
@@ -484,6 +524,16 @@ impl Interpreter {
         }
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;
+        }
+        if name == "substr"
+            && let Some((target, rest)) = args.split_first()
+        {
+            return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
+        }
+        if name == "unpolar"
+            && let Some((target, rest)) = args.split_first()
+        {
+            return self.call_method_with_values(target.clone(), "unpolar", rest.to_vec());
         }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
         if Self::is_builtin_function(name)
@@ -587,6 +637,32 @@ impl Interpreter {
             self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
+            let excluded_names = Self::routine_writeback_excluded_names(&def);
+            for (k, v) in self.env.iter() {
+                let scalar_writeback = restored_env.contains_key(k)
+                    && !excluded_names.contains(k)
+                    && !matches!(
+                        v,
+                        Value::Array(..)
+                            | Value::Hash(..)
+                            | Value::Sub(..)
+                            | Value::WeakSub(..)
+                            | Value::Routine { .. }
+                    );
+                if k != "_"
+                    && k != "@_"
+                    && k != "%_"
+                    && ((restored_env.contains_key(k)
+                        && matches!(v, Value::Array(..) | Value::Hash(..)))
+                        || scalar_writeback
+                        || k.starts_with("__mutsu_var_meta::"))
+                {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+                if k.starts_with("__mutsu_var_meta::") {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+            }
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
@@ -662,8 +738,32 @@ impl Interpreter {
     }
 
     fn call_infix_routine(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
-        // 1-arg Iterable gets flattened (like +@foo slurpy)
-        let args: Vec<Value> = if args.len() == 1 {
+        let is_set_op = matches!(
+            op,
+            "(-)"
+                | "∖"
+                | "(|)"
+                | "∪"
+                | "(&)"
+                | "∩"
+                | "(^)"
+                | "⊖"
+                | "(elem)"
+                | "∈"
+                | "(cont)"
+                | "∋"
+                | "(<=)"
+                | "⊆"
+                | "(>=)"
+                | "⊇"
+                | "(<)"
+                | "⊂"
+                | "(>)"
+                | "⊃"
+        );
+        // 1-arg Iterable gets flattened (like +@foo slurpy), but not for set operators
+        // which coerce their single argument to a QuantHash instead
+        let args: Vec<Value> = if args.len() == 1 && !is_set_op {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
                 _ => args.to_vec(),
@@ -671,6 +771,26 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
+        if op == "x" || op == "xx" {
+            return self.call_repeat_infix(op, &args);
+        }
+        // Parser normalization fallback: `method foo { ... }` can appear as
+        // InfixFunc(name="foo", left=BareWord("method"), right=[ArrayLiteral(...)]).
+        // Treat this as a Method object value.
+        if !args.is_empty() && args[0].to_string_value() == "method" {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::Str(op.to_string()));
+            attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+            let mut sig_attrs = std::collections::HashMap::new();
+            sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
+            attrs.insert(
+                "signature".to_string(),
+                Value::make_instance("Signature".to_string(), sig_attrs),
+            );
+            attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+            attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+            return Ok(Value::make_instance("Method".to_string(), attrs));
+        }
         if args.is_empty() {
             return Ok(reduction_identity(op));
         }
@@ -680,6 +800,10 @@ impl Interpreter {
             }
             if op == "~" {
                 return Ok(Value::Str(crate::runtime::utils::coerce_to_str(&args[0])));
+            }
+            // Set operators with single arg: coerce to appropriate set type
+            if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
+                return Ok(coerce_value_to_quanthash(&args[0]));
             }
             return Ok(args[0].clone());
         }
@@ -754,12 +878,403 @@ impl Interpreter {
             }
             _ => {}
         }
+        // Set operators: promote all args to the highest type, then reduce
+        if is_set_op && matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖")
+        {
+            return self.reduce_set_op(op, &args);
+        }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            acc =
-                self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, acc, rhs.clone()))])?;
+            let pair_args = vec![acc.clone(), rhs.clone()];
+            let infix_name = format!("infix:<{}>", op);
+            if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args) {
+                crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
+                acc = self.call_function_def(&def, &pair_args)?;
+                continue;
+            }
+            if let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
+                && matches!(
+                    callable,
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Instance { .. } | Value::Mixin(..)
+                )
+            {
+                crate::trace::trace_log!(
+                    "call",
+                    "call_infix_routine dispatch callable env: {}",
+                    infix_name
+                );
+                acc = self.eval_call_on_value(callable, pair_args)?;
+                continue;
+            }
+            crate::trace::trace_log!(
+                "call",
+                "call_infix_routine fallback reduce/eval: {}",
+                infix_name
+            );
+            let mut lhs = acc.clone();
+            let mut rhs = rhs.clone();
+            if self.infix_uses_numeric_bridge(op) {
+                lhs = self.coerce_infix_operand_numeric(lhs)?;
+                rhs = self.coerce_infix_operand_numeric(rhs)?;
+            }
+            if let Ok(value) = Self::apply_reduction_op(op, &lhs, &rhs) {
+                acc = value;
+            } else {
+                let (expr_op, expr_left, expr_right) =
+                    if let Some(inner) = op.strip_prefix('R').filter(|inner| !inner.is_empty()) {
+                        // Runtime autogen for callable reverse meta-ops (&infix:<Rop>):
+                        // evaluate the inner operator with swapped operands.
+                        (inner, rhs.clone(), acc)
+                    } else {
+                        (op, acc, rhs.clone())
+                    };
+                let expr_args = vec![expr_left.clone(), expr_right.clone()];
+                let expr_infix_name = format!("infix:<{}>", expr_op);
+                if let Some(def) = self.resolve_function_with_types(&expr_infix_name, &expr_args) {
+                    crate::trace::trace_log!(
+                        "call",
+                        "call_infix_routine fallback dispatch def: {}",
+                        expr_infix_name
+                    );
+                    acc = self.call_function_def(&def, &expr_args)?;
+                    continue;
+                }
+                if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()
+                    && matches!(
+                        callable,
+                        Value::Sub(_)
+                            | Value::WeakSub(_)
+                            | Value::Instance { .. }
+                            | Value::Mixin(..)
+                    )
+                {
+                    crate::trace::trace_log!(
+                        "call",
+                        "call_infix_routine fallback dispatch callable env: {}",
+                        expr_infix_name
+                    );
+                    acc = self.eval_call_on_value(callable, expr_args)?;
+                    continue;
+                }
+                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(
+                    expr_op, expr_left, expr_right,
+                ))])?;
+            }
         }
         Ok(acc)
+    }
+
+    fn repeat_error(class_name: &str, message: String) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(message.clone()));
+        let ex = Value::make_instance(class_name.to_string(), attrs);
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
+        let mut current = value;
+        while let Value::Mixin(inner, _) = current {
+            current = inner;
+        }
+        match current {
+            Value::Whatever => Ok(None),
+            Value::Int(i) => Ok(Some(*i)),
+            Value::BigInt(n) => {
+                use num_traits::ToPrimitive;
+                Ok(Some(n.to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Num(f) => {
+                if f.is_nan() {
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert NaN to Int".to_string(),
+                    ));
+                }
+                if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        return Ok(None);
+                    }
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert -Inf to Int".to_string(),
+                    ));
+                }
+                Ok(Some(f.trunc() as i64))
+            }
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    if *n > 0 {
+                        return Ok(None);
+                    }
+                    let msg = if *n < 0 {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                Ok(Some(n / d))
+            }
+            Value::FatRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    let msg = if n.is_negative() {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    let msg = if n.is_negative() {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                use num_traits::ToPrimitive;
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Str(s) => {
+                let parsed = s.trim().parse::<f64>().map_err(|_| {
+                    Self::repeat_error(
+                        "X::Str::Numeric",
+                        format!("Cannot convert string '{}' to a number", s),
+                    )
+                })?;
+                Self::parse_repeat_count(&Value::Num(parsed))
+            }
+            Value::Array(items, ..) => Ok(Some(items.len() as i64)),
+            Value::Seq(items) => Ok(Some(items.len() as i64)),
+            Value::LazyList(ll) => Ok(Some(
+                ll.cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map_or(0usize, |v| v.len()) as i64,
+            )),
+            Value::Package(_) => Ok(Some(0)),
+            _ => Ok(Some(0)),
+        }
+    }
+
+    fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
+        Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+            body: Vec::new(),
+            env: std::collections::HashMap::new(),
+            cache: std::sync::Mutex::new(Some(items)),
+        }))
+    }
+
+    fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
+        match left {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                self.eval_call_on_value(left.clone(), Vec::new())
+            }
+            _ => Ok(left.clone()),
+        }
+    }
+
+    fn make_x_whatevercode(&self, left: Value) -> Value {
+        let mut env = std::collections::HashMap::new();
+        env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::Str("WhateverCode".to_string()),
+        );
+        let param = "__wc_0".to_string();
+        let body = vec![Stmt::Expr(Expr::Binary {
+            left: Box::new(Expr::Literal(left)),
+            op: TokenKind::Ident("x".to_string()),
+            right: Box::new(Expr::Var(param.clone())),
+        })];
+        Value::make_sub(
+            self.current_package.clone(),
+            "<whatevercode-x>".to_string(),
+            vec![param],
+            Vec::new(),
+            body,
+            false,
+            env,
+        )
+    }
+
+    /// Reduce set operators with proper type promotion across all operands.
+    /// All operands are promoted to the highest type level before reduction.
+    fn reduce_set_op(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Determine the highest type level among all args
+        let mut max_level: u8 = 0;
+        for arg in args {
+            let level = match arg {
+                Value::Mix(_) => 2,
+                Value::Bag(_) => 1,
+                _ => 0,
+            };
+            max_level = max_level.max(level);
+        }
+        // Convert all args to the promoted level
+        let promoted: Vec<Value> = args
+            .iter()
+            .map(|arg| match max_level {
+                2 if !matches!(arg, Value::Mix(_)) => self
+                    .call_method_with_values(arg.clone(), "Mix", vec![])
+                    .unwrap_or_else(|_| arg.clone()),
+                1 if !matches!(arg, Value::Bag(_)) => self
+                    .call_method_with_values(arg.clone(), "Bag", vec![])
+                    .unwrap_or_else(|_| arg.clone()),
+                _ => arg.clone(),
+            })
+            .collect();
+        // Reduce left-to-right using apply_reduction_op
+        let mut acc = promoted[0].clone();
+        for rhs in &promoted[1..] {
+            acc = Self::apply_reduction_op(op, &acc, rhs).unwrap_or_else(|_| {
+                let expr = Self::build_infix_expr(op, acc.clone(), rhs.clone());
+                self.eval_block_value(&[crate::ast::Stmt::Expr(expr)])
+                    .unwrap_or(Value::Nil)
+            });
+        }
+        Ok(acc)
+    }
+
+    fn call_repeat_infix(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            if op == "xx" {
+                return Err(Self::repeat_error(
+                    "Exception",
+                    "xx with no args throws".to_string(),
+                ));
+            }
+            return Ok(reduction_identity(op));
+        }
+        if args.len() == 1 {
+            return Ok(args[0].clone());
+        }
+
+        let mut acc = args[0].clone();
+        for rhs in &args[1..] {
+            match op {
+                "x" => {
+                    if let Value::Package(name) = rhs
+                        && name == "Int"
+                        && !self.warning_suppressed()
+                    {
+                        self.write_warn_to_stderr(&format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        ));
+                    }
+                    if matches!(rhs, Value::Whatever) {
+                        acc = self.make_x_whatevercode(acc);
+                        continue;
+                    }
+                    let Some(n_raw) = Self::parse_repeat_count(rhs)? else {
+                        return Err(Self::repeat_error(
+                            "X::Numeric::CannotConvert",
+                            "Cannot convert Inf to Int".to_string(),
+                        ));
+                    };
+                    let n = n_raw.max(0) as usize;
+                    acc = Value::Str(crate::runtime::utils::coerce_to_str(&acc).repeat(n));
+                }
+                "xx" => {
+                    const EAGER_LIMIT: usize = 10_000;
+                    const LAZY_CACHE: usize = 4_096;
+                    if let Value::Package(name) = rhs
+                        && name == "Int"
+                        && !self.warning_suppressed()
+                    {
+                        self.write_warn_to_stderr(&format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        ));
+                    }
+                    let count = Self::parse_repeat_count(rhs)?;
+                    let (repeat, lazy) = match count {
+                        Some(n) if n <= 0 => (0usize, false),
+                        Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
+                        Some(n) => ((n as usize).min(LAZY_CACHE), true),
+                        None => (LAZY_CACHE, true),
+                    };
+                    let mut items = Vec::with_capacity(repeat);
+                    if let Value::Slip(slip_items) = &acc {
+                        if slip_items.is_empty() {
+                            items.extend(std::iter::repeat_n(Value::Nil, repeat));
+                        } else {
+                            for _ in 0..repeat {
+                                items.extend(slip_items.iter().cloned());
+                            }
+                        }
+                    } else {
+                        for _ in 0..repeat {
+                            items.push(self.repeat_lhs_once(&acc)?);
+                        }
+                    }
+                    acc = if lazy {
+                        Self::make_repeat_lazy_cache(items)
+                    } else {
+                        Value::Seq(std::sync::Arc::new(items))
+                    };
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(acc)
+    }
+
+    fn infix_uses_numeric_bridge(&self, op: &str) -> bool {
+        matches!(
+            op,
+            "+" | "-"
+                | "*"
+                | "/"
+                | "%"
+                | "**"
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "<=>"
+                | "cmp"
+                | "before"
+                | "after"
+                | "min"
+                | "max"
+        )
+    }
+
+    fn coerce_infix_operand_numeric(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if !matches!(value, Value::Instance { .. }) {
+            return Ok(value);
+        }
+        if !(self.type_matches_value("Real", &value) || self.type_matches_value("Numeric", &value))
+        {
+            return Ok(value);
+        }
+        self.call_method_with_values(value.clone(), "Numeric", vec![])
+            .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+            .or(Ok(value))
     }
 
     fn build_infix_expr(op: &str, left: Value, right: Value) -> Expr {
@@ -826,6 +1341,7 @@ impl Interpreter {
             "+^" => TokenKind::BitXor,
             "(|)" | "∪" => TokenKind::SetUnion,
             "(&)" | "∩" => TokenKind::SetIntersect,
+            "(-)" | "∖" => TokenKind::SetDiff,
             "(^)" | "⊖" => TokenKind::SetSymDiff,
             "(elem)" | "∈" => TokenKind::SetElem,
             "(cont)" | "∋" => TokenKind::SetCont,
@@ -911,6 +1427,93 @@ impl Interpreter {
             return_value: Some(value),
             ..RuntimeError::new("")
         })
+    }
+
+    fn leave_return_value(args: &[Value]) -> Option<Value> {
+        match args {
+            [] => None,
+            [single] => Some(single.clone()),
+            _ => Some(Value::Slip(std::sync::Arc::new(args.to_vec()))),
+        }
+    }
+
+    pub(crate) fn builtin_leave(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_leave_with_target(None, args)
+    }
+
+    pub(crate) fn builtin_leave_method(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.builtin_leave_with_target(Some(target), args)
+    }
+
+    fn builtin_leave_with_target(
+        &mut self,
+        target: Option<Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut sig = RuntimeError::last_signal();
+        sig.is_leave = true;
+        sig.return_value = Self::leave_return_value(args);
+
+        let current_callable_id = self.env.get("__mutsu_callable_id").and_then(|v| match v {
+            Value::Int(i) if *i > 0 => Some(*i as u64),
+            _ => None,
+        });
+        let current_block_id = self.env.get("&?BLOCK").and_then(|v| match v {
+            Value::WeakSub(weak) => weak.upgrade().map(|sub| sub.id),
+            Value::Sub(sub) => Some(sub.id),
+            _ => None,
+        });
+
+        match target {
+            None => {}
+            Some(Value::WeakSub(weak)) => {
+                if let Some(sub) = weak.upgrade() {
+                    if Some(sub.id) != current_callable_id && Some(sub.id) != current_block_id {
+                        sig.leave_callable_id = Some(sub.id);
+                    }
+                } else {
+                    return Err(RuntimeError::new("Callable has been freed"));
+                }
+            }
+            Some(Value::Sub(data)) => {
+                if Some(data.id) != current_callable_id && Some(data.id) != current_block_id {
+                    sig.leave_callable_id = Some(data.id);
+                }
+            }
+            Some(Value::Routine { package, name, .. }) => {
+                sig.leave_routine = Some(format!("{package}::{name}"));
+            }
+            Some(Value::Nil) => {}
+            Some(Value::Package(name)) if name == "Any" => {}
+            Some(Value::Package(name)) if name == "Sub" => {
+                let caller_callable_id = self
+                    .caller_env_stack
+                    .last()
+                    .and_then(|env| env.get("__mutsu_callable_id"))
+                    .and_then(|v| match v {
+                        Value::Int(i) if *i > 0 => Some(*i as u64),
+                        _ => None,
+                    });
+                if let Some(id) = caller_callable_id {
+                    sig.leave_callable_id = Some(id);
+                } else if let Some((package, routine)) = self.routine_stack_top() {
+                    sig.leave_routine = Some(format!("{package}::{routine}"));
+                }
+            }
+            Some(Value::Package(name)) if name == "Block" => {}
+            Some(Value::Str(label)) => {
+                sig.label = Some(label);
+            }
+            Some(other) => {
+                sig.label = Some(other.to_string_value());
+            }
+        }
+
+        Err(sig)
     }
 
     fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1004,6 +1607,48 @@ impl Interpreter {
             ));
         }
         Ok(crate::runtime::coerce_to_array(value))
+    }
+
+    fn builtin_reverse_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_reverse_xx expects count and thunk",
+            ));
+        }
+        let count = crate::runtime::to_int(&args[0]);
+        if count <= 0 {
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+        }
+        let thunk = args[1].clone();
+        let mut values = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            values.push(self.eval_call_on_value(thunk.clone(), Vec::new())?);
+        }
+        Ok(Value::Seq(std::sync::Arc::new(values)))
+    }
+
+    fn builtin_reverse_andthen(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_reverse_andthen expects condition and thunk",
+            ));
+        }
+        let cond = args[0].clone();
+        if !crate::runtime::types::value_is_defined(&cond) {
+            return Ok(cond);
+        }
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), cond);
+        let result = self.eval_call_on_value(args[1].clone(), Vec::new());
+        match saved_topic {
+            Some(value) => {
+                self.env.insert("_".to_string(), value);
+            }
+            None => {
+                self.env.remove("_");
+            }
+        }
+        result
     }
 
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
@@ -1705,6 +2350,7 @@ impl Interpreter {
                 | "quietly"
                 | "exit"
                 | "abs"
+                | "val"
                 | "sqrt"
                 | "floor"
                 | "ceiling"
@@ -1712,6 +2358,7 @@ impl Interpreter {
                 | "round"
                 | "exp"
                 | "log"
+                | "cis"
                 | "sin"
                 | "cos"
                 | "tan"
@@ -1738,6 +2385,7 @@ impl Interpreter {
                 | "acotanh"
                 | "chr"
                 | "ord"
+                | "unival"
                 | "chars"
                 | "chomp"
                 | "chop"
@@ -1747,6 +2395,7 @@ impl Interpreter {
                 | "tc"
                 | "trim"
                 | "elems"
+                | "end"
                 | "keys"
                 | "values"
                 | "pairs"
@@ -1805,6 +2454,128 @@ impl Interpreter {
             return result;
         }
         Err(RuntimeError::new("Expected callable"))
+    }
+
+    fn callable_produce_arity(&self, callable: &Value) -> usize {
+        let (params, param_defs) = self.callable_signature(callable);
+        if !param_defs.is_empty() {
+            let mut total = 0usize;
+            let mut required = 0usize;
+            for pd in &param_defs {
+                if pd.named
+                    || pd.slurpy
+                    || pd.double_slurpy
+                    || pd.traits.iter().any(|t| t == "invocant")
+                {
+                    continue;
+                }
+                total += 1;
+                let is_required = pd.required || (!pd.optional_marker && pd.default.is_none());
+                if is_required {
+                    required += 1;
+                }
+            }
+            if required >= 2 {
+                return required;
+            }
+            if total >= 2 {
+                return total;
+            }
+        }
+        params.len().max(2)
+    }
+
+    fn callable_produce_assoc(&self, callable: &Value) -> OpAssoc {
+        let callable_name = match callable {
+            Value::Sub(data) => Some(data.name.as_str()),
+            Value::Routine { name, .. } => Some(name.as_str()),
+            _ => None,
+        };
+        if let Some(name) = callable_name
+            && let Some(assoc) = self.infix_associativity(name)
+        {
+            return match assoc.as_str() {
+                "right" => OpAssoc::Right,
+                "chain" => OpAssoc::Chain,
+                _ => OpAssoc::Left,
+            };
+        }
+        Self::op_associativity(callable)
+    }
+
+    fn eval_produce_over_items(
+        &mut self,
+        callable: Value,
+        items: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        if items.len() == 1 {
+            return Ok(vec![items[0].clone()]);
+        }
+
+        let arity = self.callable_produce_arity(&callable);
+        let step = arity.saturating_sub(1).max(1);
+        let assoc = self.callable_produce_assoc(&callable);
+
+        match assoc {
+            OpAssoc::Right => {
+                let mut out = Vec::new();
+                let mut acc = items.last().cloned().unwrap_or(Value::Nil);
+                out.push(acc.clone());
+                let mut right_edge = items.len().saturating_sub(1);
+                while right_edge >= step {
+                    let start = right_edge - step;
+                    let mut call_args = items[start..right_edge].to_vec();
+                    call_args.push(acc);
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    out.push(acc.clone());
+                    right_edge = start;
+                }
+                Ok(out)
+            }
+            _ => {
+                let mut out = Vec::new();
+                let mut acc = items[0].clone();
+                out.push(acc.clone());
+                let mut idx = 1usize;
+                while idx + step <= items.len() {
+                    let mut call_args = vec![acc];
+                    call_args.extend(items[idx..idx + step].iter().cloned());
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    out.push(acc.clone());
+                    idx += step;
+                }
+                Ok(out)
+            }
+        }
+    }
+
+    fn builtin_produce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let callable = args
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("produce expects a callable as first argument"))?;
+        if !matches!(
+            callable,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            return Err(RuntimeError::new(
+                "produce expects a callable as first argument",
+            ));
+        }
+
+        let mut items = Vec::new();
+        for arg in args.iter().skip(1) {
+            if matches!(arg, Value::Hash(_)) {
+                items.push(arg.clone());
+            } else {
+                items.extend(crate::runtime::value_to_list(arg));
+            }
+        }
+        let out = self.eval_produce_over_items(callable, items)?;
+        Ok(Value::array(out))
     }
 
     /// zip:with — zip lists using a custom combining function.

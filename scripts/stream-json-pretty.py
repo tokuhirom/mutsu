@@ -2,7 +2,15 @@
 """Filter Claude Code stream-json output into human-readable text.
 
 Usage:
-    claude -p --output-format stream-json ... | stream-json-pretty.py
+    claude -p --verbose --output-format stream-json ... | stream-json-pretty.py
+
+Claude Code stream-json format (JSONL):
+  {"type": "system", ...}           — session init
+  {"type": "assistant", "message": {"content": [...]}, ...}  — assistant turn
+  {"type": "tool_use", "tool": ..., "input": ...}            — tool call
+  {"type": "tool_result", ...}      — tool output
+  {"type": "rate_limit_event", ...} — rate limit info
+  {"type": "result", ...}           — final result
 """
 
 import json
@@ -16,105 +24,90 @@ GREEN = "\033[32m"
 RED = "\033[31m"
 BOLD = "\033[1m"
 
-current_tool = None
-tool_input_buf = ""
+out = sys.stdout
 
 
-def flush_tool_input():
-    global tool_input_buf
-    if tool_input_buf:
-        try:
-            parsed = json.loads(tool_input_buf)
-            # Show a compact summary of tool parameters
-            parts = []
-            for k, v in parsed.items():
-                sv = str(v)
-                if len(sv) > 120:
-                    sv = sv[:120] + "..."
-                parts.append(f"  {DIM}{k}: {sv}{RESET}")
-            if parts:
-                print("\n".join(parts), file=sys.stderr)
-        except json.JSONDecodeError:
-            if len(tool_input_buf) > 200:
-                print(f"  {DIM}{tool_input_buf[:200]}...{RESET}", file=sys.stderr)
+def format_tool_input(tool_input):
+    """Format tool input as compact key: value lines."""
+    if not isinstance(tool_input, dict):
+        s = str(tool_input)
+        if len(s) > 200:
+            s = s[:200] + "..."
+        return f"  {DIM}{s}{RESET}"
+    parts = []
+    for k, v in tool_input.items():
+        sv = str(v)
+        if len(sv) > 120:
+            sv = sv[:120] + "..."
+        parts.append(f"  {DIM}{k}: {sv}{RESET}")
+    return "\n".join(parts)
+
+
+def handle_assistant(data):
+    """Handle assistant message — extract text and tool_use blocks."""
+    msg = data.get("message", {})
+    content = msg.get("content", [])
+
+    print(f"\n{GREEN}--- assistant ---{RESET}", file=out, flush=True)
+
+    for block in content:
+        btype = block.get("type")
+        if btype == "text":
+            text = block.get("text", "")
+            if text:
+                print(text, file=out, flush=True)
+        elif btype == "tool_use":
+            name = block.get("name", "?")
+            tool_input = block.get("input", {})
+            print(f"\n{CYAN}{BOLD}[{name}]{RESET}", file=out, flush=True)
+            formatted = format_tool_input(tool_input)
+            if formatted:
+                print(formatted, file=out, flush=True)
+
+
+def handle_tool_result(data):
+    """Handle tool result."""
+    content = data.get("content", "")
+    if isinstance(content, list):
+        # content can be a list of blocks
+        texts = []
+        for item in content:
+            if isinstance(item, dict):
+                texts.append(item.get("text", str(item)))
             else:
-                print(f"  {DIM}{tool_input_buf}{RESET}", file=sys.stderr)
-        tool_input_buf = ""
-
-
-def handle_event(event):
-    global current_tool, tool_input_buf
-
-    etype = event.get("type")
-
-    if etype == "content_block_start":
-        block = event.get("content_block", {})
-        if block.get("type") == "tool_use":
-            flush_tool_input()
-            current_tool = block.get("name", "?")
-            print(f"\n{CYAN}{BOLD}[{current_tool}]{RESET}", file=sys.stderr)
-            tool_input_buf = ""
-        elif block.get("type") == "text":
-            pass  # text block starting
-
-    elif etype == "content_block_delta":
-        delta = event.get("delta", {})
-        dtype = delta.get("type")
-        if dtype == "text_delta":
-            flush_tool_input()
-            text = delta.get("text", "")
-            print(text, end="", flush=True)
-        elif dtype == "input_json_delta":
-            tool_input_buf += delta.get("partial_json", "")
-
-    elif etype == "content_block_stop":
-        flush_tool_input()
-
-    elif etype == "message_start":
-        msg = event.get("message", {})
-        role = msg.get("role", "")
-        if role == "assistant":
-            print(f"\n{GREEN}--- assistant ---{RESET}", file=sys.stderr)
-
-    elif etype == "message_delta":
-        delta = event.get("delta", {})
-        stop = delta.get("stop_reason")
-        usage = event.get("usage", {})
-        if stop:
-            parts = [f"stop={stop}"]
-            if usage:
-                out_tokens = usage.get("output_tokens")
-                if out_tokens:
-                    parts.append(f"tokens={out_tokens}")
-            print(f"\n{DIM}[{', '.join(parts)}]{RESET}", file=sys.stderr)
-
-    elif etype == "message_stop":
-        pass
+                texts.append(str(item))
+        content = "\n".join(texts)
+    content = str(content)
+    if len(content) > 300:
+        content = content[:300] + "..."
+    if content:
+        print(f"  {DIM}{content}{RESET}", file=out, flush=True)
 
 
 def handle_result(data):
-    """Handle the final result JSON (non-stream_event)."""
-    rtype = data.get("type")
-    subtype = data.get("subtype", "")
+    """Handle the final result JSON."""
     is_error = data.get("is_error", False)
     result_text = data.get("result", "")
     duration = data.get("duration_ms", 0)
     num_turns = data.get("num_turns", 0)
+    cost = data.get("total_cost_usd", 0)
 
     color = RED if is_error else GREEN
     label = "ERROR" if is_error else "DONE"
-    print(f"\n{color}{BOLD}=== {label} ==={RESET}", file=sys.stderr)
+    print(f"\n{color}{BOLD}=== {label} ==={RESET}", file=out, flush=True)
     if duration:
         secs = duration / 1000
-        print(f"{DIM}  duration: {secs:.1f}s, turns: {num_turns}{RESET}", file=sys.stderr)
+        parts = [f"duration: {secs:.1f}s", f"turns: {num_turns}"]
+        if cost:
+            parts.append(f"cost: ${cost:.4f}")
+        print(f"{DIM}  {', '.join(parts)}{RESET}", file=out, flush=True)
     if is_error and result_text:
-        print(f"{RED}  {result_text}{RESET}", file=sys.stderr)
+        print(f"{RED}  {result_text}{RESET}", file=out, flush=True)
     elif result_text:
-        # Print final result text (truncated if huge)
         if len(result_text) > 500:
-            print(result_text[:500] + "...", flush=True)
+            print(result_text[:500] + "...", file=out, flush=True)
         else:
-            print(result_text, flush=True)
+            print(result_text, file=out, flush=True)
 
 
 def main():
@@ -125,16 +118,27 @@ def main():
         try:
             data = json.loads(line)
         except json.JSONDecodeError:
-            print(f"{DIM}{line}{RESET}", file=sys.stderr)
+            print(f"{DIM}{line}{RESET}", file=out, flush=True)
             continue
 
         dtype = data.get("type")
-        if dtype == "stream_event":
-            event = data.get("event", {})
-            handle_event(event)
+        if dtype == "assistant":
+            handle_assistant(data)
+        elif dtype == "tool_use":
+            name = data.get("tool", data.get("name", "?"))
+            tool_input = data.get("input", {})
+            print(f"\n{CYAN}{BOLD}[{name}]{RESET}", file=out, flush=True)
+            formatted = format_tool_input(tool_input)
+            if formatted:
+                print(formatted, file=out, flush=True)
+        elif dtype == "tool_result":
+            handle_tool_result(data)
         elif dtype == "result":
             handle_result(data)
-        # other types: pass through silently
+        elif dtype == "system":
+            model = data.get("model", "")
+            print(f"{DIM}[session: model={model}]{RESET}", file=out, flush=True)
+        # rate_limit_event and others: skip silently
 
 
 if __name__ == "__main__":

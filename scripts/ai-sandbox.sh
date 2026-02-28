@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: ai-sandbox [--set-window-title] [--recreate] [--dry-run] <branch> [claude|codex|codex-fa|bash] [args...]" >&2
+  echo "Usage: ai-sandbox [--set-window-title] [--recreate] [--dry-run] <branch> [claude|codex|bash] [args...]" >&2
   exit 1
 }
 
@@ -55,42 +55,48 @@ fi
 # クローンがなければ作成
 if [[ ! -d "$CLONE_DIR" ]]; then
   mkdir -p "$SANDBOX_BASE"
-
   # origin の最新を取得
   DEFAULT_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "main")"
   echo "Fetching origin/${DEFAULT_BRANCH}..."
   if git -C "$REPO_ROOT" fetch origin "$DEFAULT_BRANCH" 2>/dev/null; then
-    git -C "$REPO_ROOT" update-ref "refs/heads/${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || true
+    # update-ref only when the working tree is clean to avoid confusing git status
+    if git -C "$REPO_ROOT" diff --quiet && git -C "$REPO_ROOT" diff --cached --quiet; then
+      git -C "$REPO_ROOT" update-ref "refs/heads/${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || true
+    else
+      echo "Warning: working tree has uncommitted changes, skipping update-ref" >&2
+    fi
   else
     echo "Warning: could not fetch from origin (offline?), using local state" >&2
   fi
-
   # 親リポジトリの GitHub remote URL を取得
   UPSTREAM_URL="$(git -C "$REPO_ROOT" remote get-url origin)"
 
   echo "Cloning into sandbox for branch '${BRANCH}'..."
-  git clone --local "$REPO_ROOT" "$CLONE_DIR"
+  git clone "$UPSTREAM_URL" "$CLONE_DIR"
 
-  # origin を GitHub の URL に差し替え (push/fetch できるようにする)
   cd "$CLONE_DIR"
-  git remote set-url origin "$UPSTREAM_URL"
 
   # ブランチが既にリモートにあれば checkout、なければ新規作成
-  if git fetch origin "$BRANCH" 2>/dev/null && git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
+  if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
     git checkout -b "$BRANCH" "origin/${BRANCH}"
   else
     git checkout -b "$BRANCH"
   fi
 
-  git submodule update --init --recursive
+  git submodule update --init --recursive --depth 1
+
+  # 親リポジトリの target からビルドキャッシュをコピー（存在すれば）
+  # コピー後は独立して動くので他の sandbox とのビルド競合が起きない
+  if [[ -d "${REPO_ROOT}/target" ]]; then
+    echo "Copying build cache from parent repo into sandbox..."
+    cp -a "${REPO_ROOT}/target/." "${CLONE_DIR}/target/"
+  fi
+
   cd "$REPO_ROOT"
 fi
 
 case "$TOOL" in
-  claude) CMD_ARGS=("claude" "--dangerously-skip-permissions" "${EXTRA_ARGS[@]}") ;;
-  codex)     CMD_ARGS=("codex" "--dangerously-bypass-approvals-and-sandbox" "${EXTRA_ARGS[@]}") ;;
-  codex-fa)  CMD_ARGS=("codex" "--full-auto" "${EXTRA_ARGS[@]}") ;;
-  bash)      CMD_ARGS=("bash" "${EXTRA_ARGS[@]}") ;;
+  claude|codex|bash) CMD_ARGS=("$TOOL" "${EXTRA_ARGS[@]}") ;;
   *)         echo "Unknown tool: $TOOL" >&2; usage ;;
 esac
 
@@ -127,7 +133,7 @@ BWRAP_ARGS+=(
   --bind "${HOME}/.claude.json" "${HOME}/.claude.json"
   --bind "${HOME}/.codex" "${HOME}/.codex"
   --ro-bind "${HOME}/.ssh" "${HOME}/.ssh"
-  # クローンディレクトリだけ書き込み可能
+  # クローンディレクトリだけ書き込み可能（target/ も含む）
   --bind "${CLONE_DIR}" "${CLONE_DIR}"
 
   --share-net
@@ -136,6 +142,7 @@ BWRAP_ARGS+=(
   --chdir "${CLONE_DIR}"
   --setenv HOME "${HOME}"
   --setenv GH_TOKEN "${GH_TOKEN:-}"
+  --unsetenv CLAUDECODE
 )
 
 # tmux のウィンドウ名をブランチ名に設定 (--set-window-title 指定時のみ)
@@ -143,7 +150,6 @@ if [[ "$SET_WINDOW_TITLE" == true && -n "${TMUX:-}" ]]; then
   case "$TOOL" in
     claude)    TMUX_PREFIX="cl" ;;
     codex)     TMUX_PREFIX="cx" ;;
-    codex-fa)  TMUX_PREFIX="cf" ;;
     bash)      TMUX_PREFIX="sh" ;;
   esac
   tmux rename-window "${TMUX_PREFIX}:${BRANCH}"

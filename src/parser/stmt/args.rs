@@ -26,6 +26,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
         let (r, first_arg) = parse_single_call_arg(r).map_err(|err| PError {
             messages: merge_expected_messages("expected first call argument", &err.messages),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         // Check for invocant colon: foo($obj:) or foo($obj: $a, $b)
         {
@@ -54,6 +55,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                         &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(after_ws.len())),
+                    exception: None,
                 })?;
                 args.extend(more);
                 let (r2, _) = ws(r2)?;
@@ -78,6 +80,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                             &err.messages,
                         ),
                         remaining_len: err.remaining_len.or(Some(r2.len())),
+                        exception: None,
                     })?;
                     args.extend(more);
                     return Ok((r2, args));
@@ -109,6 +112,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             args.push(arg);
             r = r2;
@@ -141,7 +145,32 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
     let (mut rest, first) = parse_single_call_arg(input).map_err(|err| PError {
         messages: merge_expected_messages("expected first call argument", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
+        exception: None,
     })?;
+    let (rest_ws, _) = ws(rest)?;
+    if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
+        let invocant_expr = match first {
+            CallArg::Positional(expr) => expr,
+            _ => {
+                return Err(PError::expected(
+                    "positional argument before invocant colon",
+                ));
+            }
+        };
+        args.push(CallArg::Invocant(invocant_expr));
+        let after_colon = &rest_ws[1..];
+        let (after_colon, _) = ws(after_colon)?;
+        if after_colon.starts_with(';')
+            || after_colon.is_empty()
+            || after_colon.starts_with('}')
+            || after_colon.starts_with(')')
+        {
+            return Ok((after_colon, args));
+        }
+        let (after_args, mut more) = parse_remaining_call_args(after_colon)?;
+        args.append(&mut more);
+        return Ok((after_args, args));
+    }
     args.push(first);
     loop {
         let (r, _) = ws(rest)?;
@@ -160,6 +189,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         let (r, arg) = parse_single_call_arg(r).map_err(|err| PError {
             messages: merge_expected_messages("expected call argument after ','", &err.messages),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         args.push(arg);
         rest = r;
@@ -259,6 +289,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                             &err.messages,
                         ),
                         remaining_len: err.remaining_len.or(Some(r.len())),
+                        exception: None,
                     })?;
                     let (r, _) = ws(r)?;
                     // Check for comma — makes a list: :name(a, b) or :name(a,)
@@ -278,6 +309,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                                exception: None,
                             })?;
                             let (r2, _) = ws(r2)?;
                             items.push(next);
@@ -313,6 +345,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                 &err.messages,
                             ),
                             remaining_len: err.remaining_len.or(Some(r.len())),
+                            exception: None,
                         })?;
                         items.push(first);
                         let mut r = r2;
@@ -336,6 +369,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                                     &err.messages,
                                 ),
                                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                                exception: None,
                             })?;
                             items.push(next);
                             r = r2;
@@ -409,6 +443,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             return Ok((
                 r2,
@@ -428,14 +463,50 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             return Ok((rest, CallArg::Positional(assign_expr)));
         }
     }
-    let (rest, expr) = reduction_call_style_expr(input)
-        .or_else(|_| expression(input))
-        .map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected positional argument expression",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(input.len())),
-        })?;
+    // Prefer regular expression parsing for unary-minus angle terms like `-<42+2i>`.
+    // The reduction call-style parser can misinterpret this shape in statement arg context.
+    let parsed_expr = if input.starts_with("-<") || input.starts_with("−<") {
+        expression(input)
+    } else {
+        reduction_call_style_expr(input).or_else(|_| expression(input))
+    };
+    let (rest, expr) = parsed_expr.map_err(|err| PError {
+        messages: merge_expected_messages("expected positional argument expression", &err.messages),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+        exception: None,
+    })?;
     Ok((rest, CallArg::Positional(expr)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_call_args_accepts_bracket_metaop_assign_expr() {
+        let (rest, args) = parse_stmt_call_args("$y [R/]= 1, 1/5, \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_call_args_no_paren_accepts_bracket_metaop_assign_expr() {
+        let (rest, args) = parse_stmt_call_args_no_paren("$y [R/]= 1, 1/5, \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_call_args_no_paren_accepts_bracket_metaop_assign_expr_with_bracket_desc() {
+        let input = "$y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";";
+        let (rest, args) = parse_stmt_call_args_no_paren(input).unwrap();
+        assert_eq!(rest, ";");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn parse_single_call_arg_ascii_minus_angle_complex_literal() {
+        let (rest, _) = parse_single_call_arg("-<42+2i>, 'x'").unwrap();
+        assert_eq!(rest, ", 'x'");
+    }
 }
