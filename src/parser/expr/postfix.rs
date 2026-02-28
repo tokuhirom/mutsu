@@ -8,8 +8,8 @@ use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::expression;
 use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+use super::{expression, expression_no_sequence};
 
 /// Try to parse a secondary adverb after :exists/:!exists.
 /// Returns (remaining_input, adverb).
@@ -387,7 +387,12 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input) {
         let rest = &input[len..];
         let (rest, _) = ws(rest)?;
-        let (rest, arg) = prefix_expr(rest)?;
+        let assoc = crate::parser::stmt::simple::lookup_user_sub_assoc(&name);
+        let (rest, arg) = if assoc.as_deref() == Some("looser") {
+            expression_no_sequence(rest)?
+        } else {
+            prefix_expr(rest)?
+        };
         return Ok((
             rest,
             Expr::Call {
@@ -491,21 +496,18 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // ^expr — upto operator: ^5 means 0..^5
     // Use postfix_expr_tight so that `^10 .batch(3)` parses as `(^10).batch(3)`,
     // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
-    if input.starts_with('^')
-        && !input.starts_with("^..")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic() || c == b'_')
-    {
+    if input.starts_with('^') && !input.starts_with("^..") {
         let rest = &input[1..];
-        let (rest, expr) = postfix_expr_tight(rest)?;
-        return postfix_expr_continue(
-            rest,
-            Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Int(0))),
-                op: TokenKind::DotDotCaret,
-                right: Box::new(expr),
-            },
-        );
+        if let Ok((rest, expr)) = postfix_expr_tight(rest) {
+            return postfix_expr_continue(
+                rest,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Int(0))),
+                    op: TokenKind::DotDotCaret,
+                    right: Box::new(expr),
+                },
+            );
+        }
     }
     // |@array or |%hash or |$scalar or |ident — slip/flatten prefix
     if input.starts_with('|')

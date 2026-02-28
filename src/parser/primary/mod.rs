@@ -237,6 +237,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_empty_call_args_with_internal_whitespace() {
+        let (rest, expr) = primary("foo(   )").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "foo");
+                assert_eq!(args.len(), 1);
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_capture_literal_with_internal_whitespace() {
+        let (rest, expr) = primary("\\(   )").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::CaptureLiteral(items) => assert!(items.is_empty()),
+            _ => panic!("expected capture literal"),
+        }
+    }
+
+    #[test]
+    fn parse_topic_angle_lookup() {
+        let (rest, expr) = primary(".<path>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Index { target, index } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n == "_"));
+                assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s == "path"));
+            }
+            _ => panic!("expected topical angle lookup"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_bracket_expr() {
         let (rest, expr) = primary("$[1,2]").unwrap();
         assert_eq!(rest, "");

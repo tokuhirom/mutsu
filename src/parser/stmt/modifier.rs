@@ -1,4 +1,4 @@
-use super::super::expr::expression;
+use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char};
 
@@ -128,7 +128,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     }
     if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;
-        let (r, first) = expression(r).map_err(|err| PError {
+        let (r, first) = expression_no_sequence(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected iterable expression after 'for'",
                 &err.messages,
@@ -146,7 +146,11 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 }
                 let r2 = &r2[1..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next) = expression(r2)?;
+                if r2.is_empty() || r2.starts_with('}') || r2.starts_with(';') {
+                    r = r2;
+                    break;
+                }
+                let (r2, next) = expression_no_sequence(r2)?;
                 items.push(next);
                 r = r2;
             }

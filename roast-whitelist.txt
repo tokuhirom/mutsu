@@ -443,6 +443,7 @@ roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
+roast/S32-io/io-path-extension.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t

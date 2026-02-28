@@ -656,6 +656,7 @@ pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
 mod tests {
     use super::*;
     use crate::ast::{CallArg, Expr};
+    use crate::token_kind::TokenKind;
     use crate::value::Value;
 
     #[test]
@@ -753,6 +754,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_for_loop_with_parenthesized_pointy_params() {
+        let (rest, stmts) = program("for @a, @b -> ($x, $y) { say $x; say $y; }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::For {
+                param: Some(name),
+                param_def,
+                ..
+            } if name == "__for_unpack"
+                && matches!(
+                    param_def.as_ref(),
+                    Some(def) if def.sub_signature.as_ref().is_some_and(|sig| sig.len() == 2)
+                )
+        ));
+    }
+
+    #[test]
     fn parse_compound_assign_on_method_lhs() {
         let (rest, stmts) = program("for @a -> { .key //= ++$i }").unwrap();
         assert_eq!(rest, "");
@@ -764,6 +784,38 @@ mod tests {
         let (rest, stmts) = program(".key = 1 for @a;").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_statement_modifier_for_with_trailing_comma() {
+        let (rest, stmts) = program("my @x = gather { take $_ for 1, 2, }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_user_prefix_sub_with_looser_trait_as_full_rhs_expression() {
+        let src = "sub prefix:<pIO> ($p) is looser(&[~]) { $p.IO }\nmy $pre = 'foo';\nsay pIO  $pre ~ '_BAR';";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 3);
+        match &stmts[2] {
+            Stmt::Say(args) => {
+                assert_eq!(args.len(), 1);
+                assert!(matches!(
+                    &args[0],
+                    Expr::Call { name, args }
+                        if name == "prefix:<pIO>"
+                            && args.len() == 1
+                            && matches!(
+                                &args[0],
+                                Expr::Binary { op, .. } if matches!(op, TokenKind::Tilde)
+                            )
+                ));
+            }
+            _ => panic!("expected say statement"),
+        }
     }
 
     #[test]
