@@ -120,11 +120,16 @@ require_cmd gh
 SCRIPT_DIR_CHECK="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR_CHECK}/.." && pwd)"
 STOP_FILE="${REPO_ROOT}/tmp/.stop"
+STOP_FILE_PID="${STOP_FILE}.$$"
 
 check_stop_file() {
+    if [[ -f "$STOP_FILE_PID" ]]; then
+        echo "PID stop file detected ($STOP_FILE_PID). Exiting gracefully."
+        rm -f "$STOP_FILE_PID"
+        exit 0
+    fi
     if [[ -f "$STOP_FILE" ]]; then
         echo "Stop file detected ($STOP_FILE). Exiting gracefully."
-        rm -f "$STOP_FILE"
         exit 0
     fi
 }
@@ -175,11 +180,11 @@ run_history_update() {
     branch_name="update-history-${timestamp}"
     prompt="$(build_history_prompt "$branch_name")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" codex --full-auto "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" codex --full-auto "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "No fixable PR found. Running roast history update on: $branch_name"
@@ -325,11 +330,11 @@ run_for_pr() {
 
     prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url" "$ci_summary")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" codex --full-auto "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" codex --full-auto "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "Target PR #$pr_number [$reason] $head_ref"

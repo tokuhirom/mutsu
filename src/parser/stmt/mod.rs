@@ -710,6 +710,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_is_deeply_unicode_ascii_minus_complex_args() {
+        let src = "use Test;\nis-deeply −<42+2i>, -<42+2i>, 'prefix, Complex';";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        if let Stmt::Call { name, args } = &stmts[1] {
+            assert_eq!(name, "is-deeply");
+            assert!(args.len() >= 2);
+            assert!(matches!(
+                args[0],
+                CallArg::Positional(Expr::Unary {
+                    op: crate::token_kind::TokenKind::Minus,
+                    ..
+                })
+            ));
+            assert!(matches!(
+                args[1],
+                CallArg::Positional(Expr::Unary {
+                    op: crate::token_kind::TokenKind::Minus,
+                    ..
+                })
+            ));
+        } else {
+            panic!("Expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_is_deeply_unicode_ascii_minus_complex_args_in_block() {
+        let src = "use Test;\n{ is-deeply −<42+2i>, -<42+2i>, 'prefix, Complex'; }";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(stmts[1], Stmt::Block(_)));
+    }
+
+    #[test]
     fn parse_my_var_decl() {
         let (rest, stmts) = program("my $x = '0';").unwrap();
         assert_eq!(rest, "");
@@ -930,6 +967,15 @@ mod tests {
             &stmts[0],
             Stmt::Expr(Expr::Call { name, .. }) if name == "sink"
         ));
+    }
+
+    #[test]
+    fn parse_my_class_expr_in_parens() {
+        let (rest, stmts) =
+            program("(my class :: does Real { method Num { 42e0 } }.new.Bridge);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Expr(_)));
     }
 
     #[test]
@@ -1463,6 +1509,36 @@ mod tests {
         simple::register_module_exports("Test");
         let err = simple::known_call_stmt("ok :foo()").unwrap_err();
         assert!(err.message().contains("named argument value"));
+    }
+
+    #[test]
+    fn known_call_stmt_parses_unicode_and_ascii_minus_angle_complex_args() {
+        simple::reset_user_subs();
+        simple::register_module_exports("Test");
+        let (rest, stmt) =
+            simple::known_call_stmt("is-deeply −<42+2i>, -<42+2i>, 'prefix, Complex'").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Call { name, args } => {
+                assert_eq!(name, "is-deeply");
+                assert!(args.len() >= 2);
+                assert!(matches!(
+                    args[0],
+                    CallArg::Positional(Expr::Unary {
+                        op: crate::token_kind::TokenKind::Minus,
+                        ..
+                    })
+                ));
+                assert!(matches!(
+                    args[1],
+                    CallArg::Positional(Expr::Unary {
+                        op: crate::token_kind::TokenKind::Minus,
+                        ..
+                    })
+                ));
+            }
+            other => panic!("Expected Call, got {other:?}"),
+        }
     }
 
     #[test]

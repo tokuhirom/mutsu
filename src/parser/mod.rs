@@ -381,6 +381,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_program_accepts_unicode_and_ascii_minus_angle_complex_in_is_deeply() {
+        let src = "use Test;\nis-deeply −<42+2i>, -<42+2i>, 'prefix, Complex';";
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
     fn parse_program_accepts_test_call_with_bracket_metaop_assign_argument() {
         let src = r#"use Test; my $y = 5; is $y [R/]= 1, 1/5, "[R/]= works correctly (1)";"#;
         let parsed = parse_program(src);

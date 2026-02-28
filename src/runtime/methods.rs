@@ -783,6 +783,21 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let mut args = args;
+        if matches!(method, "log" | "exp" | "atan2") {
+            for arg in &mut args {
+                if !matches!(arg, Value::Instance { .. }) {
+                    continue;
+                }
+                let original = arg.clone();
+                if let Ok(coerced) = self
+                    .call_method_with_values(original.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(original.clone(), "Bridge", vec![]))
+                {
+                    *arg = coerced;
+                }
+            }
+        }
         if matches!(method, "arity" | "count")
             && args.is_empty()
             && let Some(sig_info) = extract_sig_info(&target)
@@ -1118,6 +1133,9 @@ impl Interpreter {
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || (matches!(&target, Value::Instance { .. })
+                && (target.does_check("Real") || target.does_check("Numeric")))
+            || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, "Bridge"))
             || (!is_pseudo_method
                 && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
@@ -2047,6 +2065,7 @@ impl Interpreter {
                     Value::Routine { .. } => "Sub",
                     Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                         Some(Value::Str(kind)) if kind == "Method" => "Method",
+                        Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
                         _ => "Sub",
                     },
                     Value::WeakSub(_) => "Sub",
@@ -2426,6 +2445,7 @@ impl Interpreter {
                 return Ok(match target {
                     Value::Seq(_) => target,
                     Value::Array(items, ..) => Value::Seq(items),
+                    Value::Slip(items) => Value::Seq(items),
                     Value::Instance {
                         class_name,
                         attributes,
@@ -2818,6 +2838,40 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("days".to_string(), Value::Int(days as i64));
                     return Ok(Value::make_instance("Date".to_string(), attrs));
+                }
+            }
+            "DateTime" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Date"
+                    && let Some(Value::Int(days)) = attributes.get("days")
+                {
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "epoch".to_string(),
+                        Value::Num(Self::date_days_to_epoch_with_leap_seconds(*days)),
+                    );
+                    return Ok(Value::make_instance("DateTime".to_string(), attrs));
+                }
+            }
+            "Instant" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "DateTime"
+                {
+                    let epoch = attributes
+                        .get("epoch")
+                        .and_then(to_float_value)
+                        .unwrap_or(0.0);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("value".to_string(), Value::Num(epoch));
+                    return Ok(Value::make_instance("Instant".to_string(), attrs));
                 }
             }
             "grab" => {
@@ -3502,6 +3556,63 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
+            if method == "Bool"
+                && args.is_empty()
+                && ((target.does_check("Real") || target.does_check("Numeric"))
+                    || self.has_user_method(class_name, "Bridge"))
+                && let Ok(coerced) = self
+                    .call_method_with_values(target.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
+            {
+                return Ok(Value::Bool(coerced.truthy()));
+            }
+            if method == "Bridge"
+                && args.is_empty()
+                && target.does_check("Real")
+                && !self.has_user_method(class_name, "Bridge")
+            {
+                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+                    && coerced != target
+                {
+                    return Ok(coerced);
+                }
+                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
+                    && coerced != target
+                {
+                    return Ok(coerced);
+                }
+            }
+            if method == "Bridge"
+                && args.is_empty()
+                && self.has_user_method(class_name, "Num")
+                && !self.has_user_method(class_name, "Bridge")
+                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
+                && coerced != target
+            {
+                return Ok(coerced);
+            }
+            if method == "log"
+                && args.len() == 1
+                && self.has_user_method(class_name, "Bridge")
+                && let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![])
+            {
+                let base = if let Some(arg) = args.first() {
+                    if matches!(arg, Value::Instance { class_name, .. }
+                        if self.has_user_method(class_name, "Bridge"))
+                    {
+                        self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                            .or_else(|_| {
+                                self.call_method_with_values(arg.clone(), "Bridge", vec![])
+                            })
+                            .unwrap_or_else(|_| arg.clone())
+                    } else {
+                        arg.clone()
+                    }
+                } else {
+                    Value::Nil
+                };
+                return self.call_method_with_values(bridged, "log", vec![base]);
+            }
             // User-defined methods take priority over auto-generated accessors
             if self.has_user_method(class_name, method) {
                 let (result, updated) = self.run_instance_method(
@@ -3539,8 +3650,90 @@ impl Interpreter {
             }
         }
 
+        // For user-defined numeric/real-like objects, delegate unknown methods through
+        // their coercion bridge so default Real behavior is available.
+        if matches!(target, Value::Instance { ref class_name, .. }
+            if (target.does_check("Real") || target.does_check("Numeric"))
+                || self.has_user_method(class_name, "Bridge"))
+        {
+            if matches!(method, "Bridge" | "Real")
+                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+                && coerced != target
+            {
+                return Ok(coerced);
+            }
+            if !matches!(method, "Numeric" | "Real" | "Bridge")
+                && let Ok(coerced) = self
+                    .call_method_with_values(target.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
+                && coerced != target
+                && let Ok(result) = {
+                    let mut delegated_args = Vec::with_capacity(args.len());
+                    for arg in &args {
+                        let coerced_arg = if matches!(arg, Value::Instance { class_name, .. }
+                            if self.has_user_method(class_name, "Bridge")
+                                || arg.does_check("Real")
+                                || arg.does_check("Numeric"))
+                        {
+                            self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                                .or_else(|_| {
+                                    self.call_method_with_values(arg.clone(), "Bridge", vec![])
+                                })
+                                .unwrap_or_else(|_| arg.clone())
+                        } else {
+                            arg.clone()
+                        };
+                        delegated_args.push(coerced_arg);
+                    }
+                    if delegated_args.is_empty()
+                        && let Some(result) = crate::builtins::native_method_0arg(&coerced, method)
+                    {
+                        result
+                    } else if delegated_args.len() == 1
+                        && let Some(result) = crate::builtins::native_method_1arg(
+                            &coerced,
+                            method,
+                            &delegated_args[0],
+                        )
+                    {
+                        result
+                    } else if delegated_args.len() == 2
+                        && let Some(result) = crate::builtins::native_method_2arg(
+                            &coerced,
+                            method,
+                            &delegated_args[0],
+                            &delegated_args[1],
+                        )
+                    {
+                        result
+                    } else {
+                        self.call_method_with_values(coerced, method, delegated_args)
+                    }
+                }
+            {
+                return Ok(result);
+            }
+        }
+
         // Package (type object) dispatch — private method call
         if let Value::Package(ref name) = target {
+            let normalized_method: String = method
+                .chars()
+                .map(|ch| {
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        ch
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            if name == "Instant" && normalized_method == "from_posix" {
+                let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
+                let mut attrs = HashMap::new();
+                // Match Rakudo's Instant.from-posix behavior (TAI includes leap-second offset).
+                attrs.insert("value".to_string(), Value::Num(secs + 10.0));
+                return Ok(Value::make_instance("Instant".to_string(), attrs));
+            }
             if name == "Supply" && method == "interval" {
                 let seconds = args.first().map_or(1.0, |value| match value {
                     Value::Int(i) => *i as f64,
@@ -3683,6 +3876,15 @@ impl Interpreter {
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
                 }
             }
+        }
+
+        if let Some(callable) = self.env.get(&format!("&{}", method)).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            return self.call_sub_value(callable, args, true);
         }
 
         // Fallback methods
@@ -6516,6 +6718,56 @@ impl Interpreter {
         }
     }
 
+    fn civil_to_epoch_days(year: i64, month: i64, day: i64) -> i64 {
+        let y = year - i64::from(month <= 2);
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = y - era * 400;
+        let mp = month + if month > 2 { -3 } else { 9 };
+        let doy = (153 * mp + 2) / 5 + day - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146_097 + doe - 719_468
+    }
+
+    fn leap_seconds_before_day(epoch_days: i64) -> i64 {
+        const LEAP_EFFECTIVE_DATES: &[(i64, i64, i64)] = &[
+            (1972, 7, 1),
+            (1973, 1, 1),
+            (1974, 1, 1),
+            (1975, 1, 1),
+            (1976, 1, 1),
+            (1977, 1, 1),
+            (1978, 1, 1),
+            (1979, 1, 1),
+            (1980, 1, 1),
+            (1981, 7, 1),
+            (1982, 7, 1),
+            (1983, 7, 1),
+            (1985, 7, 1),
+            (1988, 1, 1),
+            (1990, 1, 1),
+            (1991, 1, 1),
+            (1992, 7, 1),
+            (1993, 7, 1),
+            (1994, 7, 1),
+            (1996, 1, 1),
+            (1997, 7, 1),
+            (1999, 1, 1),
+            (2006, 1, 1),
+            (2009, 1, 1),
+            (2012, 7, 1),
+            (2015, 7, 1),
+            (2017, 1, 1),
+        ];
+        LEAP_EFFECTIVE_DATES
+            .iter()
+            .filter(|&&(y, m, d)| Self::civil_to_epoch_days(y, m, d) <= epoch_days)
+            .count() as i64
+    }
+
+    fn date_days_to_epoch_with_leap_seconds(days: i64) -> f64 {
+        (days * 86_400 + Self::leap_seconds_before_day(days)) as f64
+    }
+
     fn dispatch_new(&mut self, target: Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
         if let Value::ParametricRole {
             base_name,
@@ -6739,6 +6991,41 @@ impl Interpreter {
                 "Duration" => {
                     let secs = args.first().map(to_float_value).unwrap_or(Some(0.0));
                     return Ok(Value::Num(secs.unwrap_or(0.0)));
+                }
+                "Date" => {
+                    let mut year: i64 = 1970;
+                    let mut month: i64 = 1;
+                    let mut day: i64 = 1;
+                    let mut positional = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Pair(key, value) => match key.as_str() {
+                                "year" => year = to_int(value),
+                                "month" => month = to_int(value),
+                                "day" => day = to_int(value),
+                                _ => {}
+                            },
+                            other => positional.push(other),
+                        }
+                    }
+                    if let Some(v) = positional.first() {
+                        year = to_int(v);
+                    }
+                    if let Some(v) = positional.get(1) {
+                        month = to_int(v);
+                    }
+                    if let Some(v) = positional.get(2) {
+                        day = to_int(v);
+                    }
+                    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+                        return Err(RuntimeError::new("Date.new: invalid month/day"));
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "days".to_string(),
+                        Value::Int(Self::civil_to_epoch_days(year, month, day)),
+                    );
+                    return Ok(Value::make_instance("Date".to_string(), attrs));
                 }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));
@@ -7269,6 +7556,7 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
+                let mut positional_ctor_args: Vec<Value> = Vec::new();
                 for (attr_name, _is_public, default, _is_rw) in
                     self.collect_class_attributes(class_key)
                 {
@@ -7296,8 +7584,19 @@ impl Interpreter {
                                 }
                             }
                         }
-                        _ => {}
+                        _ => {
+                            positional_ctor_args.push(val.clone());
+                        }
                     }
+                }
+                if class_mro.iter().any(|name| name == "Array")
+                    && !attrs.contains_key("__array_items")
+                    && !positional_ctor_args.is_empty()
+                {
+                    attrs.insert(
+                        "__array_items".to_string(),
+                        Value::array(positional_ctor_args),
+                    );
                 }
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();

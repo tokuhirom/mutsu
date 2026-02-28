@@ -514,7 +514,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // Lower to the same unary Pipe AST used by plain `|expr`.
     if input.starts_with("|<<") || input.starts_with("|>>") {
         let (rest, _) = ws(&input[3..])?;
-        let (rest, expr) = postfix_expr(rest)?;
+        let (rest, expr) = prefix_expr(rest)?;
         return Ok((
             rest,
             Expr::Unary {
@@ -526,7 +526,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // |expr — slip/flatten prefix
     if input.starts_with('|') && !input.starts_with("||") {
         let (rest, _) = ws(&input[1..])?;
-        let (rest, expr) = postfix_expr(rest)?;
+        let (rest, expr) = prefix_expr(rest)?;
         return Ok((
             rest,
             Expr::Unary {

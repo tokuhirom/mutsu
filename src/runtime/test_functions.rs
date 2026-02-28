@@ -550,9 +550,23 @@ impl Interpreter {
         let explicit_rel_tol =
             Self::named_value(args, "rel-tol").and_then(|v| super::to_float_value(&v));
 
+        let mut coerce_float = |value: &Value| -> Option<f64> {
+            if let Some(v) = super::to_float_value(value) {
+                return Some(v);
+            }
+            if matches!(value, Value::Instance { .. }) {
+                let coerced = self
+                    .call_method_with_values(value.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+                    .ok()?;
+                return super::to_float_value(&coerced);
+            }
+            None
+        };
+
         // Raku's DWIM is-approx: when |expected| < 1e-6, use abs-tol 1e-5;
         // otherwise use rel-tol 1e-6. Explicit named args override this.
-        let expected_f = super::to_float_value(expected);
+        let expected_f = coerce_float(expected);
 
         // Helper: check if two f64 values are approximately equal
         let approx_eq = |g: f64, e: f64| -> bool {
@@ -591,13 +605,13 @@ impl Interpreter {
                 }
             }
             (_, Value::Complex(er, ei)) => {
-                if let Some(g) = super::to_float_value(got) {
+                if let Some(g) = coerce_float(got) {
                     approx_eq(g, *er) && approx_eq(0.0, *ei)
                 } else {
                     false
                 }
             }
-            _ => match (super::to_float_value(got), expected_f) {
+            _ => match (coerce_float(got), expected_f) {
                 (Some(g), Some(e)) => approx_eq(g, e),
                 _ => false,
             },
@@ -1548,23 +1562,48 @@ impl Interpreter {
 
     fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "warns-like expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.clone(),
-            _ => return Err(RuntimeError::new("warns-like expects string code")),
-        };
         let test_pattern = Self::positional_value(args, 1)
             .cloned()
             .unwrap_or(Value::Nil);
         let desc = Self::positional_string(args, 2);
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        nested.set_program_path("<warns-like>");
-        let result = nested.run(&program);
-        let warn_message = nested.warn_output.clone();
+        let warn_message = match program_val {
+            Value::Str(program) => {
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.set_program_path("<warns-like>");
+                let _ = nested.run(program);
+                nested.warn_output.clone()
+            }
+            Value::Sub(data) => {
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                self.push_caller_env();
+                let _ = self.eval_block_value(&data.body);
+                self.pop_caller_env();
+                let warn_message = self.warn_output.clone();
+                self.warn_output = saved_warn;
+                warn_message
+            }
+            Value::WeakSub(weak) => {
+                let Some(data) = weak.upgrade() else {
+                    return Err(RuntimeError::new("warns-like expects live callable"));
+                };
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                self.push_caller_env();
+                let _ = self.eval_block_value(&data.body);
+                self.pop_caller_env();
+                let warn_message = self.warn_output.clone();
+                self.warn_output = saved_warn;
+                warn_message
+            }
+            _ => {
+                return Err(RuntimeError::new(
+                    "warns-like expects string code or callable",
+                ));
+            }
+        };
         let did_warn = !warn_message.is_empty();
-        let _ = result;
         let label = if desc.is_empty() {
             "warns-like".to_string()
         } else {
