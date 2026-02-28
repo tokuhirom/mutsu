@@ -1322,6 +1322,34 @@ impl VM {
                     let exists = match (&target, &idx) {
                         (Value::Hash(map), Value::Str(key)) => map.contains_key(key),
                         (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        (
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            },
+                            Value::Str(key),
+                        ) if class_name == "Stash" => {
+                            if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
+                                symbols.contains_key(key)
+                            } else {
+                                false
+                            }
+                        }
+                        (
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            },
+                            other,
+                        ) if class_name == "Stash" => {
+                            if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
+                                symbols.contains_key(&other.to_string_value())
+                            } else {
+                                false
+                            }
+                        }
                         _ => false,
                     };
                     let result = Value::Bool(exists ^ effective_negated);
@@ -1915,6 +1943,30 @@ impl VM {
                     return Ok(());
                 }
                 // Regular hash: just do the assignment (on a temporary — won't persist)
+                self.stack.push(val);
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Stash" => {
+                let package = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                if !package.is_empty() {
+                    let key_name = if key.starts_with('$')
+                        || key.starts_with('@')
+                        || key.starts_with('%')
+                        || key.starts_with('&')
+                    {
+                        key
+                    } else {
+                        format!("${key}")
+                    };
+                    let fq = format!("{}::{}", package.trim_end_matches("::"), key_name);
+                    self.interpreter.env_mut().insert(fq, val.clone());
+                }
                 self.stack.push(val);
             }
             _ => {

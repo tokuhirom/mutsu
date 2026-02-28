@@ -242,6 +242,7 @@ impl Interpreter {
                 };
                 Ok(Value::Nil)
             }
+            "require" => self.builtin_require(&args),
             "BEGIN" => {
                 let Some(first) = args.first().cloned() else {
                     return Ok(Value::Nil);

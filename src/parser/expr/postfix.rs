@@ -1095,6 +1095,27 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
+        // Postfix symbolic lookup: expr::(key) -> expr.WHO{key}
+        if let Some(after_scope) = rest.strip_prefix("::(") {
+            let (r, _) = ws(after_scope)?;
+            let (r, key_expr) = expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let who = Expr::MethodCall {
+                target: Box::new(expr),
+                name: "WHO".to_string(),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            };
+            expr = Expr::Index {
+                target: Box::new(who),
+                index: Box::new(key_expr),
+            };
+            rest = r;
+            continue;
+        }
+
         // CallOn: expr(args) — invoke any callable expression.
         if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;

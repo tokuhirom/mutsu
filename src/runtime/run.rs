@@ -97,7 +97,7 @@ impl Interpreter {
 
     /// If the first non-Use/non-Package statement is a `unit class Foo;` (ClassDecl with empty
     /// body), merge all subsequent method/sub declarations into the class body.
-    fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
+    pub(super) fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
         // Find the index of a ClassDecl with empty body
         let class_idx = stmts
             .iter()
@@ -133,7 +133,7 @@ impl Interpreter {
         }
     }
 
-    fn preprocess_roast_directives(input: &str) -> String {
+    pub(super) fn preprocess_roast_directives(input: &str) -> String {
         let mut output = String::new();
         let mut pending_todo: Option<(String, usize)> = None; // (reason, remaining_count)
         let mut skip_lines_remaining: usize = 0;
@@ -602,6 +602,29 @@ impl Interpreter {
             && parent.is_dir()
         {
             candidates.push(parent.join(&filename));
+        }
+        if let Some(path) = &self.program_path {
+            let top_module = module.split("::").next().unwrap_or(module);
+            for ancestor in Path::new(path).ancestors() {
+                if ancestor.as_os_str().is_empty() {
+                    continue;
+                }
+                candidates.push(
+                    ancestor
+                        .join("packages")
+                        .join(top_module)
+                        .join("lib")
+                        .join(&filename),
+                );
+                candidates.push(
+                    ancestor
+                        .join("roast")
+                        .join("packages")
+                        .join(top_module)
+                        .join("lib")
+                        .join(&filename),
+                );
+            }
         }
         let mut code = None;
         for path in candidates {

@@ -378,7 +378,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
-            } else {
+            } else if parent.starts_with(|c: char| c.is_ascii_uppercase()) {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 parents.push(format!("{}{}", parent, bracket_suffix));
                 r = r2;
