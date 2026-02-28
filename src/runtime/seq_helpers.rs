@@ -1481,6 +1481,17 @@ impl Interpreter {
                 // Handle type smileys (:U, :D, :_)
                 let (base_type, smiley) = super::types::strip_type_smiley(type_name);
 
+                // Enum type object smartmatch against enum values.
+                if self.enum_types.contains_key(base_type) {
+                    let enum_match =
+                        matches!(left, Value::Enum { enum_type, .. } if enum_type == base_type);
+                    return match smiley {
+                        Some(":U") => false,
+                        Some(":D") => enum_match,
+                        _ => enum_match,
+                    };
+                }
+
                 // A Package on the LHS is a type object - check type hierarchy
                 if let Value::Package(_) = left {
                     let type_ok = self.type_matches_value(base_type, left);
@@ -1496,7 +1507,7 @@ impl Interpreter {
                 }
                 self.type_matches_value(type_name, left)
             }
-            // Enum type objects are currently represented as Str values in env.
+            // Backward-compatibility: enum type objects may still arrive as Str values.
             (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name) => {
                 matches!(left, Value::Enum { enum_type, .. } if enum_type == type_name)
             }

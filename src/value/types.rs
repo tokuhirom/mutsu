@@ -251,6 +251,17 @@ impl Value {
         if my_type == type_name {
             return true;
         }
+        // Perl6::Metamodel:: and Metamodel:: are equivalent namespaces
+        if let Some(short) = my_type.strip_prefix("Perl6::")
+            && short == type_name
+        {
+            return true;
+        }
+        if let Some(short) = type_name.strip_prefix("Perl6::")
+            && short == my_type
+        {
+            return true;
+        }
         // Check type hierarchy
         match type_name {
             "Any" => true,
