@@ -83,8 +83,35 @@ if [[ ! -f "$FILE" ]]; then
     exit 1
 fi
 
+SANDBOX_BASE="${REPO_ROOT}/.git/sandbox"
+CLONE_DIR="${SANDBOX_BASE}/${FILE}"
+
+# サンドボックスが既にあり dirty なら、途中からの続行プロンプトを追加
+RESUME_HINT=""
+if [[ -d "$CLONE_DIR" ]]; then
+    GIT_STATUS="$(git -C "$CLONE_DIR" status --short 2>/dev/null || true)"
+    GIT_LOG="$(git -C "$CLONE_DIR" log --oneline -5 2>/dev/null || true)"
+    if [[ -n "$GIT_STATUS" ]]; then
+        RESUME_HINT=$(cat <<EOF_RESUME
+
+IMPORTANT: A previous session was interrupted and left work in progress.
+The sandbox already contains uncommitted changes. Review them with
+git status and git diff, understand what was done so far, and CONTINUE
+from where it left off. Do NOT start over from scratch.
+
+Current git status:
+$GIT_STATUS
+
+Recent commits:
+$GIT_LOG
+EOF_RESUME
+)
+    fi
+fi
+
 PROMPT=$(cat <<EOF_PROMPT
 $FILE should pass. Follow the roast workflow in CLAUDE.md.
+${RESUME_HINT}
 
 Required investigation steps:
 1. Run with raku to confirm expected behavior: raku $FILE
@@ -121,9 +148,9 @@ MAX_RETRIES=3
 RETRY_DELAY=30
 
 if [[ "$AGENT" == "codex" ]]; then
-    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$FILE" codex --dangerously-bypass-approvals-and-sandbox exec "$PROMPT")
+    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" codex --dangerously-bypass-approvals-and-sandbox exec "$PROMPT")
 else
-    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$FILE" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$PROMPT")
+    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$PROMPT")
 fi
 
 echo "Selected file: $FILE"
