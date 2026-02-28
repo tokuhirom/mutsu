@@ -357,6 +357,30 @@ fn count_whatever(expr: &Expr) -> usize {
     match expr {
         e if is_whatever(e) => 1,
         Expr::Binary {
+            left,
+            op: TokenKind::AndAnd,
+            right,
+        } => {
+            if let (
+                Expr::Binary {
+                    left: ll,
+                    right: lr,
+                    ..
+                },
+                Expr::Binary {
+                    left: rl,
+                    right: rr,
+                    ..
+                },
+            ) = (left.as_ref(), right.as_ref())
+                && is_whatever(lr)
+                && is_whatever(rl)
+            {
+                return count_whatever(ll) + 1 + count_whatever(rr);
+            }
+            count_whatever(left) + count_whatever(right)
+        }
+        Expr::Binary {
             op:
                 TokenKind::DotDot
                 | TokenKind::DotDotCaret
@@ -386,6 +410,48 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             let var_name = format!("__wc_{}", counter);
             *counter += 1;
             Expr::Var(var_name)
+        }
+        Expr::Binary {
+            left,
+            op: TokenKind::AndAnd,
+            right,
+        } => {
+            if let (
+                Expr::Binary {
+                    left: ll,
+                    op: lop,
+                    right: lr,
+                },
+                Expr::Binary {
+                    left: rl,
+                    op: rop,
+                    right: rr,
+                },
+            ) = (left.as_ref(), right.as_ref())
+                && is_whatever(lr)
+                && is_whatever(rl)
+            {
+                let shared = format!("__wc_{}", counter);
+                *counter += 1;
+                return Expr::Binary {
+                    left: Box::new(Expr::Binary {
+                        left: Box::new(replace_whatever_numbered(ll, counter)),
+                        op: lop.clone(),
+                        right: Box::new(Expr::Var(shared.clone())),
+                    }),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Var(shared)),
+                        op: rop.clone(),
+                        right: Box::new(replace_whatever_numbered(rr, counter)),
+                    }),
+                };
+            }
+            Expr::Binary {
+                left: Box::new(replace_whatever_numbered(left, counter)),
+                op: TokenKind::AndAnd,
+                right: Box::new(replace_whatever_numbered(right, counter)),
+            }
         }
         // Unwrap a nested WhateverCode lambda: reuse its body with renumbered params
         Expr::Lambda { param, body } if param == "_" => {

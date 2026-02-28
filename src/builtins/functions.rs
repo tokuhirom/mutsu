@@ -554,6 +554,54 @@ fn native_function_2arg(
     }
 
     match name {
+        "roll" => {
+            let count = match arg1 {
+                Value::Int(i) if *i > 0 => Some(*i as usize),
+                Value::Int(_) => Some(0),
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Whatever => None,
+                Value::Str(s) => {
+                    let parsed = s.trim().parse::<i64>().ok()?;
+                    Some(parsed.max(0) as usize)
+                }
+                _ => return None,
+            };
+            let items = crate::runtime::utils::value_to_list(arg2);
+            if count.is_none() {
+                if items.is_empty() {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let generated = 1024usize;
+                let mut out = Vec::with_capacity(generated);
+                for _ in 0..generated {
+                    let mut idx = (builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    out.push(items[idx].clone());
+                }
+                return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList {
+                        body: vec![],
+                        env: std::collections::HashMap::new(),
+                        cache: std::sync::Mutex::new(Some(out)),
+                    },
+                ))));
+            }
+            let count = count.unwrap_or(0);
+            if items.is_empty() || count == 0 {
+                return Some(Ok(Value::array(Vec::new())));
+            }
+            let mut result = Vec::with_capacity(count);
+            for _ in 0..count {
+                let mut idx = (builtin_rand() * items.len() as f64) as usize;
+                if idx >= items.len() {
+                    idx = items.len() - 1;
+                }
+                result.push(items[idx].clone());
+            }
+            Some(Ok(Value::array(result)))
+        }
         "atan2" => {
             // atan2(y, x)
             if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {

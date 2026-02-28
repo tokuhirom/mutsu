@@ -236,6 +236,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_typed_hash_literal_with_non_string_keys() {
+        let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Hash(pairs) => {
+                assert_eq!(pairs.len(), 3);
+                assert_eq!(pairs[0].0, "foo");
+                assert_eq!(pairs[1].0, "True");
+                assert_eq!(pairs[2].0, "42");
+            }
+            _ => panic!("expected hash literal"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");

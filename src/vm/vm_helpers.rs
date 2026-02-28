@@ -732,7 +732,13 @@ impl VM {
             );
         let bypass_gist_fastpath =
             method == "gist" && args.is_empty() && collection_contains_instance(target);
-        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath || bypass_gist_fastpath
+        let bypass_pickroll_type_fastpath = matches!(method, "pick" | "roll")
+            && args.len() <= 1
+            && matches!(target, Value::Package(_) | Value::Str(_));
+        if bypass_supply_extrema_fastpath
+            || bypass_supplier_supply_fastpath
+            || bypass_gist_fastpath
+            || bypass_pickroll_type_fastpath
         {
             return None;
         }

@@ -56,6 +56,7 @@ impl Interpreter {
             "throws-like" => self.test_fn_throws_like(args).map(Some),
             "fails-like" => self.test_fn_fails_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
+            "run" | "Test::Util::run" => self.test_fn_run(args).map(Some),
             "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),
@@ -423,7 +424,7 @@ impl Interpreter {
                 } else {
                     // Convert Seq to List for comparison (per Raku spec:
                     // Seq:D arguments to is-deeply get converted to Lists).
-                    Self::seq_to_list(left) == Self::seq_to_list(right)
+                    self.seq_to_list(left) == self.seq_to_list(right)
                 }
             }
             _ => false,
@@ -474,11 +475,14 @@ impl Interpreter {
     }
 
     /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
-    fn seq_to_list(v: &Value) -> Value {
-        if let Value::Seq(items) = v {
-            Value::Array(items.clone(), false)
-        } else {
-            v.clone()
+    fn seq_to_list(&mut self, v: &Value) -> Value {
+        match v {
+            Value::Seq(items) => Value::Array(items.clone(), false),
+            Value::LazyList(list) => match self.force_lazy_list(list) {
+                Ok(items) => Value::Array(std::sync::Arc::new(items), false),
+                Err(_) => v.clone(),
+            },
+            _ => v.clone(),
         }
     }
 
@@ -1538,6 +1542,22 @@ impl Interpreter {
         hash.insert("err".to_string(), Value::Str(err));
         hash.insert("status".to_string(), Value::Int(status));
         Ok(Value::Hash(std::sync::Arc::new(hash)))
+    }
+
+    fn test_fn_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let got = self.test_fn_get_out(args)?;
+        let Value::Hash(map) = got else {
+            return Ok(Value::Str(String::new()));
+        };
+        if let Some(Value::Str(err)) = map.get("err")
+            && !err.is_empty()
+        {
+            self.emit_output(&format!("# error: {}\n", err.trim_end()));
+        }
+        if let Some(Value::Str(out)) = map.get("out") {
+            return Ok(Value::Str(out.clone()));
+        }
+        Ok(Value::Str(String::new()))
     }
 
     fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

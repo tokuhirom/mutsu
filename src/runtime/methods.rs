@@ -1100,6 +1100,192 @@ impl Interpreter {
             }
         }
 
+        // Enum type-object dispatch for Bool and user enums (e.g. `Order.roll`).
+        let enum_type_name = match &target {
+            Value::Package(type_name) => Some(type_name),
+            Value::Str(type_name) if self.enum_types.contains_key(type_name) => Some(type_name),
+            Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
+                Value::Enum { enum_type, .. } if self.enum_types.contains_key(enum_type) => {
+                    Some(enum_type)
+                }
+                _ => None,
+            }),
+            _ => None,
+        };
+        if let Some(type_name) = enum_type_name
+            && matches!(method, "pick" | "roll")
+            && args.len() <= 1
+        {
+            let pool: Option<Vec<Value>> = if type_name == "Bool" {
+                Some(vec![Value::Bool(false), Value::Bool(true)])
+            } else {
+                self.enum_types.get(type_name).map(|variants| {
+                    variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, value))| Value::Enum {
+                            enum_type: type_name.clone(),
+                            key: key.clone(),
+                            value: *value,
+                            index,
+                        })
+                        .collect()
+                })
+            };
+            if let Some(pool) = pool {
+                if pool.is_empty() {
+                    return Ok(Value::Nil);
+                }
+                if args.is_empty() {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    return Ok(pool[idx].clone());
+                }
+                let count = match &args[0] {
+                    Value::Int(i) if *i > 0 => Some(*i as usize),
+                    Value::Int(_) => Some(0),
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                    Value::Whatever => None,
+                    Value::Str(s) => s.trim().parse::<i64>().ok().map(|n| n.max(0) as usize),
+                    _ => None,
+                };
+                let Some(count) = count else {
+                    if method == "pick" {
+                        let mut items = pool.clone();
+                        let len = items.len();
+                        for i in (1..len).rev() {
+                            let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64)
+                                as usize
+                                % (i + 1);
+                            items.swap(i, j);
+                        }
+                        return Ok(Value::array(items));
+                    }
+                    let generated = 1024usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
+                        let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64)
+                            as usize
+                            % pool.len();
+                        out.push(pool[idx].clone());
+                    }
+                    return Ok(Value::LazyList(std::sync::Arc::new(
+                        crate::value::LazyList {
+                            body: vec![],
+                            env: HashMap::new(),
+                            cache: std::sync::Mutex::new(Some(out)),
+                        },
+                    )));
+                };
+                if method == "pick" {
+                    if count == 0 {
+                        return Ok(Value::array(Vec::new()));
+                    }
+                    let mut items = pool.clone();
+                    let mut out = Vec::with_capacity(count.min(items.len()));
+                    for _ in 0..count.min(items.len()) {
+                        let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                            as usize
+                            % items.len();
+                        out.push(items.swap_remove(idx));
+                    }
+                    return Ok(Value::array(out));
+                }
+                if count == 0 {
+                    return Ok(Value::array(Vec::new()));
+                }
+                if count == 1 {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    return Ok(pool[idx].clone());
+                }
+                let mut out = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    out.push(pool[idx].clone());
+                }
+                return Ok(Value::array(out));
+            }
+        }
+
+        // String pick/roll (character-wise), used when VM bypasses native fast path.
+        if let Value::Str(s) = &target
+            && matches!(method, "pick" | "roll")
+            && args.len() <= 1
+        {
+            let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+            if chars.is_empty() {
+                return Ok(if args.is_empty() {
+                    Value::Nil
+                } else {
+                    Value::array(Vec::new())
+                });
+            }
+            if args.is_empty() {
+                let idx = (crate::builtins::rng::builtin_rand() * chars.len() as f64) as usize
+                    % chars.len();
+                return Ok(chars[idx].clone());
+            }
+            let count = match &args[0] {
+                Value::Int(i) if *i > 0 => Some(*i as usize),
+                Value::Int(_) => Some(0),
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Whatever => None,
+                Value::Str(n) => n.trim().parse::<i64>().ok().map(|v| v.max(0) as usize),
+                _ => None,
+            };
+            let Some(count) = count else {
+                if method == "pick" {
+                    let mut items = chars.clone();
+                    let len = items.len();
+                    for i in (1..len).rev() {
+                        let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize
+                            % (i + 1);
+                        items.swap(i, j);
+                    }
+                    return Ok(Value::array(items));
+                }
+                let generated = 1024usize;
+                let mut out = Vec::with_capacity(generated);
+                for _ in 0..generated {
+                    let idx = (crate::builtins::rng::builtin_rand() * chars.len() as f64) as usize
+                        % chars.len();
+                    out.push(chars[idx].clone());
+                }
+                return Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList {
+                        body: vec![],
+                        env: HashMap::new(),
+                        cache: std::sync::Mutex::new(Some(out)),
+                    },
+                )));
+            };
+            if method == "pick" {
+                if count == 0 {
+                    return Ok(Value::array(Vec::new()));
+                }
+                let mut items = chars.clone();
+                let mut out = Vec::with_capacity(count.min(items.len()));
+                for _ in 0..count.min(items.len()) {
+                    let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize
+                        % items.len();
+                    out.push(items.swap_remove(idx));
+                }
+                return Ok(Value::array(out));
+            }
+            if count == 0 {
+                return Ok(Value::array(Vec::new()));
+            }
+            let mut out = Vec::with_capacity(count);
+            for _ in 0..count {
+                let idx = (crate::builtins::rng::builtin_rand() * chars.len() as f64) as usize
+                    % chars.len();
+                out.push(chars[idx].clone());
+            }
+            return Ok(Value::array(out));
+        }
+
         // Skip native fast path for pseudo-methods when called with quoted syntax
         let skip_pseudo = self
             .skip_pseudo_method_native

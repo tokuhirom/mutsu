@@ -1377,9 +1377,9 @@ fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
 
 fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {
     match expr {
-        Expr::Literal(Value::Str(s)) => Ok(s),
-        Expr::Literal(Value::Int(n)) => Ok(n.to_string()),
-        Expr::Literal(Value::BigInt(n)) => Ok(n.to_string()),
+        // Hash storage currently uses string keys; accept literal keys broadly and
+        // normalize using Raku stringification semantics.
+        Expr::Literal(v) => Ok(v.to_string_value()),
         Expr::BareWord(name) => Ok(name),
         _ => Err(PError::expected("hash key")),
     }

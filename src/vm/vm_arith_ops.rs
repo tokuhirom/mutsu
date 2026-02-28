@@ -2,6 +2,34 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
+        if !data.params.is_empty()
+            || !data.param_defs.is_empty()
+            || !data.assumed_positional.is_empty()
+            || !data.assumed_named.is_empty()
+            || data.body.len() != 1
+        {
+            return false;
+        }
+        match &data.body[0] {
+            crate::ast::Stmt::Expr(expr) => matches!(
+                expr,
+                crate::ast::Expr::Call { .. }
+                    | crate::ast::Expr::MethodCall { .. }
+                    | crate::ast::Expr::DynamicMethodCall { .. }
+                    | crate::ast::Expr::HyperMethodCall { .. }
+                    | crate::ast::Expr::HyperMethodCallDynamic { .. }
+                    | crate::ast::Expr::CallOn { .. }
+                    | crate::ast::Expr::Block(_)
+                    | crate::ast::Expr::DoBlock { .. }
+                    | crate::ast::Expr::AnonSub { .. }
+                    | crate::ast::Expr::AnonSubParams { .. }
+                    | crate::ast::Expr::Lambda { .. }
+            ),
+            _ => false,
+        }
+    }
+
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -316,7 +344,7 @@ impl VM {
         self.stack.push(Value::Str(s.repeat(n)));
     }
 
-    pub(super) fn exec_list_repeat_op(&mut self) {
+    pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let n = match right {
@@ -330,10 +358,21 @@ impl VM {
                 items.extend(slip_items.iter().cloned());
             }
             self.stack.push(Value::Seq(Arc::new(items)));
-        } else {
-            let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
-            self.stack.push(Value::Seq(Arc::new(items)));
+            return Ok(());
         }
+        let thunk = match &left {
+            Value::Sub(data) => Some(data.clone()),
+            Value::WeakSub(weak) => weak.upgrade(),
+            _ => None,
+        };
+        if let Some(data) = thunk.filter(|data| Self::is_xx_reeval_thunk(data.as_ref())) {
+            let items = self.interpreter.eval_xx_repeat_thunk(data.as_ref(), n)?;
+            self.stack.push(Value::Seq(Arc::new(items)));
+            return Ok(());
+        }
+        let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
+        self.stack.push(Value::Seq(Arc::new(items)));
+        Ok(())
     }
 
     pub(super) fn exec_function_compose_op(&mut self) {
