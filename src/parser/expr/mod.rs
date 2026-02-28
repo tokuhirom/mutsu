@@ -1264,6 +1264,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_zip_meta_with_parenthesized_set_intersection() {
+        let (rest, expr) = expression("1..3 Z(&) 2..4").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "Z");
+                assert_eq!(op, "(&)");
+            }
+            _ => panic!("expected zip meta op"),
+        }
+    }
+
+    #[test]
+    fn parse_zip_meta_with_unicode_set_intersection() {
+        let (rest, expr) = expression("1..3 Z∩ 2..4").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "Z");
+                assert_eq!(op, "∩");
+            }
+            _ => panic!("expected zip meta op"),
+        }
+    }
+
+    #[test]
     fn parse_unicode_set_union_infix() {
         let (rest, expr) = expression("1 ∪ 2").unwrap();
         assert_eq!(rest, "");
