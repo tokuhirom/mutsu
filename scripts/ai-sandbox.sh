@@ -85,12 +85,16 @@ if [[ ! -d "$CLONE_DIR" ]]; then
   fi
 
   git submodule update --init --recursive --depth 1
+
+  # 共有 target からビルドキャッシュをコピー（存在すれば）
+  # コピー後は独立して動くので他の sandbox とのビルド競合が起きない
+  if [[ -d "$SHARED_TARGET" ]]; then
+    echo "Copying shared build cache into sandbox..."
+    cp -a "$SHARED_TARGET/." "${CLONE_DIR}/target/"
+  fi
+
   cd "$REPO_ROOT"
 fi
-
-# 共有 target ディレクトリを作成（cargo ビルドキャッシュ共有用）
-mkdir -p "$SHARED_TARGET"
-mkdir -p "${CLONE_DIR}/target"
 
 case "$TOOL" in
   claude|codex|bash) CMD_ARGS=("$TOOL" "${EXTRA_ARGS[@]}") ;;
@@ -130,10 +134,8 @@ BWRAP_ARGS+=(
   --bind "${HOME}/.claude.json" "${HOME}/.claude.json"
   --bind "${HOME}/.codex" "${HOME}/.codex"
   --ro-bind "${HOME}/.ssh" "${HOME}/.ssh"
-  # クローンディレクトリだけ書き込み可能
+  # クローンディレクトリだけ書き込み可能（target/ も含む）
   --bind "${CLONE_DIR}" "${CLONE_DIR}"
-  # cargo ビルドキャッシュを全サンドボックスで共有
-  --bind "${SHARED_TARGET}" "${CLONE_DIR}/target"
 
   --share-net
   --unshare-pid
