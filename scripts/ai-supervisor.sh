@@ -243,11 +243,11 @@ run_for_pr() {
 
     prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" codex --full-auto "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" codex --full-auto "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$head_ref" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "Target PR #$pr_number [$reason] $head_ref"
@@ -314,6 +314,9 @@ fi
 while true; do
     if [[ -z "$CANDIDATES" ]]; then
         run_history_update
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            exit 0
+        fi
         echo "No open PRs with conflicts or CI failures were found. Sleeping ${POLL_INTERVAL_SECONDS}s..."
         sleep "$POLL_INTERVAL_SECONDS"
         CANDIDATES="$(collect_candidates_tsv)"
@@ -323,5 +326,8 @@ while true; do
     FIRST="$(printf '%s\n' "$CANDIDATES" | head -n 1)"
     IFS=$'\t' read -r number reason head_ref _title url <<<"$FIRST"
     run_for_pr "$number" "$reason" "$head_ref" "$url"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        exit 0
+    fi
     CANDIDATES="$(collect_candidates_tsv)"
 done
