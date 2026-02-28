@@ -7,6 +7,7 @@ pub(super) struct ForLoopSpec {
     pub(super) label: Option<String>,
     pub(super) arity: u32,
     pub(super) collect: bool,
+    pub(super) threaded: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -109,6 +110,35 @@ impl VM {
         self.sync_locals_from_env(code);
         let body_start = *ip + 1;
         let loop_end = spec.body_end as usize;
+
+        if spec.threaded {
+            // race for / hyper for: run the loop body in a spawned thread
+            // so that $*THREAD.id returns a different value.
+            let result = std::thread::scope(|s| {
+                s.spawn(|| {
+                    self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns)
+                })
+                .join()
+                .unwrap_or_else(|_| Err(RuntimeError::new("thread panicked in race/hyper for")))
+            });
+            *ip = loop_end;
+            return result;
+        }
+
+        self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns)?;
+        *ip = loop_end;
+        Ok(())
+    }
+
+    fn exec_for_loop_body(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        items: &[Value],
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx
             .map(|idx| match &code.constants[idx as usize] {
@@ -123,7 +153,7 @@ impl VM {
                 .map(|chunk| Value::array(chunk.to_vec()))
                 .collect()
         } else {
-            items
+            items.to_vec()
         };
         let stack_base = if spec.collect {
             Some(self.stack.len())
@@ -210,7 +240,6 @@ impl VM {
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
-        *ip = loop_end;
         Ok(())
     }
 

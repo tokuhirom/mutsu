@@ -876,6 +876,7 @@ impl Compiler {
             label: label.clone(),
             arity,
             collect: true,
+            threaded: false,
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);

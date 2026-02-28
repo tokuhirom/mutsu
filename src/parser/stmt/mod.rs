@@ -567,6 +567,8 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::unless_stmt,
     control::with_stmt,
     control::labeled_loop_stmt,
+    control::race_for_stmt,
+    control::hyper_for_stmt,
     control::for_stmt,
     control::while_stmt,
     control::until_stmt,

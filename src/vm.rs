@@ -299,6 +299,12 @@ impl VM {
                     *ip += 1;
                     return Ok(());
                 }
+                // $*THREAD: dynamically create a Thread instance with current thread ID
+                if name == "*THREAD" || name == "$*THREAD" {
+                    self.stack.push(Self::make_thread_instance());
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
                     if name.starts_with('^') {
                         Value::Bool(true)
@@ -1204,6 +1210,7 @@ impl VM {
                 label,
                 arity,
                 collect,
+                threaded,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -1212,6 +1219,7 @@ impl VM {
                     label: label.clone(),
                     arity: *arity,
                     collect: *collect,
+                    threaded: *threaded,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }
