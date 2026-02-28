@@ -51,6 +51,8 @@ thread_local! {
     /// Infix associativity traits to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_ASSOC_PRESEED: RefCell<HashMap<String, String>> =
         RefCell::new(HashMap::new());
+    /// Imported function names to pre-register after scope reset (for EVAL).
+    static EVAL_IMPORTED_FUNCTION_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -294,6 +296,17 @@ pub(in crate::parser) fn reset_user_subs() {
             register_user_infix_assoc(name, assoc);
         }
     });
+    EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
+        let names = preseed.borrow();
+        SCOPES.with(|s| {
+            let mut scopes = s.borrow_mut();
+            if let Some(scope) = scopes.last_mut() {
+                for name in names.iter() {
+                    scope.imported_functions.insert(name.clone());
+                }
+            }
+        });
+    });
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).
@@ -306,6 +319,12 @@ pub(in crate::parser) fn set_eval_operator_preseed(names: Vec<String>) {
 pub(in crate::parser) fn set_eval_operator_assoc_preseed(assoc: HashMap<String, String>) {
     EVAL_OPERATOR_ASSOC_PRESEED.with(|preseed| {
         *preseed.borrow_mut() = assoc;
+    });
+}
+
+pub(in crate::parser) fn set_eval_imported_function_preseed(names: Vec<String>) {
+    EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
     });
 }
 
@@ -2155,7 +2174,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         })?
     };
     let mut args = args;
-    if known_call_is_expression_prefix(input, rest) {
+    // Test assertion calls (e.g. `is [1], [1], 'desc'`) can start with bracketed
+    // arguments and be mistaken for an expression prefix. Keep them as calls.
+    if !is_test_assertion_callable(&name) && known_call_is_expression_prefix(input, rest) {
         return Err(PError::expected("known function call"));
     }
     if is_test_assertion_callable(&name) {

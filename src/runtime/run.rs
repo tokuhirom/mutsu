@@ -665,6 +665,18 @@ mod tests {
         assert!(!out.contains("ok True, 'ok';"));
     }
 
+    #[test]
+    fn eval_q_bracket_statement_list_runs_declaration_then_assertion() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run(
+            "use Test; plan 1; EVAL q[[my $sub = sub () { 42 }; is [$sub()], [42], 'q-bracket eval';]];",
+        );
+        assert!(result.is_ok());
+        assert!(interp.output.contains("1..1"));
+        assert!(interp.output.contains("ok 1 - q-bracket eval"));
+    }
+
     // END phasers must run even after die() or exit().
     // Spec: raku-doc/doc/Language/phasers.rakudoc (END runs "at runtime, ALAP, only ever runs once")
     // Roast: roast/integration/error-reporting.t line 99 ("END phasers are run after die()")
