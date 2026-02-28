@@ -49,6 +49,10 @@ pub(super) fn set_eval_operator_assoc_preseed(assoc: std::collections::HashMap<S
     simple::set_eval_operator_assoc_preseed(assoc);
 }
 
+pub(super) fn set_eval_imported_function_preseed(names: Vec<String>) {
+    simple::set_eval_imported_function_preseed(names);
+}
+
 pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
     STMT_MEMO.stats()
 }

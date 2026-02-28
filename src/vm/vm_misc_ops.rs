@@ -1092,17 +1092,38 @@ impl VM {
         let body_start = *ip + 1;
         let end = body_end as usize;
         let label = label.clone();
+        let stack_base = self.stack.len();
         loop {
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => break,
-                Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue,
+                Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                    self.stack.truncate(stack_base);
+                    continue;
+                }
                 Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
-                    self.stack.push(Value::array(vec![]));
+                    self.stack.truncate(stack_base);
+                    self.stack.push(Value::Slip(std::sync::Arc::new(vec![])));
+                    break;
+                }
+                Err(e)
+                    if e.is_leave
+                        && e.leave_callable_id.is_none()
+                        && e.leave_routine.is_none()
+                        && Self::label_matches(&e.label, &label) =>
+                {
+                    self.stack.truncate(stack_base);
+                    self.stack.push(
+                        e.return_value
+                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
+                    );
                     break;
                 }
                 Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
-                    self.stack
-                        .push(e.return_value.unwrap_or(Value::array(vec![])));
+                    self.stack.truncate(stack_base);
+                    self.stack.push(
+                        e.return_value
+                            .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
+                    );
                     break;
                 }
                 Err(e) => return Err(e),

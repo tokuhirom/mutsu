@@ -146,6 +146,7 @@ impl Interpreter {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
@@ -953,6 +954,93 @@ impl Interpreter {
             return_value: Some(value),
             ..RuntimeError::new("")
         })
+    }
+
+    fn leave_return_value(args: &[Value]) -> Option<Value> {
+        match args {
+            [] => None,
+            [single] => Some(single.clone()),
+            _ => Some(Value::Slip(std::sync::Arc::new(args.to_vec()))),
+        }
+    }
+
+    pub(crate) fn builtin_leave(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_leave_with_target(None, args)
+    }
+
+    pub(crate) fn builtin_leave_method(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.builtin_leave_with_target(Some(target), args)
+    }
+
+    fn builtin_leave_with_target(
+        &mut self,
+        target: Option<Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut sig = RuntimeError::last_signal();
+        sig.is_leave = true;
+        sig.return_value = Self::leave_return_value(args);
+
+        let current_callable_id = self.env.get("__mutsu_callable_id").and_then(|v| match v {
+            Value::Int(i) if *i > 0 => Some(*i as u64),
+            _ => None,
+        });
+        let current_block_id = self.env.get("&?BLOCK").and_then(|v| match v {
+            Value::WeakSub(weak) => weak.upgrade().map(|sub| sub.id),
+            Value::Sub(sub) => Some(sub.id),
+            _ => None,
+        });
+
+        match target {
+            None => {}
+            Some(Value::WeakSub(weak)) => {
+                if let Some(sub) = weak.upgrade() {
+                    if Some(sub.id) != current_callable_id && Some(sub.id) != current_block_id {
+                        sig.leave_callable_id = Some(sub.id);
+                    }
+                } else {
+                    return Err(RuntimeError::new("Callable has been freed"));
+                }
+            }
+            Some(Value::Sub(data)) => {
+                if Some(data.id) != current_callable_id && Some(data.id) != current_block_id {
+                    sig.leave_callable_id = Some(data.id);
+                }
+            }
+            Some(Value::Routine { package, name, .. }) => {
+                sig.leave_routine = Some(format!("{package}::{name}"));
+            }
+            Some(Value::Nil) => {}
+            Some(Value::Package(name)) if name == "Any" => {}
+            Some(Value::Package(name)) if name == "Sub" => {
+                let caller_callable_id = self
+                    .caller_env_stack
+                    .last()
+                    .and_then(|env| env.get("__mutsu_callable_id"))
+                    .and_then(|v| match v {
+                        Value::Int(i) if *i > 0 => Some(*i as u64),
+                        _ => None,
+                    });
+                if let Some(id) = caller_callable_id {
+                    sig.leave_callable_id = Some(id);
+                } else if let Some((package, routine)) = self.routine_stack_top() {
+                    sig.leave_routine = Some(format!("{package}::{routine}"));
+                }
+            }
+            Some(Value::Package(name)) if name == "Block" => {}
+            Some(Value::Str(label)) => {
+                sig.label = Some(label);
+            }
+            Some(other) => {
+                sig.label = Some(other.to_string_value());
+            }
+        }
+
+        Err(sig)
     }
 
     fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

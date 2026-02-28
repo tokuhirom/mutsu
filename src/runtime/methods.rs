@@ -1637,6 +1637,10 @@ impl Interpreter {
             }
         }
 
+        if method == "leave" {
+            return self.builtin_leave_method(target, &args);
+        }
+
         // Primary method dispatch by name
         match method {
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
@@ -4050,7 +4054,12 @@ impl Interpreter {
                 let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
             }
 
-            let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
+            let captures = if method == "parse" || method == "parsefile" {
+                self.regex_match_with_captures_full_from_start(&pattern, &text)
+            } else {
+                self.regex_match_with_captures(&pattern, &text)
+            };
+            let Some(captures) = captures else {
                 self.env.insert("/".to_string(), Value::Nil);
                 return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             };

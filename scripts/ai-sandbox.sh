@@ -55,7 +55,19 @@ fi
 # クローンがなければ作成
 if [[ ! -d "$CLONE_DIR" ]]; then
   mkdir -p "$SANDBOX_BASE"
-
+  # origin の最新を取得
+  DEFAULT_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "main")"
+  echo "Fetching origin/${DEFAULT_BRANCH}..."
+  if git -C "$REPO_ROOT" fetch origin "$DEFAULT_BRANCH" 2>/dev/null; then
+    # update-ref only when the working tree is clean to avoid confusing git status
+    if git -C "$REPO_ROOT" diff --quiet && git -C "$REPO_ROOT" diff --cached --quiet; then
+      git -C "$REPO_ROOT" update-ref "refs/heads/${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || true
+    else
+      echo "Warning: working tree has uncommitted changes, skipping update-ref" >&2
+    fi
+  else
+    echo "Warning: could not fetch from origin (offline?), using local state" >&2
+  fi
   # 親リポジトリの GitHub remote URL を取得
   UPSTREAM_URL="$(git -C "$REPO_ROOT" remote get-url origin)"
 
@@ -122,6 +134,7 @@ BWRAP_ARGS+=(
   --chdir "${CLONE_DIR}"
   --setenv HOME "${HOME}"
   --setenv GH_TOKEN "${GH_TOKEN:-}"
+  --unsetenv CLAUDECODE
 )
 
 # tmux のウィンドウ名をブランチ名に設定 (--set-window-title 指定時のみ)

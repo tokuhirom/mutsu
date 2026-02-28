@@ -118,6 +118,16 @@ fi
 
 require_cmd gh
 SCRIPT_DIR_CHECK="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR_CHECK}/.." && pwd)"
+STOP_FILE="${REPO_ROOT}/tmp/.stop"
+
+check_stop_file() {
+    if [[ -f "$STOP_FILE" ]]; then
+        echo "Stop file detected ($STOP_FILE). Exiting gracefully."
+        rm -f "$STOP_FILE"
+        exit 0
+    fi
+}
 if [[ ! -x "${SCRIPT_DIR_CHECK}/ai-sandbox.sh" ]]; then
     echo "Error: ${SCRIPT_DIR_CHECK}/ai-sandbox.sh not found or not executable" >&2
     exit 1
@@ -261,8 +271,9 @@ EOF
 This PR has merge conflicts with main. Steps:
 1. Rebase the branch onto origin/main and resolve conflicts
 2. Run make test and make roast to verify no regressions
-3. Force-push the rebased branch
-4. Verify CI passes
+3. ONLY if both make test and make roast pass (exit 0), force-push the rebased branch
+4. If make roast fails, do NOT push. Investigate and fix the failures first.
+5. Verify CI passes after pushing
 EOF
     elif [[ "$reason" == "ci-fail" ]]; then
         cat <<'EOF'
@@ -272,7 +283,8 @@ This PR has CI failures. Steps:
 2. Build and reproduce the failure locally
 3. Fix the code (no test-specific hacks or hardcoded results)
 4. Run make test and make roast
-5. Push fixes and verify CI passes
+5. ONLY if both pass (exit 0), push fixes. Do NOT push if tests fail.
+6. Verify CI passes after pushing
 EOF
         if [[ -n "$ci_summary" ]]; then
             cat <<EOF
@@ -373,12 +385,14 @@ if [[ "$RUN_ALL" -eq 1 ]]; then
         exit 0
     fi
     while IFS=$'\t' read -r number reason head_ref _title url; do
+        check_stop_file
         run_for_pr "$number" "$reason" "$head_ref" "$url"
     done <<<"$CANDIDATES"
     exit 0
 fi
 
 while true; do
+    check_stop_file
     if [[ -z "$CANDIDATES" ]]; then
         run_history_update
         if [[ "$DRY_RUN" -eq 1 ]]; then
