@@ -55,7 +55,12 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
             make_rat(an * bd + bn * ad, ad * bd)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
+                    Some(sum) => Value::Int(sum),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) + num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
@@ -69,7 +74,12 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
             Value::Num(a + b)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
+                    Some(sum) => Value::Int(sum),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) + num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
@@ -96,7 +106,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             make_rat(an * bd - bn * ad, ad * bd)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
+                    Some(diff) => Value::Int(diff),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
@@ -114,7 +129,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             Value::Num(a - b)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
+                    Some(diff) => Value::Int(diff),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),

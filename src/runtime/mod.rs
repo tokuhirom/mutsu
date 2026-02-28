@@ -53,6 +53,7 @@ mod methods_mut;
 mod methods_trans;
 mod native_io;
 mod native_methods;
+pub(crate) mod native_types;
 mod ops;
 mod regex;
 mod regex_parse;
@@ -78,6 +79,7 @@ use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 struct ClassDef {
     parents: Vec<String>,
     attributes: Vec<(String, bool, Option<Expr>, bool)>, // (name, is_public, default, is_rw)
+    attribute_types: HashMap<String, String>,            // attr_name -> type constraint
     methods: HashMap<String, Vec<MethodDef>>,            // name -> overloads
     native_methods: HashSet<String>,
     mro: Vec<String>,
@@ -307,6 +309,7 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    cunion_classes: HashSet<String>,
     hidden_classes: HashSet<String>,
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
@@ -466,6 +469,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Mu".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -477,6 +481,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Any".to_string(), "Mu".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -491,6 +496,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Promise".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -505,6 +511,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Channel".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -536,6 +543,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Supply".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -547,6 +555,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["utf8".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -558,6 +567,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["utf16".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -572,6 +582,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Supplier".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -598,6 +609,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Proc::Async".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -614,6 +626,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Proc".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -625,6 +638,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Tap".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -636,6 +650,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Scheduler".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -647,6 +662,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["ThreadPoolScheduler".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -658,6 +674,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["CurrentThreadScheduler".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -669,6 +686,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Cancellation".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -683,6 +701,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Lock".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -694,6 +713,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Lock::Async".to_string(), "Lock".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -708,6 +728,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Lock::ConditionVariable".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -768,6 +789,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Path".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -785,6 +807,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Handle".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -796,6 +819,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Backtrace".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -810,6 +834,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["IO::Pipe".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -824,6 +849,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -851,6 +877,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Distro".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -880,6 +907,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Perl".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -907,6 +935,7 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Compiler".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -921,6 +950,7 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Encoding::Builtin".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -932,6 +962,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Encoding::Encoder".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -943,6 +974,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["decode-chars"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Encoding::Decoder".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -954,6 +986,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["find", "register"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Encoding::Registry".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -965,6 +998,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -976,6 +1010,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Comment".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -987,6 +1022,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Para".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -998,6 +1034,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Table".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1009,6 +1046,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Item".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1020,6 +1058,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::AdHoc".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1031,6 +1070,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::TypeCheck".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1046,6 +1086,7 @@ impl Interpreter {
                     "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1062,6 +1103,7 @@ impl Interpreter {
                     "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1077,6 +1119,7 @@ impl Interpreter {
                     "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1092,6 +1135,7 @@ impl Interpreter {
                     "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1103,6 +1147,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::Numeric::Real".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1114,6 +1159,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::TypeCheck::Return".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1125,6 +1171,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::Coerce::Impossible".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
         );
@@ -1163,6 +1210,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes,
+            cunion_classes: HashSet::new(),
             hidden_classes: HashSet::new(),
             hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
@@ -2087,6 +2135,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
+            cunion_classes: self.cunion_classes.clone(),
             hidden_classes: self.hidden_classes.clone(),
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),

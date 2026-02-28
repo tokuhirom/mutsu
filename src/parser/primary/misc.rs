@@ -1196,6 +1196,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             is_hidden: false,
             hidden_parents: Vec::new(),
             does_parents: Vec::new(),
+            repr: None,
             body,
         })),
     ))

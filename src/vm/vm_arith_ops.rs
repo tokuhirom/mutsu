@@ -511,11 +511,8 @@ impl VM {
             if shift >= i64::BITS as u64 {
                 return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
             }
-            if let Some(v) = a.checked_shl(shift as u32) {
-                Value::Int(v)
-            } else {
-                Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
-            }
+            // Use BigInt for the shift to avoid i64 overflow (Raku integers are arbitrary precision)
+            Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
         }
 
         let right = self.stack.pop().unwrap();

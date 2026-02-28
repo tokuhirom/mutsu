@@ -428,6 +428,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
 }
 
 pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
+    if super::native_types::is_native_int_type(constraint) {
+        return true;
+    }
     matches!(
         constraint,
         "Int"

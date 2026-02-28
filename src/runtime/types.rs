@@ -690,6 +690,10 @@ impl Interpreter {
         if constraint == "str" && value_type == "Str" {
             return true;
         }
+        // Native integer types match Int values
+        if crate::runtime::native_types::is_native_int_type(constraint) && value_type == "Int" {
+            return true;
+        }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
         if constraint == "Numeric"
             && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat" | "Complex")

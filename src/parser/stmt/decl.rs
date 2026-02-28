@@ -1226,6 +1226,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             default,
             handles,
             is_rw,
+            type_constraint,
         },
     ))
 }

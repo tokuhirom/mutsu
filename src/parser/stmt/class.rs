@@ -302,10 +302,22 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // Parse parent classes
     let mut parents = Vec::new();
+    let mut anon_repr: Option<String> = None;
     let mut r = rest;
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent) = qualified_ident(r2)?;
+        if parent == "repr" {
+            if let Some(inner) = r2.strip_prefix('(') {
+                let end = inner.find(')').unwrap_or(inner.len());
+                let repr_val = inner[..end].trim().trim_matches('\'').trim_matches('"');
+                anon_repr = Some(repr_val.to_string());
+            }
+            let r2 = skip_balanced_parens(r2);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+            continue;
+        }
         parents.push(parent);
         let (r2, _) = ws(r2)?;
         r = r2;
@@ -318,6 +330,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         is_hidden: false,
         hidden_parents: Vec::new(),
         does_parents: Vec::new(),
+        repr: anon_repr,
         body,
     };
     // Emit the class registration followed by unregistering the name from the scope
@@ -345,6 +358,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
+    let mut is_repr: Option<String> = None;
     let mut r = rest;
     loop {
         if let Some(r2) = keyword("is", r) {
@@ -352,6 +366,18 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
             let (r2, parent) = qualified_ident(r2)?;
             if parent == "hidden" {
                 is_hidden = true;
+            } else if parent == "repr" {
+                // Extract repr value from `is repr('CUnion')` etc.
+                if let Some(inner) = r2.strip_prefix('(') {
+                    // Find the content between parens, stripping quotes
+                    let end = inner.find(')').unwrap_or(inner.len());
+                    let repr_val = inner[..end].trim().trim_matches('\'').trim_matches('"');
+                    is_repr = Some(repr_val.to_string());
+                }
+                let r2 = skip_balanced_parens(r2);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
             } else {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 parents.push(format!("{}{}", parent, bracket_suffix));
@@ -392,6 +418,20 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     }
 
     let (rest, body) = block(r)?;
+    // Extract repr from `is repr(...)` or from declarator traits
+    let repr = is_repr.or_else(|| {
+        traits.iter().find_map(|(k, v)| {
+            if k == "repr" {
+                if let Value::Str(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    });
     let class_stmt = Stmt::ClassDecl {
         name: name.clone(),
         name_expr,
@@ -399,6 +439,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         is_hidden,
         hidden_parents,
         does_parents,
+        repr,
         body,
     };
     let mut stmts = Vec::new();
@@ -734,6 +775,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_hidden: false,
                 hidden_parents: Vec::new(),
                 does_parents: Vec::new(),
+                repr: None,
                 body: Vec::new(),
             },
         ));
