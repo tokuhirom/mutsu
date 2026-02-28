@@ -2139,9 +2139,12 @@ impl Interpreter {
     pub(super) fn seq_mul_rat(val: &Value, num: i64, den: i64) -> Value {
         match val {
             Value::Int(i) => {
-                // In geometric sequences with rational ratio, always produce Rat
                 if let Some(product) = i.checked_mul(num) {
-                    make_rat(product, den)
+                    if den == 1 {
+                        Value::Int(product)
+                    } else {
+                        make_rat(product, den)
+                    }
                 } else {
                     Value::Num(*i as f64 * num as f64 / den as f64)
                 }

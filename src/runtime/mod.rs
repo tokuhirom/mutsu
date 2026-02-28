@@ -49,7 +49,14 @@ mod handle;
 mod io;
 mod metamodel;
 mod methods;
+mod methods_classhow;
+mod methods_collection;
+mod methods_collection_ops;
+mod methods_grammar;
 mod methods_mut;
+mod methods_object;
+mod methods_promise;
+mod methods_string;
 mod methods_trans;
 mod native_io;
 mod native_methods;
@@ -124,6 +131,15 @@ struct MethodDispatchFrame {
     invocant: Value,
     args: Vec<Value>,
     remaining: Vec<(String, MethodDef)>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SquishIteratorMeta {
+    pub(crate) source_items: Vec<Value>,
+    pub(crate) as_func: Option<Value>,
+    pub(crate) with_func: Option<Value>,
+    pub(crate) revert_values: HashMap<String, Value>,
+    pub(crate) revert_remove: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,6 +330,7 @@ pub struct Interpreter {
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
+    block_scope_depth: usize,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
     cunion_classes: HashSet<String>,
@@ -391,6 +408,9 @@ pub struct Interpreter {
     pub(crate) pending_local_updates: Vec<(String, Value)>,
     /// Set of variable names that are readonly (default parameter binding).
     readonly_vars: HashSet<String>,
+    /// Metadata for Seq values produced by `squish` with callbacks, used to
+    /// provide callback-aware iterator behavior.
+    pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,
     /// Metadata for custom types created by Metamodel::Primitives.create_type.
     pub(crate) custom_type_data: HashMap<u64, CustomTypeData>,
     /// Rebless mapping: instance_id -> new HOW value.
@@ -548,6 +568,7 @@ impl Interpreter {
                     "do",
                     "reverse",
                     "split",
+                    "interval",
                     "tail",
                     "delayed",
                     "min",
@@ -1251,6 +1272,7 @@ impl Interpreter {
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: 0,
             enum_types: HashMap::new(),
             classes,
             cunion_classes: HashSet::new(),
@@ -1329,6 +1351,7 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
             pending_regex_error: None,
@@ -2179,6 +2202,7 @@ impl Interpreter {
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: self.block_scope_depth,
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
             cunion_classes: self.cunion_classes.clone(),
@@ -2227,6 +2251,7 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
             pending_regex_error: None,
@@ -2309,7 +2334,14 @@ struct TestState {
     planned: Option<usize>,
     ran: usize,
     failed: usize,
-    force_todo: Vec<(usize, usize)>,
+    force_todo: Vec<TodoRange>,
+}
+
+#[derive(Debug, Clone)]
+struct TodoRange {
+    start: usize,
+    end: usize,
+    reason: String,
 }
 
 impl TestState {

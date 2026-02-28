@@ -1,7 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
-use crate::token_kind::lookup_unicode_char_by_name;
+use crate::token_kind::{TokenKind, lookup_unicode_char_by_name};
 
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
@@ -53,6 +53,34 @@ fn static_default_type(expr: &Expr) -> Option<String> {
         Expr::Literal(Value::Str(_)) => Some("Str".to_string()),
         Expr::Literal(Value::Package(name)) => Some(name.clone()),
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
+        _ => None,
+    }
+}
+
+fn negate_literal_value(value: &Value) -> Option<Value> {
+    match value {
+        Value::Int(n) => Some(Value::Int(-n)),
+        Value::BigInt(n) => Some(Value::BigInt(-n)),
+        Value::Num(n) => Some(Value::Num(-n)),
+        Value::Rat(n, d) => Some(crate::value::make_rat(-n, *d)),
+        Value::FatRat(n, d) => Some(Value::FatRat(-n, *d)),
+        Value::BigRat(n, d) => Some(crate::value::make_big_rat(-n.clone(), d.clone())),
+        Value::Complex(re, im) => Some(Value::Complex(-re, -im)),
+        _ => None,
+    }
+}
+
+fn literal_value_from_expr(expr: &Expr) -> Option<Value> {
+    match expr {
+        Expr::Literal(v) => Some(v.clone()),
+        Expr::Unary { op, expr } => {
+            let inner = literal_value_from_expr(expr)?;
+            match op {
+                TokenKind::Plus => Some(inner),
+                TokenKind::Minus => negate_literal_value(&inner),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -449,9 +477,7 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
-    if let Some(assoc) = traits.associativity.as_ref()
-        && name.starts_with("infix:<")
-    {
+    if let Some(assoc) = traits.associativity.as_ref() {
         super::simple::register_user_infix_assoc(&name, assoc);
     }
     if traits.is_test_assertion {
@@ -719,6 +745,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
                 is_rw = true;
+            } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
+                associativity = Some(trait_name.to_string());
             } else if trait_name != "assoc"
                 && trait_name != "equiv"
                 && trait_name != "tighter"
@@ -1730,19 +1758,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
-    // Handle literal value parameters: multi sub foo(0) { ... }
-    if rest.starts_with(|c: char| c.is_ascii_digit())
-        || (rest.starts_with('"') || rest.starts_with('\''))
+    // Handle literal value parameters: multi sub foo(0), foo(-١), foo(Inf), foo("x")
+    if let Ok((lit_rest, lit_expr)) = expression(rest)
+        && let Some(v) = literal_value_from_expr(&lit_expr)
+        && let Ok((after_lit, _)) = ws(lit_rest)
+        && (after_lit.starts_with(')')
+            || after_lit.starts_with(',')
+            || after_lit.starts_with(';')
+            || after_lit.starts_with(']')
+            || after_lit.starts_with("-->"))
     {
-        let (rest, lit_expr) = expression(rest)?;
-        let literal_value = match &lit_expr {
-            Expr::Literal(v) => Some(v.clone()),
-            _ => None,
-        };
         let mut p = make_param("__literal__".to_string());
         p.type_constraint = type_constraint;
-        p.literal_value = literal_value;
-        return Ok((rest, p));
+        p.literal_value = Some(v);
+        return Ok((after_lit, p));
     }
 
     // Sigilless parameter: \name

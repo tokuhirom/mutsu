@@ -435,7 +435,7 @@ impl VM {
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
                 self.sync_locals_from_env(code);
                 result
-            } else if let Some(native_result) = Self::try_native_function(name, &[]) {
+            } else if let Some(native_result) = self.try_native_function(name, &[]) {
                 native_result?
             } else {
                 let result = self.interpreter.call_function(name, Vec::new())?;
@@ -555,7 +555,7 @@ impl VM {
                     }
                 }
             }
-            (Value::Array(items, ..), Value::Range(a, b)) => {
+            (Value::Array(items, is_arr), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
                 let slice = if start >= items.len() {
@@ -564,9 +564,13 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::array(slice)
+                if is_arr {
+                    Value::array(slice)
+                } else {
+                    Value::Seq(Arc::new(slice))
+                }
             }
-            (Value::Array(items, ..), Value::RangeExcl(a, b)) => {
+            (Value::Array(items, is_arr), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
                 let slice = if start >= items.len() {
@@ -579,7 +583,11 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::array(slice)
+                if is_arr {
+                    Value::array(slice)
+                } else {
+                    Value::Seq(Arc::new(slice))
+                }
             }
             (Value::Seq(items), Value::Int(i)) => {
                 if i < 0 {
@@ -597,7 +605,7 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::array(slice)
+                Value::Seq(Arc::new(slice))
             }
             (Value::Seq(items), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
@@ -612,7 +620,7 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::array(slice)
+                Value::Seq(Arc::new(slice))
             }
             (Value::Hash(items), Value::Whatever) => {
                 Value::array(items.values().cloned().collect())
@@ -1018,6 +1026,250 @@ impl VM {
             let idx = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
+            if let Value::Hash(map) = &target {
+                if adverb_bits == 5 {
+                    return Err(crate::value::RuntimeError::new(
+                        "Unsupported combination of :exists and :v adverbs".to_string(),
+                    ));
+                }
+                match &idx {
+                    Value::Array(items, ..) => {
+                        // Multi-dimensional hash path (%h{a;b;c}:exists): if we can
+                        // traverse through nested hashes, treat this as a single exists.
+                        if items.len() > 1 {
+                            let mut cur: &Value = &target;
+                            let mut traversed_nested = false;
+                            let mut path_exists: Option<bool> = None;
+                            for (i, key) in items.iter().enumerate() {
+                                if let Value::Hash(cur_map) = cur {
+                                    let key_s = key.to_string_value();
+                                    if let Some(next) = cur_map.get(&key_s) {
+                                        if i + 1 == items.len() {
+                                            path_exists = Some(!matches!(next, Value::Nil));
+                                        } else if matches!(next, Value::Hash(_)) {
+                                            traversed_nested = true;
+                                            cur = next;
+                                        } else if traversed_nested {
+                                            path_exists = Some(false);
+                                            break;
+                                        } else {
+                                            break;
+                                        }
+                                    } else {
+                                        if traversed_nested {
+                                            path_exists = Some(false);
+                                        }
+                                        break;
+                                    }
+                                } else if traversed_nested {
+                                    path_exists = Some(false);
+                                    break;
+                                } else {
+                                    break;
+                                }
+                            }
+                            if traversed_nested {
+                                let exists = path_exists.unwrap_or(false);
+                                self.stack.push(Value::Bool(exists ^ effective_negated));
+                                return Ok(());
+                            }
+                        }
+                        let pairs: Vec<(Value, bool)> = items
+                            .iter()
+                            .map(|k| {
+                                let key = k.to_string_value();
+                                (k.clone(), map.contains_key(&key))
+                            })
+                            .collect();
+                        let result = match adverb_bits {
+                            0 => Value::array(
+                                pairs
+                                    .iter()
+                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .collect(),
+                            ),
+                            1 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    if *exists {
+                                        vals.push(key.clone());
+                                        vals.push(Value::Bool(*exists ^ effective_negated));
+                                    }
+                                }
+                                Value::array(vals)
+                            }
+                            2 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    vals.push(key.clone());
+                                    vals.push(Value::Bool(*exists ^ effective_negated));
+                                }
+                                Value::array(vals)
+                            }
+                            3 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    if *exists {
+                                        vals.push(Value::ValuePair(
+                                            Box::new(key.clone()),
+                                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                                        ));
+                                    }
+                                }
+                                Value::array(vals)
+                            }
+                            4 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    vals.push(Value::ValuePair(
+                                        Box::new(key.clone()),
+                                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                                    ));
+                                }
+                                Value::array(vals)
+                            }
+                            5 => Value::array(
+                                pairs
+                                    .iter()
+                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .collect(),
+                            ),
+                            _ => Value::Nil,
+                        };
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                    // Whatever (*) — all hash keys.
+                    Value::Whatever => {
+                        let pairs: Vec<(Value, bool)> =
+                            map.keys().map(|k| (Value::Str(k.clone()), true)).collect();
+                        let result = match adverb_bits {
+                            0 => Value::array(
+                                pairs
+                                    .iter()
+                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .collect(),
+                            ),
+                            1 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    if *exists {
+                                        vals.push(key.clone());
+                                        vals.push(Value::Bool(*exists ^ effective_negated));
+                                    }
+                                }
+                                Value::array(vals)
+                            }
+                            2 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    vals.push(key.clone());
+                                    vals.push(Value::Bool(*exists ^ effective_negated));
+                                }
+                                Value::array(vals)
+                            }
+                            3 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    if *exists {
+                                        vals.push(Value::ValuePair(
+                                            Box::new(key.clone()),
+                                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                                        ));
+                                    }
+                                }
+                                Value::array(vals)
+                            }
+                            4 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    vals.push(Value::ValuePair(
+                                        Box::new(key.clone()),
+                                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                                    ));
+                                }
+                                Value::array(vals)
+                            }
+                            5 => Value::array(
+                                pairs
+                                    .iter()
+                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .collect(),
+                            ),
+                            _ => Value::Nil,
+                        };
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                        let pairs: Vec<(Value, bool)> =
+                            map.keys().map(|k| (Value::Str(k.clone()), true)).collect();
+                        let result = match adverb_bits {
+                            0 => Value::array(
+                                pairs
+                                    .iter()
+                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .collect(),
+                            ),
+                            1 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    if *exists {
+                                        vals.push(key.clone());
+                                        vals.push(Value::Bool(*exists ^ effective_negated));
+                                    }
+                                }
+                                Value::array(vals)
+                            }
+                            2 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    vals.push(key.clone());
+                                    vals.push(Value::Bool(*exists ^ effective_negated));
+                                }
+                                Value::array(vals)
+                            }
+                            3 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    if *exists {
+                                        vals.push(Value::ValuePair(
+                                            Box::new(key.clone()),
+                                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                                        ));
+                                    }
+                                }
+                                Value::array(vals)
+                            }
+                            4 => {
+                                let mut vals = Vec::new();
+                                for (key, exists) in &pairs {
+                                    vals.push(Value::ValuePair(
+                                        Box::new(key.clone()),
+                                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                                    ));
+                                }
+                                Value::array(vals)
+                            }
+                            5 => Value::array(
+                                pairs
+                                    .iter()
+                                    .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                                    .collect(),
+                            ),
+                            _ => Value::Nil,
+                        };
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                    _ => {
+                        let exists = map.contains_key(&idx.to_string_value());
+                        let result = Value::Bool(exists ^ effective_negated);
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                }
+            }
             let idxs = match &idx {
                 Value::Int(i) => vec![*i],
                 Value::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {

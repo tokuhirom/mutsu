@@ -93,6 +93,25 @@ fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
 
 fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "combinations" => {
+            // combinations($n) where $n is Int => (^$n).combinations (powerset)
+            // combinations($iterable) => $iterable.combinations
+            let items = match arg {
+                Value::Int(n) => {
+                    if *n < 0 {
+                        return Some(Ok(Value::Seq(Vec::new().into())));
+                    }
+                    let items: Vec<Value> = (0..*n).map(Value::Int).collect();
+                    return Some(Ok(Value::Seq(
+                        super::methods_0arg::collection::combinations_all(&items).into(),
+                    )));
+                }
+                _ => runtime::value_to_list(arg),
+            };
+            Some(Ok(Value::Seq(
+                super::methods_0arg::collection::combinations_all(&items).into(),
+            )))
+        }
         "srand" => {
             let seed = match arg {
                 Value::Int(n) => *n as u64,
@@ -219,47 +238,63 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             _ => Value::Num(f64::NAN),
         })),
-        "floor" => Some(Ok(match arg {
-            Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-            Value::Num(f) => Value::Int(f.floor() as i64),
-            Value::Int(i) => Value::Int(*i),
-            Value::Rat(n, d) if *d != 0 => {
-                let q = *n / *d;
-                let r = *n % *d;
-                if r != 0 && (*n < 0) != (*d < 0) {
-                    Value::Int(q - 1)
-                } else {
-                    Value::Int(q)
+        "floor" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
+                Value::Num(f) => Value::Int(f.floor() as i64),
+                Value::Int(i) => Value::Int(*i),
+                Value::Rat(n, d) if *d != 0 => {
+                    let q = *n / *d;
+                    let r = *n % *d;
+                    if r != 0 && (*n < 0) != (*d < 0) {
+                        Value::Int(q - 1)
+                    } else {
+                        Value::Int(q)
+                    }
                 }
+                _ => Value::Int(0),
+            }))
+        }
+        "ceiling" | "ceil" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
             }
-            _ => Value::Int(0),
-        })),
-        "ceiling" | "ceil" => Some(Ok(match arg {
-            Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-            Value::Num(f) => Value::Int(f.ceil() as i64),
-            Value::Int(i) => Value::Int(*i),
-            Value::Rat(n, d) if *d != 0 => {
-                let q = *n / *d;
-                let r = *n % *d;
-                if r != 0 && (*n < 0) == (*d < 0) {
-                    Value::Int(q + 1)
-                } else {
-                    Value::Int(q)
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
+                Value::Num(f) => Value::Int(f.ceil() as i64),
+                Value::Int(i) => Value::Int(*i),
+                Value::Rat(n, d) if *d != 0 => {
+                    let q = *n / *d;
+                    let r = *n % *d;
+                    if r != 0 && (*n < 0) == (*d < 0) {
+                        Value::Int(q + 1)
+                    } else {
+                        Value::Int(q)
+                    }
                 }
+                _ => Value::Int(0),
+            }))
+        }
+        "round" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
             }
-            _ => Value::Int(0),
-        })),
-        "round" => Some(Ok(match arg {
-            Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-            Value::Num(f) => Value::Int(f.round() as i64),
-            Value::Int(i) => Value::Int(*i),
-            Value::Rat(n, d) if *d != 0 => {
-                let f = *n as f64 / *d as f64;
-                Value::Int(f.round() as i64)
-            }
-            _ => Value::Int(0),
-        })),
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
+                Value::Num(f) => Value::Int(f.round() as i64),
+                Value::Int(i) => Value::Int(*i),
+                Value::Rat(n, d) if *d != 0 => {
+                    let f = *n as f64 / *d as f64;
+                    Value::Int(f.round() as i64)
+                }
+                _ => Value::Int(0),
+            }))
+        }
         "exp" => Some(Ok(match arg {
+            Value::Instance { .. } => return None,
             Value::Int(i) => Value::Num((*i as f64).exp()),
             Value::Num(f) => Value::Num(f.exp()),
             Value::Rat(n, d) if *d != 0 => Value::Num((*n as f64 / *d as f64).exp()),
@@ -270,6 +305,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => Value::Num(f64::NAN),
         })),
         "log" => match arg {
+            Value::Instance { .. } => None,
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let phase = i.atan2(*r);
@@ -281,6 +317,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         },
         "log2" => match arg {
+            Value::Instance { .. } => None,
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let phase = i.atan2(*r);
@@ -293,6 +330,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         },
         "log10" => match arg {
+            Value::Instance { .. } => None,
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let phase = i.atan2(*r);
@@ -355,10 +393,16 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Some(Ok(Value::Num(y.atan2(1.0))))
         }
         "cis" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
             let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
             Some(Ok(Value::Complex(x.cos(), x.sin())))
         }
         "truncate" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
             if let Some(num) = runtime::to_float_value(arg) {
                 if num.is_nan() || num.is_infinite() {
                     Some(Ok(Value::Num(num)))
@@ -554,6 +598,79 @@ fn native_function_2arg(
     }
 
     match name {
+        "combinations" => {
+            // combinations($n_or_iterable, $k_or_range)
+            // If first arg is an iterable, use its elements; otherwise treat as numeric n
+            let items = match arg1 {
+                Value::Array(..)
+                | Value::Seq(..)
+                | Value::Slip(..)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }
+                | Value::Hash(..) => runtime::value_to_list(arg1),
+                _ => {
+                    let n = runtime::to_int(arg1);
+                    if n <= 0 {
+                        Vec::new()
+                    } else {
+                        (0..n).map(Value::Int).collect()
+                    }
+                }
+            };
+            // Dispatch based on $k type (Int or Range)
+            super::native_method_1arg(&Value::array(items), "combinations", arg2)
+        }
+        "roll" => {
+            let count = match arg1 {
+                Value::Int(i) if *i > 0 => Some(*i as usize),
+                Value::Int(_) => Some(0),
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Whatever => None,
+                Value::Str(s) => {
+                    let parsed = s.trim().parse::<i64>().ok()?;
+                    Some(parsed.max(0) as usize)
+                }
+                _ => return None,
+            };
+            let items = crate::runtime::utils::value_to_list(arg2);
+            if count.is_none() {
+                if items.is_empty() {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let generated = 1024usize;
+                let mut out = Vec::with_capacity(generated);
+                for _ in 0..generated {
+                    let mut idx = (builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    out.push(items[idx].clone());
+                }
+                return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList {
+                        body: vec![],
+                        env: std::collections::HashMap::new(),
+                        cache: std::sync::Mutex::new(Some(out)),
+                    },
+                ))));
+            }
+            let count = count.unwrap_or(0);
+            if items.is_empty() || count == 0 {
+                return Some(Ok(Value::array(Vec::new())));
+            }
+            let mut result = Vec::with_capacity(count);
+            for _ in 0..count {
+                let mut idx = (builtin_rand() * items.len() as f64) as usize;
+                if idx >= items.len() {
+                    idx = items.len() - 1;
+                }
+                result.push(items[idx].clone());
+            }
+            Some(Ok(Value::array(result)))
+        }
         "atan2" => {
             // atan2(y, x)
             if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {
@@ -671,6 +788,9 @@ fn native_function_2arg(
             ))))
         }
         "log" => {
+            if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {
+                return None;
+            }
             let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
             let base_val = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
             if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {

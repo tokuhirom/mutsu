@@ -296,6 +296,8 @@ pub(crate) enum OpCode {
     // -- Given/When control --
     Proceed,
     Succeed,
+    /// `done` — terminate the innermost react event loop
+    ReactDone,
     /// Tag the current value as coming from a named container (for Scalar binding)
     TagContainerRef(u32),
 
@@ -344,6 +346,7 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
         collect: bool,
+        isolate_topic: bool,
     },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.

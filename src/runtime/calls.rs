@@ -2,6 +2,30 @@ use super::*;
 use crate::ast::FunctionDef;
 
 impl Interpreter {
+    pub(crate) fn routine_writeback_excluded_names(
+        def: &FunctionDef,
+    ) -> std::collections::HashSet<String> {
+        let mut names: std::collections::HashSet<String> = def
+            .param_defs
+            .iter()
+            .filter_map(|pd| {
+                if pd.name.is_empty() || pd.name.starts_with('@') || pd.name.starts_with('%') {
+                    None
+                } else if let Some(name) = pd.name.strip_prefix(':') {
+                    Some(name.to_string())
+                } else {
+                    Some(pd.name.clone())
+                }
+            })
+            .collect();
+        for stmt in &def.body {
+            if let Stmt::VarDecl { name, .. } = stmt {
+                names.insert(name.clone());
+            }
+        }
+        names
+    }
+
     /// Call a specific FunctionDef directly, bypassing the built-in function dispatch.
     /// Used for user-defined operator overrides.
     pub(crate) fn call_function_def(
@@ -53,6 +77,29 @@ impl Interpreter {
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
         let mut restored_env = saved_env;
         self.pop_caller_env_with_writeback(&mut restored_env);
+        let excluded_names = Self::routine_writeback_excluded_names(def);
+        for (k, v) in self.env.iter() {
+            let scalar_writeback = restored_env.contains_key(k)
+                && !excluded_names.contains(k)
+                && !matches!(
+                    v,
+                    Value::Array(..)
+                        | Value::Hash(..)
+                        | Value::Sub(..)
+                        | Value::WeakSub(..)
+                        | Value::Routine { .. }
+                );
+            if k != "_"
+                && k != "@_"
+                && k != "%_"
+                && ((restored_env.contains_key(k)
+                    && matches!(v, Value::Array(..) | Value::Hash(..)))
+                    || scalar_writeback
+                    || k.starts_with("__mutsu_var_meta::"))
+            {
+                restored_env.insert(k.clone(), v.clone());
+            }
+        }
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
@@ -128,6 +175,29 @@ impl Interpreter {
                     let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
                     let mut restored_env = saved_env;
                     self.pop_caller_env_with_writeback(&mut restored_env);
+                    let excluded_names = Self::routine_writeback_excluded_names(&def);
+                    for (k, v) in self.env.iter() {
+                        let scalar_writeback = restored_env.contains_key(k)
+                            && !excluded_names.contains(k)
+                            && !matches!(
+                                v,
+                                Value::Array(..)
+                                    | Value::Hash(..)
+                                    | Value::Sub(..)
+                                    | Value::WeakSub(..)
+                                    | Value::Routine { .. }
+                            );
+                        if k != "_"
+                            && k != "@_"
+                            && k != "%_"
+                            && ((restored_env.contains_key(k)
+                                && matches!(v, Value::Array(..) | Value::Hash(..)))
+                                || scalar_writeback
+                                || k.starts_with("__mutsu_var_meta::"))
+                        {
+                            restored_env.insert(k.clone(), v.clone());
+                        }
+                    }
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
                     self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
                     self.env = restored_env;

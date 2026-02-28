@@ -5,7 +5,7 @@ use crate::value::Value;
 use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
 use super::super::expr::expression;
-use super::super::helpers::{skip_balanced_parens, split_angle_words, ws};
+use super::super::helpers::{skip_balanced_parens, split_angle_words, ws, ws1};
 use super::super::stmt::keyword;
 use super::parse_call_arg_list;
 use super::string::{double_quoted_string, single_quoted_string};
@@ -102,6 +102,32 @@ fn is_valid_reduction_op(op: &str) -> bool {
     let s = s.strip_prefix('\\').unwrap_or(s);
     let s = if s == "∘" { "o" } else { s };
     if REDUCTION_OPS.contains(&s) {
+        return true;
+    }
+    // Set operators in parenthesized and unicode form
+    if matches!(
+        s,
+        "(-)"
+            | "(|)"
+            | "(&)"
+            | "(^)"
+            | "(elem)"
+            | "(cont)"
+            | "∪"
+            | "∩"
+            | "∖"
+            | "⊖"
+            | "∈"
+            | "∋"
+            | "(<=)"
+            | "(>=)"
+            | "(<)"
+            | "(>)"
+            | "⊆"
+            | "⊇"
+            | "⊂"
+            | "⊃"
+    ) {
         return true;
     }
     if let Some(stripped) = s.strip_prefix('!')
@@ -1135,6 +1161,13 @@ fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String>
 /// Parse a class expression: `class { ... }`, `class Foo { ... }`, or `class :: is Parent { ... }`
 /// Named classes in expression context register the class AND return the type object.
 pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
+    // Accept optional declarator prefixes used in expression context (e.g. `my class ...`).
+    let input = if let Some(r) = keyword("my", input).or_else(|| keyword("our", input)) {
+        let (r, _) = ws1(r)?;
+        r
+    } else {
+        input
+    };
     let rest = keyword("class", input).ok_or_else(|| PError::expected("anonymous class"))?;
     let (rest, _) = ws(rest)?;
 
@@ -1378,9 +1411,9 @@ fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
 
 fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {
     match expr {
-        Expr::Literal(Value::Str(s)) => Ok(s),
-        Expr::Literal(Value::Int(n)) => Ok(n.to_string()),
-        Expr::Literal(Value::BigInt(n)) => Ok(n.to_string()),
+        // Hash storage currently uses string keys; accept literal keys broadly and
+        // normalize using Raku stringification semantics.
+        Expr::Literal(v) => Ok(v.to_string_value()),
         Expr::BareWord(name) => Ok(name),
         _ => Err(PError::expected("hash key")),
     }

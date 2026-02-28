@@ -327,6 +327,75 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
+    pub(crate) fn eval_xx_repeat_thunk(
+        &mut self,
+        data: &crate::value::SubData,
+        n: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut touched_keys: Vec<String> = Vec::with_capacity(data.env.len());
+        for k in data.env.keys() {
+            touched_keys.push(k.clone());
+        }
+        let saved: Vec<(String, Option<Value>)> = touched_keys
+            .iter()
+            .map(|k| (k.clone(), self.env.get(k).cloned()))
+            .collect();
+
+        for (k, v) in &data.env {
+            if matches!(self.env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..)) {
+                continue;
+            }
+            self.env.insert(k.clone(), v.clone());
+        }
+
+        let compiler = crate::compiler::Compiler::new();
+        let (code, compiled_fns) = compiler.compile(&data.body);
+        let interp = std::mem::take(self);
+        let mut vm = crate::vm::VM::new(interp);
+        let mut out = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            match vm.run_reuse(&code, &compiled_fns) {
+                Ok(()) => {
+                    let val = vm
+                        .interpreter()
+                        .env()
+                        .get("_")
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    out.push(val);
+                }
+                Err(e) => {
+                    *self = vm.into_interpreter();
+                    for (k, orig) in saved {
+                        match orig {
+                            Some(v) => {
+                                self.env.insert(k, v);
+                            }
+                            None => {
+                                self.env.remove(&k);
+                            }
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        *self = vm.into_interpreter();
+        for (k, orig) in saved {
+            match orig {
+                Some(v) => {
+                    self.env.insert(k, v);
+                }
+                None => {
+                    self.env.remove(&k);
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -451,6 +520,7 @@ impl Interpreter {
                 new_env.insert("_".to_string(), first_positional.clone());
             } else if data.params.is_empty()
                 && sanitized_args.is_empty()
+                && data.name.is_empty()
                 && let Some(caller_topic) = saved_env.get("_")
             {
                 new_env.insert("_".to_string(), caller_topic.clone());
@@ -598,6 +668,16 @@ impl Interpreter {
             return Ok(Value::Nil);
         }
         let let_mark = self.let_saves_len();
+        let saved_functions = self.functions.clone();
+        let saved_proto_subs = self.proto_subs.clone();
+        let saved_proto_functions = self.proto_functions.clone();
+        let saved_operator_assoc = self.operator_assoc.clone();
+        let saved_code_env: std::collections::HashMap<String, Value> = self
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with('&') || k.starts_with("__mutsu_callable_id::"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         let mut compiler = crate::compiler::Compiler::new();
         let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
             format!("{}::&{}", pkg, routine)
@@ -606,7 +686,19 @@ impl Interpreter {
         };
         compiler.set_current_package(scope);
         let (code, compiled_fns) = compiler.compile(body);
+        self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
+        self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
+        // Sub/proto declarations in block scope are lexical; restore registries on block exit.
+        self.functions = saved_functions;
+        self.proto_subs = saved_proto_subs;
+        self.proto_functions = saved_proto_functions;
+        self.operator_assoc = saved_operator_assoc;
+        self.env
+            .retain(|k, _| !(k.starts_with('&') || k.starts_with("__mutsu_callable_id::")));
+        for (k, v) in saved_code_env {
+            self.env.insert(k, v);
+        }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
         result

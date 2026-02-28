@@ -261,34 +261,7 @@ impl VM {
     pub(super) fn exec_set_diff_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = match (left, right) {
-            (Value::Set(a), Value::Set(b)) => Value::set(a.difference(&b).cloned().collect()),
-            (Value::Bag(a), Value::Bag(b)) => {
-                let mut result = HashMap::new();
-                for (k, v) in a.iter() {
-                    let bv = b.get(k).copied().unwrap_or(0);
-                    if *v > bv {
-                        result.insert(k.clone(), *v - bv);
-                    }
-                }
-                Value::bag(result)
-            }
-            (Value::Mix(a), Value::Mix(b)) => {
-                let mut result = HashMap::new();
-                for (k, v) in a.iter() {
-                    let bv = b.get(k).copied().unwrap_or(0.0);
-                    if *v > bv {
-                        result.insert(k.clone(), *v - bv);
-                    }
-                }
-                Value::mix(result)
-            }
-            (l, r) => {
-                let a = runtime::coerce_to_set(&l);
-                let b = runtime::coerce_to_set(&r);
-                Value::set(a.difference(&b).cloned().collect())
-            }
-        };
+        let result = runtime::set_diff_values(&left, &right);
         self.stack.push(result);
     }
 

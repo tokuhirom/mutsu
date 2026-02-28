@@ -457,6 +457,8 @@ pub(crate) enum Stmt {
     Redo(Option<String>),
     Proceed,
     Succeed,
+    /// `done` — terminate the innermost react event loop
+    ReactDone,
     Given {
         topic: Expr,
         body: Vec<Stmt>,

@@ -1,4 +1,31 @@
 use super::*;
+use num_traits::ToPrimitive;
+
+enum IoPathExtensionPartsSpec {
+    Exact(i64),
+    Range { low: i64, high: i64 },
+}
+
+impl IoPathExtensionPartsSpec {
+    fn select(&self, available: i64) -> Option<i64> {
+        match self {
+            Self::Exact(n) => {
+                if *n <= available {
+                    Some(*n)
+                } else {
+                    None
+                }
+            }
+            Self::Range { low, high } => {
+                if low > high {
+                    return None;
+                }
+                let best = available.min(*high);
+                if best < *low { None } else { Some(best) }
+            }
+        }
+    }
+}
 
 impl Interpreter {
     pub(super) fn native_io_path(
@@ -118,11 +145,54 @@ impl Interpreter {
                 Ok(self.make_io_path_instance(&joined))
             }
             "extension" => {
-                let ext = original
-                    .extension()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                Ok(Value::Str(ext))
+                let subst = Self::positional_value(&args, 0).map(|v| v.to_string_value());
+                let parts_spec = Self::io_path_extension_parts_spec(&args)?;
+                let selected_parts = parts_spec.select(Self::io_path_extension_part_count(&p));
+
+                if let Some(subst) = subst {
+                    let Some(parts_to_replace) = selected_parts else {
+                        return Ok(Value::make_instance(
+                            "IO::Path".to_string(),
+                            attributes.clone(),
+                        ));
+                    };
+                    let joiner = Self::named_value(&args, "joiner")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| {
+                            if subst.is_empty() {
+                                "".to_string()
+                            } else {
+                                ".".to_string()
+                            }
+                        });
+                    let (dir_prefix, basename) = Self::split_path_for_extension(&p);
+                    let Some(base_without_ext) =
+                        Self::io_path_extension_strip_n_parts(basename, parts_to_replace)
+                    else {
+                        return Ok(Value::make_instance(
+                            "IO::Path".to_string(),
+                            attributes.clone(),
+                        ));
+                    };
+                    let mut new_basename = format!("{base_without_ext}{joiner}{subst}");
+                    // Raku: empty basename after replacement becomes "."
+                    if new_basename.is_empty() {
+                        new_basename = ".".to_string();
+                    }
+                    let mut new_attrs = attributes.clone();
+                    new_attrs.insert(
+                        "path".to_string(),
+                        Value::Str(format!("{dir_prefix}{new_basename}")),
+                    );
+                    Ok(Value::make_instance("IO::Path".to_string(), new_attrs))
+                } else {
+                    let Some(parts) = selected_parts else {
+                        return Ok(Value::Str(String::new()));
+                    };
+                    Ok(Value::Str(
+                        Self::io_path_extension_with_n_parts(&p, parts).unwrap_or_default(),
+                    ))
+                }
             }
             "absolute" => {
                 let absolute = Self::stringify_path(&path_buf);
@@ -400,6 +470,204 @@ impl Interpreter {
                 "No native method '{}' on IO::Path",
                 method
             ))),
+        }
+    }
+
+    fn split_path_for_extension(path: &str) -> (&str, &str) {
+        if let Some(idx) = path.rfind(['/', '\\']) {
+            (&path[..=idx], &path[idx + 1..])
+        } else {
+            ("", path)
+        }
+    }
+
+    fn io_path_extension_part_count(path: &str) -> i64 {
+        let (_, basename) = Self::split_path_for_extension(path);
+        basename.chars().filter(|&c| c == '.').count() as i64
+    }
+
+    fn io_path_extension_dot_index_for_n_parts(basename: &str, parts: i64) -> Option<usize> {
+        if parts <= 0 {
+            return None;
+        }
+        let mut seen = 0i64;
+        for (idx, ch) in basename.char_indices().rev() {
+            if ch == '.' {
+                seen += 1;
+                if seen == parts {
+                    return Some(idx);
+                }
+            }
+        }
+        None
+    }
+
+    fn io_path_extension_with_n_parts(path: &str, parts: i64) -> Option<String> {
+        if parts == 0 {
+            return Some(String::new());
+        }
+        let (_, basename) = Self::split_path_for_extension(path);
+        let dot_idx = Self::io_path_extension_dot_index_for_n_parts(basename, parts)?;
+        Some(basename[dot_idx + 1..].to_string())
+    }
+
+    fn io_path_extension_strip_n_parts(basename: &str, parts: i64) -> Option<String> {
+        if parts == 0 {
+            return Some(basename.to_string());
+        }
+        let dot_idx = Self::io_path_extension_dot_index_for_n_parts(basename, parts)?;
+        Some(basename[..dot_idx].to_string())
+    }
+
+    fn io_path_extension_normalize_count(v: &Value) -> Result<i64, RuntimeError> {
+        let n = match v {
+            Value::Int(i) => *i,
+            Value::BigInt(i) => i.to_i64().unwrap_or_else(|| {
+                if i.sign() == num_bigint::Sign::Minus {
+                    i64::MIN
+                } else {
+                    i64::MAX
+                }
+            }),
+            Value::Num(f) => {
+                if f.is_nan() {
+                    return Err(RuntimeError::new(
+                        "Exception: IO::Path.extension: :parts endpoint must be numeric",
+                    ));
+                }
+                if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        i64::MAX
+                    } else {
+                        i64::MIN
+                    }
+                } else {
+                    *f as i64
+                }
+            }
+            Value::Whatever | Value::HyperWhatever => i64::MAX,
+            Value::Str(_) => {
+                return Err(RuntimeError::new(
+                    "Exception: IO::Path.extension: :parts endpoint must be numeric",
+                ));
+            }
+            other => {
+                let f = other.to_f64();
+                if f.is_nan() {
+                    return Err(RuntimeError::new(
+                        "Exception: IO::Path.extension: :parts endpoint must be numeric",
+                    ));
+                }
+                if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        i64::MAX
+                    } else {
+                        i64::MIN
+                    }
+                } else {
+                    f as i64
+                }
+            }
+        };
+        Ok(n.max(0))
+    }
+
+    fn io_path_extension_endpoint(v: &Value) -> Result<(Option<i64>, bool), RuntimeError> {
+        match v {
+            Value::Whatever | Value::HyperWhatever => Ok((None, false)),
+            Value::Num(f) if f.is_infinite() => Ok((None, false)),
+            Value::Num(f) if f.is_nan() => Err(RuntimeError::new(
+                "Exception: IO::Path.extension: :parts endpoint must be numeric",
+            )),
+            Value::Str(_) => Err(RuntimeError::new(
+                "Exception: IO::Path.extension: :parts endpoint must be numeric",
+            )),
+            _ => Ok((Some(Self::io_path_extension_normalize_count(v)?), true)),
+        }
+    }
+
+    fn io_path_extension_range_bounds(
+        start: &Value,
+        end: &Value,
+        excl_start: bool,
+        excl_end: bool,
+    ) -> Result<(i64, i64), RuntimeError> {
+        let (mut low, low_finite) = Self::io_path_extension_endpoint(start)?;
+        let (mut high, high_finite) = Self::io_path_extension_endpoint(end)?;
+
+        if low_finite && excl_start {
+            low = low.map(|v| v.saturating_add(1));
+        }
+        if high_finite && excl_end {
+            high = high.map(|v| v.saturating_sub(1));
+        }
+
+        let low = low.unwrap_or(0).max(0);
+        let high = high.unwrap_or(i64::MAX).max(0);
+        Ok((low, high))
+    }
+
+    fn io_path_extension_parts_spec(
+        args: &[Value],
+    ) -> Result<IoPathExtensionPartsSpec, RuntimeError> {
+        let Some(parts_val) = Self::named_value(args, "parts") else {
+            return Ok(IoPathExtensionPartsSpec::Exact(1));
+        };
+
+        match parts_val {
+            Value::Range(start, end) => {
+                let (low, high) = Self::io_path_extension_range_bounds(
+                    &Value::Int(start),
+                    &Value::Int(end),
+                    false,
+                    false,
+                )?;
+                Ok(IoPathExtensionPartsSpec::Range { low, high })
+            }
+            Value::RangeExcl(start, end) => {
+                let (low, high) = Self::io_path_extension_range_bounds(
+                    &Value::Int(start),
+                    &Value::Int(end),
+                    false,
+                    true,
+                )?;
+                Ok(IoPathExtensionPartsSpec::Range { low, high })
+            }
+            Value::RangeExclStart(start, end) => {
+                let (low, high) = Self::io_path_extension_range_bounds(
+                    &Value::Int(start),
+                    &Value::Int(end),
+                    true,
+                    false,
+                )?;
+                Ok(IoPathExtensionPartsSpec::Range { low, high })
+            }
+            Value::RangeExclBoth(start, end) => {
+                let (low, high) = Self::io_path_extension_range_bounds(
+                    &Value::Int(start),
+                    &Value::Int(end),
+                    true,
+                    true,
+                )?;
+                Ok(IoPathExtensionPartsSpec::Range { low, high })
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let (low, high) = Self::io_path_extension_range_bounds(
+                    start.as_ref(),
+                    end.as_ref(),
+                    excl_start,
+                    excl_end,
+                )?;
+                Ok(IoPathExtensionPartsSpec::Range { low, high })
+            }
+            other => Ok(IoPathExtensionPartsSpec::Exact(
+                Self::io_path_extension_normalize_count(&other)?,
+            )),
         }
     }
 

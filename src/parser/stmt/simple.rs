@@ -266,6 +266,18 @@ pub(in crate::parser) fn lookup_user_infix_assoc(symbol: &str) -> Option<String>
     })
 }
 
+pub(in crate::parser) fn lookup_user_sub_assoc(name: &str) -> Option<String> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            if let Some(v) = scope.infix_assoc.get(name) {
+                return Some(v.clone());
+            }
+        }
+        None
+    })
+}
+
 /// Register a user-declared sub with `is test-assertion`.
 pub(in crate::parser) fn register_user_test_assertion_sub(name: &str) {
     SCOPES.with(|s| {
@@ -339,6 +351,11 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     })
 }
 
+pub(in crate::parser) fn is_user_declared_prefix_sub(symbol: &str) -> bool {
+    let op_name = format!("prefix:<{}>", symbol);
+    is_user_declared_sub(&op_name)
+}
+
 /// Match a user-declared prefix operator against the current input.
 /// Returns `(full_name, consumed_len)` when input begins with an in-scope
 /// `prefix:<...>` operator symbol.
@@ -356,6 +373,13 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
                     continue;
                 };
                 if !input.starts_with(op) {
+                    continue;
+                }
+                if scope
+                    .infix_assoc
+                    .get(name)
+                    .is_some_and(|assoc| assoc == "looser")
+                {
                     continue;
                 }
                 let consumed = op.len();
@@ -1684,6 +1708,119 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
+    // Reverse bind assignment is intentionally unsupported in Raku.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && (rest.starts_with("R:=") || rest.starts_with("R::="))
+    {
+        return Err(PError::fatal(
+            "Cannot reverse the args of := because list assignment operators are too fiddly"
+                .to_string(),
+        ));
+    }
+
+    // Reverse assignment: `value R= target` means `target = value`.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && rest.starts_with("R=")
+        && !rest.starts_with("R==")
+    {
+        let r = &rest[2..];
+        let (r, _) = ws(r)?;
+        let (r, target_expr) =
+            super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected assignable expression after 'R='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
+            })?;
+        if let Expr::DoStmt(stmt) = &target_expr
+            && let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                ..
+            } = stmt.as_ref()
+        {
+            let stmt = Stmt::VarDecl {
+                name: name.clone(),
+                expr,
+                type_constraint: type_constraint.clone(),
+                is_state: *is_state,
+                is_our: *is_our,
+                is_dynamic: *is_dynamic,
+                is_export: *is_export,
+                export_tags: export_tags.clone(),
+                custom_traits: custom_traits.clone(),
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } = &target_expr
+        {
+            let target_var_name = match target.as_ref() {
+                Expr::Var(var_name) => Some(var_name.clone()),
+                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
+                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                _ => None,
+            };
+            let assigned = method_lvalue_assign_expr(
+                (**target).clone(),
+                target_var_name,
+                name.clone(),
+                args.clone(),
+                expr,
+            );
+            let stmt = Stmt::Expr(assigned);
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::Call { name, args } = &target_expr {
+            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
+                name.clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::CallOn { target, args } = &target_expr {
+            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
+                (**target).clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        let stmt = match target_expr {
+            Expr::Var(name) => Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::ArrayVar(name) => Stmt::Assign {
+                name: format!("@{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::HashVar(name) => Stmt::Assign {
+                name: format!("%{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr)),
+        };
+        return parse_statement_modifier(r, stmt);
+    }
+
     // Generic assignment on non-variable lhs (e.g. `.key = 1`).
     // TODO: Introduce a dedicated assignment AST form for arbitrary lvalues.
     // Current fallback consumes `lhs = rhs` and preserves both sides as expressions.
@@ -1750,7 +1887,12 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ));
             return parse_statement_modifier(r, stmt);
         }
-        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        let stmt = match expr {
+            Expr::Literal(_) | Expr::BareWord(_) => {
+                Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
+            }
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs)),
+        };
         return parse_statement_modifier(r, stmt);
     }
 
@@ -2124,8 +2266,8 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Test/Test::Util functions are NOT listed here — they are registered dynamically
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
-    "dd", "exit", "proceed", "succeed", "push", "pop", "shift", "unshift", "append", "prepend",
-    "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
+    "dd", "exit", "proceed", "succeed", "done", "push", "pop", "shift", "unshift", "append",
+    "prepend", "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.
@@ -2171,6 +2313,10 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     if name == "succeed" {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Succeed));
+    }
+    if name == "done" {
+        let (rest, _) = opt_char(rest, ';');
+        return Ok((rest, Stmt::ReactDone));
     }
 
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.

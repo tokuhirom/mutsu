@@ -42,19 +42,18 @@ impl Interpreter {
         desc: &str,
         todo: bool,
     ) -> Result<(), RuntimeError> {
-        let mut record_failure = false;
         let mut line = String::new();
-        {
+        let (record_failure, effective_todo) = {
             let state = self.test_state.get_or_insert_with(TestState::new);
             state.ran += 1;
-            let forced = state
+            let forced_reason = state
                 .force_todo
                 .iter()
-                .any(|(start, end)| state.ran >= *start && state.ran <= *end);
-            let todo = todo || forced;
+                .find(|range| state.ran >= range.start && state.ran <= range.end)
+                .map(|range| range.reason.as_str());
+            let todo = todo || forced_reason.is_some();
             if !success && !todo {
                 state.failed += 1;
-                record_failure = true;
             }
             if success {
                 line.push_str("ok ");
@@ -67,20 +66,28 @@ impl Interpreter {
                 line.push_str(desc);
             }
             if todo {
-                line.push_str(" # TODO");
+                match forced_reason {
+                    Some(reason) if !reason.is_empty() => {
+                        line.push_str(" # TODO ");
+                        line.push_str(reason);
+                    }
+                    _ => line.push_str(" # TODO"),
+                }
             }
             line.push('\n');
-        }
+            (!success, todo)
+        };
+        self.emit_output(&line);
         if record_failure {
-            self.emit_test_failure_diag(desc);
-            if self.subtest_depth == 0 && self.raku_test_die_on_fail_enabled() {
+            let to_stderr = !effective_todo && self.subtest_depth == 0;
+            self.emit_test_failure_diag(desc, to_stderr);
+            if !effective_todo && self.subtest_depth == 0 && self.raku_test_die_on_fail_enabled() {
                 self.stderr_output
                     .push_str("Stopping test suite because of RAKU_TEST_DIE_ON_FAIL\n");
                 self.exit_code = 255;
                 self.halted = true;
             }
         }
-        self.emit_output(&line);
         Ok(())
     }
 
@@ -94,24 +101,36 @@ impl Interpreter {
             && planned != ran
         {
             self.stderr_output
-                .push_str(&format!("Planned {} tests, but ran {}\n", planned, ran));
+                .push_str(&format!("# Planned {} tests, but ran {}\n", planned, ran));
         }
         let plural = if failed == 1 { "" } else { "s" };
-        self.stderr_output
-            .push_str(&format!("Failed {} test{} of {}\n", failed, plural, ran));
+        self.stderr_output.push_str(&format!(
+            "# You failed {} test{} of {}\n",
+            failed, plural, ran
+        ));
     }
 
-    fn emit_test_failure_diag(&mut self, desc: &str) {
+    fn emit_test_failure_diag(&mut self, desc: &str, to_stderr: bool) {
         let line_no = self.current_test_failure_line();
         let at_line = if let Some(path) = &self.program_path {
             format!("at {} line {}", path, line_no)
         } else {
             format!("at line {}", line_no)
         };
-        let _ = desc;
-        let diag = format!("Failed test {}\n", at_line);
-        self.stderr_output.push_str(&diag);
-        eprint!("{}", diag);
+        let mut emit = |msg: String| {
+            if to_stderr {
+                self.stderr_output.push_str(&msg);
+                eprint!("{}", msg);
+            } else {
+                self.emit_output(&msg);
+            }
+        };
+        if desc.is_empty() {
+            emit(format!("# Failed test {}\n", at_line));
+        } else {
+            emit(format!("# Failed test '{}'\n", desc));
+            emit(format!("# {}\n", at_line));
+        }
     }
 
     pub(crate) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {

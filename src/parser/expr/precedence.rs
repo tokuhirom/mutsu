@@ -1183,6 +1183,21 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             r,
         ));
     }
+    // Detect R. metaop misuse.
+    if r.starts_with("R.") && !r.starts_with("R..") {
+        let after = &r[2..];
+        let after_trimmed = after.trim_start();
+        if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+            return Err(PError::expected_at(
+                "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                r,
+            ));
+        }
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot reverse the args of . because it is too fiddly",
+            r,
+        ));
+    }
     if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
@@ -1611,6 +1626,14 @@ fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
         "+&" => Some(TokenKind::BitAnd),
         "+|" => Some(TokenKind::BitOr),
         "+^" => Some(TokenKind::BitXor),
+        "~&" => Some(TokenKind::Ident("~&".to_string())),
+        "~|" => Some(TokenKind::Ident("~|".to_string())),
+        "~^" => Some(TokenKind::Ident("~^".to_string())),
+        "(|)" | "∪" => Some(TokenKind::SetUnion),
+        "(&)" | "∩" => Some(TokenKind::SetIntersect),
+        "(^)" | "⊖" => Some(TokenKind::SetSymDiff),
+        "(elem)" | "∈" => Some(TokenKind::SetElem),
+        "(cont)" | "∋" => Some(TokenKind::SetCont),
         // Word operators are represented as Ident tokens
         "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "min" | "max" | "gcd" | "lcm"
         | "and" | "or" | "not" | "after" | "before" => Some(TokenKind::Ident(op.to_string())),
@@ -1668,10 +1691,34 @@ fn flatten_bracket_op(s: &str) -> String {
 /// Known operators for bracket infix and meta-op bracket notation.
 const KNOWN_OPS: &[&str] = &[
     "...^", "...", "…^", "…", "**", "==", "!=", "<=", ">=", "<=>", "===", "~~", "%%", "//", "||",
-    "&&", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|", "?^", "cmp", "min",
-    "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and", "or", "not", "after", "before", "gcd",
-    "lcm", ",",
+    "&&", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|",
+    "?^", "cmp", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and", "or", "not",
+    "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(^)", "(elem)", "(cont)", "∪", "∩", "⊖",
+    "∈", "∋",
 ];
+
+fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
+    const META_SET_OPS: &[(&str, &str)] = &[
+        ("(|)", "(|)"),
+        ("(&)", "(&)"),
+        ("(-)", "(-)"),
+        ("(^)", "(^)"),
+        ("(elem)", "(elem)"),
+        ("(cont)", "(cont)"),
+        ("∪", "∪"),
+        ("∩", "∩"),
+        ("∖", "(-)"),
+        ("⊖", "⊖"),
+        ("∈", "∈"),
+        ("∋", "∋"),
+    ];
+    for (prefix, normalized) in META_SET_OPS {
+        if input.starts_with(prefix) {
+            return Some(((*normalized).to_string(), prefix.len()));
+        }
+    }
+    None
+}
 
 /// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.
 fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
@@ -1701,10 +1748,17 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         return Some((meta.to_string(), op, 1 + inner_len));
     }
 
+    // Set operators in parenthesized and unicode form used by meta ops:
+    // Z(&), Z∩, X(|), X∪, etc.
+    if let Some((op, len)) = parse_meta_set_op(r) {
+        return Some((meta.to_string(), op.to_string(), 1 + len));
+    }
+
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
-        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+",
-        "-", "*", "/", "%", "<", ">",
+        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "&&", "||",
+        "+&", "+|", "+^", "+<", "+>", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">",
+        ",",
     ];
     for op in ops {
         if r.starts_with(op) {
@@ -1823,24 +1877,44 @@ fn parse_bracket_infix_op(input: &str) -> Option<BracketInfix> {
 fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
     if input.starts_with("(|)") {
         Some((TokenKind::SetUnion, 3))
+    } else if input.starts_with('∪') {
+        Some((TokenKind::SetUnion, '∪'.len_utf8()))
     } else if input.starts_with("(&)") {
         Some((TokenKind::SetIntersect, 3))
+    } else if input.starts_with('∩') {
+        Some((TokenKind::SetIntersect, '∩'.len_utf8()))
     } else if input.starts_with("(-)") {
         Some((TokenKind::SetDiff, 3))
+    } else if input.starts_with('∖') {
+        Some((TokenKind::SetDiff, '∖'.len_utf8()))
     } else if input.starts_with("(^)") {
         Some((TokenKind::SetSymDiff, 3))
+    } else if input.starts_with('⊖') {
+        Some((TokenKind::SetSymDiff, '⊖'.len_utf8()))
     } else if input.starts_with("(<=)") {
         Some((TokenKind::SetSubset, 4))
+    } else if input.starts_with('⊆') {
+        Some((TokenKind::SetSubset, '⊆'.len_utf8()))
     } else if input.starts_with("(>=)") {
         Some((TokenKind::SetSuperset, 4))
+    } else if input.starts_with('⊇') {
+        Some((TokenKind::SetSuperset, '⊇'.len_utf8()))
     } else if input.starts_with("(<)") {
         Some((TokenKind::SetStrictSubset, 3))
+    } else if input.starts_with('⊂') {
+        Some((TokenKind::SetStrictSubset, '⊂'.len_utf8()))
     } else if input.starts_with("(>)") {
         Some((TokenKind::SetStrictSuperset, 3))
+    } else if input.starts_with('⊃') {
+        Some((TokenKind::SetStrictSuperset, '⊃'.len_utf8()))
     } else if input.starts_with("(elem)") {
         Some((TokenKind::SetElem, 6))
+    } else if input.starts_with('∈') {
+        Some((TokenKind::SetElem, '∈'.len_utf8()))
     } else if input.starts_with("(cont)") {
         Some((TokenKind::SetCont, 6))
+    } else if input.starts_with('∋') {
+        Some((TokenKind::SetCont, '∋'.len_utf8()))
     } else {
         None
     }
@@ -2014,8 +2088,8 @@ fn classify_base_op(op: &str) -> OpPrecedence {
         s = rest;
     }
     match s {
-        "*" | "/" | "%" | "gcd" | "lcm" => OpPrecedence::Multiplicative,
-        "+" | "-" => OpPrecedence::Additive,
+        "*" | "/" | "%" | "gcd" | "lcm" | "~&" => OpPrecedence::Multiplicative,
+        "+" | "-" | "~|" | "~^" => OpPrecedence::Additive,
         "~" => OpPrecedence::Concatenation,
         "==" | "!=" | "<" | ">" | "<=" | ">=" | "<=>" | "===" | "eq" | "ne" | "lt" | "gt"
         | "le" | "ge" | "leg" | "cmp" | "~~" | "%%" => OpPrecedence::Comparison,
@@ -2192,4 +2266,21 @@ pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     Ok((rest, base))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_meta_op;
+
+    #[test]
+    fn parse_meta_op_accepts_set_union_variants() {
+        assert_eq!(
+            parse_meta_op("Z(|) 2..4").map(|(m, op, len)| (m, op, len)),
+            Some(("Z".to_string(), "(|)".to_string(), 4))
+        );
+        assert_eq!(
+            parse_meta_op("Z∪ 2..4").map(|(m, op, len)| (m, op, len)),
+            Some(("Z".to_string(), "∪".to_string(), 1 + "∪".len()))
+        );
+    }
 }
