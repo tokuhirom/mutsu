@@ -285,12 +285,34 @@ impl VM {
                         results.push(Value::Pair(key, Box::new(right_list[i].clone())));
                     }
                 } else {
+                    let nested_left = if left_list.len() == 2 {
+                        match &left_list[1] {
+                            Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+                                Some(runtime::value_to_list(&left_list[1]))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
                     for i in 0..len {
-                        results.push(self.eval_reduction_operator_values(
-                            &op,
-                            &left_list[i],
-                            &right_list[i],
-                        )?);
+                        if let Some(extra) = &nested_left {
+                            let mut v = self.eval_reduction_operator_values(
+                                &op,
+                                &left_list[0],
+                                &right_list[i],
+                            )?;
+                            if let Some(extra_i) = extra.get(i) {
+                                v = self.eval_reduction_operator_values(&op, &v, extra_i)?;
+                            }
+                            results.push(v);
+                        } else {
+                            results.push(self.eval_reduction_operator_values(
+                                &op,
+                                &left_list[i],
+                                &right_list[i],
+                            )?);
+                        }
                     }
                 }
                 Value::array(results)

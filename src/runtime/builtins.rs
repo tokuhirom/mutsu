@@ -722,6 +722,35 @@ impl Interpreter {
             return Ok(reduction_identity(op));
         }
         if args.len() == 1 {
+            if op == "(|)" || op == "∪" {
+                let is_lazy_union_input = |value: &Value| match value {
+                    Value::LazyList(_) => true,
+                    Value::GenericRange { start, end, .. } => {
+                        let is_infinite = |bound: &Value| match bound {
+                            Value::Num(n) => n.is_infinite(),
+                            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+                            Value::Mixin(inner, _) => match inner.as_ref() {
+                                Value::Num(n) => n.is_infinite(),
+                                Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+                                _ => false,
+                            },
+                            _ => false,
+                        };
+                        is_infinite(start) || is_infinite(end)
+                    }
+                    _ => false,
+                };
+                return match &args[0] {
+                    Value::Instance { class_name, .. } if class_name == "Failure" => {
+                        Err(RuntimeError::new("Exception"))
+                    }
+                    value if is_lazy_union_input(value) => {
+                        Err(RuntimeError::new("X::Cannot::Lazy"))
+                    }
+                    Value::Bag(_) | Value::Mix(_) | Value::Set(_) => Ok(args[0].clone()),
+                    other => Ok(Value::set(crate::runtime::utils::coerce_to_set(other))),
+                };
+            }
             if is_chain_comparison_op(op) {
                 return Ok(Value::Bool(true));
             }

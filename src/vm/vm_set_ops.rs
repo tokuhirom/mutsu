@@ -150,6 +150,170 @@ impl VM {
         }
     }
 
+    fn lazy_list_error() -> RuntimeError {
+        RuntimeError::new("X::Cannot::Lazy")
+    }
+
+    fn is_infinite_bound(value: &Value) -> bool {
+        match value {
+            Value::Num(n) => n.is_infinite(),
+            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+            Value::Mixin(inner, _) => Self::is_infinite_bound(inner),
+            _ => false,
+        }
+    }
+
+    fn is_lazy_union_input(value: &Value) -> bool {
+        match value {
+            Value::LazyList(_) => true,
+            Value::GenericRange { start, end, .. } => {
+                Self::is_infinite_bound(start) || Self::is_infinite_bound(end)
+            }
+            _ => false,
+        }
+    }
+
+    fn union_insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
+        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
+        match value {
+            Value::Set(items) => {
+                elems.extend(items.iter().cloned());
+            }
+            Value::Bag(items) => {
+                for (k, v) in items.iter() {
+                    if *v > 0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Mix(items) => {
+                for (k, v) in items.iter() {
+                    if *v != 0.0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Hash(items) => {
+                for (k, v) in items.iter() {
+                    if v.truthy() || matches!(v, Value::Nil) {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    Self::union_insert_set_elem(elems, item);
+                }
+            }
+            range if range.is_range() => {
+                for item in runtime::value_to_list(range) {
+                    Self::union_insert_set_elem(elems, &item);
+                }
+            }
+            Value::Pair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.clone());
+                }
+            }
+            Value::ValuePair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.to_string_value());
+                }
+            }
+            other => {
+                let sv = other.to_string_value();
+                if !sv.is_empty() {
+                    elems.insert(sv);
+                }
+            }
+        }
+    }
+
+    fn value_to_set_keys(value: &Value) -> Result<HashSet<String>, RuntimeError> {
+        if Self::is_lazy_union_input(value) {
+            return Err(Self::lazy_list_error());
+        }
+        match value {
+            Value::Set(s) => Ok((**s).clone()),
+            Value::Bag(b) => Ok(b.keys().cloned().collect()),
+            Value::Mix(m) => Ok(m.keys().cloned().collect()),
+            Value::Hash(h) => Ok(h
+                .iter()
+                .filter_map(|(k, v)| {
+                    if v.truthy() || matches!(v, Value::Nil) {
+                        Some(k.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()),
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                let mut elems = HashSet::new();
+                for item in items.iter() {
+                    Self::union_insert_set_elem(&mut elems, item);
+                }
+                Ok(elems)
+            }
+            range if range.is_range() => {
+                let mut elems = HashSet::new();
+                for item in runtime::value_to_list(range) {
+                    Self::union_insert_set_elem(&mut elems, &item);
+                }
+                Ok(elems)
+            }
+            Value::Pair(_, _) | Value::ValuePair(_, _) => {
+                let mut elems = HashSet::new();
+                Self::union_insert_set_elem(&mut elems, value);
+                Ok(elems)
+            }
+            other => {
+                let mut elems = HashSet::new();
+                let sv = other.to_string_value();
+                if !sv.is_empty() {
+                    elems.insert(sv);
+                }
+                Ok(elems)
+            }
+        }
+    }
+
+    fn value_to_bag_counts(value: &Value) -> Result<HashMap<String, i64>, RuntimeError> {
+        if Self::is_lazy_union_input(value) {
+            return Err(Self::lazy_list_error());
+        }
+        match value {
+            Value::Bag(b) => Ok((**b).clone()),
+            Value::Mix(m) => Ok(m
+                .iter()
+                .filter_map(|(k, w)| {
+                    if *w != 0.0 {
+                        Some((k.clone(), 1))
+                    } else {
+                        None
+                    }
+                })
+                .collect()),
+            other => {
+                let set = Self::value_to_set_keys(other)?;
+                Ok(set.into_iter().map(|k| (k, 1)).collect())
+            }
+        }
+    }
+
+    fn value_to_mix_weights(value: &Value) -> Result<HashMap<String, f64>, RuntimeError> {
+        if Self::is_lazy_union_input(value) {
+            return Err(Self::lazy_list_error());
+        }
+        match value {
+            Value::Mix(m) => Ok((**m).clone()),
+            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            other => {
+                let set = Self::value_to_set_keys(other)?;
+                Ok(set.into_iter().map(|k| (k, 1.0)).collect())
+            }
+        }
+    }
+
     pub(super) fn exec_set_elem_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -172,16 +336,21 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_set_union_op(&mut self) {
+    pub(super) fn exec_set_union_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+
         let result = match (left, right) {
-            (Value::Set(a), Value::Set(b)) => {
+            (Value::Mix(a), Value::Mix(b)) => {
                 let mut result = (*a).clone();
-                for elem in b.iter() {
-                    result.insert(elem.clone());
+                for (k, v) in b.iter() {
+                    let e = result.entry(k.clone()).or_insert(0.0);
+                    *e = e.max(*v);
                 }
-                Value::set(result)
+                Value::mix(result)
             }
             (Value::Bag(a), Value::Bag(b)) => {
                 let mut result = (*a).clone();
@@ -191,39 +360,42 @@ impl VM {
                 }
                 Value::bag(result)
             }
-            (Value::Mix(a), Value::Mix(b)) => {
-                let mut result = (*a).clone();
-                for (k, v) in b.iter() {
-                    let e = result.entry(k.clone()).or_insert(0.0);
-                    *e = e.max(*v);
-                }
-                Value::mix(result)
-            }
-            (Value::Set(a), Value::Bag(b)) => {
-                let mut result = (*b).clone();
-                for elem in a.iter() {
-                    result.entry(elem.clone()).or_insert(1);
-                }
-                Value::bag(result)
-            }
-            (Value::Bag(a), Value::Set(b)) => {
+            (Value::Set(a), Value::Set(b)) => {
                 let mut result = (*a).clone();
                 for elem in b.iter() {
-                    result.entry(elem.clone()).or_insert(1);
-                }
-                Value::bag(result)
-            }
-            (l, r) => {
-                let a = runtime::coerce_to_set(&l);
-                let b = runtime::coerce_to_set(&r);
-                let mut result = a;
-                for elem in b {
-                    result.insert(elem);
+                    result.insert(elem.clone());
                 }
                 Value::set(result)
             }
+            (l, r) if matches!(l, Value::Mix(_)) || matches!(r, Value::Mix(_)) => {
+                let mut left_mix = Self::value_to_mix_weights(&l)?;
+                let right_mix = Self::value_to_mix_weights(&r)?;
+                for (k, v) in right_mix {
+                    let e = left_mix.entry(k).or_insert(0.0);
+                    *e = e.max(v);
+                }
+                Value::mix(left_mix)
+            }
+            (l, r) if matches!(l, Value::Bag(_)) || matches!(r, Value::Bag(_)) => {
+                let mut left_bag = Self::value_to_bag_counts(&l)?;
+                let right_bag = Self::value_to_bag_counts(&r)?;
+                for (k, v) in right_bag {
+                    let e = left_bag.entry(k).or_insert(0);
+                    *e = (*e).max(v);
+                }
+                Value::bag(left_bag)
+            }
+            (l, r) => {
+                let mut left_set = Self::value_to_set_keys(&l)?;
+                let right_set = Self::value_to_set_keys(&r)?;
+                for elem in right_set {
+                    left_set.insert(elem);
+                }
+                Value::set(left_set)
+            }
         };
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_set_intersect_op(&mut self) {

@@ -1387,6 +1387,11 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
+            Expr::AssignExpr { name, .. } => Some(name.clone()),
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }

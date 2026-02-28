@@ -762,7 +762,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SetUnion => {
-                self.exec_set_union_op();
+                self.exec_set_union_op()?;
                 *ip += 1;
             }
             OpCode::SetIntersect => {

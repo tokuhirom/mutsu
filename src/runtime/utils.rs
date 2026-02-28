@@ -629,6 +629,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
             kind: crate::value::JunctionKind::One,
             values: std::sync::Arc::new(Vec::new()),
         },
+        "(|)" | "∪" => Value::set(HashSet::new()),
         // Comma/zip: empty list
         "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), false),
         _ => Value::Nil,
@@ -806,11 +807,88 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
 }
 
 pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
+    fn insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
+        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
+        match value {
+            Value::Set(items) => {
+                elems.extend(items.iter().cloned());
+            }
+            Value::Bag(items) => {
+                for (k, v) in items.iter() {
+                    if *v > 0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Mix(items) => {
+                for (k, v) in items.iter() {
+                    if *v != 0.0 {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Hash(items) => {
+                for (k, v) in items.iter() {
+                    if v.truthy() || matches!(v, Value::Nil) {
+                        elems.insert(k.clone());
+                    }
+                }
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    insert_set_elem(elems, item);
+                }
+            }
+            range if range.is_range() => {
+                for item in value_to_list(range) {
+                    insert_set_elem(elems, &item);
+                }
+            }
+            Value::Pair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.clone());
+                }
+            }
+            Value::ValuePair(key, weight) => {
+                if pair_selected(weight) {
+                    elems.insert(key.to_string_value());
+                }
+            }
+            other => {
+                let sv = other.to_string_value();
+                if !sv.is_empty() {
+                    elems.insert(sv);
+                }
+            }
+        }
+    }
+
     match val {
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
-        Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
+        Value::Hash(items) => items
+            .iter()
+            .filter_map(|(k, v)| {
+                if v.truthy() || matches!(v, Value::Nil) {
+                    Some(k.clone())
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            let mut elems = HashSet::new();
+            for item in items.iter() {
+                insert_set_elem(&mut elems, item);
+            }
+            elems
+        }
+        Value::Pair(_, _) | Value::ValuePair(_, _) => {
+            let mut elems = HashSet::new();
+            insert_set_elem(&mut elems, val);
+            elems
+        }
         _ => {
             let mut s = HashSet::new();
             let sv = val.to_string_value();
