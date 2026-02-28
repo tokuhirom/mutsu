@@ -1139,7 +1139,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 let joined = items
                     .iter()
-                    .map(|v| v.to_string_value())
+                    .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()
                     .join("");
                 Some(Ok(Value::Str(joined)))
