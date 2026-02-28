@@ -52,6 +52,44 @@ fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &Big
 }
 
 impl Interpreter {
+    fn normalize_incdec_source_for_mut(value: Value) -> Value {
+        match value {
+            Value::Nil | Value::Package(_) => Value::Int(0),
+            other => other,
+        }
+    }
+
+    fn increment_mut_target_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => i
+                .checked_add(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n + 1),
+            Value::Bool(_) => Value::Bool(true),
+            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
+            Value::Str(s) => Value::Str(Self::string_succ(s)),
+            _ => Value::Int(1),
+        }
+    }
+
+    fn decrement_mut_target_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => i
+                .checked_sub(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n - 1),
+            Value::Bool(_) => Value::Bool(false),
+            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
+            Value::Str(s) => match Self::string_pred(s) {
+                Ok(prev) => Value::Str(prev),
+                Err(_) => Value::Str(s.clone()),
+            },
+            _ => Value::Int(-1),
+        }
+    }
+
     fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
         match value {
             Value::Int(i) => Some(*i),
@@ -528,6 +566,21 @@ impl Interpreter {
             return Err(RuntimeError::new(
                 "X::Immutable: Cannot modify an immutable List",
             ));
+        }
+        if scalar_like_target
+            && args.is_empty()
+            && matches!(method, "postfix:<++>" | "postfix:<-->")
+        {
+            self.check_readonly_for_increment(target_var)?;
+            let current = self.env.get(target_var).cloned().unwrap_or(target);
+            let current = Self::normalize_incdec_source_for_mut(current);
+            let updated = if method == "postfix:<++>" {
+                Self::increment_mut_target_value(&current)
+            } else {
+                Self::decrement_mut_target_value(&current)
+            };
+            self.env.insert(target_var.to_string(), updated);
+            return Ok(current);
         }
         if method == "VAR" && args.is_empty() {
             if let Value::Instance { attributes, .. } = &target
