@@ -611,6 +611,10 @@ impl Interpreter {
                 }
                 Ok(Value::array(items))
             }
+            "(-)" | "∖" => Ok(set_diff_values(left, right)),
+            "(|)" | "∪" => Ok(set_union_values(left, right)),
+            "(&)" | "∩" => Ok(set_intersect_values(left, right)),
+            "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op

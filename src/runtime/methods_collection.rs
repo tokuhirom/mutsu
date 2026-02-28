@@ -7,7 +7,16 @@ impl Interpreter {
             Value::Set(_) => return Ok(target),
             Value::Array(items, ..) => {
                 for item in items.iter() {
-                    elems.insert(item.to_string_value());
+                    match item {
+                        Value::Pair(k, v) => {
+                            if v.truthy() {
+                                elems.insert(k.clone());
+                            }
+                        }
+                        _ => {
+                            elems.insert(item.to_string_value());
+                        }
+                    }
                 }
             }
             Value::Hash(items) => {
@@ -27,6 +36,11 @@ impl Interpreter {
                     elems.insert(k.clone());
                 }
             }
+            Value::Pair(k, v) => {
+                if v.truthy() {
+                    elems.insert(k);
+                }
+            }
             other => {
                 elems.insert(other.to_string_value());
             }
@@ -40,7 +54,19 @@ impl Interpreter {
             Value::Bag(_) => return Ok(target),
             Value::Array(items, ..) => {
                 for item in items.iter() {
-                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                    match item {
+                        Value::Pair(k, v) => {
+                            let c = match v.as_ref() {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => *n as i64,
+                                _ => 1,
+                            };
+                            *counts.entry(k.clone()).or_insert(0) += c;
+                        }
+                        _ => {
+                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                        }
+                    }
                 }
             }
             Value::Set(s) => {
@@ -51,6 +77,29 @@ impl Interpreter {
             Value::Mix(m) => {
                 for (k, v) in m.iter() {
                     counts.insert(k.clone(), *v as i64);
+                }
+            }
+            Value::Hash(h) => {
+                for (k, v) in h.iter() {
+                    let c = match v {
+                        Value::Int(i) => *i,
+                        Value::Num(n) => *n as i64,
+                        Value::Bool(b) => i64::from(*b),
+                        _ => i64::from(v.truthy()),
+                    };
+                    if c > 0 {
+                        counts.insert(k.clone(), c);
+                    }
+                }
+            }
+            Value::Pair(k, v) => {
+                let c = match v.as_ref() {
+                    Value::Int(i) => *i,
+                    Value::Num(n) => *n as i64,
+                    _ => 1,
+                };
+                if c > 0 {
+                    counts.insert(k, c);
                 }
             }
             other => {
@@ -99,6 +148,50 @@ impl Interpreter {
             Value::Bag(b) => {
                 for (k, v) in b.iter() {
                     weights.insert(k.clone(), *v as f64);
+                }
+            }
+            Value::Pair(k, v) => {
+                let w = match v.as_ref() {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(n) => *n,
+                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                    _ => 1.0,
+                };
+                *weights.entry(k.clone()).or_insert(0.0) += w;
+            }
+            Value::ValuePair(k, v) => {
+                let w = match v.as_ref() {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(n) => *n,
+                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                    _ => 1.0,
+                };
+                *weights.entry(k.to_string_value()).or_insert(0.0) += w;
+            }
+            Value::Hash(h) => {
+                for (k, v) in h.iter() {
+                    let w = match v {
+                        Value::Int(i) => *i as f64,
+                        Value::Num(n) => *n,
+                        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                        Value::Bool(b) => {
+                            if *b {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        _ => {
+                            if v.truthy() {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                    };
+                    if w != 0.0 {
+                        weights.insert(k.clone(), w);
+                    }
                 }
             }
             other => {
