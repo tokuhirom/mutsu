@@ -1,5 +1,12 @@
 use super::*;
 use ::regex::Regex;
+use std::cell::RefCell;
+
+thread_local! {
+    /// Thread-local storage for regex security errors that need to propagate
+    /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
+    pub(super) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
+}
 
 fn regex_single_quote_closes(open: char, ch: char) -> bool {
     match open {
@@ -9,6 +16,29 @@ fn regex_single_quote_closes(open: char, ch: char) -> bool {
         '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
         _ => false,
     }
+}
+
+fn is_inside_single_quoted_regex_literal(chars: &[char], pos: usize) -> bool {
+    let mut open: Option<char> = None;
+    let mut escaped = false;
+    for &ch in chars.iter().take(pos) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(open_ch) = open {
+            if regex_single_quote_closes(open_ch, ch) {
+                open = None;
+            }
+        } else if matches!(ch, '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}') {
+            open = Some(ch);
+        }
+    }
+    open.is_some()
 }
 
 fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
@@ -342,7 +372,15 @@ impl Interpreter {
             }
         }
 
-        let interpolated = self.interpolate_regex_scalars(pattern);
+        let interpolated = match self.interpolate_regex_scalars(pattern) {
+            Ok(s) => s,
+            Err(e) => {
+                PENDING_REGEX_ERROR.with(|err| {
+                    *err.borrow_mut() = Some(e);
+                });
+                return None;
+            }
+        };
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
         let mut ignore_mark = false;
@@ -924,6 +962,58 @@ impl Interpreter {
                                 } else {
                                     continue;
                                 }
+                            } else if let Some(var_name) = trimmed.strip_prefix('$') {
+                                // <$var> — look up scalar variable and compile as regex
+                                let value = self.env.get(var_name).cloned().unwrap_or(Value::Nil);
+                                let pat_str = match &value {
+                                    Value::Regex(pat) => pat.clone(),
+                                    Value::RegexWithAdverbs { pattern, .. } => pattern.clone(),
+                                    other => other.to_string_value(),
+                                };
+                                // Check for longname alias first
+                                if Self::contains_longname_alias(&pat_str) {
+                                    PENDING_REGEX_ERROR.with(|e| {
+                                        *e.borrow_mut() = Some(Self::make_longname_alias_error());
+                                    });
+                                    return None;
+                                }
+                                // Security check: reject dangerous patterns
+                                if Self::contains_dangerous_regex_code(&pat_str) {
+                                    PENDING_REGEX_ERROR.with(|e| {
+                                        *e.borrow_mut() = Some(Self::make_security_policy_error());
+                                    });
+                                    return None;
+                                }
+                                // Parse the pattern string as a regex
+                                if let Some(parsed) = self.parse_regex(&pat_str) {
+                                    RegexAtom::Group(parsed)
+                                } else {
+                                    continue;
+                                }
+                            } else if trimmed.starts_with('@') {
+                                // <@var> — look up array variable and compile
+                                // each element as a regex pattern (alternation)
+                                let env_key = trimmed.to_string(); // includes @
+                                let value = self.env.get(&env_key).cloned().unwrap_or(Value::Nil);
+                                let elements = match &value {
+                                    Value::Array(arr, _) => arr.as_ref().clone(),
+                                    _ => vec![value],
+                                };
+                                let mut alt_patterns = Vec::new();
+                                for elt in &elements {
+                                    let pat_str = match elt {
+                                        Value::Regex(pat) => pat.clone(),
+                                        Value::RegexWithAdverbs { pattern, .. } => pattern.clone(),
+                                        other => other.to_string_value(),
+                                    };
+                                    if let Some(parsed) = self.parse_regex(&pat_str) {
+                                        alt_patterns.push(parsed);
+                                    }
+                                }
+                                if alt_patterns.is_empty() {
+                                    continue;
+                                }
+                                RegexAtom::Alternation(alt_patterns)
                             } else {
                                 // Check for named character classes
                                 match trimmed {
@@ -971,7 +1061,17 @@ impl Interpreter {
                                             ignore_mark,
                                         })
                                     }
-                                    _ => RegexAtom::Named(name),
+                                    _ => {
+                                        // Check for longname aliases
+                                        if trimmed.contains("::") && trimmed.contains('=') {
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() =
+                                                    Some(Self::make_longname_alias_error());
+                                            });
+                                            return None;
+                                        }
+                                        RegexAtom::Named(name)
+                                    }
                                 }
                             }
                         } // close else for code assertion special case
@@ -1192,7 +1292,7 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> String {
+    pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
         let mut i = 0usize;
@@ -1282,6 +1382,24 @@ impl Interpreter {
                 }
                 continue;
             }
+            // Skip <...> angle brackets — don't interpolate variables inside them.
+            // The tokenizer handles <$var>, <@var>, <{code}>, etc. directly.
+            if ch == '<' {
+                let mut depth = 1usize;
+                out.push(ch);
+                i += 1;
+                while i < chars.len() && depth > 0 {
+                    let c = chars[i];
+                    if c == '<' {
+                        depth += 1;
+                    } else if c == '>' {
+                        depth -= 1;
+                    }
+                    out.push(c);
+                    i += 1;
+                }
+                continue;
+            }
             if ch == '$' {
                 let mut j = i + 1;
                 if j < chars.len() && chars[j] == '{' {
@@ -1298,12 +1416,11 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.env.get(&format!("${name}")).cloned())
                             .unwrap_or(Value::Nil);
-                        match value {
-                            Value::Regex(pat) => out.push_str(&pat),
-                            Value::RegexWithAdverbs { pattern, .. } => out.push_str(&pattern),
-                            other => out.push_str(&Self::escape_regex_scalar_literal(
-                                &other.to_string_value(),
-                            )),
+                        if !(matches!(value, Value::Nil)
+                            && is_inside_single_quoted_regex_literal(&chars, i))
+                        {
+                            Self::check_hash_in_regex(&value)?;
+                            Self::push_value_as_regex_pattern(&value, &mut out);
                         }
                         i = j + 1;
                         continue;
@@ -1322,11 +1439,11 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::Nil);
-                    match value {
-                        Value::Regex(pat) => out.push_str(&pat),
-                        Value::RegexWithAdverbs { pattern, .. } => out.push_str(&pattern),
-                        other => out
-                            .push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+                    if !(matches!(value, Value::Nil)
+                        && is_inside_single_quoted_regex_literal(&chars, i))
+                    {
+                        Self::check_hash_in_regex(&value)?;
+                        Self::push_value_as_regex_pattern(&value, &mut out);
                     }
                     i = j;
                     continue;
@@ -1341,41 +1458,65 @@ impl Interpreter {
                     {
                         j += 1;
                     }
-                    let name: String = chars[name_start..j].iter().collect();
-                    let mut value = self
+                    let bare_name: String = chars[name_start..j].iter().collect();
+                    let sigiled_name = format!("@{bare_name}");
+                    let value = self
                         .env
-                        .get(&format!("@{name}"))
+                        .get(&sigiled_name)
                         .cloned()
-                        .or_else(|| self.env.get(&name).cloned())
+                        .or_else(|| self.env.get(&bare_name).cloned())
                         .unwrap_or(Value::Nil);
-                    if matches!(value, Value::Nil)
-                        && let Some(v) = self
-                            .eval_regex_expr_value(&format!("@{name}"), &RegexCaptures::default())
-                    {
-                        value = v;
-                    }
-                    match value {
-                        Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
-                            let mut alts = Vec::new();
-                            for item in items.iter() {
-                                match item {
-                                    Value::Regex(pat) => alts.push(pat.clone()),
-                                    Value::RegexWithAdverbs { pattern, .. } => {
-                                        alts.push(pattern.clone())
-                                    }
-                                    other => alts.push(Self::escape_regex_scalar_literal(
-                                        &other.to_string_value(),
-                                    )),
-                                }
-                            }
-                            out.push_str(&alts.join("||"));
+                    let elements = match &value {
+                        Value::Array(arr, _) => arr.as_ref().clone(),
+                        _ => vec![value],
+                    };
+                    out.push('[');
+                    for (idx, elt) in elements.iter().enumerate() {
+                        if idx > 0 {
+                            out.push('|');
                         }
-                        other => {
-                            out.push_str(&Self::escape_regex_scalar_literal(
+                        match elt {
+                            Value::Regex(pat) => out.push_str(pat),
+                            Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
+                            other => out.push_str(&Self::escape_regex_scalar_literal(
                                 &other.to_string_value(),
-                            ));
+                            )),
                         }
                     }
+                    out.push(']');
+                    i = j;
+                    continue;
+                } else if j < chars.len() && chars[j] == '(' {
+                    j += 1; // skip '('
+                    let mut depth = 1usize;
+                    let expr_start = j;
+                    while j < chars.len() && depth > 0 {
+                        if chars[j] == '(' {
+                            depth += 1;
+                        } else if chars[j] == ')' {
+                            depth -= 1;
+                        }
+                        if depth > 0 {
+                            j += 1;
+                        }
+                    }
+                    let expr_str: String = chars[expr_start..j].iter().collect();
+                    j += 1; // skip closing ')'
+                    let val = self.eval_string_as_source(&expr_str);
+                    let elements = match &val {
+                        Value::Array(arr, _) => arr.as_ref().clone(),
+                        _ => vec![val],
+                    };
+                    let mut alts = Vec::new();
+                    for elt in elements.iter() {
+                        match elt {
+                            Value::Regex(pat) => alts.push(pat.clone()),
+                            Value::RegexWithAdverbs { pattern, .. } => alts.push(pattern.clone()),
+                            other => alts
+                                .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
+                        }
+                    }
+                    out.push_str(&alts.join("||"));
                     i = j;
                     continue;
                 }
@@ -1383,7 +1524,48 @@ impl Interpreter {
             out.push(ch);
             i += 1;
         }
-        out
+        Ok(out)
+    }
+
+    /// Convert a Value to its regex pattern representation and push to output.
+    /// Handles Nil (always-fail), Regex, Junction (alternation), and literals.
+    fn push_value_as_regex_pattern(value: &Value, out: &mut String) {
+        match value {
+            Value::Nil => out.push_str("<!>"),
+            Value::Regex(pat) => out.push_str(pat),
+            Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
+            Value::Junction { values, .. } => {
+                // Expand junction values as alternation [v1|v2|...]
+                out.push('[');
+                for (idx, v) in values.iter().enumerate() {
+                    if idx > 0 {
+                        out.push('|');
+                    }
+                    match v {
+                        Value::Regex(pat) => out.push_str(pat),
+                        Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
+                        other => out
+                            .push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+                    }
+                }
+                out.push(']');
+            }
+            other => out.push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+        }
+    }
+
+    /// Check if a value is a Hash and throw X::Syntax::Reserved if so.
+    fn check_hash_in_regex(value: &Value) -> Result<(), RuntimeError> {
+        if matches!(value, Value::Hash(_)) {
+            let msg = "The use of hashes in regexes is reserved";
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+            let ex = Value::make_instance("X::Syntax::Reserved".to_string(), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        Ok(())
     }
 
     fn escape_regex_scalar_literal(input: &str) -> String {
@@ -1417,6 +1599,88 @@ impl Interpreter {
             out.push(ch);
         }
         out
+    }
+
+    /// Check if a regex pattern string contains dangerous code that could
+    /// be used for injection attacks. Returns true if the pattern is dangerous.
+    pub(super) fn contains_dangerous_regex_code(pattern: &str) -> bool {
+        let s = pattern.trim();
+        // Check for code interpolation patterns
+        if s.contains("$(") || s.contains("@(") {
+            return true;
+        }
+        // Check for braces: { or } could indicate code blocks
+        if s.contains('{') || s.contains('}') {
+            return true;
+        }
+        // Check for dynamic lookups: <::(...)>
+        if s.contains("::(") {
+            return true;
+        }
+        // Check for double-quoted strings with interpolation
+        if s.contains('"') {
+            let in_dq: Vec<&str> = s.split('"').collect();
+            for (i, chunk) in in_dq.iter().enumerate() {
+                if i % 2 == 1
+                    && (chunk.contains('$')
+                        || chunk.contains('@')
+                        || chunk.contains('%')
+                        || chunk.contains('&'))
+                {
+                    return true;
+                }
+            }
+        }
+        // Check for named rule with parens containing code: <alpha(...)>
+        if ::regex::Regex::new(r"<\w+\(.*\)>")
+            .ok()
+            .and_then(|re| re.find(s))
+            .is_some()
+        {
+            return true;
+        }
+        // Check for :my variable declaration
+        if s.contains(":my ") || s.contains(":our ") {
+            return true;
+        }
+        // Check for "$x:(..." extended colonpair syntax
+        if s.contains(":(") {
+            return true;
+        }
+        false
+    }
+
+    /// Check if a regex pattern string contains a longname alias
+    /// (e.g., `<IO::File=bar>` or `<::IO::File=bar>`). Returns true if so.
+    pub(super) fn contains_longname_alias(pattern: &str) -> bool {
+        // Look for <...::...=...> pattern
+        let s = pattern.trim();
+        if s.contains("::") && s.contains('=') {
+            return true;
+        }
+        false
+    }
+
+    /// Create an X::Syntax::Regex::Alias::LongName error.
+    pub(super) fn make_longname_alias_error() -> RuntimeError {
+        let msg = "Can't use a long name as a regex alias";
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+        let ex = Value::make_instance("X::Syntax::Regex::Alias::LongName".to_string(), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    /// Create an X::SecurityPolicy error for prohibited regex interpolation.
+    pub(super) fn make_security_policy_error() -> RuntimeError {
+        let msg = "Prohibited regex interpolation";
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+        let ex = Value::make_instance("X::SecurityPolicy".to_string(), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(ex));
+        err
     }
 
     pub(super) fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
@@ -1643,6 +1907,27 @@ impl Interpreter {
             negative: negative_items,
         })
     }
+
+    /// Evaluate a string as Raku source code and return the result value.
+    /// Used for @(expr) interpolation in regex patterns.
+    fn eval_string_as_source(&self, code: &str) -> Value {
+        let parsed = crate::parse_dispatch::parse_source(code);
+        let (stmts, _) = match parsed {
+            Ok(v) => v,
+            Err(_) => return Value::Nil,
+        };
+        let mut interp = Interpreter {
+            env: self.env.clone(),
+            functions: self.functions.clone(),
+            token_defs: self.token_defs.clone(),
+            current_package: self.current_package.clone(),
+            ..Default::default()
+        };
+        match interp.eval_block_value(&stmts) {
+            Ok(v) => v,
+            Err(e) => e.return_value.unwrap_or(Value::Nil),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1660,7 +1945,14 @@ mod tests {
                 Value::Str("xxxx".to_string()),
             ]),
         );
-        let interpolated = interp.interpolate_regex_scalars(" ||@list ");
-        assert_eq!(interpolated, " ||x||xx||xxxx ");
+        let interpolated = interp.interpolate_regex_scalars(" ||@list ").unwrap();
+        assert_eq!(interpolated, " ||[x|xx|xxxx] ");
+    }
+
+    #[test]
+    fn undefined_scalar_inside_single_quoted_regex_atom_interpolates_to_empty() {
+        let interp = Interpreter::default();
+        let interpolated = interp.interpolate_regex_scalars("'$param'").unwrap();
+        assert_eq!(interpolated, "''");
     }
 }

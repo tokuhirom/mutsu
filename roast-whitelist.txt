@@ -164,6 +164,7 @@ roast/S05-grammar/parse_and_parsefile-6e.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
+roast/S05-interpolation/regex-in-variable.t
 roast/S05-mass/charsets.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t
@@ -488,6 +489,7 @@ roast/S32-list/first-kv.t
 roast/S32-list/first-p.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
+roast/S32-list/grep.t
 roast/S32-list/map_function_return_values.t
 roast/S32-list/produce.t
 roast/S32-list/rotor.t

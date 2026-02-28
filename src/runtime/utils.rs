@@ -6,14 +6,46 @@ use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
+type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, bool);
+type GrepViewMap = HashMap<usize, GrepViewBinding>;
 
 fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
     static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, Vec<usize>>>> = OnceLock::new();
     SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
+    static GREP_VIEW_BINDINGS: OnceLock<Mutex<GrepViewMap>> = OnceLock::new();
+    GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn shaped_array_key(items: &Arc<Vec<Value>>) -> usize {
     Arc::as_ptr(items) as usize
+}
+
+fn grep_view_key(items: &Arc<Vec<Value>>) -> usize {
+    Arc::as_ptr(items) as usize
+}
+
+pub(crate) fn register_grep_view_binding(
+    filtered: &Arc<Vec<Value>>,
+    source: &Arc<Vec<Value>>,
+    source_indices: Vec<usize>,
+    source_is_array: bool,
+) {
+    if let Ok(mut bindings) = grep_view_bindings().lock() {
+        bindings.insert(
+            grep_view_key(filtered),
+            (source.clone(), source_indices, source_is_array),
+        );
+    }
+}
+
+pub(crate) fn get_grep_view_binding(
+    filtered: &Arc<Vec<Value>>,
+) -> Option<(Arc<Vec<Value>>, Vec<usize>, bool)> {
+    let bindings = grep_view_bindings().lock().ok()?;
+    bindings.get(&grep_view_key(filtered)).cloned()
 }
 
 /// Check if an array is a shaped (multidimensional) array.

@@ -1735,6 +1735,13 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        if name == "_"
+            && let Some(ref source_var) = self.topic_source_var
+        {
+            let sv = source_var.clone();
+            self.set_env_with_main_alias(&sv, val.clone());
+            self.update_local_if_exists(code, &sv, &val);
+        }
         if (name.starts_with('@') || name.starts_with('%'))
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {

@@ -171,6 +171,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // Fatal parse errors (e.g. bare say/print/put) pass through directly
                 let mut err = RuntimeError::new(format!("{}", e));
                 err.code = Some(RuntimeErrorCode::ParseGeneric);
+                if let Some(ex) = e.exception {
+                    err.exception = Some(ex);
+                }
                 return Err(err);
             }
             if let Some(consumed) = e.consumed_from(source.len()) {

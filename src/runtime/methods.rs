@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::CallArg;
+use crate::ast::{CallArg, ControlFlowKind};
 use crate::value::signature::{
     extract_sig_info, make_params_value_from_param_defs, make_signature_value,
     param_defs_to_sig_info,
@@ -2864,6 +2864,42 @@ impl Interpreter {
             }
             "grep" => {
                 return self.dispatch_grep(target, &args);
+            }
+            "eager" if args.is_empty() => {
+                return match target {
+                    Value::LazyList(list) => Ok(Value::array(self.force_lazy_list_bridge(&list)?)),
+                    Value::Array(..) | Value::Seq(..) | Value::Slip(..) => Ok(target),
+                    Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. } => {
+                        Ok(Value::array(crate::runtime::utils::value_to_list(&target)))
+                    }
+                    other => Ok(other),
+                };
+            }
+            "is-lazy" if args.is_empty() => {
+                let value_is_lazy = |v: &Value| match v {
+                    Value::LazyList(_) => true,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                    Value::GenericRange { end, .. } => {
+                        let end_f = end.to_f64();
+                        end_f.is_infinite() && end_f.is_sign_positive()
+                    }
+                    _ => false,
+                };
+                let is_lazy = match &target {
+                    v if value_is_lazy(v) => true,
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        items.iter().any(value_is_lazy)
+                    }
+                    _ => false,
+                };
+                return Ok(Value::Bool(is_lazy));
             }
             "first" if !args.is_empty() => {
                 return self.dispatch_first(target, &args);
@@ -7177,6 +7213,192 @@ impl Interpreter {
     }
 
     fn dispatch_grep(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        fn stmt_contains_last(stmt: &Stmt) -> bool {
+            match stmt {
+                Stmt::Last(_) => true,
+                Stmt::Expr(expr)
+                | Stmt::Return(expr)
+                | Stmt::Die(expr)
+                | Stmt::Fail(expr)
+                | Stmt::Take(expr) => expr_contains_last(expr),
+                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_contains_last(expr),
+                Stmt::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    expr_contains_last(cond)
+                        || then_branch.iter().any(stmt_contains_last)
+                        || else_branch.iter().any(stmt_contains_last)
+                }
+                Stmt::While { cond, body, .. } => {
+                    expr_contains_last(cond) || body.iter().any(stmt_contains_last)
+                }
+                Stmt::For { iterable, body, .. } => {
+                    expr_contains_last(iterable) || body.iter().any(stmt_contains_last)
+                }
+                Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    ..
+                } => {
+                    init.as_ref().is_some_and(|s| stmt_contains_last(s))
+                        || cond.as_ref().is_some_and(expr_contains_last)
+                        || step.as_ref().is_some_and(expr_contains_last)
+                        || body.iter().any(stmt_contains_last)
+                }
+                Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::React { body }
+                | Stmt::Catch(body)
+                | Stmt::Control(body)
+                | Stmt::Default(body) => body.iter().any(stmt_contains_last),
+                Stmt::Whenever { supply, body, .. } => {
+                    expr_contains_last(supply) || body.iter().any(stmt_contains_last)
+                }
+                Stmt::Given { topic, body } => {
+                    expr_contains_last(topic) || body.iter().any(stmt_contains_last)
+                }
+                Stmt::When { cond, body } => {
+                    expr_contains_last(cond) || body.iter().any(stmt_contains_last)
+                }
+                Stmt::ClassDecl { body, .. }
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::Package { body, .. }
+                | Stmt::SubDecl { body, .. }
+                | Stmt::MethodDecl { body, .. } => body.iter().any(stmt_contains_last),
+                Stmt::HasDecl { default, .. } => default.as_ref().is_some_and(expr_contains_last),
+                Stmt::Call { args, .. } => args.iter().any(|arg| match arg {
+                    CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => {
+                        expr_contains_last(e)
+                    }
+                    CallArg::Named { value, .. } => value.as_ref().is_some_and(expr_contains_last),
+                }),
+                Stmt::Label { stmt, .. } => stmt_contains_last(stmt),
+                Stmt::EnumDecl { variants, .. } => variants
+                    .iter()
+                    .any(|(_, v)| v.as_ref().is_some_and(expr_contains_last)),
+                Stmt::Goto(expr) => expr_contains_last(expr),
+                _ => false,
+            }
+        }
+
+        fn expr_contains_last(expr: &Expr) -> bool {
+            match expr {
+                Expr::ControlFlow {
+                    kind: ControlFlowKind::Last,
+                    ..
+                } => true,
+                Expr::Unary { expr, .. }
+                | Expr::PostfixOp { expr, .. }
+                | Expr::Reduction { expr, .. }
+                | Expr::PositionalPair(expr)
+                | Expr::ZenSlice(expr)
+                | Expr::IndirectTypeLookup(expr) => expr_contains_last(expr),
+                Expr::DoStmt(stmt) => stmt_contains_last(stmt),
+                Expr::Binary { left, right, .. }
+                | Expr::HyperOp { left, right, .. }
+                | Expr::MetaOp { left, right, .. } => {
+                    expr_contains_last(left) || expr_contains_last(right)
+                }
+                Expr::InfixFunc { left, right, .. } => {
+                    expr_contains_last(left) || right.iter().any(expr_contains_last)
+                }
+                Expr::Ternary {
+                    cond,
+                    then_expr,
+                    else_expr,
+                } => {
+                    expr_contains_last(cond)
+                        || expr_contains_last(then_expr)
+                        || expr_contains_last(else_expr)
+                }
+                Expr::Index { target, index } => {
+                    expr_contains_last(target) || expr_contains_last(index)
+                }
+                Expr::Exists { target, arg, .. } => {
+                    expr_contains_last(target)
+                        || arg
+                            .as_ref()
+                            .is_some_and(|index_expr| expr_contains_last(index_expr))
+                }
+                Expr::MethodCall { target, args, .. }
+                | Expr::DynamicMethodCall { target, args, .. }
+                | Expr::HyperMethodCall { target, args, .. }
+                | Expr::HyperMethodCallDynamic { target, args, .. } => {
+                    expr_contains_last(target) || args.iter().any(expr_contains_last)
+                }
+                Expr::CallOn { target, args } => {
+                    expr_contains_last(target) || args.iter().any(expr_contains_last)
+                }
+                Expr::Call { args, .. } => args.iter().any(expr_contains_last),
+                Expr::StringInterpolation(items)
+                | Expr::ArrayLiteral(items)
+                | Expr::BracketArray(items)
+                | Expr::CaptureLiteral(items) => items.iter().any(expr_contains_last),
+                Expr::Hash(items) => items
+                    .iter()
+                    .any(|(_, val)| val.as_ref().is_some_and(expr_contains_last)),
+                Expr::Block(body)
+                | Expr::AnonSub { body, .. }
+                | Expr::AnonSubParams { body, .. }
+                | Expr::Gather(body)
+                | Expr::DoBlock { body, .. } => body.iter().any(stmt_contains_last),
+                Expr::Try { body, catch } => {
+                    body.iter().any(stmt_contains_last)
+                        || catch
+                            .as_ref()
+                            .is_some_and(|stmts| stmts.iter().any(stmt_contains_last))
+                }
+                Expr::IndexAssign {
+                    target,
+                    index,
+                    value,
+                } => {
+                    expr_contains_last(target)
+                        || expr_contains_last(index)
+                        || expr_contains_last(value)
+                }
+                Expr::AssignExpr { expr, .. } => expr_contains_last(expr),
+                Expr::Lambda { body, .. } => body.iter().any(stmt_contains_last),
+                Expr::Subst { .. }
+                | Expr::NonDestructiveSubst { .. }
+                | Expr::Transliterate { .. }
+                | Expr::MatchRegex(_)
+                | Expr::Literal(_)
+                | Expr::Whatever
+                | Expr::HyperWhatever
+                | Expr::BareWord(_)
+                | Expr::Var(_)
+                | Expr::CaptureVar(_)
+                | Expr::ArrayVar(_)
+                | Expr::HashVar(_)
+                | Expr::CodeVar(_)
+                | Expr::EnvIndex(_)
+                | Expr::RoutineMagic
+                | Expr::BlockMagic
+                | Expr::PseudoStash(_) => false,
+                Expr::IndirectCodeLookup { package, .. } => expr_contains_last(package),
+                Expr::HyperSlice { target, .. } => expr_contains_last(target),
+                Expr::HyperIndex { target, keys } => {
+                    expr_contains_last(target) || expr_contains_last(keys)
+                }
+                _ => false,
+            }
+        }
+
+        if let Some(Value::Pair(key, _)) =
+            args.iter().skip(1).find(|v| matches!(v, Value::Pair(_, _)))
+        {
+            return Err(RuntimeError::new(format!(
+                "X::Adverb: Unexpected adverb '{}'",
+                key
+            )));
+        }
+
         match target {
             Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
                 "Cannot call .grep on a Supply type object",
@@ -7223,8 +7445,37 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance("Supply".to_string(), attrs))
             }
-            Value::Array(items, ..) => {
-                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
+            Value::Array(items, is_array) => {
+                let (filtered, mutated_items) =
+                    self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
+                let updated_source = std::sync::Arc::new(mutated_items);
+                self.overwrite_array_bindings_by_identity(
+                    &items,
+                    Value::Array(updated_source.clone(), is_array),
+                );
+                if let Value::Array(filtered_items, ..) = &filtered {
+                    let mut indices = Vec::new();
+                    let mut scan_from = 0usize;
+                    let source_items = updated_source.as_ref();
+                    for needle in filtered_items.iter() {
+                        if let Some(rel) = source_items[scan_from..].iter().position(|candidate| {
+                            crate::runtime::utils::values_identical(candidate, needle)
+                        }) {
+                            let absolute = scan_from + rel;
+                            indices.push(absolute);
+                            scan_from = absolute.saturating_add(1);
+                        }
+                    }
+                    if !indices.is_empty() {
+                        crate::runtime::utils::register_grep_view_binding(
+                            filtered_items,
+                            &updated_source,
+                            indices,
+                            is_array,
+                        );
+                    }
+                }
+                Ok(filtered)
             }
             Value::Range(a, b) => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
@@ -7243,8 +7494,71 @@ impl Interpreter {
                 self.eval_grep_over_items(args.first().cloned(), items)
             }
             Value::GenericRange { .. } => {
+                if let Value::GenericRange {
+                    start,
+                    end,
+                    excl_start,
+                    ..
+                } = &target
+                {
+                    let end_num = end.to_f64();
+                    if end_num.is_infinite()
+                        && end_num.is_sign_positive()
+                        && let Some(Value::Sub(data)) = args.first().cloned()
+                        && data.body.iter().any(stmt_contains_last)
+                    {
+                        let mut current = start.to_f64() as i64;
+                        if *excl_start {
+                            current += 1;
+                        }
+                        let mut result = Vec::new();
+                        let limit = 1_000_000usize;
+                        while result.len() < limit {
+                            let item = match start.as_ref() {
+                                Value::Num(_) => Value::Num(current as f64),
+                                Value::Rat(_, den) => crate::value::make_rat(current * *den, *den),
+                                _ => Value::Int(current),
+                            };
+                            'redo_item: loop {
+                                match self.call_sub_value(
+                                    Value::Sub(data.clone()),
+                                    vec![item.clone()],
+                                    false,
+                                ) {
+                                    Ok(pred) => {
+                                        if pred.truthy() {
+                                            result.push(item.clone());
+                                        }
+                                        break 'redo_item;
+                                    }
+                                    Err(e) if e.is_redo => continue 'redo_item,
+                                    Err(e) if e.is_next => break 'redo_item,
+                                    Err(e) if e.is_last => return Ok(Value::array(result)),
+                                    Err(e) => return Err(e),
+                                }
+                            }
+                            current += 1;
+                        }
+                        return Ok(Value::array(result));
+                    }
+                    if end_num.is_infinite() && end_num.is_sign_positive() {
+                        // Preserve laziness for open-ended ranges in grep.
+                        return Ok(target);
+                    }
+                }
                 let items = crate::runtime::utils::value_to_list(&target);
                 self.eval_grep_over_items(args.first().cloned(), items)
+            }
+            Value::Str(s) => {
+                if let Some(Value::Sub(data)) = args.first()
+                    && matches!(
+                        data.body.last(),
+                        Some(Stmt::Expr(Expr::Literal(Value::Regex(_))))
+                    )
+                {
+                    return self.eval_grep_over_items(args.first().cloned(), vec![Value::Str(s)]);
+                }
+                Ok(Value::Str(s))
             }
             other => Ok(other),
         }

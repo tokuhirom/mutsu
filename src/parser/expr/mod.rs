@@ -1302,6 +1302,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_dot_hyper_postfix_increment() {
+        let (rest, expr) = expression("$x.>>++").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall {
+                target, name, args, ..
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n == "x"));
+                assert_eq!(name, "postfix:<++>");
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected hyper postfix increment"),
+        }
+    }
+
+    #[test]
     fn parse_dot_postfix_decrement() {
         let (rest, expr) = expression("$x.--").unwrap();
         assert_eq!(rest, "");

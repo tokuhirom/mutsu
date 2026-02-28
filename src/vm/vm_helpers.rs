@@ -593,6 +593,10 @@ impl VM {
                 | Value::Routine { is_regex: true, .. }
         );
         let matched = self.interpreter.smart_match_values(&left, &right);
+        // Check for pending regex security error (set by regex parse/match)
+        if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
+            return Err(err);
+        }
         if is_regex {
             // For regex smartmatch, return the Match object (from $/) or Nil
             if matched {

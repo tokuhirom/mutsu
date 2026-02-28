@@ -225,6 +225,11 @@ impl VM {
         &mut self.interpreter
     }
 
+    /// Override the source variable used when mutating `$_` in VM execution.
+    pub(crate) fn set_topic_source_var(&mut self, name: Option<String>) {
+        self.topic_source_var = name;
+    }
+
     /// Consume the VM and return the interpreter.
     pub(crate) fn into_interpreter(self) -> Interpreter {
         self.interpreter
@@ -415,7 +420,14 @@ impl VM {
                 }) {
                     self.interpreter.env_mut().insert(alias_name, val.clone());
                 }
-                self.set_env_with_main_alias(&name, val);
+                self.set_env_with_main_alias(&name, val.clone());
+                if name == "_"
+                    && let Some(ref source_var) = self.topic_source_var
+                {
+                    let source_name = source_var.clone();
+                    self.set_env_with_main_alias(&source_name, val.clone());
+                    self.update_local_if_exists(code, &source_name, &val);
+                }
                 *ip += 1;
             }
             OpCode::SetVarType { name_idx, tc_idx } => {

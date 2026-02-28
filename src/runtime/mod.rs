@@ -387,6 +387,9 @@ pub struct Interpreter {
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// Pending error from regex security validation, to be propagated by the caller.
+    #[allow(dead_code)]
+    pending_regex_error: Option<RuntimeError>,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -451,6 +454,12 @@ impl Default for Interpreter {
 }
 
 impl Interpreter {
+    /// Take any pending regex security error from the thread-local store.
+    pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
+        // Delegate to the regex_parse module's thread-local error store
+        regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take())
+    }
+
     pub fn new() -> Self {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(current_process_id()));
@@ -1311,6 +1320,7 @@ impl Interpreter {
             readonly_vars: HashSet::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            pending_regex_error: None,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -2206,6 +2216,7 @@ impl Interpreter {
             readonly_vars: HashSet::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            pending_regex_error: None,
         };
         cloned.init_io_environment();
         cloned

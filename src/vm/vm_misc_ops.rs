@@ -590,6 +590,13 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        if name == "_"
+            && let Some(ref source_var) = self.topic_source_var
+        {
+            let sv = source_var.clone();
+            self.set_env_with_main_alias(&sv, val.clone());
+            self.update_local_if_exists(code, &sv, &val);
+        }
         self.stack.push(val);
         Ok(())
     }
