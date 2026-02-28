@@ -167,7 +167,7 @@ impl Interpreter {
 
         // Event loop: poll all subscriptions
         let timeout = Duration::from_millis(10);
-        loop {
+        'react_loop: loop {
             let mut all_done = true;
             for sub in react_subs.iter_mut() {
                 if sub.done {
@@ -183,24 +183,37 @@ impl Interpreter {
                             while let Some(pos) = sub.line_buffer.find('\n') {
                                 let line = sub.line_buffer[..pos].to_string();
                                 sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
-                                self.call_sub_value(
+                                match self.call_sub_value(
                                     sub.callback.clone(),
                                     vec![Value::Str(line)],
                                     true,
-                                )?;
+                                ) {
+                                    Err(e) if e.is_react_done => break 'react_loop,
+                                    other => { other?; }
+                                }
                             }
                         } else {
-                            self.call_sub_value(sub.callback.clone(), vec![value], true)?;
+                            match self.call_sub_value(
+                                sub.callback.clone(),
+                                vec![value],
+                                true,
+                            ) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => { other?; }
+                            }
                         }
                     }
                     Ok(SupplyEvent::Done) => {
                         if sub.is_lines && !sub.line_buffer.is_empty() {
                             let remaining = std::mem::take(&mut sub.line_buffer);
-                            self.call_sub_value(
+                            match self.call_sub_value(
                                 sub.callback.clone(),
                                 vec![Value::Str(remaining)],
                                 true,
-                            )?;
+                            ) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => { other?; }
+                            }
                         }
                         sub.done = true;
                     }
