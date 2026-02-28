@@ -303,6 +303,11 @@ pub(super) fn for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::for_stmt(input)
 }
 
+/// Public accessor for `if` statement parser (used by primary.rs for `if` expressions).
+pub(super) fn if_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::if_stmt(input)
+}
+
 /// Public accessor for `while` statement parser (used by primary.rs for `while` expressions).
 pub(super) fn while_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::while_stmt(input)
@@ -782,6 +787,57 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::If { .. }));
+    }
+
+    #[test]
+    fn parse_if_elsif_with_binding_var() {
+        let (rest, stmts) = program("if 0 -> $a { } elsif 1 -> $b { } else { }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::If {
+                binding_var,
+                else_branch,
+                ..
+            } => {
+                assert_eq!(binding_var.as_deref(), Some("a"));
+                assert!(matches!(
+                    else_branch.first(),
+                    Some(Stmt::If {
+                        binding_var: Some(next),
+                        ..
+                    }) if next == "b"
+                ));
+            }
+            _ => panic!("Expected If statement"),
+        }
+    }
+
+    #[test]
+    fn parse_if_else_with_binding_var_desugars_to_var_decl() {
+        let (rest, stmts) = program("if 0 { } else -> $c { say $c; }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::If {
+                binding_var,
+                else_branch,
+                ..
+            } => {
+                let source = binding_var.as_ref().expect("generated if binding var");
+                assert!(source.starts_with("$__mutsu_if_bind_"));
+                assert!(matches!(
+                    else_branch.first(),
+                    Some(Stmt::VarDecl { name, expr, .. })
+                        if name == "c"
+                            && matches!(
+                                expr,
+                                Expr::Var(var) if var == source.trim_start_matches('$')
+                            )
+                ));
+            }
+            _ => panic!("Expected If statement"),
+        }
     }
 
     #[test]
