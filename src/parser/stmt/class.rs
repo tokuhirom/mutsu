@@ -2,7 +2,7 @@ use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 use super::super::primary::regex::scan_to_delim;
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident};
@@ -455,40 +455,74 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Block(stmts)))
 }
 
-/// Parse optional role type parameters like `[::T]` or `[::T1, ::T2]`.
-/// Returns parameter names for either type params (`::T`) or value params (`$x`).
-fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
+/// Parse optional role type parameters like `[::T]`, `[Str $x]`, or
+/// `[Int $x where { ... }]`.
+/// Returns both full parameter defs and plain names used for substitution.
+fn parse_optional_role_type_params(input: &str) -> PResult<'_, (Vec<String>, Vec<ParamDef>)> {
     let (r, _) = ws(input)?;
     if !r.starts_with('[') {
-        return Ok((r, Vec::new()));
+        return Ok((r, (Vec::new(), Vec::new())));
     }
-    // Find the matching closing bracket to extract the content
     let mut depth = 0u32;
-    let mut end = 0;
+    let mut end = 0usize;
     for (i, ch) in r.char_indices() {
         if ch == '[' {
             depth += 1;
         } else if ch == ']' {
-            depth -= 1;
+            depth = depth.saturating_sub(1);
             if depth == 0 {
                 end = i;
                 break;
             }
         }
     }
-    let content = &r[1..end]; // content between [ and ]
-    let rest = &r[end + 1..];
-    // Parse params: split by comma and look for ::Name or sigiled vars like $x.
+    if end == 0 {
+        return Err(PError::expected("']'"));
+    }
+    let content = &r[1..end];
+    for part in content.split(',') {
+        let trimmed = part.trim();
+        if let Some(stripped) = trimmed.strip_prefix("::")
+            && let Ok((rest_after_ident, _)) = ident(stripped)
+            && rest_after_ident.starts_with('?')
+        {
+            return Err(PError::fatal("X::Syntax::Malformed".to_string()));
+        }
+    }
+    if let Ok((after_params, param_defs)) = parse_param_list(&r[1..])
+        && let Ok((rest, _)) = parse_char(after_params, ']')
+    {
+        let params = param_defs
+            .iter()
+            .map(|pd| {
+                if let Some(captured) = pd
+                    .type_constraint
+                    .as_deref()
+                    .and_then(|t| t.strip_prefix("::"))
+                {
+                    captured.to_string()
+                } else {
+                    pd.name.trim_start_matches(['$', '@', '%', '&']).to_string()
+                }
+            })
+            .collect::<Vec<_>>();
+        let (rest, _) = ws(rest)?;
+        return Ok((rest, (params, param_defs)));
+    }
+
+    // Fallback: keep permissive parsing for edge signatures that parse_param_list
+    // does not yet support in role parameter lists.
     let mut params = Vec::new();
     for part in content.split(',') {
         let trimmed = part.trim();
         if let Some(stripped) = trimmed.strip_prefix("::") {
-            // May have additional constraints like "Cool ::T" — take just the ident
             let name_part = stripped.trim();
             if let Ok((_, name)) = ident(name_part) {
                 params.push(name);
             }
-        } else if let Some(stripped) = trimmed
+            continue;
+        }
+        if let Some(stripped) = trimmed
             .strip_prefix('$')
             .or_else(|| trimmed.strip_prefix('@'))
             .or_else(|| trimmed.strip_prefix('%'))
@@ -497,23 +531,24 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
             if let Ok((_, name)) = ident(stripped.trim()) {
                 params.push(name);
             }
-        } else {
-            // Could be "Cool ::T" or "Int $x" pattern — look for marker within.
-            if let Some(pos) = trimmed.find("::") {
-                let after = &trimmed[pos + 2..];
-                if let Ok((_, name)) = ident(after.trim()) {
-                    params.push(name);
-                }
-            } else if let Some(pos) = trimmed.find('$') {
-                let after = &trimmed[pos + 1..];
-                if let Ok((_, name)) = ident(after.trim()) {
-                    params.push(name);
-                }
+            continue;
+        }
+        if let Some(pos) = trimmed.find("::") {
+            let after = &trimmed[pos + 2..];
+            if let Ok((_, name)) = ident(after.trim()) {
+                params.push(name);
+                continue;
+            }
+        }
+        if let Some(pos) = trimmed.find('$') {
+            let after = &trimmed[pos + 1..];
+            if let Ok((_, name)) = ident(after.trim()) {
+                params.push(name);
             }
         }
     }
-    let (rest, _) = ws(rest)?;
-    Ok((rest, params))
+    let (rest, _) = ws(&r[end + 1..])?;
+    Ok((rest, (params, Vec::new())))
 }
 
 /// Skip optional role args like `[Str:D(Numeric)]` in a `does` clause.
@@ -545,7 +580,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
-    let (mut rest, type_params) = parse_optional_role_type_params(rest)?;
+    let (mut rest, (type_params, type_param_defs)) = parse_optional_role_type_params(rest)?;
     let mut parent_roles: Vec<String> = Vec::new();
     let mut is_hidden_role = false;
 
@@ -560,8 +595,10 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                     name
                 )));
             }
-            let (r, _) = skip_optional_role_args(r)?;
-            parent_roles.push(role_name);
+            let (r, _) = ws(r)?;
+            let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
+            let (r, _) = ws(r)?;
+            parent_roles.push(format!("{}{}", role_name, bracket_suffix));
             rest = r;
             continue;
         }
@@ -614,6 +651,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         Stmt::RoleDecl {
             name,
             type_params,
+            type_param_defs,
             body,
         },
     ))

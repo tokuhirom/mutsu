@@ -55,6 +55,42 @@ fn default_decl_expr(
     }
 }
 
+fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
+    matches!(op, TokenKind::OrWord | TokenKind::OrElse)
+}
+
+fn rewrite_decl_assignment_or_chain(expr: Expr, mut decl_stmt: Stmt) -> Option<Stmt> {
+    let mut init = expr;
+    let mut tails: Vec<(TokenKind, Expr)> = Vec::new();
+    while let Expr::Binary { left, op, right } = init {
+        if !is_decl_trailing_or_chain_op(&op) {
+            init = Expr::Binary { left, op, right };
+            break;
+        }
+        tails.push((op, *right));
+        init = *left;
+    }
+    if tails.is_empty() {
+        return None;
+    }
+
+    if let Stmt::VarDecl { expr, .. } = &mut decl_stmt {
+        *expr = init;
+    } else {
+        return None;
+    }
+
+    let mut chain = Expr::DoStmt(Box::new(decl_stmt));
+    for (op, right) in tails.into_iter().rev() {
+        chain = Expr::Binary {
+            left: Box::new(chain),
+            op,
+            right: Box::new(right),
+        };
+    }
+    Some(Stmt::Expr(chain))
+}
+
 fn is_supported_variable_trait(trait_name: &str) -> bool {
     if matches!(trait_name, "default" | "export" | "dynamic") {
         return true;
@@ -934,6 +970,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         } else {
             expr
         };
+        let base_stmt = Stmt::VarDecl {
+            name: name.clone(),
+            expr: expr.clone(),
+            type_constraint: type_constraint.clone(),
+            is_state,
+            is_our,
+            is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
+        };
+        if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
+            if apply_modifier {
+                return parse_statement_modifier(rest, stmt);
+            }
+            return Ok((rest, stmt));
+        }
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -1371,7 +1424,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Default value
-    let (rest, default) = if rest.starts_with('=') && !rest.starts_with("==") {
+    let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
@@ -1382,6 +1435,18 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         (rest, None)
     };
+    if sigil == b'@'
+        && let Some(expr) = default.take()
+    {
+        default = Some(match expr {
+            Expr::ArrayLiteral(_)
+            | Expr::BracketArray(_)
+            | Expr::ArrayVar(_)
+            | Expr::Var(_)
+            | Expr::Index { .. } => expr,
+            other => Expr::ArrayLiteral(vec![other]),
+        });
+    }
     let (rest, _) = ws(rest)?;
 
     let (rest, _) = opt_char(rest, ';');

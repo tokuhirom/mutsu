@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use regex::Regex;
 
+use super::super::add_parse_warning;
 use super::super::expr::expression;
 use super::super::helpers::{is_loop_label_name, ws, ws1};
 use super::super::parse_result::{
@@ -11,6 +12,7 @@ use super::super::parse_result::{
 };
 
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.
@@ -59,6 +61,33 @@ thread_local! {
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn flatten_xor_chain_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+    if let Expr::Binary { left, op, right } = expr
+        && *op == TokenKind::XorXor
+    {
+        flatten_xor_chain_terms(left, out);
+        flatten_xor_chain_terms(right, out);
+        return;
+    }
+    out.push(expr);
+}
+
+fn add_xor_sink_warnings(expr: &Expr) {
+    let mut terms = Vec::new();
+    flatten_xor_chain_terms(expr, &mut terms);
+    if terms.len() < 2 {
+        return;
+    }
+    for term in terms.iter().skip(1) {
+        if let Expr::Literal(Value::Str(s)) = term {
+            add_parse_warning(format!(
+                "Useless use of constant string \"{}\" in sink context (line 1)",
+                s
+            ));
+        }
+    }
+}
 
 fn parse_hyper_assign_op(input: &str) -> Option<&str> {
     const HYPER_ASSIGN_OPS: &[&str] = &[
@@ -422,6 +451,11 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     })
 }
 
+pub(in crate::parser) fn is_user_declared_prefix_sub(symbol: &str) -> bool {
+    let op_name = format!("prefix:<{}>", symbol);
+    is_user_declared_sub(&op_name)
+}
+
 /// Match a user-declared prefix operator against the current input.
 /// Returns `(full_name, consumed_len)` when input begins with an in-scope
 /// `prefix:<...>` operator symbol.
@@ -439,6 +473,13 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
                     continue;
                 };
                 if !input.starts_with(op) {
+                    continue;
+                }
+                if scope
+                    .infix_assoc
+                    .get(name)
+                    .is_some_and(|assoc| assoc == "looser")
+                {
                     continue;
                 }
                 let consumed = op.len();
@@ -1714,6 +1755,19 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         if let Expr::Index { target, index } = expr {
+            if let Expr::Call { name, args } = target.as_ref()
+                && name == "__mutsu_subscript_adverb"
+                && args.len() >= 3
+                && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
+                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode == "kv" || mode == "not-kv")
+            {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target: Box::new(args[0].clone()),
+                    index: Box::new(args[1].clone()),
+                    value: Box::new(value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
             let stmt = Stmt::Expr(Expr::IndexAssign {
                 target,
                 index,
@@ -1765,6 +1819,119 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
+    }
+
+    // Reverse bind assignment is intentionally unsupported in Raku.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && (rest.starts_with("R:=") || rest.starts_with("R::="))
+    {
+        return Err(PError::fatal(
+            "Cannot reverse the args of := because list assignment operators are too fiddly"
+                .to_string(),
+        ));
+    }
+
+    // Reverse assignment: `value R= target` means `target = value`.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && rest.starts_with("R=")
+        && !rest.starts_with("R==")
+    {
+        let r = &rest[2..];
+        let (r, _) = ws(r)?;
+        let (r, target_expr) =
+            super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected assignable expression after 'R='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
+            })?;
+        if let Expr::DoStmt(stmt) = &target_expr
+            && let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                ..
+            } = stmt.as_ref()
+        {
+            let stmt = Stmt::VarDecl {
+                name: name.clone(),
+                expr,
+                type_constraint: type_constraint.clone(),
+                is_state: *is_state,
+                is_our: *is_our,
+                is_dynamic: *is_dynamic,
+                is_export: *is_export,
+                export_tags: export_tags.clone(),
+                custom_traits: custom_traits.clone(),
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } = &target_expr
+        {
+            let target_var_name = match target.as_ref() {
+                Expr::Var(var_name) => Some(var_name.clone()),
+                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
+                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                _ => None,
+            };
+            let assigned = method_lvalue_assign_expr(
+                (**target).clone(),
+                target_var_name,
+                name.clone(),
+                args.clone(),
+                expr,
+            );
+            let stmt = Stmt::Expr(assigned);
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::Call { name, args } = &target_expr {
+            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
+                name.clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::CallOn { target, args } = &target_expr {
+            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
+                (**target).clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        let stmt = match target_expr {
+            Expr::Var(name) => Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::ArrayVar(name) => Stmt::Assign {
+                name: format!("@{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::HashVar(name) => Stmt::Assign {
+                name: format!("%{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr)),
+        };
+        return parse_statement_modifier(r, stmt);
     }
 
     // Generic assignment on non-variable lhs (e.g. `.key = 1`).
@@ -1833,7 +2000,12 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ));
             return parse_statement_modifier(r, stmt);
         }
-        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        let stmt = match expr {
+            Expr::Literal(_) | Expr::BareWord(_) => {
+                Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
+            }
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs)),
+        };
         return parse_statement_modifier(r, stmt);
     }
 
@@ -2015,6 +2187,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 Expr::ArrayLiteral(exprs)
             };
+            add_xor_sink_warnings(&expr);
             return Ok((r, Stmt::Expr(expr)));
         }
 
@@ -2034,6 +2207,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((r, Stmt::Block(stmts)));
     }
 
+    add_xor_sink_warnings(&expr);
     let stmt = Stmt::Expr(expr);
     parse_statement_modifier(rest, stmt)
 }

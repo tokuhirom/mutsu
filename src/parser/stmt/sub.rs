@@ -477,9 +477,7 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
-    if let Some(assoc) = traits.associativity.as_ref()
-        && name.starts_with("infix:<")
-    {
+    if let Some(assoc) = traits.associativity.as_ref() {
         super::simple::register_user_infix_assoc(&name, assoc);
     }
     if traits.is_test_assertion {
@@ -764,6 +762,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
                 is_rw = true;
+            } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
+                associativity = Some(trait_name.to_string());
             } else if trait_name != "assoc"
                 && trait_name != "equiv"
                 && trait_name != "tighter"
@@ -1514,6 +1514,17 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     // Slurpy: *@arr or *%hash or *$scalar or *[...] (slurpy unpack)
     let mut slurpy_sigil = None;
     let mut double_slurpy = false;
+    // Unary plus marker on parameters (e.g. +@a). Keep parsing semantics
+    // aligned with regular sigiled params for now.
+    if rest.starts_with('+')
+        && rest.len() > 1
+        && (rest.as_bytes()[1] == b'@'
+            || rest.as_bytes()[1] == b'%'
+            || rest.as_bytes()[1] == b'$'
+            || rest.as_bytes()[1] == b'&')
+    {
+        rest = &rest[1..];
+    }
     if rest.starts_with('*')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@'
@@ -1554,8 +1565,12 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         if let Some(r) = r.strip_prefix(':') {
             // This invocant marker is handled at parse_param_list level.
             let (r, _) = ws(r)?;
-            if r.starts_with(')') {
-                return Ok((r, make_param("self".to_string())));
+            if r.starts_with(')') || r.starts_with("-->") {
+                let mut p = make_param("self".to_string());
+                p.type_constraint = Some(tc);
+                p.is_invocant = true;
+                p.traits.push("invocant".to_string());
+                return Ok((r, p));
             }
             return parse_single_param(r);
         }
@@ -1583,7 +1598,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         type_constraint = Some(format!("::{}", capture_name));
         let (r, _) = ws(r)?;
         rest = r;
-        if rest.starts_with(')') || rest.starts_with(',') || rest.starts_with(';') {
+        if rest.starts_with(')')
+            || rest.starts_with(']')
+            || rest.starts_with(',')
+            || rest.starts_with(';')
+        {
             let mut p = make_param(format!("__type_capture__{}", capture_name));
             p.type_constraint = type_constraint;
             p.named = named;

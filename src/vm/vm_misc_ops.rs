@@ -1049,6 +1049,7 @@ impl VM {
         let saved_locals = self.locals.clone();
 
         self.run_range(code, enter_start, body_start, compiled_fns)?;
+        self.interpreter.push_block_scope_depth();
         let mut body_err = None;
         if let Err(e) = self.run_range(code, body_start, leave_start, compiled_fns) {
             body_err = Some(e);
@@ -1060,6 +1061,11 @@ impl VM {
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
             if saved_env.contains_key(&k) {
+                // Lexical topic is block-scoped; don't write inner `$_` back
+                // to the outer scope on block exit.
+                if k == "_" {
+                    continue;
+                }
                 // Dynamic variables (e.g. $*VAR) are scoped to the block:
                 // restore to the saved value rather than propagating the inner value.
                 if k.starts_with('*') {
@@ -1075,6 +1081,7 @@ impl VM {
             }
         }
         *self.interpreter.env_mut() = restored_env;
+        self.interpreter.pop_block_scope_depth();
 
         if let Err(e) = leave_res
             && body_err.is_none()

@@ -56,6 +56,7 @@ impl Interpreter {
             "throws-like" => self.test_fn_throws_like(args).map(Some),
             "fails-like" => self.test_fn_fails_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
+            "run" | "Test::Util::run" => self.test_fn_run(args).map(Some),
             "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),
@@ -332,7 +333,19 @@ impl Interpreter {
         // Clone values before they might be consumed by callable operator
         let left_diag = left.clone();
         let right_diag = right.clone();
-        let op_diag = op_val.to_string_value();
+        let op_diag = match &op_val {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                format!("'{}'", crate::value::what_type_name(&op_val))
+            }
+            _ => {
+                let s = op_val.to_string_value();
+                if s.is_empty() {
+                    crate::value::what_type_name(&op_val).to_string()
+                } else {
+                    s
+                }
+            }
+        };
         let ok = match &op_val {
             Value::Str(op) => match op.as_str() {
                 "~~" => self.smart_match(&left, &right),
@@ -352,6 +365,27 @@ impl Interpreter {
                 "===" => left == right,
                 "!===" => left != right,
                 "=:=" => left == right,
+                "\u{2245}" => {
+                    // ≅ approximately equal
+                    let (lr, li) = match &left {
+                        Value::Complex(r, i) => (*r, *i),
+                        _ => (super::to_float_value(&left).unwrap_or(0.0), 0.0),
+                    };
+                    let (rr, ri) = match &right {
+                        Value::Complex(r, i) => (*r, *i),
+                        _ => (super::to_float_value(&right).unwrap_or(0.0), 0.0),
+                    };
+                    let tol = 1e-15;
+                    let approx = |a: f64, b: f64| {
+                        let max = a.abs().max(b.abs());
+                        if max == 0.0 {
+                            true
+                        } else {
+                            (a - b).abs() / max <= tol
+                        }
+                    };
+                    approx(lr, rr) && approx(li, ri)
+                }
                 _ => {
                     return Err(RuntimeError::new(format!(
                         "cmp-ok: unsupported string operator '{}'",
@@ -423,7 +457,7 @@ impl Interpreter {
                 } else {
                     // Convert Seq to List for comparison (per Raku spec:
                     // Seq:D arguments to is-deeply get converted to Lists).
-                    Self::seq_to_list(left) == Self::seq_to_list(right)
+                    self.seq_to_list(left) == self.seq_to_list(right)
                 }
             }
             _ => false,
@@ -474,11 +508,14 @@ impl Interpreter {
     }
 
     /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
-    fn seq_to_list(v: &Value) -> Value {
-        if let Value::Seq(items) = v {
-            Value::Array(items.clone(), false)
-        } else {
-            v.clone()
+    fn seq_to_list(&mut self, v: &Value) -> Value {
+        match v {
+            Value::Seq(items) => Value::Array(items.clone(), false),
+            Value::LazyList(list) => match self.force_lazy_list(list) {
+                Ok(items) => Value::Array(std::sync::Arc::new(items), false),
+                Err(_) => v.clone(),
+            },
+            _ => v.clone(),
         }
     }
 
@@ -550,9 +587,23 @@ impl Interpreter {
         let explicit_rel_tol =
             Self::named_value(args, "rel-tol").and_then(|v| super::to_float_value(&v));
 
+        let mut coerce_float = |value: &Value| -> Option<f64> {
+            if let Some(v) = super::to_float_value(value) {
+                return Some(v);
+            }
+            if matches!(value, Value::Instance { .. }) {
+                let coerced = self
+                    .call_method_with_values(value.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+                    .ok()?;
+                return super::to_float_value(&coerced);
+            }
+            None
+        };
+
         // Raku's DWIM is-approx: when |expected| < 1e-6, use abs-tol 1e-5;
         // otherwise use rel-tol 1e-6. Explicit named args override this.
-        let expected_f = super::to_float_value(expected);
+        let expected_f = coerce_float(expected);
 
         // Helper: check if two f64 values are approximately equal
         let approx_eq = |g: f64, e: f64| -> bool {
@@ -579,7 +630,16 @@ impl Interpreter {
             }
         };
 
-        let ok = match (got, expected) {
+        // Unwrap Mixin wrappers (e.g. from angle-bracket literals like <1+3i>)
+        let got_inner = match got {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        let expected_inner = match expected {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        let ok = match (got_inner, expected_inner) {
             (Value::Complex(gr, gi), Value::Complex(er, ei)) => {
                 approx_eq(*gr, *er) && approx_eq(*gi, *ei)
             }
@@ -591,13 +651,13 @@ impl Interpreter {
                 }
             }
             (_, Value::Complex(er, ei)) => {
-                if let Some(g) = super::to_float_value(got) {
+                if let Some(g) = coerce_float(got) {
                     approx_eq(g, *er) && approx_eq(0.0, *ei)
                 } else {
                     false
                 }
             }
-            _ => match (super::to_float_value(got), expected_f) {
+            _ => match (coerce_float(got), expected_f) {
                 (Some(g), Some(e)) => approx_eq(g, e),
                 _ => false,
             },
@@ -646,7 +706,7 @@ impl Interpreter {
         // but the first arg could be a Pair value being tested.
         let (value, type_name, desc) = Self::extract_isa_ok_args(args);
         let todo = Self::named_bool(args, "todo");
-        let ok = value.isa_check(&type_name);
+        let ok = value.isa_check(&type_name) || self.type_matches_value(&type_name, value);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
     }
@@ -691,12 +751,20 @@ impl Interpreter {
             match arg {
                 Value::Int(i) if *i > 0 => {
                     let n = *i as usize;
-                    ranges.push((n, n));
+                    ranges.push(TodoRange {
+                        start: n,
+                        end: n,
+                        reason: String::new(),
+                    });
                 }
                 Value::Range(a, b) => {
                     let start = (*a).min(*b).max(1) as usize;
                     let end = (*a).max(*b).max(1) as usize;
-                    ranges.push((start, end));
+                    ranges.push(TodoRange {
+                        start,
+                        end,
+                        reason: String::new(),
+                    });
                 }
                 _ => {}
             }
@@ -721,7 +789,13 @@ impl Interpreter {
         nested.lib_paths = self.lib_paths.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
+        nested.class_composed_roles = self.class_composed_roles.clone();
         nested.roles = self.roles.clone();
+        nested.role_candidates = self.role_candidates.clone();
+        nested.role_parents = self.role_parents.clone();
+        nested.role_hides = self.role_hides.clone();
+        nested.role_type_params = self.role_type_params.clone();
+        nested.class_role_param_bindings = self.class_role_param_bindings.clone();
         nested.subsets = self.subsets.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
@@ -754,7 +828,13 @@ impl Interpreter {
         nested.lib_paths = self.lib_paths.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
+        nested.class_composed_roles = self.class_composed_roles.clone();
         nested.roles = self.roles.clone();
+        nested.role_candidates = self.role_candidates.clone();
+        nested.role_parents = self.role_parents.clone();
+        nested.role_hides = self.role_hides.clone();
+        nested.role_type_params = self.role_type_params.clone();
+        nested.class_role_param_bindings = self.class_role_param_bindings.clone();
         nested.subsets = self.subsets.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
@@ -794,7 +874,13 @@ impl Interpreter {
                 nested.proto_tokens = self.proto_tokens.clone();
                 nested.classes = self.classes.clone();
                 nested.class_trusts = self.class_trusts.clone();
+                nested.class_composed_roles = self.class_composed_roles.clone();
                 nested.roles = self.roles.clone();
+                nested.role_candidates = self.role_candidates.clone();
+                nested.role_parents = self.role_parents.clone();
+                nested.role_hides = self.role_hides.clone();
+                nested.role_type_params = self.role_type_params.clone();
+                nested.class_role_param_bindings = self.class_role_param_bindings.clone();
                 nested.subsets = self.subsets.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
@@ -978,7 +1064,13 @@ impl Interpreter {
                 nested.proto_tokens = self.proto_tokens.clone();
                 nested.classes = self.classes.clone();
                 nested.class_trusts = self.class_trusts.clone();
+                nested.class_composed_roles = self.class_composed_roles.clone();
                 nested.roles = self.roles.clone();
+                nested.role_candidates = self.role_candidates.clone();
+                nested.role_parents = self.role_parents.clone();
+                nested.role_hides = self.role_hides.clone();
+                nested.role_type_params = self.role_type_params.clone();
+                nested.class_role_param_bindings = self.class_role_param_bindings.clone();
                 nested.subsets = self.subsets.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
@@ -1205,9 +1297,12 @@ impl Interpreter {
         let value = Self::positional_value(args, 0)
             .cloned()
             .unwrap_or(Value::Nil);
-        let role_name = match Self::positional_value(args, 1) {
-            Some(Value::Package(name)) => name.clone(),
-            _ => Self::positional_string(args, 1),
+        let role_val = Self::positional_value(args, 1)
+            .cloned()
+            .unwrap_or_else(|| Value::Package(Self::positional_string(args, 1)));
+        let role_name = match &role_val {
+            Value::Package(name) => name.clone(),
+            other => other.to_string_value(),
         };
         let desc = {
             let explicit = Self::positional_string(args, 2);
@@ -1218,8 +1313,7 @@ impl Interpreter {
             }
         };
         let todo = Self::named_bool(args, "todo");
-        // NOTE: does_check currently delegates to isa_check (issue #91)
-        let ok = value.does_check(&role_name);
+        let ok = self.smart_match(&value, &role_val);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
     }
@@ -1244,13 +1338,15 @@ impl Interpreter {
     }
 
     fn test_fn_todo(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let _reason = Self::positional_string(args, 0);
-        let count_str = Self::positional_value(args, 1).map(|v| v.to_string_value());
-        let count = count_str.and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
+        let reason = Self::positional_string(args, 0);
+        let count = Self::positional_value(args, 1)
+            .map(|v| v.to_string_value())
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(1);
         let state = self.test_state.get_or_insert_with(TestState::new);
         let start = state.ran + 1;
         let end = start + count - 1;
-        state.force_todo.push((start, end));
+        state.force_todo.push(TodoRange { start, end, reason });
         Ok(Value::Nil)
     }
 
@@ -1546,25 +1642,66 @@ impl Interpreter {
         Ok(Value::Hash(std::sync::Arc::new(hash)))
     }
 
+    fn test_fn_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let got = self.test_fn_get_out(args)?;
+        let Value::Hash(map) = got else {
+            return Ok(Value::Str(String::new()));
+        };
+        if let Some(Value::Str(err)) = map.get("err")
+            && !err.is_empty()
+        {
+            self.emit_output(&format!("# error: {}\n", err.trim_end()));
+        }
+        if let Some(Value::Str(out)) = map.get("out") {
+            return Ok(Value::Str(out.clone()));
+        }
+        Ok(Value::Str(String::new()))
+    }
+
     fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "warns-like expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.clone(),
-            _ => return Err(RuntimeError::new("warns-like expects string code")),
-        };
         let test_pattern = Self::positional_value(args, 1)
             .cloned()
             .unwrap_or(Value::Nil);
         let desc = Self::positional_string(args, 2);
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        nested.set_program_path("<warns-like>");
-        let result = nested.run(&program);
-        let warn_message = nested.warn_output.clone();
+        let warn_message = match program_val {
+            Value::Str(program) => {
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.set_program_path("<warns-like>");
+                let _ = nested.run(program);
+                nested.warn_output.clone()
+            }
+            Value::Sub(data) => {
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                self.push_caller_env();
+                let _ = self.eval_block_value(&data.body);
+                self.pop_caller_env();
+                let warn_message = self.warn_output.clone();
+                self.warn_output = saved_warn;
+                warn_message
+            }
+            Value::WeakSub(weak) => {
+                let Some(data) = weak.upgrade() else {
+                    return Err(RuntimeError::new("warns-like expects live callable"));
+                };
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                self.push_caller_env();
+                let _ = self.eval_block_value(&data.body);
+                self.pop_caller_env();
+                let warn_message = self.warn_output.clone();
+                self.warn_output = saved_warn;
+                warn_message
+            }
+            _ => {
+                return Err(RuntimeError::new(
+                    "warns-like expects string code or callable",
+                ));
+            }
+        };
         let did_warn = !warn_message.is_empty();
-        let _ = result;
         let label = if desc.is_empty() {
             "warns-like".to_string()
         } else {
@@ -1687,21 +1824,16 @@ impl Interpreter {
                 } else {
                     nested.exit_code
                 };
-                let stdout_only = if stderr_content.is_empty() {
-                    output
-                } else {
-                    output.replace(&stderr_content, "")
-                };
-                (stdout_only, stderr_content, s)
+                let (stdout_tap, tap_err) = Self::split_tap_output_streams(&output);
+                let mut err = stderr_content;
+                err.push_str(&tap_err);
+                (stdout_tap, err, s)
             }
             Err(e) => {
                 let combined = nested.output.clone();
-                let stdout_only = if stderr_content.is_empty() {
-                    combined
-                } else {
-                    combined.replace(&stderr_content, "")
-                };
+                let (stdout_only, tap_err) = Self::split_tap_output_streams(&combined);
                 let mut err = stderr_content;
+                err.push_str(&tap_err);
                 if !e.message.is_empty() {
                     if !err.is_empty() && !err.ends_with('\n') {
                         err.push('\n');
@@ -1717,6 +1849,36 @@ impl Interpreter {
                 (stdout_only, err, s)
             }
         }
+    }
+
+    fn split_tap_output_streams(output: &str) -> (String, String) {
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut last_not_ok_todo: Option<bool> = None;
+
+        for line in output.split_inclusive('\n') {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("not ok ") {
+                last_not_ok_todo = Some(trimmed.contains("# TODO"));
+                stdout.push_str(line);
+                continue;
+            }
+            if trimmed.starts_with("ok ") {
+                last_not_ok_todo = None;
+                stdout.push_str(line);
+                continue;
+            }
+            let is_failure_diag = trimmed.starts_with("# Failed test")
+                || trimmed.starts_with("# at ")
+                || trimmed.starts_with("# You failed");
+            if is_failure_diag && matches!(last_not_ok_todo, Some(false)) {
+                stderr.push_str(line);
+                continue;
+            }
+            stdout.push_str(line);
+        }
+
+        (stdout, stderr)
     }
 
     /// `doesn't-hang` — run code in a subprocess and verify it completes

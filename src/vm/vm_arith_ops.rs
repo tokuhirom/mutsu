@@ -2,10 +2,39 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
+        if !data.params.is_empty()
+            || !data.param_defs.is_empty()
+            || !data.assumed_positional.is_empty()
+            || !data.assumed_named.is_empty()
+            || data.body.len() != 1
+        {
+            return false;
+        }
+        match &data.body[0] {
+            crate::ast::Stmt::Expr(expr) => matches!(
+                expr,
+                crate::ast::Expr::Call { .. }
+                    | crate::ast::Expr::MethodCall { .. }
+                    | crate::ast::Expr::DynamicMethodCall { .. }
+                    | crate::ast::Expr::HyperMethodCall { .. }
+                    | crate::ast::Expr::HyperMethodCallDynamic { .. }
+                    | crate::ast::Expr::CallOn { .. }
+                    | crate::ast::Expr::Block(_)
+                    | crate::ast::Expr::DoBlock { .. }
+                    | crate::ast::Expr::AnonSub { .. }
+                    | crate::ast::Expr::AnonSubParams { .. }
+                    | crate::ast::Expr::Lambda { .. }
+            ),
+            _ => false,
+        }
+    }
+
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 Ok(result)
             } else {
@@ -20,6 +49,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 Ok(result)
             } else {
@@ -49,7 +79,8 @@ impl VM {
     pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
         self.stack.push(result);
@@ -59,8 +90,10 @@ impl VM {
     pub(super) fn exec_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_div(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            crate::builtins::arith_div(l, r)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -68,8 +101,10 @@ impl VM {
     pub(super) fn exec_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_mod(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            crate::builtins::arith_mod(l, r)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -77,7 +112,8 @@ impl VM {
     pub(super) fn exec_pow_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_pow(l, r))
         })?;
         self.stack.push(result);
@@ -86,6 +122,7 @@ impl VM {
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        let val = self.coerce_numeric_bridge_value(val)?;
         self.stack.push(crate::builtins::arith_negate(val)?);
         Ok(())
     }
@@ -303,35 +340,37 @@ impl VM {
         self.stack.push(if ord.is_ge() { left } else { right });
     }
 
-    pub(super) fn exec_string_repeat_op(&mut self) {
+    pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let s = left.to_string_value();
-        let n = match right {
-            Value::Int(n) => n.max(0) as usize,
-            _ => 0,
-        };
-        self.stack.push(Value::Str(s.repeat(n)));
+        let result = self
+            .interpreter
+            .call_function("infix:<x>", vec![left, right])?;
+        self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_list_repeat_op(&mut self) {
+    pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let n = match right {
-            Value::Int(n) => n.max(0) as usize,
-            _ => 0,
+        let thunk = match &left {
+            Value::Sub(data) => Some(data.clone()),
+            Value::WeakSub(weak) => weak.upgrade(),
+            _ => None,
         };
-        // When repeating a Slip, flatten its items into the result
-        if let Value::Slip(ref slip_items) = left {
-            let mut items = Vec::with_capacity(slip_items.len() * n);
-            for _ in 0..n {
-                items.extend(slip_items.iter().cloned());
-            }
+        if let Some(data) = thunk.filter(|data| Self::is_xx_reeval_thunk(data.as_ref()))
+            && let Value::Int(n) = right
+        {
+            let n = n.max(0) as usize;
+            let items = self.interpreter.eval_xx_repeat_thunk(data.as_ref(), n)?;
             self.stack.push(Value::Seq(Arc::new(items)));
-        } else {
-            let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
-            self.stack.push(Value::Seq(Arc::new(items)));
+            return Ok(());
         }
+        let result = self
+            .interpreter
+            .call_function("infix:<xx>", vec![left, right])?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_function_compose_op(&mut self) {

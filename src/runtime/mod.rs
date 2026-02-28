@@ -49,7 +49,14 @@ mod handle;
 mod io;
 mod metamodel;
 mod methods;
+mod methods_classhow;
+mod methods_collection;
+mod methods_collection_ops;
+mod methods_grammar;
 mod methods_mut;
+mod methods_object;
+mod methods_promise;
+mod methods_string;
 mod methods_trans;
 mod native_io;
 mod native_methods;
@@ -93,6 +100,13 @@ struct RoleDef {
     methods: HashMap<String, Vec<MethodDef>>,
     is_stub_role: bool,
     is_hidden: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RoleCandidateDef {
+    type_params: Vec<String>,
+    type_param_defs: Vec<ParamDef>,
+    role_def: RoleDef,
 }
 
 #[derive(Debug, Clone)]
@@ -316,6 +330,7 @@ pub struct Interpreter {
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
+    block_scope_depth: usize,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
     cunion_classes: HashSet<String>,
@@ -324,9 +339,11 @@ pub struct Interpreter {
     class_trusts: HashMap<String, HashSet<String>>,
     class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
     roles: HashMap<String, RoleDef>,
+    role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
     role_parents: HashMap<String, Vec<String>>,
     role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
+    class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -1255,6 +1272,7 @@ impl Interpreter {
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: 0,
             enum_types: HashMap::new(),
             classes,
             cunion_classes: HashSet::new(),
@@ -1293,9 +1311,11 @@ impl Interpreter {
                 );
                 roles
             },
+            role_candidates: HashMap::new(),
             role_parents: HashMap::new(),
             role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
+            class_role_param_bindings: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -2182,6 +2202,7 @@ impl Interpreter {
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: self.block_scope_depth,
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
             cunion_classes: self.cunion_classes.clone(),
@@ -2190,9 +2211,11 @@ impl Interpreter {
             class_trusts: self.class_trusts.clone(),
             class_composed_roles: self.class_composed_roles.clone(),
             roles: self.roles.clone(),
+            role_candidates: self.role_candidates.clone(),
             role_parents: self.role_parents.clone(),
             role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
+            class_role_param_bindings: self.class_role_param_bindings.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
@@ -2311,7 +2334,14 @@ struct TestState {
     planned: Option<usize>,
     ran: usize,
     failed: usize,
-    force_todo: Vec<(usize, usize)>,
+    force_todo: Vec<TodoRange>,
+}
+
+#[derive(Debug, Clone)]
+struct TodoRange {
+    start: usize,
+    end: usize,
+    reason: String,
 }
 
 impl TestState {

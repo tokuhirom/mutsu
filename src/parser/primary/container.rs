@@ -52,6 +52,18 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                         expr: Box::new(rhs),
                     },
                 )
+            } else if let Some(stripped) = r2.strip_prefix("::=").or_else(|| r2.strip_prefix(":="))
+            {
+                // Binding expression in parens: ($var := expr)
+                let (r2, _) = ws(stripped)?;
+                let (r2, rhs) = expression(r2)?;
+                (
+                    r2,
+                    Expr::AssignExpr {
+                        name: assign_name,
+                        expr: Box::new(rhs),
+                    },
+                )
             } else if let Some((stripped, op)) =
                 super::super::stmt::assign::parse_compound_assign_op(r2)
             {

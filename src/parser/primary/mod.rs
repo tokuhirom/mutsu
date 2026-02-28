@@ -236,10 +236,61 @@ mod tests {
     }
 
     #[test]
+    fn parse_typed_hash_literal_with_non_string_keys() {
+        let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Hash(pairs) => {
+                assert_eq!(pairs.len(), 3);
+                assert_eq!(pairs[0].0, "foo");
+                assert_eq!(pairs[1].0, "True");
+                assert_eq!(pairs[2].0, "42");
+            }
+            _ => panic!("expected hash literal"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::CaptureLiteral(ref items) if items.len() == 1));
+    }
+
+    #[test]
+    fn parse_empty_call_args_with_internal_whitespace() {
+        let (rest, expr) = primary("foo(   )").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "foo");
+                assert_eq!(args.len(), 1);
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_capture_literal_with_internal_whitespace() {
+        let (rest, expr) = primary("\\(   )").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::CaptureLiteral(items) => assert!(items.is_empty()),
+            _ => panic!("expected capture literal"),
+        }
+    }
+
+    #[test]
+    fn parse_topic_angle_lookup() {
+        let (rest, expr) = primary(".<path>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Index { target, index } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n == "_"));
+                assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s == "path"));
+            }
+            _ => panic!("expected topical angle lookup"),
+        }
     }
 
     #[test]

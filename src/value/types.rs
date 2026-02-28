@@ -204,16 +204,11 @@ impl Value {
             Value::Instance { class_name, .. } => class_name.as_str(),
             Value::Package(name) => name.as_str(),
             Value::Enum { enum_type, .. } => enum_type.as_str(),
-            Value::Sub(data) => {
-                if matches!(
-                    data.env.get("__mutsu_callable_type"),
-                    Some(Value::Str(kind)) if kind == "Method"
-                ) {
-                    "Method"
-                } else {
-                    "Sub"
-                }
-            }
+            Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
+                Some(Value::Str(kind)) if kind == "Method" => "Method",
+                Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
+                _ => "Sub",
+            },
             Value::WeakSub(_) => "Sub",
             Value::Routine {
                 is_regex: false, ..
@@ -254,6 +249,17 @@ impl Value {
             Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
         };
         if my_type == type_name {
+            return true;
+        }
+        // Perl6::Metamodel:: and Metamodel:: are equivalent namespaces
+        if let Some(short) = my_type.strip_prefix("Perl6::")
+            && short == type_name
+        {
+            return true;
+        }
+        if let Some(short) = type_name.strip_prefix("Perl6::")
+            && short == my_type
+        {
             return true;
         }
         // Check type hierarchy

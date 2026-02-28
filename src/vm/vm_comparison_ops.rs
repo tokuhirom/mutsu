@@ -1,5 +1,14 @@
 use super::*;
 
+/// Extract (real, imaginary) parts from a value, treating non-Complex as having im=0.
+fn complex_parts(v: &Value) -> (f64, f64) {
+    match v {
+        Value::Complex(re, im) => (*re, *im),
+        Value::Mixin(inner, _) => complex_parts(inner),
+        other => (value_to_f64(other), 0.0),
+    }
+}
+
 pub(super) fn value_to_f64(v: &Value) -> f64 {
     match v {
         Value::Int(n) => *n as f64,
@@ -62,7 +71,8 @@ impl VM {
     pub(super) fn exec_num_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
                 || matches!(l, Value::Nil)
                 || matches!(l, Value::Rat(_, _));
@@ -81,7 +91,8 @@ impl VM {
     pub(super) fn exec_num_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                 Ok(Value::Bool(
                     runtime::to_float_value(&l) != runtime::to_float_value(&r),
@@ -97,7 +108,8 @@ impl VM {
     pub(super) fn exec_num_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
         })?;
         self.stack.push(result);
@@ -107,7 +119,8 @@ impl VM {
     pub(super) fn exec_num_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o <= 0)
         })?;
         self.stack.push(result);
@@ -117,7 +130,8 @@ impl VM {
     pub(super) fn exec_num_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o > 0)
         })?;
         self.stack.push(result);
@@ -127,7 +141,8 @@ impl VM {
     pub(super) fn exec_num_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o >= 0)
         })?;
         self.stack.push(result);
@@ -137,6 +152,7 @@ impl VM {
     pub(super) fn exec_approx_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let tolerance = self
             .interpreter
             .env()
@@ -146,14 +162,18 @@ impl VM {
                 _ => None,
             })
             .unwrap_or(1e-15);
-        let a = value_to_f64(&left);
-        let b = value_to_f64(&right);
-        let max_abs = a.abs().max(b.abs());
-        let result = if max_abs == 0.0 {
-            true
-        } else {
-            (a - b).abs() / max_abs <= tolerance
+        // Extract Complex components, treating Real as Complex with im=0
+        let (lr, li) = complex_parts(&left);
+        let (rr, ri) = complex_parts(&right);
+        let approx_f64 = |a: f64, b: f64| -> bool {
+            let max_abs = a.abs().max(b.abs());
+            if max_abs == 0.0 {
+                true
+            } else {
+                (a - b).abs() / max_abs <= tolerance
+            }
         };
+        let result = approx_f64(lr, rr) && approx_f64(li, ri);
         self.stack.push(Value::Bool(result));
         Ok(())
     }
@@ -225,6 +245,15 @@ impl VM {
     }
 
     fn spaceship_ordering(left: &Value, right: &Value) -> std::cmp::Ordering {
+        // Unwrap Mixin for comparison
+        let left = match left {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        let right = match right {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
             (Value::Rat(_, _), _)
@@ -246,6 +275,44 @@ impl VM {
             (Value::Num(a), Value::Int(b)) => a
                 .partial_cmp(&(*b as f64))
                 .unwrap_or(std::cmp::Ordering::Equal),
+            // Complex cmp: compare real parts first, then imaginary parts
+            // NaN sorts as Greater (More) in Raku
+            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+                if ar.is_nan() || ai.is_nan() {
+                    return std::cmp::Ordering::Greater;
+                }
+                match ar.partial_cmp(br).unwrap_or(std::cmp::Ordering::Greater) {
+                    std::cmp::Ordering::Equal => {
+                        ai.partial_cmp(bi).unwrap_or(std::cmp::Ordering::Greater)
+                    }
+                    ord => ord,
+                }
+            }
+            // Complex vs Real: treat Real as Complex with im=0
+            (Value::Complex(ar, ai), _) => {
+                if ar.is_nan() || ai.is_nan() {
+                    return std::cmp::Ordering::Greater;
+                }
+                let br = value_to_f64(right);
+                match ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Greater) {
+                    std::cmp::Ordering::Equal => {
+                        ai.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Greater)
+                    }
+                    ord => ord,
+                }
+            }
+            (_, Value::Complex(br, bi)) => {
+                if br.is_nan() || bi.is_nan() {
+                    return std::cmp::Ordering::Greater;
+                }
+                let ar = value_to_f64(left);
+                match ar.partial_cmp(br).unwrap_or(std::cmp::Ordering::Greater) {
+                    std::cmp::Ordering::Equal => 0.0f64
+                        .partial_cmp(bi)
+                        .unwrap_or(std::cmp::Ordering::Greater),
+                    ord => ord,
+                }
+            }
             (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
                 runtime::version_cmp_parts(ap, bp)
             }
@@ -256,6 +323,7 @@ impl VM {
     pub(super) fn exec_spaceship_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let ord = Self::numeric_spaceship_ordering(&left, &right)?;
         self.stack.push(runtime::make_order(ord));
         Ok(())
@@ -264,6 +332,9 @@ impl VM {
     pub(super) fn exec_before_after_op(&mut self, is_before: bool) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self
+            .coerce_numeric_bridge_pair(left.clone(), right.clone())
+            .unwrap_or((left, right));
         let ord = Self::spaceship_ordering(&left, &right);
         let result = if is_before {
             ord == std::cmp::Ordering::Less
@@ -276,6 +347,9 @@ impl VM {
     pub(super) fn exec_cmp_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self
+            .coerce_numeric_bridge_pair(left.clone(), right.clone())
+            .unwrap_or((left, right));
         let ord = Self::spaceship_ordering(&left, &right);
         self.stack.push(runtime::make_order(ord));
     }

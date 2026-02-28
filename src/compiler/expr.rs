@@ -240,6 +240,25 @@ impl Compiler {
                     self.code.emit(OpCode::MakeArray(count as u32));
                     return;
                 }
+                if matches!(op, TokenKind::Ident(name) if name == "xx") {
+                    // Raku's list repeat reevaluates call-like lhs expressions on each
+                    // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
+                    if Self::xx_lhs_needs_reeval(left) {
+                        let thunk = Expr::AnonSubParams {
+                            params: Vec::new(),
+                            param_defs: Vec::new(),
+                            return_type: None,
+                            body: vec![Stmt::Expr((**left).clone())],
+                            is_rw: false,
+                        };
+                        self.compile_expr(&thunk);
+                    } else {
+                        self.compile_expr(left);
+                    }
+                    self.compile_expr(right);
+                    self.code.emit(OpCode::ListRepeat);
+                    return;
+                }
                 // Detect `funcname |capture` pattern (listop call with capture slip)
                 if *op == TokenKind::Pipe
                     && matches!(right.as_ref(), Expr::BareWord(_))
@@ -283,10 +302,8 @@ impl Compiler {
                         return;
                     }
                     TokenKind::XorXor => {
-                        // a ^^ b: return truthy value if exactly one is truthy, else Nil/last falsy
-                        self.compile_expr(left);
-                        self.compile_expr(right);
-                        self.code.emit(OpCode::XorXor);
+                        // a ^^ b ^^ c ... : evaluate left-to-right, short-circuit on second truthy.
+                        self.compile_xor_chain(left, right);
                         return;
                     }
                     TokenKind::SlashSlash | TokenKind::OrElse => {
@@ -832,6 +849,11 @@ impl Compiler {
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        if Self::index_assign_target_requires_eval(delete_target) {
+                            // Preserve side effects for targets like DoStmt(VarDecl).
+                            self.compile_expr(delete_target);
+                            self.code.emit(OpCode::Pop);
+                        }
                         self.compile_expr(delete_index);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::DeleteIndexNamed(name_idx));
@@ -1062,11 +1084,11 @@ impl Compiler {
                     // Push key as string constant
                     let key_idx = self.code.add_constant(Value::Str(key.clone()));
                     self.code.emit(OpCode::LoadConst(key_idx));
-                    // Push value (or Nil if none)
+                    // Push value (or True if none, for bare colonpairs like :a)
                     if let Some(val_expr) = val_opt {
                         self.compile_expr(val_expr);
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        self.code.emit(OpCode::LoadTrue);
                     }
                 }
                 self.code.emit(OpCode::MakeHash(n));
@@ -1242,6 +1264,65 @@ impl Compiler {
                 left,
                 right,
             } => {
+                if meta == "R" {
+                    // R-meta can stack (RRop, RRRop, ...). Normalize to base operator and parity.
+                    let mut base = op.as_str();
+                    let mut reverse_count = 1usize;
+                    while let Some(rest) = base.strip_prefix('R') {
+                        reverse_count += 1;
+                        base = rest;
+                    }
+                    let reversed = reverse_count % 2 == 1;
+                    let (eval_left, eval_right) = if reversed {
+                        (right.as_ref(), left.as_ref())
+                    } else {
+                        (left.as_ref(), right.as_ref())
+                    };
+
+                    if base == "andthen" && reversed {
+                        let thunked = Expr::AnonSub {
+                            body: vec![Stmt::Expr(eval_right.clone())],
+                            is_rw: false,
+                        };
+                        let rewritten = Expr::Call {
+                            name: "__mutsu_reverse_andthen".to_string(),
+                            args: vec![eval_left.clone(), thunked],
+                        };
+                        self.compile_expr(&rewritten);
+                        return;
+                    }
+
+                    let logical_token = match base {
+                        "and" | "&&" => Some(TokenKind::AndAnd),
+                        "or" | "||" => Some(TokenKind::OrOr),
+                        "//" | "orelse" => Some(TokenKind::OrElse),
+                        "andthen" => Some(TokenKind::AndThen),
+                        "notandthen" => Some(TokenKind::NotAndThen),
+                        _ => None,
+                    };
+                    if let Some(op_tok) = logical_token {
+                        let rewritten = Expr::Binary {
+                            left: Box::new(eval_left.clone()),
+                            op: op_tok,
+                            right: Box::new(eval_right.clone()),
+                        };
+                        self.compile_expr(&rewritten);
+                        return;
+                    }
+
+                    if base == "xx" {
+                        let thunked = Expr::AnonSub {
+                            body: vec![Stmt::Expr(eval_left.clone())],
+                            is_rw: false,
+                        };
+                        let rewritten = Expr::Call {
+                            name: "__mutsu_reverse_xx".to_string(),
+                            args: vec![eval_right.clone(), thunked],
+                        };
+                        self.compile_expr(&rewritten);
+                        return;
+                    }
+                }
                 self.compile_expr(left);
                 self.compile_expr(right);
                 let meta_idx = self.code.add_constant(Value::Str(meta.clone()));
@@ -1760,6 +1841,121 @@ impl Compiler {
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
+    }
+
+    fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll"
+        ) || matches!(
+            expr,
+            Expr::MethodCall { name, target, .. }
+                if name == "rand"
+                    || name == "pick"
+                    || name == "roll"
+                    || name == "take"
+                    || Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::DynamicMethodCall { target, .. }
+                | Expr::HyperMethodCall { target, .. }
+                | Expr::HyperMethodCallDynamic { target, .. }
+                | Expr::CallOn { target, .. } if Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::Block(_)
+                | Expr::DoBlock { .. }
+                | Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+        )
+    }
+
+    fn flatten_xor_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+        if let Expr::Binary { left, op, right } = expr
+            && *op == TokenKind::XorXor
+        {
+            Self::flatten_xor_terms(left, out);
+            Self::flatten_xor_terms(right, out);
+            return;
+        }
+        out.push(expr);
+    }
+
+    fn compile_xor_chain(&mut self, left: &Expr, right: &Expr) {
+        let mut terms = Vec::new();
+        Self::flatten_xor_terms(left, &mut terms);
+        Self::flatten_xor_terms(right, &mut terms);
+        if terms.len() == 2 {
+            self.compile_expr(terms[0]);
+            self.compile_expr(terms[1]);
+            self.code.emit(OpCode::XorXor);
+            return;
+        }
+
+        self.tmp_counter += 1;
+        let acc_slot = self.alloc_local(&format!("__mutsu_xor_acc_{}", self.tmp_counter));
+        self.tmp_counter += 1;
+        let seen_slot = self.alloc_local(&format!("__mutsu_xor_seen_{}", self.tmp_counter));
+
+        self.compile_expr(terms[0]);
+        self.code.emit(OpCode::Dup);
+        self.code.emit(OpCode::SetLocal(acc_slot));
+        let first_truthy = self.code.emit(OpCode::JumpIfTrue(0));
+        self.code.emit(OpCode::LoadFalse);
+        let first_done = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(first_truthy);
+        self.code.emit(OpCode::LoadTrue);
+        self.code.patch_jump(first_done);
+        self.code.emit(OpCode::SetLocal(seen_slot));
+        self.code.emit(OpCode::Pop);
+
+        let mut early_end_jumps = Vec::new();
+        for term in terms.iter().skip(1) {
+            self.compile_expr(term);
+
+            self.code.emit(OpCode::GetLocal(seen_slot));
+            let seen_false = self.code.emit(OpCode::JumpIfFalse(0));
+
+            self.code.emit(OpCode::Dup);
+            let second_truthy = self.code.emit(OpCode::JumpIfTrue(0));
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::Pop);
+            let next_after_seen_true = self.code.emit(OpCode::Jump(0));
+
+            self.code.patch_jump(second_truthy);
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::LoadNil);
+            self.code.emit(OpCode::Dup);
+            self.code.emit(OpCode::SetLocal(acc_slot));
+            self.code.emit(OpCode::LoadTrue);
+            self.code.emit(OpCode::SetLocal(seen_slot));
+            early_end_jumps.push(self.code.emit(OpCode::Jump(0)));
+
+            self.code.patch_jump(seen_false);
+
+            self.code.emit(OpCode::Dup);
+            let became_truthy = self.code.emit(OpCode::JumpIfTrue(0));
+            self.code.emit(OpCode::Dup);
+            self.code.emit(OpCode::SetLocal(acc_slot));
+            self.code.emit(OpCode::Pop);
+            let next_after_seen_false = self.code.emit(OpCode::Jump(0));
+
+            self.code.patch_jump(became_truthy);
+            self.code.emit(OpCode::SetLocal(acc_slot));
+            self.code.emit(OpCode::LoadTrue);
+            self.code.emit(OpCode::SetLocal(seen_slot));
+            self.code.emit(OpCode::Pop);
+
+            self.code.patch_jump(next_after_seen_true);
+            self.code.patch_jump(next_after_seen_false);
+        }
+
+        for jump in early_end_jumps {
+            self.code.patch_jump(jump);
+        }
+        self.code.emit(OpCode::GetLocal(acc_slot));
     }
 
     /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_

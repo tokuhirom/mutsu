@@ -2,16 +2,21 @@
 
 use crate::runtime;
 use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
-use num_traits::{Signed, ToPrimitive};
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::builtin_rand;
+
+/// Raku-style rounding: round half toward positive infinity (ceiling).
+fn raku_round(x: f64) -> f64 {
+    (x + 0.5).floor()
+}
 use super::unicode::titlecase_string;
 
 pub(crate) mod coercion;
-mod collection;
+pub(crate) mod collection;
 
 use std::collections::HashMap;
 
@@ -417,6 +422,19 @@ fn raku_value(v: &Value) -> String {
     }
 }
 
+fn hash_pick_item(key: &str, value: &Value) -> Value {
+    match key {
+        "True" => Value::ValuePair(Box::new(Value::Bool(true)), Box::new(value.clone())),
+        "False" => Value::ValuePair(Box::new(Value::Bool(false)), Box::new(value.clone())),
+        _ => {
+            if let Ok(n) = key.parse::<f64>() {
+                return Value::ValuePair(Box::new(Value::Num(n)), Box::new(value.clone()));
+            }
+            Value::Pair(key.to_string(), Box::new(value.clone()))
+        }
+    }
+}
+
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     // CX::Warn methods: message, resume
     if let Value::Instance {
@@ -674,7 +692,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             attrs.insert("WHICH".to_string(), Value::Str(which_str));
             Some(Ok(Value::make_instance("ObjAt".to_string(), attrs)))
         }
-        "Bool" => Some(Ok(Value::Bool(target.truthy()))),
+        "Bool" => {
+            if matches!(target, Value::Instance { .. })
+                && (target.does_check("Real") || target.does_check("Numeric"))
+            {
+                None
+            } else {
+                Some(Ok(Value::Bool(target.truthy())))
+            }
+        }
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
@@ -743,6 +769,38 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "Real" => {
+            let result = match target {
+                Value::Int(i) => Value::Int(*i),
+                Value::BigInt(_) => target.clone(),
+                Value::Num(f) => Value::Num(*f),
+                Value::Rat(n, d) => Value::Rat(*n, *d),
+                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+                Value::Complex(r, im) => {
+                    if im.abs() <= 1e-15 {
+                        Value::Num(*r)
+                    } else {
+                        return Some(Err(RuntimeError::new(
+                            "Cannot convert Complex to Real: imaginary part not zero",
+                        )));
+                    }
+                }
+                Value::Str(s) => {
+                    if let Ok(i) = s.trim().parse::<i64>() {
+                        Value::Int(i)
+                    } else if let Ok(f) = s.trim().parse::<f64>() {
+                        Value::Num(f)
+                    } else {
+                        return Some(Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))));
+                    }
+                }
+                _ => return None,
+            };
+            Some(Ok(result))
+        }
         "Numeric" => {
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
@@ -768,6 +826,39 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "Bridge" => {
+            let result = match target {
+                Value::Int(i) => Value::Num(*i as f64),
+                Value::BigInt(n) => Value::Num(n.to_f64().unwrap_or(f64::INFINITY)),
+                Value::Num(f) => Value::Num(*f),
+                Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                Value::FatRat(n, d) if *d != 0 => {
+                    Value::Num(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let bridged = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(bridged)
+                }
+                _ => return None,
+            };
+            Some(Ok(result))
+        }
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),
@@ -781,7 +872,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "ords" => {
             let s = target.to_string_value();
-            let ords: Vec<Value> = s.chars().map(|c| Value::Int(c as u32 as i64)).collect();
+            let normalized: String = s.nfc().collect();
+            let ords: Vec<Value> = normalized
+                .chars()
+                .map(|c| Value::Int(c as u32 as i64))
+                .collect();
             Some(Ok(Value::array(ords)))
         }
         "chr" => {
@@ -854,6 +949,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let imag = match target {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::BigInt(n) => n.to_f64().unwrap_or(0.0),
+                Value::BigRat(n, d) if !d.is_zero() => {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                }
+                Value::Complex(r, i) => return Some(Ok(Value::Complex(-*i, *r))),
                 _ => 0.0,
             };
             Some(Ok(Value::Complex(0.0, imag)))
@@ -874,6 +976,66 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(n) => *n as f64,
                 Value::Num(n) => *n,
                 Value::Rat(n, d) => *n as f64 / *d as f64,
+                Value::Range(start, end) => {
+                    let span = (*end - *start + 1).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        *start + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::RangeExcl(start, end) => {
+                    if *start >= *end {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let span = (*end - *start).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        *start + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::RangeExclStart(start, end) => {
+                    if *start >= *end {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let from = *start + 1;
+                    let span = (*end - from + 1).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        from + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::RangeExclBoth(start, end) => {
+                    let from = *start + 1;
+                    let to = *end - 1;
+                    if from > to {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let span = (to - from + 1).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        from + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::GenericRange {
+                    start,
+                    end,
+                    excl_start,
+                    excl_end,
+                } => {
+                    let Some(mut from) = runtime::to_float_value(start) else {
+                        return Some(Ok(Value::Nil));
+                    };
+                    let Some(mut to) = runtime::to_float_value(end) else {
+                        return Some(Ok(Value::Nil));
+                    };
+                    if *excl_start {
+                        from = f64::from_bits(from.to_bits().saturating_add(1));
+                    }
+                    if *excl_end {
+                        to = f64::from_bits(to.to_bits().saturating_sub(1));
+                    }
+                    if !from.is_finite() || !to.is_finite() || from > to {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let v = from + builtin_rand() * (to - from);
+                    return Some(Ok(Value::Num(v)));
+                }
                 _ => return None,
             };
             Some(Ok(Value::Num(builtin_rand() * max)))
@@ -1006,6 +1168,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Some(Ok(Value::array(result)))
             }
+            Value::LazyList(_) => None,
             _ => Some(Ok(target.clone())),
         },
         "floor" => match target {
@@ -1021,6 +1184,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Int(q)))
                 }
             }
+            Value::Complex(re, im) => Some(Ok(Value::Complex(re.floor(), im.floor()))),
             _ => None,
         },
         "ceiling" | "ceil" => match target {
@@ -1036,16 +1200,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Int(q)))
                 }
             }
+            Value::Complex(re, im) => Some(Ok(Value::Complex(re.ceil(), im.ceil()))),
             _ => None,
         },
         "round" => match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
-            Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
+            Value::Num(f) => Some(Ok(Value::Int(raku_round(*f) as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::Rat(n, d) if *d != 0 => {
                 let f = *n as f64 / *d as f64;
-                Some(Ok(Value::Int(f.round() as i64)))
+                Some(Ok(Value::Int(raku_round(f) as i64)))
             }
+            Value::Complex(re, im) => Some(Ok(Value::Complex(raku_round(*re), raku_round(*im)))),
+            _ => None,
+        },
+        "truncate" => match target {
+            Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
+            Value::Num(f) => Some(Ok(Value::Int(f.trunc() as i64))),
+            Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
+            Value::Complex(re, im) => Some(Ok(Value::Complex(re.trunc(), im.trunc()))),
             _ => None,
         },
         "narrow" => match target {
@@ -1435,7 +1609,35 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
             }
         },
-        "pick" => {
+        "pick" => match target {
+            Value::Hash(items) => {
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    let (key, value) = items.iter().nth(idx).expect("index in range");
+                    Some(Ok(hash_pick_item(key, value)))
+                }
+            }
+            _ => {
+                let items = runtime::value_to_list(target);
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    Some(Ok(items[idx].clone()))
+                }
+            }
+        },
+        "roll" => {
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))
@@ -1486,6 +1688,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "succ" => match target {
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i + 1))),
+            Value::Num(f) => Some(Ok(Value::Num(f + 1.0))),
+            Value::Rat(n, d) => Some(Ok(make_rat(n + d, *d))),
+            Value::FatRat(n, d) => Some(Ok(Value::FatRat(n + d, *d))),
+            Value::BigRat(n, d) => Some(Ok(Value::BigRat(n + d, d.clone()))),
             Value::Bool(_) => Some(Ok(Value::Bool(true))),
             Value::Str(s) => {
                 if s.is_empty() {
@@ -1503,6 +1709,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "pred" => match target {
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i - 1))),
+            Value::Num(f) => Some(Ok(Value::Num(f - 1.0))),
+            Value::Rat(n, d) => Some(Ok(make_rat(n - d, *d))),
+            Value::FatRat(n, d) => Some(Ok(Value::FatRat(n - d, *d))),
+            Value::BigRat(n, d) => Some(Ok(Value::BigRat(n - d, d.clone()))),
             Value::Bool(_) => Some(Ok(Value::Bool(false))),
             _ => Some(Ok(target.clone())),
         },
@@ -1525,6 +1735,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log2()))),
             Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log2()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log2()))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).log2()))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log2(),
+            ))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -1537,6 +1751,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log10()))),
             Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log10()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log10()))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).log10()))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log10(),
+            ))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -1666,6 +1884,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 } else {
                     let n = s.trim().parse::<i64>().unwrap_or(0);
                     Some(Ok(make_rat(n, 1)))
+                }
+            }
+            Value::Complex(r, im) => {
+                if im.abs() <= 1e-15 {
+                    let denom = 1_000_000i64;
+                    let numer = (r * denom as f64).round() as i64;
+                    Some(Ok(make_rat(numer, denom)))
+                } else {
+                    Some(Err(RuntimeError::new(
+                        "Cannot convert Complex to Real: imaginary part not zero",
+                    )))
                 }
             }
             Value::Instance { .. } => None,

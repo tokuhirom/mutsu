@@ -596,6 +596,59 @@ impl Compiler {
             .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)))
     }
 
+    pub(super) fn body_mutates_topic(stmts: &[Stmt]) -> bool {
+        fn expr_mutates_topic(expr: &Expr) -> bool {
+            match expr {
+                Expr::AssignExpr { name, .. } => name == "_",
+                Expr::Unary { expr, .. } => expr_mutates_topic(expr),
+                Expr::Binary { left, right, .. } => {
+                    expr_mutates_topic(left) || expr_mutates_topic(right)
+                }
+                Expr::MethodCall { target, args, .. } => {
+                    expr_mutates_topic(target) || args.iter().any(expr_mutates_topic)
+                }
+                Expr::Call { args, .. } => args.iter().any(expr_mutates_topic),
+                Expr::IndexAssign {
+                    target,
+                    index,
+                    value,
+                } => {
+                    expr_mutates_topic(target)
+                        || expr_mutates_topic(index)
+                        || expr_mutates_topic(value)
+                }
+                _ => false,
+            }
+        }
+
+        fn stmt_mutates_topic(stmt: &Stmt) -> bool {
+            match stmt {
+                Stmt::Assign { name, .. } => name == "_",
+                Stmt::Expr(expr) => expr_mutates_topic(expr),
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    super::Compiler::body_mutates_topic(then_branch)
+                        || super::Compiler::body_mutates_topic(else_branch)
+                }
+                Stmt::While { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::Catch(body)
+                | Stmt::Control(body)
+                | Stmt::When { body, .. }
+                | Stmt::Given { body, .. }
+                | Stmt::Default(body) => super::Compiler::body_mutates_topic(body),
+                Stmt::For { body, .. } => super::Compiler::body_mutates_topic(body),
+                _ => false,
+            }
+        }
+
+        stmts.iter().any(stmt_mutates_topic)
+    }
+
     /// Compile a block body, automatically wrapping in implicit try if it contains
     /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
     /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
@@ -916,6 +969,7 @@ impl Compiler {
             body_end: 0,
             label: label.clone(),
             collect: true,
+            isolate_topic: Self::body_mutates_topic(&loop_body),
         });
         self.compile_expr(cond);
         self.code.patch_while_cond_end(loop_idx);
@@ -1387,6 +1441,11 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
+            Expr::AssignExpr { name, .. } => Some(name.clone()),
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
