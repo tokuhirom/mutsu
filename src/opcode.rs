@@ -352,6 +352,8 @@ pub(crate) enum OpCode {
         label: Option<String>,
         arity: u32,
         collect: bool,
+        /// When true, run the loop body in a spawned thread (race for / hyper for).
+        threaded: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
@@ -445,6 +447,12 @@ pub(crate) enum OpCode {
     HyperMethodCall {
         name_idx: u32,
         arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+    },
+    HyperMethodCallDynamic {
+        arity: u32,
+        modifier_idx: Option<u32>,
     },
 
     // -- HyperOp (>>op<<) --
@@ -553,6 +561,13 @@ pub(crate) enum OpCode {
     RegisterVarExport {
         name_idx: u32,
         tags_idx: Option<u32>,
+    },
+    /// Apply a custom variable trait via trait_mod:<is>.
+    /// When `has_arg` is true, pops trait argument value from stack.
+    ApplyVarTrait {
+        name_idx: u32,
+        trait_name_idx: u32,
+        has_arg: bool,
     },
 
     /// Get a variable from the caller's scope ($CALLER::varname).

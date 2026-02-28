@@ -458,6 +458,11 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => arg.clone(),
         })),
         "min" => Some(Ok(match arg {
+            Value::Hash(items) => items
+                .iter()
+                .min_by(|(ak, _), (bk, _)| ak.cmp(bk))
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .unwrap_or(Value::Nil),
             Value::Array(items, ..) => items
                 .iter()
                 .cloned()
@@ -469,6 +474,11 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => arg.clone(),
         })),
         "max" => Some(Ok(match arg {
+            Value::Hash(items) => items
+                .iter()
+                .max_by(|(ak, _), (bk, _)| ak.cmp(bk))
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .unwrap_or(Value::Nil),
             Value::Array(items, ..) => items
                 .iter()
                 .cloned()
@@ -494,6 +504,55 @@ fn native_function_2arg(
     arg1: &Value,
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    fn failure_exception(value: &Value) -> Option<Value> {
+        match value {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => attributes.get("exception").cloned(),
+            Value::Mixin(inner, mixins) => {
+                if let Some(mixed) = mixins.get("Failure")
+                    && let Some(ex) = failure_exception(mixed)
+                {
+                    return Some(ex);
+                }
+                failure_exception(inner)
+            }
+            _ => None,
+        }
+    }
+
+    fn minmax_two(arg1: &Value, arg2: &Value, want_max: bool) -> Result<Value, RuntimeError> {
+        let ex1 = failure_exception(arg1);
+        let ex2 = failure_exception(arg2);
+        if ex1.is_some() && ex2.is_some() {
+            let ex = ex1.unwrap_or(Value::Nil);
+            let mut err = RuntimeError::new(ex.to_string_value());
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        if ex1.is_some() {
+            return Ok(arg1.clone());
+        }
+        if ex2.is_some() {
+            return Ok(arg2.clone());
+        }
+        if matches!(arg1, Value::Package(name) if name == "Any") {
+            return Ok(arg2.clone());
+        }
+        if matches!(arg2, Value::Package(name) if name == "Any") {
+            return Ok(arg1.clone());
+        }
+
+        let cmp = crate::runtime::compare_values(arg1, arg2);
+        Ok(if (want_max && cmp >= 0) || (!want_max && cmp <= 0) {
+            arg1.clone()
+        } else {
+            arg2.clone()
+        })
+    }
+
     match name {
         "atan2" => {
             // atan2(y, x)
@@ -662,30 +721,24 @@ fn native_function_2arg(
             }
         }
         "min" => {
-            let cmp = match (arg1, arg2) {
-                (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                _ => arg1.to_string_value().cmp(&arg2.to_string_value()),
-            };
-            Some(Ok(
-                if cmp == std::cmp::Ordering::Less || cmp == std::cmp::Ordering::Equal {
-                    arg1.clone()
-                } else {
-                    arg2.clone()
-                },
-            ))
+            if matches!(arg1, Value::Pair(name, _) if name == "by")
+                || matches!(arg2, Value::Pair(name, _) if name == "by")
+                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+            {
+                return None;
+            }
+            Some(minmax_two(arg1, arg2, false))
         }
         "max" => {
-            let cmp = match (arg1, arg2) {
-                (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                _ => arg1.to_string_value().cmp(&arg2.to_string_value()),
-            };
-            Some(Ok(
-                if cmp == std::cmp::Ordering::Greater || cmp == std::cmp::Ordering::Equal {
-                    arg1.clone()
-                } else {
-                    arg2.clone()
-                },
-            ))
+            if matches!(arg1, Value::Pair(name, _) if name == "by")
+                || matches!(arg2, Value::Pair(name, _) if name == "by")
+                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+            {
+                return None;
+            }
+            Some(minmax_two(arg1, arg2, true))
         }
         _ => None,
     }
@@ -724,27 +777,41 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             if args.is_empty() {
                 return Some(Ok(Value::Nil));
             }
-            Some(Ok(args
-                .iter()
-                .cloned()
-                .min_by(|a, b| match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                    _ => a.to_string_value().cmp(&b.to_string_value()),
-                })
-                .unwrap_or(Value::Nil)))
+            if args.iter().any(|arg| {
+                matches!(arg, Value::Pair(name, _) if name == "by")
+                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+            }) {
+                return None;
+            }
+            let mut acc = args[0].clone();
+            for rhs in &args[1..] {
+                let next = native_function_2arg("min", &acc, rhs)?;
+                match next {
+                    Ok(v) => acc = v,
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+            Some(Ok(acc))
         }
         "max" => {
             if args.is_empty() {
                 return Some(Ok(Value::Nil));
             }
-            Some(Ok(args
-                .iter()
-                .cloned()
-                .max_by(|a, b| match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                    _ => a.to_string_value().cmp(&b.to_string_value()),
-                })
-                .unwrap_or(Value::Nil)))
+            if args.iter().any(|arg| {
+                matches!(arg, Value::Pair(name, _) if name == "by")
+                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+            }) {
+                return None;
+            }
+            let mut acc = args[0].clone();
+            for rhs in &args[1..] {
+                let next = native_function_2arg("max", &acc, rhs)?;
+                match next {
+                    Ok(v) => acc = v,
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+            Some(Ok(acc))
         }
         "chrs" => {
             let mut result = String::new();

@@ -178,6 +178,7 @@ impl Compiler {
                 is_dynamic,
                 is_export,
                 export_tags,
+                custom_traits,
             } => {
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
@@ -248,6 +249,17 @@ impl Compiler {
                     self.code
                         .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
+                for (trait_name, trait_arg) in custom_traits {
+                    if let Some(arg) = trait_arg {
+                        self.compile_expr(arg);
+                    }
+                    let trait_name_idx = self.code.add_constant(Value::Str(trait_name.clone()));
+                    self.code.emit(OpCode::ApplyVarTrait {
+                        name_idx,
+                        trait_name_idx,
+                        has_arg: trait_arg.is_some(),
+                    });
+                }
             }
             Stmt::Assign {
                 name,
@@ -316,6 +328,7 @@ impl Compiler {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: vec![],
+                        custom_traits: Vec::new(),
                     };
                     self.compile_stmt(&var_decl);
                     self.compile_condition_expr(&desugared_cond);
@@ -334,7 +347,8 @@ impl Compiler {
                 }
             }
             Stmt::While { cond, body, label } => {
-                let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+                let (pre_stmts, loop_body, post_stmts) =
+                    self.expand_loop_phasers(body, label.as_deref());
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -359,8 +373,10 @@ impl Compiler {
                 params,
                 body,
                 label,
+                mode,
             } => {
-                let (pre_stmts, mut loop_body, post_stmts) = self.expand_loop_phasers(body);
+                let (pre_stmts, mut loop_body, post_stmts) =
+                    self.expand_loop_phasers(body, label.as_deref());
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -393,6 +409,7 @@ impl Compiler {
                     label: label.clone(),
                     arity,
                     collect: false,
+                    threaded: *mode != crate::ast::ForMode::Normal,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
@@ -409,7 +426,8 @@ impl Compiler {
                 repeat,
                 label,
             } if !*repeat => {
-                let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+                let (pre_stmts, loop_body, post_stmts) =
+                    self.expand_loop_phasers(body, label.as_deref());
                 // Compile init statement (if any) before the loop opcode
                 if let Some(init_stmt) = init {
                     self.compile_stmt(init_stmt);
@@ -710,7 +728,8 @@ impl Compiler {
                 repeat,
                 label,
             } if *repeat => {
-                let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+                let (pre_stmts, loop_body, post_stmts) =
+                    self.expand_loop_phasers(body, label.as_deref());
                 if let Some(init_stmt) = init {
                     self.compile_stmt(init_stmt);
                 }

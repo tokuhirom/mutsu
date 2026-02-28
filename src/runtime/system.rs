@@ -57,6 +57,11 @@ impl Interpreter {
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
+        if trimmed == "<>" || trimmed == "<STDIN>" {
+            return Err(RuntimeError::new(
+                "X::Obsolete: The degenerate case <> and old angle forms like <STDIN> are disallowed.",
+            ));
+        }
         let previous_pod = self.env.get("=pod").cloned();
         self.collect_pod_blocks(trimmed);
         // Collect operator sub names so the parser recognizes them in EVAL context
@@ -356,5 +361,11 @@ fn unwrap_parenthesized_statements(code: &str) -> Option<&str> {
     if depth != 0 {
         return None;
     }
-    Some(&code[1..code.len() - 1])
+    let inner = &code[1..code.len() - 1];
+    // Restrict this fallback to statement-list snippets like `(6;)`.
+    // Plain parenthesized expressions should keep normal parse behavior.
+    if !inner.contains(';') {
+        return None;
+    }
+    Some(inner)
 }

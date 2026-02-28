@@ -281,6 +281,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_pointy_slurpy_param_method_call() {
+        let (rest, expr) = primary("(-> *@a { }).count").unwrap();
+        assert_eq!(rest, ".count");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { ref param_defs, .. }
+                if param_defs.len() == 1
+                    && param_defs[0].slurpy
+                    && param_defs[0].name == "@a"
+        ));
+    }
+
+    #[test]
     fn parse_big_q_to_heredoc() {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
@@ -462,6 +475,19 @@ mod tests {
     fn primary_reports_missing_listop_argument() {
         let err = primary("shift :").unwrap_err();
         assert!(err.message().contains("listop argument expression"));
+    }
+
+    #[test]
+    fn primary_parses_produce_as_expr_listop() {
+        let (rest, expr) = primary("produce *+*, 1..10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args, .. } => {
+                assert_eq!(name, "produce");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("expected produce call expression"),
+        }
     }
 
     #[test]

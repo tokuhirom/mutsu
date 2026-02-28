@@ -1,5 +1,5 @@
 use Test;
-plan 14;
+plan 16;
 
 # ? prefix (boolean coercion)
 is ?1, True, '?1 is True';
@@ -9,6 +9,11 @@ is ?"", False, '?"" is False';
 
 # ^ upto operator
 is-deeply (^5).list, [0, 1, 2, 3, 4], '^5 produces 0..^5';
+my @vals = <a b c>;
+is-deeply (^@vals.elems).list, [0, 1, 2], '^@array.elems parses and evaluates as 0..^N';
+my $sum = 0;
+for ^@vals.elems -> $i { $sum = $sum + $i; }
+is $sum, 3, '^@array.elems works as for-loop iterable';
 
 # <=> numeric comparison
 is (1 <=> 2), Order::Less, '1 <=> 2 is Less';

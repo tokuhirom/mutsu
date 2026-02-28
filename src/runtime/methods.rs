@@ -1,7 +1,8 @@
 use super::*;
 use crate::ast::CallArg;
 use crate::value::signature::{
-    make_params_value_from_param_defs, make_signature_value, param_defs_to_sig_info,
+    extract_sig_info, make_params_value_from_param_defs, make_signature_value,
+    param_defs_to_sig_info,
 };
 
 impl Interpreter {
@@ -136,9 +137,25 @@ impl Interpreter {
                     }
                 }
                 Expr::MethodCall { target, args, .. }
-                | Expr::DynamicMethodCall { target, args, .. }
                 | Expr::HyperMethodCall { target, args, .. } => {
                     scan_expr(target, positional, named);
+                    for a in args {
+                        scan_expr(a, positional, named);
+                    }
+                }
+                Expr::DynamicMethodCall {
+                    target,
+                    name_expr,
+                    args,
+                }
+                | Expr::HyperMethodCallDynamic {
+                    target,
+                    name_expr,
+                    args,
+                    ..
+                } => {
+                    scan_expr(target, positional, named);
+                    scan_expr(name_expr, positional, named);
                     for a in args {
                         scan_expr(a, positional, named);
                     }
@@ -346,6 +363,28 @@ impl Interpreter {
         }
     }
 
+    fn varref_parts(value: &Value) -> Option<(String, Value)> {
+        if let Value::Capture { positional, named } = value
+            && positional.is_empty()
+            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            return Some((name.clone(), inner.clone()));
+        }
+        None
+    }
+
+    fn var_target_from_meta_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
+            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
+                Some(Value::Str(name)) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn candidate_matches_call_args(&mut self, candidate: &Value, args: &[Value]) -> bool {
         match candidate {
             Value::Sub(data) => {
@@ -494,6 +533,58 @@ impl Interpreter {
         make_signature_value(info)
     }
 
+    fn signature_required_positional_count(info: &crate::value::signature::SigInfo) -> i64 {
+        info.params
+            .iter()
+            .filter(|p| !p.named && !p.slurpy && !p.has_default && !p.optional_marker)
+            .count() as i64
+    }
+
+    fn signature_positional_count(info: &crate::value::signature::SigInfo) -> Option<i64> {
+        let mut count = 0i64;
+        for p in &info.params {
+            if p.named || (p.slurpy && p.sigil == '%') {
+                continue;
+            }
+            if p.slurpy {
+                return None;
+            }
+            count += 1;
+        }
+        Some(count)
+    }
+
+    fn signature_count_value(info: &crate::value::signature::SigInfo) -> Value {
+        match Self::signature_positional_count(info) {
+            Some(count) => Value::Int(count),
+            None => Value::Num(f64::INFINITY),
+        }
+    }
+
+    fn candidate_arity_value(infos: &[crate::value::signature::SigInfo]) -> Value {
+        let arity = infos
+            .iter()
+            .map(Self::signature_required_positional_count)
+            .min()
+            .unwrap_or(0);
+        Value::Int(arity)
+    }
+
+    fn candidate_count_value(infos: &[crate::value::signature::SigInfo]) -> Value {
+        let mut max_count = 0i64;
+        for info in infos {
+            match Self::signature_positional_count(info) {
+                Some(count) => {
+                    if count > max_count {
+                        max_count = count;
+                    }
+                }
+                None => return Value::Num(f64::INFINITY),
+            }
+        }
+        Value::Int(max_count)
+    }
+
     fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
         let shape_val = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
@@ -585,12 +676,124 @@ impl Interpreter {
         Some((base, args))
     }
 
+    pub(crate) fn call_method_all_with_values(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id: target_id,
+        } = &target
+        {
+            if let Some(private_method_name) = method.strip_prefix('!')
+                && let Some((resolved_owner, method_def)) =
+                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+            {
+                let (result, updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                return Ok(vec![result]);
+            }
+
+            if let Some((owner_class, private_method_name)) = method.split_once("::")
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
+                    class_name,
+                    owner_class,
+                    private_method_name,
+                    &args,
+                )
+            {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
+                let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                    || self
+                        .class_trusts
+                        .get(&resolved_owner)
+                        .is_some_and(|trusted| {
+                            caller_class
+                                .as_ref()
+                                .is_some_and(|caller| trusted.contains(caller))
+                        });
+                if !caller_allowed {
+                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+                }
+                let (result, updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                return Ok(vec![result]);
+            }
+
+            let candidates = self.resolve_all_methods_with_owner(class_name, method, &args);
+            if !candidates.is_empty() {
+                let mut attrs = (**attributes).clone();
+                let mut out = Vec::with_capacity(candidates.len());
+                for (resolved_owner, method_def) in candidates {
+                    let (result, updated) = self.run_instance_method_resolved(
+                        class_name,
+                        &resolved_owner,
+                        method_def,
+                        attrs,
+                        args.clone(),
+                        Some(target.clone()),
+                    )?;
+                    attrs = updated;
+                    out.push(result);
+                }
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, attrs);
+                return Ok(out);
+            }
+        }
+
+        Ok(vec![self.call_method_with_values(target, method, args)?])
+    }
+
+    pub(crate) fn overwrite_array_items_by_identity_for_vm(
+        &mut self,
+        needle: &std::sync::Arc<Vec<Value>>,
+        updated_items: Vec<Value>,
+        is_array: bool,
+    ) {
+        self.overwrite_array_bindings_by_identity(
+            needle,
+            Value::Array(std::sync::Arc::new(updated_items), is_array),
+        );
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if matches!(method, "arity" | "count")
+            && args.is_empty()
+            && let Some(sig_info) = extract_sig_info(&target)
+        {
+            return Ok(if method == "arity" {
+                Value::Int(Self::signature_required_positional_count(&sig_info))
+            } else {
+                Self::signature_count_value(&sig_info)
+            });
+        }
+
         if let Value::Instance {
             class_name,
             attributes,
@@ -1038,6 +1241,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "arity"
+                        | "count"
                         | "candidates"
                         | "cando"
                         | "of"
@@ -1049,6 +1254,63 @@ impl Interpreter {
                         | "can"
                 );
                 return Ok(Value::Bool(can));
+            }
+            if matches!(method, "arity" | "count") && args.is_empty() {
+                let candidates = self.routine_candidate_subs(package, name);
+                if !candidates.is_empty() {
+                    let mut infos = Vec::new();
+                    for candidate in candidates {
+                        if let Value::Sub(data) = candidate {
+                            let sig = self.sub_signature_value(&data);
+                            if let Some(info) = extract_sig_info(&sig) {
+                                infos.push(info);
+                            }
+                        }
+                    }
+                    if infos.is_empty() {
+                        return Ok(Value::Int(0));
+                    }
+                    return Ok(if method == "arity" {
+                        Self::candidate_arity_value(&infos)
+                    } else {
+                        Self::candidate_count_value(&infos)
+                    });
+                }
+
+                let (params, param_defs) = self.callable_signature(&target);
+                let defs = if !param_defs.is_empty() {
+                    param_defs
+                } else {
+                    params
+                        .into_iter()
+                        .map(|name| ParamDef {
+                            name,
+                            default: None,
+                            multi_invocant: true,
+                            required: true,
+                            named: false,
+                            slurpy: false,
+                            double_slurpy: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
+                            is_invocant: false,
+                            shape_constraints: None,
+                        })
+                        .collect()
+                };
+                let info = param_defs_to_sig_info(&defs, None);
+                return Ok(if method == "arity" {
+                    Value::Int(Self::signature_required_positional_count(&info))
+                } else {
+                    Self::signature_count_value(&info)
+                });
             }
         }
         if let Value::Sub(data) = &target {
@@ -1161,6 +1423,17 @@ impl Interpreter {
                     .unwrap_or_else(|| "Mu".to_string());
                 return Ok(Value::Package(type_name));
             }
+            if matches!(method, "arity" | "count") && args.is_empty() {
+                let sig = self.sub_signature_value(data);
+                if let Some(info) = extract_sig_info(&sig) {
+                    return Ok(if method == "arity" {
+                        Value::Int(Self::signature_required_positional_count(&info))
+                    } else {
+                        Self::signature_count_value(&info)
+                    });
+                }
+                return Ok(Value::Int(0));
+            }
             if method == "can" {
                 let method_name = args
                     .first()
@@ -1170,6 +1443,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "arity"
+                        | "count"
                         | "candidates"
                         | "cando"
                         | "of"
@@ -1187,6 +1462,27 @@ impl Interpreter {
             && let Some(strong) = weak.upgrade()
         {
             return self.call_method_with_values(Value::Sub(strong), method, args);
+        }
+
+        if method == "VAR"
+            && args.is_empty()
+            && let Some((source_name, inner)) = Self::varref_parts(&target)
+        {
+            return self.call_method_mut_with_values(&source_name, inner, "VAR", vec![]);
+        }
+
+        if method == "var"
+            && args.is_empty()
+            && let Some(source_name) = Self::var_target_from_meta_value(&target)
+        {
+            let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::Nil);
+            let mut named = std::collections::HashMap::new();
+            named.insert("__mutsu_varref_name".to_string(), Value::Str(source_name));
+            named.insert("__mutsu_varref_value".to_string(), source_value);
+            return Ok(Value::Capture {
+                positional: Vec::new(),
+                named,
+            });
         }
 
         if method == "join"
@@ -1207,7 +1503,9 @@ impl Interpreter {
         }
 
         if let Value::Instance { class_name, .. } = &target
-            && class_name == "Perl6::Metamodel::ClassHOW"
+            && (class_name == "Perl6::Metamodel::ClassHOW"
+                || class_name == "Perl6::Metamodel::CurriedRoleHOW"
+                || class_name == "Perl6::Metamodel::ParametricRoleGroupHOW")
             && matches!(
                 method,
                 "can"
@@ -1215,14 +1513,45 @@ impl Interpreter {
                     | "lookup"
                     | "find_method"
                     | "add_method"
+                    | "archetypes"
                     | "name"
                     | "ver"
                     | "auth"
                     | "mro"
+                    | "mro_unhidden"
                     | "methods"
+                    | "concretization"
+                    | "curried_role"
             )
         {
-            return self.dispatch_classhow_method(method, args);
+            let mut how_args = args.to_vec();
+            if let Value::Instance { attributes, .. } = &target
+                && !matches!(
+                    how_args.first(),
+                    Some(Value::Package(_))
+                        | Some(Value::Instance { .. })
+                        | Some(Value::ParametricRole { .. })
+                )
+                && let Some(Value::Str(type_name)) = attributes.get("name")
+            {
+                how_args.insert(0, Value::Package(type_name.clone()));
+            }
+            return self.dispatch_classhow_method(method, how_args);
+        }
+
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Perl6::Metamodel::Archetypes"
+            && method == "composable"
+            && args.is_empty()
+        {
+            return Ok(attributes
+                .get("composable")
+                .cloned()
+                .unwrap_or(Value::Bool(false)));
         }
 
         // CREATE method: allocate a bare instance without BUILD
@@ -1314,6 +1643,92 @@ impl Interpreter {
             }
             "are" => {
                 return self.dispatch_are(target, &args);
+            }
+            "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") =>
+            {
+                let mut positional: Vec<Value> = Vec::new();
+                let mut label: Option<String> = None;
+                let mut repeat = false;
+
+                for arg in &args {
+                    if let Value::Pair(name, value) = arg {
+                        if name == "label" {
+                            label = Some(value.to_string_value());
+                            continue;
+                        }
+                        if name == "repeat" {
+                            repeat = value.truthy();
+                            continue;
+                        }
+                        continue;
+                    }
+                    if let Value::ValuePair(name, value) = arg {
+                        if let Value::Str(key) = name.as_ref() {
+                            if key == "label" {
+                                label = Some(value.to_string_value());
+                                continue;
+                            }
+                            if key == "repeat" {
+                                repeat = value.truthy();
+                                continue;
+                            }
+                        }
+                        continue;
+                    }
+                    positional.push(arg.clone());
+                }
+
+                let Some(body_callable) = positional.first().cloned() else {
+                    return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+                };
+                let cond_callable = positional.get(1).cloned();
+                let step_callable = positional.get(2).cloned();
+
+                let label_matches = |error_label: &Option<String>| {
+                    error_label.as_deref() == label.as_deref() || error_label.is_none()
+                };
+
+                let mut items = Vec::new();
+                let mut first_iteration = true;
+
+                'from_loop: loop {
+                    if (!first_iteration || !repeat)
+                        && let Some(cond) = cond_callable.clone()
+                    {
+                        let cond_value = self.call_sub_value(cond, vec![], true)?;
+                        if !cond_value.truthy() {
+                            break;
+                        }
+                    }
+                    first_iteration = false;
+
+                    'body_redo: loop {
+                        match self.call_sub_value(body_callable.clone(), vec![], true) {
+                            Ok(value) => {
+                                if !matches!(value, Value::Nil) {
+                                    items.push(value);
+                                }
+                                break 'body_redo;
+                            }
+                            Err(e) if e.is_redo && label_matches(&e.label) => continue 'body_redo,
+                            Err(e) if e.is_next && label_matches(&e.label) => break 'body_redo,
+                            Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
+                            Err(e) => return Err(e),
+                        }
+                    }
+
+                    if let Some(step) = step_callable.clone() {
+                        match self.call_sub_value(step, vec![], true) {
+                            Ok(_) => {}
+                            Err(e) if e.is_next && label_matches(&e.label) => continue 'from_loop,
+                            Err(e) if e.is_redo && label_matches(&e.label) => continue 'from_loop,
+                            Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                }
+
+                return Ok(Value::Seq(std::sync::Arc::new(items)));
             }
             "say" if args.is_empty() => {
                 let s = format!("{}\n", crate::runtime::gist_value(&target));
@@ -1677,6 +2092,28 @@ impl Interpreter {
                 {
                     return Ok(*how.clone());
                 }
+                // Return CurriedRoleHOW for parameterized roles
+                if let Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } = &target
+                {
+                    let args_str = type_args
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) => n.clone(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let full_name = format!("{}[{}]", base_name, args_str);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("name".to_string(), Value::Str(full_name));
+                    return Ok(Value::make_instance(
+                        "Perl6::Metamodel::CurriedRoleHOW".to_string(),
+                        attrs,
+                    ));
+                }
                 // Return a meta-object (ClassHOW) for any value
                 let type_name = match &target {
                     Value::Package(name) => name.clone(),
@@ -1697,12 +2134,15 @@ impl Interpreter {
                         tn.to_string()
                     }
                 };
+                // Use ParametricRoleGroupHOW for role type objects
+                let how_name = if self.roles.contains_key(&type_name) && !type_name.contains('[') {
+                    "Perl6::Metamodel::ParametricRoleGroupHOW"
+                } else {
+                    "Perl6::Metamodel::ClassHOW"
+                };
                 let mut attrs = HashMap::new();
                 attrs.insert("name".to_string(), Value::Str(type_name));
-                return Ok(Value::make_instance(
-                    "Perl6::Metamodel::ClassHOW".to_string(),
-                    attrs,
-                ));
+                return Ok(Value::make_instance(how_name.to_string(), attrs));
             }
             "WHO" if args.is_empty() => {
                 if let Value::Package(name) = &target {
@@ -1739,6 +2179,20 @@ impl Interpreter {
                     Value::Package(name) => name.clone(),
                     Value::Instance { class_name, .. } => class_name.clone(),
                     Value::Promise(p) => p.class_name(),
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str = type_args
+                            .iter()
+                            .map(|v| match v {
+                                Value::Package(n) => n.clone(),
+                                other => other.to_string_value(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        format!("{}[{}]", base_name, args_str)
+                    }
                     other => value_type_name(other).to_string(),
                 }));
             }
@@ -2006,6 +2460,28 @@ impl Interpreter {
                 attrs.insert("index".to_string(), Value::Int(0));
                 return Ok(Value::make_instance("Iterator".to_string(), attrs));
             }
+            "produce" => {
+                let callable = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("produce expects a callable"))?;
+                if !matches!(
+                    target,
+                    Value::Array(_, _)
+                        | Value::Seq(_)
+                        | Value::Slip(_)
+                        | Value::LazyList(_)
+                        | Value::Range(_, _)
+                        | Value::RangeExcl(_, _)
+                        | Value::RangeExclStart(_, _)
+                        | Value::RangeExclBoth(_, _)
+                        | Value::GenericRange { .. }
+                        | Value::Hash(_)
+                ) {
+                    return Ok(target);
+                }
+                return self.call_function("produce", vec![callable, target]);
+            }
             "map" => {
                 if let Value::Instance {
                     ref class_name,
@@ -2064,6 +2540,24 @@ impl Interpreter {
                 return self.eval_map_over_items(args.first().cloned(), items);
             }
             "max" | "min" => {
+                if matches!(target, Value::Hash(_)) {
+                    let mut call_args = vec![target.clone()];
+                    if let Some(first) = args.first() {
+                        if matches!(
+                            first,
+                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        ) {
+                            call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                        } else {
+                            call_args.extend(args.clone());
+                        }
+                    }
+                    return if method == "max" {
+                        self.builtin_max(&call_args)
+                    } else {
+                        self.builtin_min(&call_args)
+                    };
+                }
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {
@@ -2359,6 +2853,21 @@ impl Interpreter {
                 Value::Pair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 Value::ValuePair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 _ => return Ok(Value::array(Vec::new())),
+            },
+            "AT-KEY" if args.len() == 1 => match (&target, &args[0]) {
+                (Value::Pair(key, value), idx) => {
+                    if key == &idx.to_string_value() {
+                        return Ok(*value.clone());
+                    }
+                    return Ok(Value::Nil);
+                }
+                (Value::ValuePair(key, value), idx) => {
+                    if key.to_string_value() == idx.to_string_value() {
+                        return Ok(*value.clone());
+                    }
+                    return Ok(Value::Nil);
+                }
+                _ => {}
             },
             "rotate" => {
                 return self.dispatch_rotate(target, &args);
@@ -2698,7 +3207,11 @@ impl Interpreter {
                     &args,
                 )
             {
-                let caller_class = self.method_class_stack.last().cloned();
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
                 let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                     || self
                         .class_trusts
@@ -3667,12 +4180,16 @@ impl Interpreter {
                 | "ver"
                 | "auth"
                 | "mro"
+                | "mro_unhidden"
+                | "archetypes"
                 | "isa"
                 | "can"
                 | "lookup"
                 | "find_method"
                 | "add_method"
                 | "methods"
+                | "concretization"
+                | "curried_role"
         ) {
             return Some(Value::Str(method_name.to_string()));
         }
@@ -3705,6 +4222,20 @@ impl Interpreter {
             "name" if args.len() == 1 => Ok(Value::Str(match &args[0] {
                 Value::Package(name) => name.clone(),
                 Value::Instance { class_name, .. } => class_name.clone(),
+                Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } => {
+                    let args_str = type_args
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) => n.clone(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("{}[{}]", base_name, args_str)
+                }
                 other => value_type_name(other).to_string(),
             })),
             "ver" if args.len() == 1 => {
@@ -3771,11 +4302,74 @@ impl Interpreter {
                 let mro = self.class_mro(class_name);
                 Ok(Value::Bool(mro.iter().any(|p| p == other_name)))
             }
-            "mro" if args.len() == 1 => {
-                let mro = self.classhow_mro_names(&args[0]);
-                Ok(Value::array(
-                    mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+            "mro" if !args.is_empty() => {
+                let mut include_roles = false;
+                let mut include_concretizations = false;
+                for arg in &args[1..] {
+                    match arg {
+                        Value::Pair(k, v) if k == "roles" => {
+                            include_roles = v.truthy();
+                        }
+                        Value::Pair(k, v) if k == "concretizations" => {
+                            include_concretizations = v.truthy();
+                        }
+                        _ => {}
+                    }
+                }
+                if include_roles || include_concretizations {
+                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
+                    Ok(Value::array(mro))
+                } else {
+                    let mro = self.classhow_mro_names(&args[0]);
+                    Ok(Value::array(
+                        mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+                    ))
+                }
+            }
+            "archetypes" if !args.is_empty() => {
+                let invocant_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    _ => value_type_name(&args[0]).to_string(),
+                };
+                let base_name = invocant_name
+                    .split_once('[')
+                    .map(|(base, _)| base)
+                    .unwrap_or(invocant_name.as_str());
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "composable".to_string(),
+                    Value::Bool(self.roles.contains_key(base_name)),
+                );
+                Ok(Value::make_instance(
+                    "Perl6::Metamodel::Archetypes".to_string(),
+                    attrs,
                 ))
+            }
+            "mro_unhidden" if !args.is_empty() => {
+                let mut include_roles = false;
+                let mut include_concretizations = false;
+                for arg in &args[1..] {
+                    match arg {
+                        Value::Pair(k, v) if k == "roles" => {
+                            include_roles = v.truthy();
+                        }
+                        Value::Pair(k, v) if k == "concretizations" => {
+                            include_concretizations = v.truthy();
+                        }
+                        _ => {}
+                    }
+                }
+                if include_roles || include_concretizations {
+                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
+                    let filtered = self.filter_mro_unhidden(&args[0], mro);
+                    Ok(Value::array(filtered))
+                } else {
+                    let mro = self.classhow_mro_unhidden_names(&args[0]);
+                    Ok(Value::array(
+                        mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+                    ))
+                }
             }
             "can" if args.len() >= 2 => {
                 let invocant = &args[0];
@@ -3853,6 +4447,119 @@ impl Interpreter {
                 )))
             }
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
+            "concretization" if args.len() >= 2 => {
+                let class_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    other => value_type_name(other).to_string(),
+                };
+                let role_name = match &args[1] {
+                    Value::Package(name) => name.clone(),
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str = type_args
+                            .iter()
+                            .map(|v| match v {
+                                Value::Package(n) => n.clone(),
+                                other => other.to_string_value(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        format!("{}[{}]", base_name, args_str)
+                    }
+                    _ => args[1].to_string_value(),
+                };
+                let base_role_name = role_name
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(role_name.as_str());
+                // Check for :local named arg
+                let local_only = args[2..]
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "local" && v.truthy()));
+                // Check direct composed roles and transitive sub-roles
+                let check_transitive = |class_composed: &HashMap<String, Vec<String>>,
+                                        role_parents: &HashMap<String, Vec<String>>,
+                                        cn: &str|
+                 -> Option<Value> {
+                    let composed = class_composed.get(cn).cloned().unwrap_or_default();
+                    // Check direct matches
+                    for cr in &composed {
+                        let cr_base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                        if *cr == role_name || cr_base == base_role_name {
+                            return Some(Value::Package(cr_base.to_string()));
+                        }
+                    }
+                    // Check transitive sub-roles
+                    let mut stack: Vec<String> = composed
+                        .iter()
+                        .map(|cr| {
+                            cr.split_once('[')
+                                .map(|(b, _)| b)
+                                .unwrap_or(cr.as_str())
+                                .to_string()
+                        })
+                        .collect();
+                    let mut seen = std::collections::HashSet::new();
+                    while let Some(rn) = stack.pop() {
+                        if !seen.insert(rn.clone()) {
+                            continue;
+                        }
+                        if let Some(rp) = role_parents.get(&rn) {
+                            for p in rp {
+                                let p_base =
+                                    p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
+                                if p_base == base_role_name || *p == role_name {
+                                    return Some(Value::Package(p_base.to_string()));
+                                }
+                                stack.push(p_base.to_string());
+                            }
+                        }
+                    }
+                    None
+                };
+                if let Some(result) =
+                    check_transitive(&self.class_composed_roles, &self.role_parents, &class_name)
+                {
+                    return Ok(result);
+                }
+                if !local_only {
+                    let mro = self.class_mro(&class_name);
+                    for cn in &mro[1..] {
+                        if let Some(result) =
+                            check_transitive(&self.class_composed_roles, &self.role_parents, cn)
+                        {
+                            return Ok(result);
+                        }
+                    }
+                }
+                Err(RuntimeError::new(format!(
+                    "No concretization of {} found for {}",
+                    role_name, class_name
+                )))
+            }
+            "curried_role" if !args.is_empty() => {
+                // For a parameterized role like R[Int], return the base role R
+                match &args[0] {
+                    Value::ParametricRole { base_name, .. } => {
+                        Ok(Value::Package(base_name.clone()))
+                    }
+                    Value::Package(name) => {
+                        let base = name
+                            .split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(name.as_str());
+                        Ok(Value::Package(base.to_string()))
+                    }
+                    _ => {
+                        let s = args[0].to_string_value();
+                        let base = s.split_once('[').map(|(b, _)| b).unwrap_or(s.as_str());
+                        Ok(Value::Package(base.to_string()))
+                    }
+                }
+            }
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
@@ -3886,6 +4593,194 @@ impl Interpreter {
             mro.push("Mu".to_string());
         }
         mro
+    }
+
+    /// Build MRO with roles interleaved (for :roles or :concretizations).
+    /// For each class in the MRO, insert its composed roles right after it.
+    /// For :roles mode, use base role names. For :concretizations, use as-is.
+    fn classhow_mro_with_roles(&mut self, invocant: &Value, _concretizations: bool) -> Vec<Value> {
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+        let base_mro = self.classhow_mro_names(invocant);
+        let mut result: Vec<Value> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+
+        for entry in &base_mro {
+            // Check if this entry is a role (in the parents list because of `does`)
+            let base_entry = entry
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(entry.as_str());
+            if self.roles.contains_key(base_entry)
+                && entry != "Any"
+                && entry != "Mu"
+                && entry != &class_name
+            {
+                // This is a role in the class's parent list - include it with base name
+                if seen.insert(base_entry.to_string()) {
+                    result.push(Value::Package(base_entry.to_string()));
+                    // Also add the role's parent classes that aren't already in base MRO
+                    self.add_role_parents_to_mro(base_entry, &base_mro, &mut result, &mut seen);
+                }
+            } else {
+                // This is a class
+                if seen.insert(entry.clone()) {
+                    result.push(Value::Package(entry.clone()));
+                    // Insert composed roles for this class
+                    let composed = self
+                        .class_composed_roles
+                        .get(entry)
+                        .cloned()
+                        .unwrap_or_default();
+                    for role_name in &composed {
+                        let base_role = role_name
+                            .split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(role_name.as_str());
+                        if seen.insert(base_role.to_string()) {
+                            result.push(Value::Package(base_role.to_string()));
+                            // Add role's sub-roles (from `does` inside the role)
+                            self.add_role_parents_to_mro(
+                                base_role,
+                                &base_mro,
+                                &mut result,
+                                &mut seen,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Add a role's parent roles/classes to the MRO result.
+    fn add_role_parents_to_mro(
+        &self,
+        role_name: &str,
+        _base_mro: &[String],
+        result: &mut Vec<Value>,
+        seen: &mut HashSet<String>,
+    ) {
+        if let Some(parents) = self.role_parents.get(role_name) {
+            for parent in parents {
+                let base = parent
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(parent.as_str());
+                if self.roles.contains_key(base) && seen.insert(base.to_string()) {
+                    result.push(Value::Package(base.to_string()));
+                    self.add_role_parents_to_mro(base, _base_mro, result, seen);
+                }
+                // Parent classes from roles are handled by the class MRO
+            }
+        }
+    }
+
+    /// Filter MRO to remove hidden classes and their associated roles.
+    fn filter_mro_unhidden(&self, invocant: &Value, mro: Vec<Value>) -> Vec<Value> {
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+        // Collect hidden parent names for this class
+        let hidden_parents: HashSet<String> = self
+            .hidden_defer_parents
+            .get(&class_name)
+            .cloned()
+            .unwrap_or_default();
+        // Also collect classes marked `is hidden`
+        let mut hidden_set: HashSet<String> = HashSet::new();
+        for hp in &hidden_parents {
+            hidden_set.insert(hp.clone());
+        }
+        for hc in &self.hidden_classes {
+            hidden_set.insert(hc.clone());
+        }
+        if hidden_set.is_empty() {
+            return mro;
+        }
+        // Build set of all entries to hide: hidden classes + their composed roles
+        let mut to_hide: HashSet<String> = HashSet::new();
+        for hidden in &hidden_set {
+            to_hide.insert(hidden.clone());
+            // Also add the base name (strip type params)
+            let hidden_base = hidden
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(hidden.as_str());
+            to_hide.insert(hidden_base.to_string());
+            // Also hide roles composed by the hidden class (try both full and base name)
+            let composed_full = self.class_composed_roles.get(hidden.as_str()).cloned();
+            let composed_base = self.class_composed_roles.get(hidden_base).cloned();
+            let composed = composed_full.or(composed_base).unwrap_or_default();
+            for role in &composed {
+                let base = role
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(role.as_str());
+                to_hide.insert(base.to_string());
+                // And roles composed by those roles
+                self.collect_hidden_roles(base, &mut to_hide);
+            }
+            // Also check role_parents for the hidden entry (in case it's a punned role)
+            self.collect_hidden_roles(hidden_base, &mut to_hide);
+        }
+        mro.into_iter()
+            .filter(|v| {
+                if let Value::Package(name) = v {
+                    !to_hide.contains(name)
+                } else {
+                    true
+                }
+            })
+            .collect()
+    }
+
+    fn collect_hidden_roles(&self, role_name: &str, to_hide: &mut HashSet<String>) {
+        if let Some(parents) = self.role_parents.get(role_name) {
+            for parent in parents {
+                let base = parent
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(parent.as_str());
+                if self.roles.contains_key(base) && to_hide.insert(base.to_string()) {
+                    self.collect_hidden_roles(base, to_hide);
+                }
+            }
+        }
+    }
+
+    /// MRO without hidden classes (no roles)
+    fn classhow_mro_unhidden_names(&mut self, invocant: &Value) -> Vec<String> {
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+        let mro = self.classhow_mro_names(invocant);
+        let hidden_parents: HashSet<String> = self
+            .hidden_defer_parents
+            .get(&class_name)
+            .cloned()
+            .unwrap_or_default();
+        let mut hidden_set: HashSet<String> = HashSet::new();
+        for hp in &hidden_parents {
+            hidden_set.insert(hp.clone());
+        }
+        for hc in &self.hidden_classes {
+            hidden_set.insert(hc.clone());
+        }
+        if hidden_set.is_empty() {
+            return mro;
+        }
+        mro.into_iter()
+            .filter(|name| !hidden_set.contains(name))
+            .collect()
     }
 
     fn package_looks_like_grammar(&self, package_name: &str) -> bool {
@@ -4000,7 +4895,7 @@ impl Interpreter {
                 "fmt",
             ],
             "Int" | "Num" | "Rat" | "Complex" => &[
-                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp",
+                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp", "roots",
                 "is-prime", "chr", "base", "polymod", "pred", "succ", "Numeric", "Int", "Num",
                 "Rat", "Bool", "Str", "gist", "raku",
             ],
@@ -4591,7 +5486,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let len = text.chars().count() as i64;
         if start < 0 {
-            return Err(RuntimeError::new("X::OutOfRange"));
+            return Err(self.out_of_range_error(Value::Int(start)));
         }
         if start > len {
             return Ok(Value::Nil);
@@ -4652,20 +5547,35 @@ impl Interpreter {
             .collect()
     }
 
+    fn out_of_range_error(&self, got: Value) -> RuntimeError {
+        let mut attrs = HashMap::new();
+        attrs.insert("got".to_string(), got);
+        attrs.insert(
+            "message".to_string(),
+            Value::Str("X::OutOfRange".to_string()),
+        );
+        let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+        let mut err = RuntimeError::new("X::OutOfRange".to_string());
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     fn value_to_position(&self, pos: &Value) -> Result<i64, RuntimeError> {
         match pos {
             Value::Int(i) => Ok(*i),
             Value::Num(f) => {
                 if f.abs() > i64::MAX as f64 {
-                    Err(RuntimeError::new("X::OutOfRange"))
+                    Err(self.out_of_range_error(Value::Num(*f)))
                 } else {
                     Ok(*f as i64)
                 }
             }
             Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
             Value::BigInt(b) => {
-                if b > &num_bigint::BigInt::from(i64::MAX) {
-                    Err(RuntimeError::new("X::OutOfRange"))
+                if b > &num_bigint::BigInt::from(i64::MAX)
+                    || b < &num_bigint::BigInt::from(i64::MIN)
+                {
+                    Err(self.out_of_range_error(Value::BigInt(b.clone())))
                 } else {
                     Ok(b.to_string().parse::<i64>().unwrap_or(0))
                 }
@@ -4689,7 +5599,7 @@ impl Interpreter {
         };
         let len = text.chars().count() as i64;
         if start < 0 || start > len {
-            return Err(RuntimeError::new("X::OutOfRange"));
+            return Err(self.out_of_range_error(Value::Int(start)));
         }
         let substr: String = text
             .chars()
@@ -6084,6 +6994,10 @@ impl Interpreter {
                     mixins,
                 ));
             }
+            // CUnion repr classes use byte-overlay construction
+            if self.cunion_classes.contains(class_name) {
+                return self.construct_cunion_instance(class_name, &args);
+            }
             if self.classes.contains_key(class_name)
                 || type_args
                     .as_ref()
@@ -6531,6 +7445,7 @@ impl Interpreter {
             mode: IoHandleMode::ReadWrite,
             path: None,
             line_separators: self.default_line_separators(),
+            line_chomp: true,
             encoding: "utf-8".to_string(),
             file: None,
             socket: Some(stream),

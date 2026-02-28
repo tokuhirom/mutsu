@@ -54,7 +54,7 @@ impl Interpreter {
             "eval-lives-ok" => self.test_fn_eval_lives_ok(args).map(Some),
             "eval-dies-ok" => self.test_fn_eval_dies_ok(args).map(Some),
             "throws-like" => self.test_fn_throws_like(args).map(Some),
-            "fails-like" => self.test_fn_throws_like(args).map(Some),
+            "fails-like" => self.test_fn_fails_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
             "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
@@ -70,6 +70,7 @@ impl Interpreter {
             "doesn't-hang" => self.test_fn_doesnt_hang(args).map(Some),
             "make-temp-file" | "make-temp-path" => self.test_fn_make_temp_file(args).map(Some),
             "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
+            "is-deeply-junction" => self.test_fn_is_deeply_junction(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -146,6 +147,20 @@ impl Interpreter {
                 if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
                 {
                     Self::eqv_with_junctions(left, right).truthy()
+                } else if matches!(
+                    left,
+                    Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                ) || matches!(
+                    right,
+                    Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                ) {
+                    crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
@@ -417,6 +432,25 @@ impl Interpreter {
         Ok(Value::Bool(ok))
     }
 
+    fn test_fn_is_deeply_junction(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let left = Self::positional_value(args, 0);
+        let right = Self::positional_value(args, 1);
+        let desc = Self::positional_string(args, 2);
+        let todo = Self::named_bool(args, "todo");
+        let ok = match (left, right) {
+            (Some(left), Some(right)) => match (
+                Self::junction_guts_value(left),
+                Self::junction_guts_value(right),
+            ) {
+                (Some(lg), Some(rg)) => lg.eqv(&rg),
+                _ => false,
+            },
+            _ => false,
+        };
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::Bool(ok))
+    }
+
     /// Extract (left, right, desc) for is-deeply from raw args.
     /// The first two args are always the values being compared (even if they are Pairs).
     /// Only known internal named pairs (__mutsu_test_callsite_line, todo) are skipped.
@@ -446,6 +480,44 @@ impl Interpreter {
         } else {
             v.clone()
         }
+    }
+
+    fn junction_kind_name(kind: &JunctionKind) -> &'static str {
+        match kind {
+            JunctionKind::Any => "any",
+            JunctionKind::All => "all",
+            JunctionKind::One => "one",
+            JunctionKind::None => "none",
+        }
+    }
+
+    fn junction_sort_key(v: &Value) -> String {
+        match v {
+            Value::Array(items, _) => {
+                let parts: Vec<String> = items.iter().map(Self::junction_sort_key).collect();
+                format!("[{}]", parts.join(","))
+            }
+            Value::Junction { .. } => {
+                Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::Nil))
+            }
+            _ => v.to_string_value(),
+        }
+    }
+
+    fn junction_guts_value(v: &Value) -> Option<Value> {
+        let Value::Junction { kind, values } = v else {
+            return None;
+        };
+        // Normalize recursively so nested junction structures compare order-independently.
+        let mut guts: Vec<Value> = values
+            .iter()
+            .map(|value| Self::junction_guts_value(value).unwrap_or_else(|| value.clone()))
+            .collect();
+        guts.sort_by_key(Self::junction_sort_key);
+        Some(Value::array(vec![
+            Value::Str(Self::junction_kind_name(kind).to_string()),
+            Value::array(guts),
+        ]))
     }
 
     /// Perform `eqv` comparison that threads through Junctions,
@@ -871,6 +943,142 @@ impl Interpreter {
             self.test_ok(type_ok, &desc, false)?;
         }
         Ok(Value::Bool(type_ok))
+    }
+
+    fn test_fn_fails_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let code_val = Self::positional_value_required(args, 0, "fails-like expects code")?.clone();
+        let expected =
+            Self::positional_value_required(args, 1, "fails-like expects type")?.to_string_value();
+        let desc = Self::positional_string(args, 2);
+        let mut named_matchers: Vec<(String, Value)> = Vec::new();
+        for arg in args.iter().skip(2) {
+            if let Value::Pair(key, val) = arg {
+                named_matchers.push((key.clone(), *val.clone()));
+            }
+        }
+        let expected_normalized = expected
+            .strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .unwrap_or(&expected)
+            .to_string();
+
+        let result = match &code_val {
+            Value::Sub(data) => self.eval_block_value(&data.body),
+            Value::Str(code) => {
+                let mut nested = Interpreter::new();
+                nested.strict_mode = self.strict_mode;
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.lib_paths = self.lib_paths.clone();
+                nested.functions = self.functions.clone();
+                nested.proto_functions = self.proto_functions.clone();
+                nested.token_defs = self.token_defs.clone();
+                nested.proto_subs = self.proto_subs.clone();
+                nested.proto_tokens = self.proto_tokens.clone();
+                nested.classes = self.classes.clone();
+                nested.class_trusts = self.class_trusts.clone();
+                nested.roles = self.roles.clone();
+                nested.subsets = self.subsets.clone();
+                nested.type_metadata = self.type_metadata.clone();
+                nested.current_package = self.current_package.clone();
+                for (k, v) in &self.env {
+                    if k.contains("::") {
+                        continue;
+                    }
+                    if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                        continue;
+                    }
+                    nested.env.insert(k.clone(), v.clone());
+                }
+                nested.eval_eval_string(code)
+            }
+            _ => Ok(Value::Nil),
+        };
+
+        let is_failure_like = |value: &Value| {
+            matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
+                || matches!(value, Value::Mixin(_, mixins) if mixins.contains_key("Failure"))
+        };
+
+        let sink_type_ok = |err: &RuntimeError| {
+            let ex_class = err.exception.as_ref().and_then(|ex| {
+                if let Value::Instance { class_name, .. } = ex.as_ref() {
+                    Some(class_name.as_str())
+                } else {
+                    None
+                }
+            });
+            if expected_normalized.is_empty() || expected_normalized == "Exception" {
+                true
+            } else if let Some(cls) = ex_class {
+                cls == expected_normalized || cls.starts_with(&format!("{}::", expected_normalized))
+            } else if expected_normalized == "X::AdHoc" {
+                true
+            } else {
+                err.message.contains(&expected_normalized)
+            }
+        };
+
+        let ok = if let Ok(value) = result {
+            if !is_failure_like(&value) {
+                false
+            } else {
+                match self.call_method_with_values(value, "sink", vec![]) {
+                    Ok(_) => false,
+                    Err(err) => {
+                        if !sink_type_ok(&err) {
+                            false
+                        } else {
+                            self.fails_like_named_matchers_ok(&err, &named_matchers)
+                        }
+                    }
+                }
+            }
+        } else if let Err(err) = result {
+            sink_type_ok(&err) && self.fails_like_named_matchers_ok(&err, &named_matchers)
+        } else {
+            false
+        };
+
+        self.test_ok(ok, &desc, false)?;
+        Ok(Value::Bool(ok))
+    }
+
+    fn fails_like_named_matchers_ok(
+        &mut self,
+        err: &RuntimeError,
+        named_matchers: &[(String, Value)],
+    ) -> bool {
+        for (attr_name, expected_val) in named_matchers {
+            let actual_val = err.exception.as_ref().and_then(|ex| {
+                if let Value::Instance { attributes, .. } = ex.as_ref() {
+                    attributes.get(attr_name).cloned()
+                } else {
+                    None
+                }
+            });
+            let actual_str = actual_val
+                .as_ref()
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| {
+                    if attr_name == "message" {
+                        err.message.clone()
+                    } else {
+                        String::new()
+                    }
+                });
+            let matched = match expected_val {
+                Value::Regex(pattern) => self
+                    .regex_match_with_captures(pattern, &actual_str)
+                    .is_some(),
+                _ => actual_str == expected_val.to_string_value(),
+            };
+            if !matched {
+                return false;
+            }
+        }
+        true
     }
 
     fn test_fn_is_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

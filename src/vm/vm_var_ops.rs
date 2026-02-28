@@ -47,6 +47,8 @@ impl VM {
     fn typed_container_default(&self, target: &Value) -> Value {
         if let Some(info) = self.interpreter.container_type_metadata(target) {
             Value::Package(info.value_type)
+        } else if matches!(target, Value::Hash(_)) {
+            Value::Package("Any".to_string())
         } else {
             Value::Nil
         }
@@ -716,12 +718,17 @@ impl VM {
                     })
                     .collect(),
             ),
-            (Value::Str(_), Value::Str(key)) => self
-                .interpreter
-                .env()
-                .get(&format!("<{}>", key))
-                .cloned()
-                .unwrap_or(Value::Nil),
+            (Value::Str(_), Value::Str(_)) => {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::Str("Type Str does not support associative indexing.".to_string()),
+                );
+                let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
+                let mut failure_attrs = std::collections::HashMap::new();
+                failure_attrs.insert("exception".to_string(), ex);
+                Value::make_instance("Failure".to_string(), failure_attrs)
+            }
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
             (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(&key).unwrap_or(&0)),
@@ -1231,6 +1238,7 @@ impl VM {
             .unwrap_or(Value::Int(0));
         let val = Self::normalize_incdec_source(raw_val);
         let new_val = Self::increment_value(&val);
+        let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
@@ -1259,6 +1267,7 @@ impl VM {
             .unwrap_or(Value::Int(0));
         let val = Self::normalize_incdec_source(raw_val);
         let new_val = Self::decrement_value(&val);
+        let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
