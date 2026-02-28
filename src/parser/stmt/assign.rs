@@ -333,6 +333,57 @@ fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) 
     }
 }
 
+fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
+    fn subscript_parts(expr: &Expr) -> Option<(Expr, Expr, String)> {
+        let Expr::Call { name, args } = expr else {
+            return None;
+        };
+        if name != "__mutsu_subscript_adverb" || args.len() < 3 {
+            return None;
+        }
+        let Expr::Literal(Value::Str(mode)) = &args[2] else {
+            return None;
+        };
+        Some((args[0].clone(), args[1].clone(), mode.clone()))
+    }
+
+    match lhs {
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } if name == "value" && args.is_empty() => {
+            if let Some((base_target, base_index, mode)) = subscript_parts(target.as_ref())
+                && (mode == "p" || mode == "not-p")
+            {
+                return Some(Expr::IndexAssign {
+                    target: Box::new(base_target),
+                    index: Box::new(base_index),
+                    value: Box::new(rhs),
+                });
+            }
+            None
+        }
+        Expr::Index { target, index } => {
+            let (base_target, base_index, mode) = subscript_parts(target.as_ref())?;
+            if mode != "kv" && mode != "not-kv" {
+                return None;
+            }
+            if !matches!(*index, Expr::Literal(Value::Int(1))) {
+                return None;
+            }
+            Some(Expr::IndexAssign {
+                target: Box::new(base_target),
+                index: Box::new(base_index),
+                value: Box::new(rhs),
+            })
+        }
+        _ => None,
+    }
+}
+
 fn compound_index_assign_expr<F>(target: Expr, index: Expr, build_assigned_value: F) -> Expr
 where
     F: FnOnce(Expr) -> Expr,
@@ -545,6 +596,9 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, ')')?;
+    if let Some(expr) = subscript_adverb_lvalue_assign_expr(lhs.clone(), rhs.clone()) {
+        return Ok((rest, expr));
+    }
     let expr = match lhs {
         Expr::Var(name) => Expr::AssignExpr {
             name,

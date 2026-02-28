@@ -162,6 +162,7 @@ impl Interpreter {
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(args.first().cloned().unwrap_or(Value::Nil)),
             )),
+            "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
@@ -1527,6 +1528,137 @@ impl Interpreter {
             method_args,
             value,
         )
+    }
+
+    fn builtin_subscript_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_subscript_adverb expects target, index, and mode",
+            ));
+        }
+        let target = args[0].clone();
+        let index = args[1].clone();
+        let mode = args[2].to_string_value();
+        let var_name = args
+            .get(3)
+            .map(Value::to_string_value)
+            .filter(|s| !s.is_empty());
+
+        let (kind, keep_missing) = match mode.as_str() {
+            "kv" => ("kv", false),
+            "not-kv" => ("kv", true),
+            "p" => ("p", false),
+            "not-p" => ("p", true),
+            "k" => ("k", false),
+            "not-k" => ("k", true),
+            "v" => ("v", false),
+            "not-v" => ("v", true),
+            _ => return Ok(Value::Nil),
+        };
+
+        let mut indices = match index {
+            Value::Array(items, ..) => items.to_vec(),
+            other => vec![other],
+        };
+        if matches!(indices.first(), Some(Value::Whatever))
+            || matches!(indices.first(), Some(Value::Num(f)) if f.is_infinite() && *f > 0.0)
+        {
+            indices = match &target {
+                Value::Array(items, ..) => (0..items.len())
+                    .map(|i| Value::Int(i as i64))
+                    .collect::<Vec<_>>(),
+                Value::Hash(map) => map
+                    .keys()
+                    .map(|k| Value::Str(k.clone()))
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+        }
+        let is_multi = indices.len() != 1;
+
+        let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
+        match &target {
+            Value::Array(items, ..) => {
+                let bound_map = var_name
+                    .as_ref()
+                    .and_then(|name| self.env.get(&format!("__mutsu_initialized_index::{name}")))
+                    .and_then(|v| match v {
+                        Value::Hash(map) => Some(map),
+                        _ => None,
+                    });
+                for idx in &indices {
+                    let i = match idx {
+                        Value::Int(i) => *i,
+                        Value::Num(f) => *f as i64,
+                        _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
+                    };
+                    let key = Value::Int(i);
+                    if i < 0 || i as usize >= items.len() {
+                        rows.push((key, Value::Package("Any".to_string()), false));
+                        continue;
+                    }
+                    let ui = i as usize;
+                    let exists = if let Some(map) = bound_map {
+                        if map.contains_key(&i.to_string()) {
+                            true
+                        } else {
+                            !matches!(&items[ui], Value::Package(name) if name == "Any")
+                        }
+                    } else {
+                        true
+                    };
+                    rows.push((key, items[ui].clone(), exists));
+                }
+            }
+            Value::Hash(map) => {
+                for idx in &indices {
+                    let key_str = idx.to_string_value();
+                    let key =
+                        super::builtins_collection::builtin_val(&[Value::Str(key_str.clone())]);
+                    let exists = map.contains_key(&key_str);
+                    let value = map
+                        .get(&key_str)
+                        .cloned()
+                        .unwrap_or_else(|| Value::Package("Any".to_string()));
+                    rows.push((key, value, exists));
+                }
+            }
+            _ => return Ok(Value::Nil),
+        }
+
+        if !is_multi {
+            let Some((key, value, exists)) = rows.into_iter().next() else {
+                return Ok(Value::Nil);
+            };
+            if !keep_missing && !exists {
+                return Ok(Value::array(Vec::new()));
+            }
+            return Ok(match kind {
+                "kv" => Value::array(vec![key, value]),
+                "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                "k" => key,
+                "v" => value,
+                _ => Value::Nil,
+            });
+        }
+
+        let mut out = Vec::new();
+        for (key, value, exists) in rows {
+            if !keep_missing && !exists {
+                continue;
+            }
+            match kind {
+                "kv" => {
+                    out.push(key);
+                    out.push(value);
+                }
+                "p" => out.push(Value::ValuePair(Box::new(key), Box::new(value))),
+                "k" => out.push(key),
+                "v" => out.push(value),
+                _ => {}
+            }
+        }
+        Ok(Value::array(out))
     }
 
     fn builtin_feed_whatever(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

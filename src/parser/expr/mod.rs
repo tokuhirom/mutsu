@@ -1205,7 +1205,9 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "say");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::Index { .. }));
+                assert!(
+                    matches!(args[0], Expr::Call { ref name, .. } if name == "__mutsu_subscript_adverb")
+                );
             }
             _ => panic!("expected call expression"),
         }
@@ -1219,7 +1221,9 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "say");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::Index { .. }));
+                assert!(
+                    matches!(args[0], Expr::Call { ref name, .. } if name == "__mutsu_subscript_adverb")
+                );
             }
             _ => panic!("expected call expression"),
         }

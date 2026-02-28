@@ -150,6 +150,21 @@ fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 let r = &r[1..];
                 let (r, _) = ws(r)?;
                 let (r, rhs) = and_expr_mode(r, mode)?;
+                if let Expr::Call { name, args } = target.as_ref()
+                    && name == "__mutsu_subscript_adverb"
+                    && args.len() >= 3
+                    && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
+                    && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode == "kv" || mode == "not-kv")
+                {
+                    return Ok((
+                        r,
+                        Expr::IndexAssign {
+                            target: Box::new(args[0].clone()),
+                            index: Box::new(args[1].clone()),
+                            value: Box::new(rhs),
+                        },
+                    ));
+                }
                 return Ok((
                     r,
                     Expr::IndexAssign {
