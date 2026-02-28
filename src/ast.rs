@@ -481,6 +481,7 @@ pub(crate) enum Stmt {
     EnumDecl {
         name: String,
         variants: Vec<(String, Option<Expr>)>,
+        is_export: bool,
     },
     ClassDecl {
         name: String,

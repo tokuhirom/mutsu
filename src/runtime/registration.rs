@@ -1209,7 +1209,27 @@ impl Interpreter {
         &mut self,
         name: &str,
         variants: &[(String, Option<Expr>)],
+        is_export: bool,
     ) -> Result<Value, RuntimeError> {
+        // Handle dynamic enum body: `enum Stuff (@variable)`
+        let expanded;
+        let variants: &[(String, Option<Expr>)] =
+            if variants.len() == 1 && variants[0].0 == "__DYNAMIC__" && variants[0].1.is_some() {
+                let expr = variants[0].1.as_ref().unwrap();
+                let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
+                let items: Vec<Value> = match &v {
+                    Value::Array(items, _) => items.as_ref().clone(),
+                    Value::Slip(items) => items.as_ref().clone(),
+                    _ => vec![v.clone()],
+                };
+                expanded = items
+                    .iter()
+                    .map(|item| (item.to_str_context(), None::<Expr>))
+                    .collect::<Vec<_>>();
+                &expanded[..]
+            } else {
+                variants
+            };
         let mut enum_variants = Vec::new();
         let mut next_value: i64 = 0;
         for (key, value_expr) in variants {
@@ -1217,6 +1237,13 @@ impl Interpreter {
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 match v {
                     Value::Int(i) => i,
+                    Value::Bool(b) => {
+                        if b {
+                            1
+                        } else {
+                            0
+                        }
+                    }
                     _ => next_value,
                 }
             } else {
@@ -1232,6 +1259,13 @@ impl Interpreter {
         if !is_anonymous {
             self.env
                 .insert(name.to_string(), Value::Package(name.to_string()));
+            // Also register with fully-qualified package name
+            if self.current_package != "GLOBAL" {
+                self.env.insert(
+                    format!("{}::{}", self.current_package, name),
+                    Value::Package(name.to_string()),
+                );
+            }
         }
         for (index, (key, val)) in enum_variants.iter().enumerate() {
             let enum_val = Value::Enum {
@@ -1243,9 +1277,31 @@ impl Interpreter {
             if !is_anonymous {
                 self.env
                     .insert(format!("{}::{}", name, key), enum_val.clone());
+                // Also register with fully-qualified package name
+                if self.current_package != "GLOBAL" {
+                    self.env.insert(
+                        format!("{}::{}::{}", self.current_package, name, key),
+                        enum_val.clone(),
+                    );
+                }
+            }
+            // Also register bare variant with package prefix for import lookup
+            if self.current_package != "GLOBAL" {
+                self.env.insert(
+                    format!("{}::{}", self.current_package, key),
+                    enum_val.clone(),
+                );
             }
             self.env.insert(key.clone(), enum_val);
         }
+        // Register exports if `is export`
+        if is_export && !is_anonymous {
+            let pkg = self.current_package.clone();
+            for (key, _) in &enum_variants {
+                self.register_exported_var(pkg.clone(), key.clone(), vec!["DEFAULT".to_string()]);
+            }
+        }
+
         // For anonymous enums, return a Map (Hash) of key => value pairs
         if is_anonymous {
             let mut map = HashMap::new();

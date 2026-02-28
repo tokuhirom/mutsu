@@ -453,8 +453,15 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::EnumDecl { name, variants } = stmt {
-            let result = self.interpreter.register_enum_decl(name, variants)?;
+        if let Stmt::EnumDecl {
+            name,
+            variants,
+            is_export,
+        } = stmt
+        {
+            let result = self
+                .interpreter
+                .register_enum_decl(name, variants, *is_export)?;
             // For anonymous enums, push the Map result onto the stack
             if name.is_empty() {
                 self.stack.push(result);
