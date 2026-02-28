@@ -1111,6 +1111,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_quote_word_list() {
+        let (rest, expr) = expression("|<a b>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_prefix_boolify_codevar_method_call() {
         let (rest, expr) = expression("?&foo.cando($c)").unwrap();
         assert_eq!(rest, "");

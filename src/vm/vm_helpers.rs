@@ -681,7 +681,14 @@ impl VM {
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supplier"
             );
-        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath {
+        let bypass_gist_fastpath = method == "gist"
+            && args.is_empty()
+            && matches!(
+                target,
+                Value::Array(..) | Value::Seq(..) | Value::Slip(..)
+            );
+        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath || bypass_gist_fastpath
+        {
             return None;
         }
         if args.len() == 2 {

@@ -610,6 +610,37 @@ impl Interpreter {
                 _ => {}
             }
         }
+        if method == "gist" && args.is_empty() {
+            fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
+                match value {
+                    Value::Nil => "Nil".to_string(),
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        let inner = items
+                            .iter()
+                            .map(|item| gist_item(interp, item))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        format!("({inner})")
+                    }
+                    other => match interp.call_method_with_values(other.clone(), "gist", vec![]) {
+                        Ok(Value::Str(s)) => s,
+                        Ok(v) => v.to_string_value(),
+                        Err(_) => other.to_string_value(),
+                    },
+                }
+            }
+            match &target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    let inner = items
+                        .iter()
+                        .map(|item| gist_item(self, item))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    return Ok(Value::Str(format!("({inner})")));
+                }
+                _ => {}
+            }
+        }
         if matches!(method, "max" | "min" | "lines")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {

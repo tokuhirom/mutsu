@@ -1819,19 +1819,79 @@ impl Interpreter {
         chars.into_iter().collect()
     }
 
-    // Compute the predecessor of a string (decrement the last character)
-    pub(super) fn string_pred(s: &str) -> String {
+    pub(super) fn digit_string_succ_radix(s: &str, radix: u32) -> String {
+        if s.is_empty() || !(2..=10).contains(&radix) {
+            return s.to_string();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        let mut carry = true;
+        for ch in chars.iter_mut().rev() {
+            if !carry {
+                break;
+            }
+            if !ch.is_ascii_digit() {
+                return Self::string_succ(s);
+            }
+            let mut digit = (*ch as u8 - b'0') as u32;
+            if digit + 1 >= radix {
+                digit = 0;
+                *ch = (b'0' + digit as u8) as char;
+            } else {
+                digit += 1;
+                *ch = (b'0' + digit as u8) as char;
+                carry = false;
+            }
+        }
+        if carry {
+            chars.insert(0, '1');
+        }
+        chars.into_iter().collect()
+    }
+
+    pub(super) fn digit_string_pred_radix(s: &str, radix: u32) -> Result<String, RuntimeError> {
+        if s.is_empty() || !(2..=10).contains(&radix) {
+            return Self::string_pred(s);
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        let mut borrow = true;
+        for ch in chars.iter_mut().rev() {
+            if !borrow {
+                break;
+            }
+            if !ch.is_ascii_digit() {
+                return Self::string_pred(s);
+            }
+            let mut digit = (*ch as u8 - b'0') as u32;
+            if digit == 0 {
+                digit = radix - 1;
+                *ch = (b'0' + digit as u8) as char;
+            } else {
+                digit -= 1;
+                *ch = (b'0' + digit as u8) as char;
+                borrow = false;
+            }
+        }
+        if borrow {
+            return Err(RuntimeError::new("Decrement out of range"));
+        }
+        Ok(chars.into_iter().collect())
+    }
+
+    // Compute the predecessor of a string (decrement the last character).
+    // For multi-char alphabetic/digit strings, the leftmost character is never
+    // removed; underflow (e.g. "AA".pred) is an error.
+    pub(super) fn string_pred(s: &str) -> Result<String, RuntimeError> {
         if s.is_empty() {
-            return String::new();
+            return Ok(String::new());
         }
         let mut chars: Vec<char> = s.chars().collect();
         // For single-char strings, just decrement the codepoint
         if chars.len() == 1 {
             let ch = chars[0];
             if let Some(prev) = char::from_u32(ch as u32 - 1) {
-                return prev.to_string();
+                return Ok(prev.to_string());
             }
-            return s.to_string();
+            return Ok(s.to_string());
         }
         // Multi-char: decrement from end with borrow
         let mut borrow = true;
@@ -1868,10 +1928,9 @@ impl Interpreter {
             }
         }
         if borrow && chars.len() > 1 {
-            // Remove leading character on borrow
-            chars.remove(0);
+            return Err(RuntimeError::new("Decrement out of range"));
         }
-        chars.into_iter().collect()
+        Ok(chars.into_iter().collect())
     }
 
     // Add step to a sequence value, preserving type where possible

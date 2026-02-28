@@ -847,6 +847,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 reversed.reverse();
                 Some(Ok(Value::Array(std::sync::Arc::new(reversed), *is_array)))
             }
+            Value::Range(a, b)
+            | Value::RangeExcl(a, b)
+            | Value::RangeExclStart(a, b)
+            | Value::RangeExclBoth(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    None
+                } else {
+                    let mut reversed = crate::runtime::utils::value_to_list(target);
+                    reversed.reverse();
+                    Some(Ok(Value::array(reversed)))
+                }
+            }
             Value::Str(s) => Some(Ok(Value::Str(s.chars().rev().collect()))),
             _ => None,
         },

@@ -507,28 +507,19 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         );
     }
-    // |@array or |%hash or |$scalar or |ident — slip/flatten prefix
-    if input.starts_with('|')
-        && !input.starts_with("||")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'@'
-            || c == b'%'
-            || c == b'$'
-            || c == b'.'
-            || c == b'('
-            || c == b'['
-            || c.is_ascii_alphabetic()
-            || c == b'_')
-    {
+    // Prefix slip: `|expr` (e.g. |@a, |$c, |<a b>, |(1,2), |.method)
+    // Parse by delegating to term parsing after `|` so all primary starters work.
+    if input.starts_with('|') && !input.starts_with("||") {
         let rest = &input[1..];
-        let (rest, expr) = postfix_expr(rest)?;
-        return Ok((
-            rest,
-            Expr::Unary {
-                op: TokenKind::Pipe,
-                expr: Box::new(expr),
-            },
-        ));
+        if let Ok((rest, expr)) = postfix_expr(rest) {
+            return Ok((
+                rest,
+                Expr::Unary {
+                    op: TokenKind::Pipe,
+                    expr: Box::new(expr),
+                },
+            ));
+        }
     }
     postfix_expr(input)
 }
