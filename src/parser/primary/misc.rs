@@ -1298,6 +1298,18 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         let (r, item) = super::super::expr::expression(r)?;
         if let Some((key, val)) = hash_pair_from_expr(&item)? {
             pairs.push((key, Some(val)));
+        } else if let Expr::ArrayLiteral(elems) = &item {
+            // Flatten word lists like <a b c d> into pairs: a => "b", c => "d"
+            let mut i = 0;
+            while i + 1 < elems.len() {
+                let key = hash_key_from_expr(elems[i].clone())?;
+                pairs.push((key, Some(elems[i + 1].clone())));
+                i += 2;
+            }
+            if i < elems.len() {
+                // Odd element becomes a pending key
+                pending_key = Some(hash_key_from_expr(elems[i].clone())?);
+            }
         } else {
             pending_key = Some(hash_key_from_expr(item)?);
         }

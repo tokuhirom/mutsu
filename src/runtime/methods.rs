@@ -1721,9 +1721,31 @@ impl Interpreter {
                         tn.to_string()
                     }
                 };
-                // Use ParametricRoleGroupHOW for role type objects
-                let how_name = if self.roles.contains_key(&type_name) && !type_name.contains('[') {
+                // Use appropriate HOW metaclass for each type kind
+                let how_name = if self.roles.contains_key(&type_name) && !type_name.contains('[')
+                    || matches!(
+                        type_name.as_str(),
+                        "Numeric"
+                            | "Real"
+                            | "Stringy"
+                            | "Positional"
+                            | "Associative"
+                            | "Callable"
+                            | "Setty"
+                            | "Baggy"
+                            | "Mixy"
+                            | "Dateish"
+                            | "Iterable"
+                            | "Iterator"
+                            | "PositionalBindFailover"
+                    ) {
                     "Perl6::Metamodel::ParametricRoleGroupHOW"
+                } else if self.enum_types.contains_key(&type_name) {
+                    "Perl6::Metamodel::EnumHOW"
+                } else if self.subsets.contains_key(&type_name)
+                    || matches!(type_name.as_str(), "UInt" | "NativeInt")
+                {
+                    "Perl6::Metamodel::SubsetHOW"
                 } else {
                     "Perl6::Metamodel::ClassHOW"
                 };
@@ -1784,7 +1806,11 @@ impl Interpreter {
                 }));
             }
             "enums" => {
-                if let Value::Str(type_name) = &target
+                let type_name = match &target {
+                    Value::Str(name) | Value::Package(name) => Some(name.as_str()),
+                    _ => None,
+                };
+                if let Some(type_name) = type_name
                     && let Some(variants) = self.enum_types.get(type_name)
                 {
                     let mut map = HashMap::new();

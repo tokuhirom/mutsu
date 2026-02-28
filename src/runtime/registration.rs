@@ -1108,7 +1108,7 @@ impl Interpreter {
             .insert(enum_type_name.to_string(), enum_variants.clone());
         if !is_anonymous {
             self.env
-                .insert(name.to_string(), Value::Str(name.to_string()));
+                .insert(name.to_string(), Value::Package(name.to_string()));
         }
         for (index, (key, val)) in enum_variants.iter().enumerate() {
             let enum_val = Value::Enum {
