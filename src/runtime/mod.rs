@@ -57,6 +57,7 @@ mod methods_mut;
 mod methods_object;
 mod methods_promise;
 mod methods_string;
+mod methods_sub;
 mod methods_trans;
 mod native_io;
 mod native_methods;
