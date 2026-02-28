@@ -661,6 +661,7 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         args.push(first_method_arg);
         r = r2;
@@ -686,6 +687,7 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r2.len())),
+                exception: None,
             })?;
             args.push(arg);
             r = r2;
