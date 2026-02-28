@@ -1337,6 +1337,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_cross_metaop_with_bitshift_right() {
+        let (rest, expr) = expression("1 X+> 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "X" && op == "+>"
+        ));
+    }
+
+    #[test]
     fn parse_pair_lvalue_colonparen_form() {
         let (rest, expr) = expression(":(:$a is raw)").unwrap();
         assert_eq!(rest, "");
