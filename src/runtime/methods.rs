@@ -2642,6 +2642,50 @@ impl Interpreter {
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
             }
+            "interval" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    let seconds = args.first().map_or(1.0, |value| match value {
+                        Value::Int(i) => *i as f64,
+                        Value::Num(n) => *n,
+                        other => other.to_string_value().parse::<f64>().unwrap_or(1.0),
+                    });
+                    let period_secs = if seconds.is_finite() && seconds > 0.0 {
+                        seconds
+                    } else {
+                        1.0
+                    };
+
+                    let supply_id = super::native_methods::next_supply_id();
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+                        map.insert(supply_id, rx);
+                    }
+
+                    std::thread::spawn(move || {
+                        let delay = std::time::Duration::from_secs_f64(period_secs);
+                        let mut tick = 0i64;
+                        loop {
+                            std::thread::sleep(delay);
+                            if tx
+                                .send(super::native_methods::SupplyEvent::Emit(Value::Int(tick)))
+                                .is_err()
+                            {
+                                break;
+                            }
+                            tick = tick.saturating_add(1);
+                        }
+                    });
+
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+                    attrs.insert("live".to_string(), Value::Bool(true));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+            }
             "repository-for-name" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "CompUnit::RepositoryRegistry"
@@ -3515,46 +3559,6 @@ impl Interpreter {
 
         // Package (type object) dispatch — private method call
         if let Value::Package(ref name) = target {
-            if name == "Supply" && method == "interval" {
-                let seconds = args.first().map_or(1.0, |value| match value {
-                    Value::Int(i) => *i as f64,
-                    Value::Num(n) => *n,
-                    other => other.to_string_value().parse::<f64>().unwrap_or(1.0),
-                });
-                let period_secs = if seconds.is_finite() && seconds > 0.0 {
-                    seconds
-                } else {
-                    1.0
-                };
-
-                let supply_id = super::native_methods::next_supply_id();
-                let (tx, rx) = std::sync::mpsc::channel();
-                if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
-                    map.insert(supply_id, rx);
-                }
-
-                std::thread::spawn(move || {
-                    let delay = std::time::Duration::from_secs_f64(period_secs);
-                    let mut tick = 0i64;
-                    loop {
-                        std::thread::sleep(delay);
-                        if tx
-                            .send(super::native_methods::SupplyEvent::Emit(Value::Int(tick)))
-                            .is_err()
-                        {
-                            break;
-                        }
-                        tick = tick.saturating_add(1);
-                    }
-                });
-
-                let mut attrs = HashMap::new();
-                attrs.insert("values".to_string(), Value::array(Vec::new()));
-                attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
-                attrs.insert("live".to_string(), Value::Bool(true));
-                return Ok(Value::make_instance("Supply".to_string(), attrs));
-            }
             if let Some(private_method_name) = method.strip_prefix('!')
                 && let Some((resolved_owner, method_def)) =
                     self.resolve_private_method_any_owner(name, private_method_name, &args)

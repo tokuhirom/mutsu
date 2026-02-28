@@ -1211,6 +1211,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_call_arg_list_accepts_leading_space_before_slip_quote_list() {
+        let (rest, expr) = expression("Proc::Async.new( | «cmd /c type $read-file» )").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::MethodCall { .. }));
+    }
+
+    #[test]
     fn parse_prefix_boolify_codevar_method_call() {
         let (rest, expr) = expression("?&foo.cando($c)").unwrap();
         assert_eq!(rest, "");

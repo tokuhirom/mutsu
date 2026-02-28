@@ -189,17 +189,17 @@ impl Interpreter {
                                     true,
                                 ) {
                                     Err(e) if e.is_react_done => break 'react_loop,
-                                    other => { other?; }
+                                    other => {
+                                        other?;
+                                    }
                                 }
                             }
                         } else {
-                            match self.call_sub_value(
-                                sub.callback.clone(),
-                                vec![value],
-                                true,
-                            ) {
+                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
                                 Err(e) if e.is_react_done => break 'react_loop,
-                                other => { other?; }
+                                other => {
+                                    other?;
+                                }
                             }
                         }
                     }
@@ -212,7 +212,9 @@ impl Interpreter {
                                 true,
                             ) {
                                 Err(e) if e.is_react_done => break 'react_loop,
-                                other => { other?; }
+                                other => {
+                                    other?;
+                                }
                             }
                         }
                         sub.done = true;

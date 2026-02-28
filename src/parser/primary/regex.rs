@@ -239,6 +239,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             .or_else(|_| expression(input))
     }
 
+    let (input, _) = ws(input)?;
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
