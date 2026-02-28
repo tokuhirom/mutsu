@@ -385,6 +385,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '\''
             || c == '*'
             || c.is_ascii_digit()
+            || crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
             || c.is_alphabetic()
             || crate::builtins::unicode::unicode_rat_value(c).is_some()
             || crate::builtins::unicode::unicode_numeric_int_value(c).is_some()
