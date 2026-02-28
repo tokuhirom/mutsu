@@ -416,8 +416,17 @@ pub(crate) fn native_method_1arg(
         }
         "fmt" => {
             let fmt = arg.to_string_value();
-            let rendered = runtime::format_sprintf(&fmt, Some(target));
-            Some(Ok(Value::Str(rendered)))
+            if fmt_joinable_target(target) {
+                let rendered = runtime::value_to_list(target)
+                    .into_iter()
+                    .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                Some(Ok(Value::Str(rendered)))
+            } else {
+                let rendered = runtime::format_sprintf(&fmt, Some(target));
+                Some(Ok(Value::Str(rendered)))
+            }
         }
         "parse-base" => {
             let radix = match arg {

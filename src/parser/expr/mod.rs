@@ -1143,6 +1143,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_quote_word_list() {
+        let (rest, expr) = expression("|<a b>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_hyper_prefix_slip_left_on_angle_list() {
         let (rest, expr) = expression("|<< <a x y z>").unwrap();
         assert_eq!(rest, "");
