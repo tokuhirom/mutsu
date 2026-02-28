@@ -56,11 +56,16 @@ wip_remove() {
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STOP_FILE="${REPO_ROOT}/tmp/.stop"
+STOP_FILE_PID="${STOP_FILE}.$$"
 
 check_stop_file() {
+    if [[ -f "$STOP_FILE_PID" ]]; then
+        echo "PID stop file detected ($STOP_FILE_PID). Exiting gracefully."
+        rm -f "$STOP_FILE_PID"
+        exit 0
+    fi
     if [[ -f "$STOP_FILE" ]]; then
         echo "Stop file detected ($STOP_FILE). Exiting gracefully."
-        rm -f "$STOP_FILE"
         exit 0
     fi
 }
