@@ -1182,6 +1182,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_space_before_french_quote_list() {
+        let (rest, expr) = expression("| «echo test»").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr
+            } if matches!(
+                *expr,
+                Expr::ArrayLiteral(ref items) if items.len() == 2
+            )
+        ));
+    }
+
+    #[test]
+    fn parse_slip_prefix_with_space_before_var() {
+        let (rest, expr) = expression("|   @cmd").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr
+            } if matches!(*expr, Expr::ArrayVar(ref name) if name == "cmd")
+        ));
+    }
+
+    #[test]
     fn parse_prefix_boolify_codevar_method_call() {
         let (rest, expr) = expression("?&foo.cando($c)").unwrap();
         assert_eq!(rest, "");
@@ -1258,6 +1287,53 @@ mod tests {
             }
             _ => panic!("expected zip meta op"),
         }
+    }
+
+    #[test]
+    fn parse_unicode_set_union_infix() {
+        let (rest, expr) = expression("1 ∪ 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::SetUnion,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_whatever_with_unicode_set_union_infix() {
+        let (rest, expr) = expression("* ∪ *").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { body, .. }
+                if matches!(
+                    body.as_slice(),
+                    [Stmt::Expr(Expr::Binary { op: TokenKind::SetUnion, .. })]
+                )
+        ));
+    }
+
+    #[test]
+    fn parse_zip_metaop_with_set_union_ascii() {
+        let (rest, expr) = expression("1..3 Z(|) 2..4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "Z" && op == "(|)"
+        ));
+    }
+
+    #[test]
+    fn parse_zip_metaop_with_set_union_unicode() {
+        let (rest, expr) = expression("1..3 Z∪ 2..4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "Z" && op == "∪"
+        ));
     }
 
     #[test]
@@ -1355,6 +1431,52 @@ mod tests {
                 assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
             }
             _ => panic!("expected dot-postfix decrement"),
+        }
+    }
+
+    #[test]
+    fn parse_ascii_minus_on_angle_complex_literal() {
+        let (rest, expr) = expression("-<42+2i>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Minus,
+                expr,
+            } => {
+                assert!(matches!(
+                    *expr,
+                    Expr::Literal(Value::Mixin(inner, _))
+                        if matches!(*inner, Value::Complex(42.0, 2.0))
+                ));
+            }
+            _ => panic!("expected unary minus expression"),
+        }
+    }
+
+    #[test]
+    fn parse_is_deeply_with_unicode_and_ascii_minus_complex_literals() {
+        let (rest, expr) = expression("is-deeply −<42+2i>, -<42+2i>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "is-deeply");
+                assert!(args.len() >= 2);
+                assert!(matches!(
+                    args[0],
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+                assert!(matches!(
+                    args[1],
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+            }
+            _ => panic!("expected is-deeply call"),
         }
     }
 

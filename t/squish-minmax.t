@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 6;
 
 # squish - remove consecutive duplicates
 my @a = 1, 1, 2, 2, 3, 1, 1;
@@ -9,6 +9,9 @@ is @s.join(","), "1,2,3,1", 'squish removes consecutive duplicates';
 my @b = 1, 2, 3;
 my @s2 = @b.squish;
 is @s2.join(","), "1,2,3", 'squish on unique list is identity';
+
+my @s3 = squish(@a);
+is @s3.join(","), "1,2,3,1", 'squish subroutine form removes consecutive duplicates';
 
 # minmax
 my @c = 3, 1, 4, 1, 5, 9;

@@ -92,13 +92,11 @@ impl VM {
 
     pub(super) fn exec_int_bit_neg_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        match &val {
+        match val {
             Value::Int(n) => self.stack.push(Value::Int(!n)),
-            _ => {
-                use num_traits::ToPrimitive;
-                let n = val.to_bigint();
-                let i = n.to_i64().unwrap_or(0);
-                self.stack.push(Value::Int(!i));
+            other => {
+                let n = other.to_bigint();
+                self.stack.push(Value::from_bigint(!n));
             }
         }
     }

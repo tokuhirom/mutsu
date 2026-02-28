@@ -513,8 +513,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // Hyper-prefix slip forms: |<< expr / |>> expr.
     // Lower to the same unary Pipe AST used by plain `|expr`.
     if input.starts_with("|<<") || input.starts_with("|>>") {
-        let rest = &input[3..];
-        let (rest, _) = ws(rest)?;
+        let (rest, _) = ws(&input[3..])?;
         let (rest, expr) = postfix_expr(rest)?;
         return Ok((
             rest,
@@ -524,19 +523,17 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // Prefix slip: `|expr` (e.g. |@a, |$c, |<a b>, |(1,2), |.method)
-    // Parse by delegating to term parsing after `|` so all primary starters work.
+    // |expr — slip/flatten prefix
     if input.starts_with('|') && !input.starts_with("||") {
-        let rest = &input[1..];
-        if let Ok((rest, expr)) = postfix_expr(rest) {
-            return Ok((
-                rest,
-                Expr::Unary {
-                    op: TokenKind::Pipe,
-                    expr: Box::new(expr),
-                },
-            ));
-        }
+        let (rest, _) = ws(&input[1..])?;
+        let (rest, expr) = postfix_expr(rest)?;
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr: Box::new(expr),
+            },
+        ));
     }
     postfix_expr(input)
 }
@@ -1232,9 +1229,15 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            let (r, index) = parse_bracket_indices(r)?;
-            let (r, _) = ws(r)?;
-            let (r, _) = parse_char(r, '}')?;
+            // Empty hash subscript (%h{}) follows the same lookup path as %h{*}.
+            let (r, index) = if let Some(r) = r.strip_prefix('}') {
+                (r, Expr::Whatever)
+            } else {
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, '}')?;
+                (r, index)
+            };
             // Allow whitespace before adverbs
             let (r_adv, _) = ws(r)?;
             // Check for :exists / :!exists / :delete adverbs on curly-brace subscript

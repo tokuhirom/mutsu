@@ -453,15 +453,28 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             return Ok((rest, CallArg::Positional(assign_expr)));
         }
     }
-    let (rest, expr) = reduction_call_style_expr(input)
-        .or_else(|_| expression(input))
-        .map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected positional argument expression",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(input.len())),
-            exception: None,
-        })?;
+    // Prefer regular expression parsing for unary-minus angle terms like `-<42+2i>`.
+    // The reduction call-style parser can misinterpret this shape in statement arg context.
+    let parsed_expr = if input.starts_with("-<") || input.starts_with("−<") {
+        expression(input)
+    } else {
+        reduction_call_style_expr(input).or_else(|_| expression(input))
+    };
+    let (rest, expr) = parsed_expr.map_err(|err| PError {
+        messages: merge_expected_messages("expected positional argument expression", &err.messages),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+        exception: None,
+    })?;
     Ok((rest, CallArg::Positional(expr)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_single_call_arg;
+
+    #[test]
+    fn parse_single_call_arg_ascii_minus_angle_complex_literal() {
+        let (rest, _) = parse_single_call_arg("-<42+2i>, 'x'").unwrap();
+        assert_eq!(rest, ", 'x'");
+    }
 }

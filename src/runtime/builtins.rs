@@ -289,6 +289,7 @@ impl Interpreter {
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
+            "squish" => self.builtin_squish(&args),
             "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
@@ -455,7 +456,8 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            return self.call_infix_routine(op, args);
+            let normalized = if op == "−" { "-" } else { op };
+            return self.call_infix_routine(normalized, args);
         }
         if let Some(op) = name
             .strip_prefix("prefix:<")
@@ -471,17 +473,18 @@ impl Interpreter {
                 return Ok(Value::Nil);
             }
             let arg = &args[0];
+            let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
-                "-" => crate::builtins::arith_negate(arg.clone()),
+                "-" | "−" => crate::builtins::arith_negate(arg.clone()),
                 "~" => Ok(Value::Str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
                 _ => Err(RuntimeError::new(format!(
                     "Unknown prefix operator: {}",
-                    op
+                    normalized
                 ))),
             };
         }
@@ -800,8 +803,15 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            acc =
-                self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, acc, rhs.clone()))])?;
+            if let Ok(value) = Self::apply_reduction_op(op, &acc, rhs) {
+                acc = value;
+            } else {
+                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(
+                    op,
+                    acc,
+                    rhs.clone(),
+                ))])?;
+            }
         }
         Ok(acc)
     }

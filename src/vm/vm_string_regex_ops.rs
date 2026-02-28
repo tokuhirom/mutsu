@@ -570,6 +570,22 @@ impl VM {
         infix_name: Option<&str>,
         call_args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if call_args.len() >= 2 {
+            let mut acc = call_args[0].clone();
+            let mut reduced = true;
+            for rhs in &call_args[1..] {
+                match crate::runtime::Interpreter::apply_reduction_op(name, &acc, rhs) {
+                    Ok(value) => acc = value,
+                    Err(_) => {
+                        reduced = false;
+                        break;
+                    }
+                }
+            }
+            if reduced {
+                return Ok(acc);
+            }
+        }
         if let Some(op_name) = infix_name
             && let Ok(v) = self
                 .interpreter

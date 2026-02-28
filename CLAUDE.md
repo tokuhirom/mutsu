@@ -201,11 +201,11 @@ Per-type method documentation — consult when implementing methods on specific 
 - Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
 - Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
 - When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
-- When investigating a roast test outside of "roast fix" mode and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`. (In "roast fix" mode, deferring is not allowed — implement everything needed.)
+- When investigating a roast test and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`.
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
 - When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
 - Never remove a previously passing test from the whitelist due to a regression. If a change causes a whitelisted test to fail, fix the regression so the test passes again.
-- When a roast test requires solving multiple unrelated prerequisites (outside of "roast fix" mode): fix what you can, update the relevant file under `TODO_roast/`, and move on. In "roast fix" mode, implement ALL prerequisites — do not move on until the test passes.
+- When a roast test requires solving multiple unrelated prerequisites: fix what you can, update the relevant file under `TODO_roast/`, and move on.
 
 ## Working on complex features
 
@@ -257,28 +257,57 @@ Before writing any code, always investigate the test in this order:
 4. **Run with `mutsu`**: `timeout 30 target/debug/mutsu <roast-test-path>`
 5. Compare outputs to identify what mutsu is doing wrong, then fix the interpreter.
 
-## roast fix workflow
+## AI fleet operations
 
-When the user says **"roast fix"**, execute this automated loop (serially, without sub-agents):
+Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI (or human) launches workers and a supervisor, then monitors their progress.
 
-1. If `tmp/roast-raku-pass.txt` does not exist, run `./scripts/roast-raku-check.sh` to generate it.
-2. Run `scripts/pick-next-roast.sh -n 1` to find the next failing roast test.
-3. Ensure you are on `main` and up to date: `git checkout main && git pull`.
-4. Create a feature branch: `git checkout -b <branch-name>`.
-5. Investigate the test (see "Investigating a failing roast test" above).
-6. Fix the interpreter so the roast test passes. **Implement ALL features required to pass the test, no matter how many or how complex.** Do NOT skip the test or move on because it requires multiple new features. This is the core work of the project.
-7. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
-8. Append the test path to `roast-whitelist.txt` (sorted).
-9. **Before committing**: run `make test` and `make roast` to ensure no regressions.
-10. Commit, push the branch, and create a PR with `gh pr create`.
-11. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
-12. Poll PR CI status every 60 seconds with `gh pr checks <pr-number>`:
-    - If CI fails: read the failure log, push fix commits, and retry.
-    - If PR has conflicts: rebase onto main (`git pull --rebase origin main`), force push, and wait for CI again.
-    - If CI passes and PR is merged: proceed to next step.
-13. Switch back to main and pull: `git checkout main && git pull`.
-14. Repeat from step 1 with the next failing test.
-15. Continue this loop indefinitely until stopped by the user.
+### Scripts
+
+- **`ai-sandbox.sh`** — Creates an isolated sandbox (via `bwrap`) with a fresh git clone of the repo per branch. Runs `claude`, `codex`, or `bash` inside the sandbox. Copies parent repo's `target/` as build cache on first clone. Sandboxes persist across runs (no `--recreate` by default) so interrupted agents can resume.
+- **`ai-run-roast.sh`** — Takes a single roast test file path, builds a prompt with investigation steps, and runs an agent in a sandbox to fix it. If the sandbox has uncommitted changes from a previous interrupted session, the prompt instructs the agent to continue from where it left off. Retries up to 3 times on failure.
+- **`ai-next-roast.sh`** — Continuously picks random failing roast tests (via `pick-next-roast.sh`), coordinates with other instances via `wip.txt` to avoid duplicate work, and delegates each test to `ai-run-roast.sh`.
+- **`ai-supervisor.sh`** — Monitors open PRs for merge conflicts and CI failures. Dispatches agents to rebase/fix them. When idle, triggers roast history updates. Polls every 10 minutes.
+- **`ai-fleet.sh`** — Fleet manager. Monitors tmux windows with the `fleet:` prefix and automatically restarts dead workers. Can run as a daemon (`ai-fleet.sh`) or one-shot (`ai-fleet.sh --once`).
+- **`tmux-status.sh`** — Quick status display of all tmux windows (pid, alive/dead, last N lines of output). Usage: `./scripts/tmux-status.sh [lines]`
+
+### Fleet manager
+
+`ai-fleet.sh` manages the fleet automatically. It monitors tmux windows with the `fleet:` prefix and restarts dead workers.
+
+```bash
+# Start the fleet manager (runs in foreground, Ctrl-C to stop)
+./scripts/ai-fleet.sh
+
+# Check status once without looping
+./scripts/ai-fleet.sh --once
+
+# Dry-run: show what would be launched
+./scripts/ai-fleet.sh --once --dry-run
+```
+
+Default fleet composition (edit `FLEET` array in `ai-fleet.sh` to change):
+- `fleet:codex:1`, `fleet:codex:2` — codex workers
+- `fleet:claude:1` — claude worker
+- `fleet:supervisor:1` — PR supervisor
+
+### Monitoring
+
+- **Fleet status**: `./scripts/ai-fleet.sh --once`
+- **Read worker output**: `tmux capture-pane -t "fleet:codex:1" -p -S -30`
+- **PR progress**: `gh pr list --state open`
+- **Supervisor status**: `dotenvx run -- ./scripts/ai-supervisor.sh --list`
+
+### Stopping
+
+```bash
+# Stop all agents (fleet manager also exits)
+touch tmp/.stop
+
+# Stop a specific agent by PID
+touch tmp/.stop.<PID>
+```
+
+All scripts check for `tmp/.stop` (all agents) and `tmp/.stop.<PID>` (specific agent) and exit gracefully. PID-specific stop files are automatically cleaned up on exit.
 
 ## Test::Util function workout
 

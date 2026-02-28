@@ -660,6 +660,9 @@ impl Compiler {
             Stmt::Succeed => {
                 self.code.emit(OpCode::Succeed);
             }
+            Stmt::ReactDone => {
+                self.code.emit(OpCode::ReactDone);
+            }
             // MatchAssign (~~=): coerce value to string
             Stmt::Assign {
                 name,
