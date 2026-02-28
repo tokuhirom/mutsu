@@ -3,6 +3,7 @@ use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 
 type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
@@ -192,6 +193,7 @@ struct SupplierTapSubscription {
     line_mode: bool,
     line_chomp: bool,
     line_buffer: String,
+    delay_seconds: f64,
 }
 
 #[derive(Clone, Default)]
@@ -349,7 +351,7 @@ pub(super) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
     }
 }
 
-fn register_supplier_tap(supplier_id: u64, tap: Value) {
+fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds: f64) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
             .or_default()
@@ -359,11 +361,12 @@ fn register_supplier_tap(supplier_id: u64, tap: Value) {
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
+                delay_seconds,
             });
     }
 }
 
-fn register_supplier_lines_tap(supplier_id: u64, tap: Value, chomp: bool) {
+fn register_supplier_lines_tap(supplier_id: u64, tap: Value, chomp: bool, delay_seconds: f64) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
             .or_default()
@@ -373,11 +376,12 @@ fn register_supplier_lines_tap(supplier_id: u64, tap: Value, chomp: bool) {
                 line_mode: true,
                 line_chomp: chomp,
                 line_buffer: String::new(),
+                delay_seconds,
             });
     }
 }
 
-fn supplier_emit_callbacks(supplier_id: u64, emitted_value: &Value) -> Vec<(Value, Value)> {
+fn supplier_emit_callbacks(supplier_id: u64, emitted_value: &Value) -> Vec<(Value, Value, f64)> {
     let mut callbacks = Vec::new();
     if let Ok(mut map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get_mut(&supplier_id)
@@ -388,10 +392,14 @@ fn supplier_emit_callbacks(supplier_id: u64, emitted_value: &Value) -> Vec<(Valu
                 for line in
                     take_complete_lines_from_buffer(&mut tap.line_buffer, tap.line_chomp, false)
                 {
-                    callbacks.push((tap.callback.clone(), Value::Str(line)));
+                    callbacks.push((tap.callback.clone(), Value::Str(line), tap.delay_seconds));
                 }
             } else {
-                callbacks.push((tap.callback.clone(), emitted_value.clone()));
+                callbacks.push((
+                    tap.callback.clone(),
+                    emitted_value.clone(),
+                    tap.delay_seconds,
+                ));
             }
         }
     }
@@ -438,6 +446,36 @@ fn register_supplier_done_callback(supplier_id: u64, done_cb: Value) {
 }
 
 impl Interpreter {
+    fn resolve_supply_delay_seconds(&self, arg: Option<&Value>) -> Result<f64, RuntimeError> {
+        let Some(value) = arg else {
+            return Err(RuntimeError::new(
+                "Supply.delayed requires a delay argument",
+            ));
+        };
+        let delay = value.to_f64();
+        if delay.is_nan() {
+            return Err(RuntimeError::new("Supply.delayed requires a numeric delay"));
+        }
+        if delay.is_infinite() {
+            return Err(RuntimeError::new("Supply.delayed requires a finite delay"));
+        }
+        Ok(delay.max(0.0))
+    }
+
+    fn supply_delay_seconds(attributes: &HashMap<String, Value>) -> f64 {
+        attributes
+            .get("delay_seconds")
+            .map(Value::to_f64)
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .unwrap_or(0.0)
+    }
+
+    fn sleep_for_supply_delay(delay_seconds: f64) {
+        if delay_seconds > 0.0 {
+            std::thread::sleep(Duration::from_secs_f64(delay_seconds));
+        }
+    }
+
     fn resolve_supply_tail_count(
         &mut self,
         arg: Option<&Value>,
@@ -1068,6 +1106,20 @@ impl Interpreter {
                 new_attrs.insert("live".to_string(), Value::Bool(false));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
+            "delayed" => {
+                let delay_seconds = self.resolve_supply_delay_seconds(args.first())?;
+                if delay_seconds <= 0.0 {
+                    return Ok(Value::Instance {
+                        class_name: "Supply".to_string(),
+                        attributes: Arc::new(attributes.clone()),
+                        id: 0,
+                    });
+                }
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("delay_seconds".to_string(), Value::Num(delay_seconds));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "min" => {
                 let mapper = args.first().cloned();
                 if let Some(ref m) = mapper
@@ -1287,6 +1339,7 @@ impl Interpreter {
                 // Immutable tap: emit all values and return a Tap instance
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+                let delay_seconds = Self::supply_delay_seconds(attributes);
 
                 if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
                     let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
@@ -1295,14 +1348,19 @@ impl Interpreter {
                             .get("line_chomp")
                             .map(Value::truthy)
                             .unwrap_or(true);
-                        register_supplier_lines_tap(*supplier_id as u64, tap_cb.clone(), chomp);
+                        register_supplier_lines_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            chomp,
+                            delay_seconds,
+                        );
                     } else {
-                        register_supplier_tap(*supplier_id as u64, tap_cb.clone());
+                        register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }
                 }
 
-                // If this Supply has a supply_id (belongs to Proc::Async or signal()),
-                // check if there's a live channel — if so, start a background reader thread
+                // If this Supply has a supply_id, register the tap globally
+                // so that .start (Proc::Async) can find and call it later
                 if let Some(Value::Int(sid)) = attributes.get("supply_id") {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }
@@ -1314,8 +1372,9 @@ impl Interpreter {
                 {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
+                    let delay = delay_seconds;
                     std::thread::spawn(move || {
-                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb);
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
                     return Ok(Value::make_instance("Tap".to_string(), HashMap::new()));
                 }
@@ -1347,6 +1406,7 @@ impl Interpreter {
                     }
                 });
                 for v in &values {
+                    Self::sleep_for_supply_delay(delay_seconds);
                     if let Some(ref cbs) = do_cbs {
                         for cb in cbs {
                             let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
@@ -1591,7 +1651,10 @@ impl Interpreter {
                     );
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    for (tap, emitted) in supplier_emit_callbacks(*supplier_id as u64, &value) {
+                    for (tap, emitted, delay_seconds) in
+                        supplier_emit_callbacks(*supplier_id as u64, &value)
+                    {
+                        Self::sleep_for_supply_delay(delay_seconds);
                         let _ = self.call_sub_value(tap, vec![emitted], true);
                     }
                 }
@@ -1665,14 +1728,20 @@ impl Interpreter {
             "tap" | "act" => {
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+                let delay_seconds = Self::supply_delay_seconds(&attrs);
 
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
-                        register_supplier_lines_tap(*supplier_id as u64, tap_cb.clone(), chomp);
+                        register_supplier_lines_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            chomp,
+                            delay_seconds,
+                        );
                     } else {
-                        register_supplier_tap(*supplier_id as u64, tap_cb.clone());
+                        register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }
                 }
 
@@ -1689,8 +1758,9 @@ impl Interpreter {
                 {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
+                    let delay = delay_seconds;
                     std::thread::spawn(move || {
-                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb);
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
                     let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
                     return Ok((tap_instance, attrs));
@@ -1729,6 +1799,7 @@ impl Interpreter {
                     }
                 });
                 for v in &values {
+                    Self::sleep_for_supply_delay(delay_seconds);
                     if let Some(ref cbs) = do_cbs {
                         for cb in cbs {
                             let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
@@ -2580,9 +2651,11 @@ impl Interpreter {
         interp: &mut Interpreter,
         rx: &std::sync::mpsc::Receiver<SupplyEvent>,
         cb: &Value,
+        delay_seconds: f64,
     ) {
         use std::io::Write;
         while let Ok(SupplyEvent::Emit(value)) = rx.recv() {
+            Self::sleep_for_supply_delay(delay_seconds);
             let _ = interp.call_sub_value(cb.clone(), vec![value], true);
             // Flush stdout
             if !interp.output.is_empty() {

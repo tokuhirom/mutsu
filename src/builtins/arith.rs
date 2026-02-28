@@ -2,8 +2,8 @@
 
 use crate::runtime;
 use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
-use num_bigint::BigInt as NumBigInt;
-use num_traits::Zero;
+use num_bigint::{BigInt as NumBigInt, Sign};
+use num_traits::{ToPrimitive, Zero};
 
 fn as_bigint(value: &Value) -> Option<NumBigInt> {
     match value {
@@ -55,7 +55,12 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
             make_rat(an * bd + bn * ad, ad * bd)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
+                    Some(sum) => Value::Int(sum),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) + num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
@@ -69,7 +74,12 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
             Value::Num(a + b)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
+                    Some(sum) => Value::Int(sum),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) + num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
@@ -96,7 +106,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             make_rat(an * bd - bn * ad, ad * bd)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
+                    Some(diff) => Value::Int(diff),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
@@ -114,7 +129,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             Value::Num(a - b)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
+                    Some(diff) => Value::Int(diff),
+                    None => Value::from_bigint(
+                        num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b),
+                    ),
+                },
                 (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
@@ -341,6 +361,30 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
 
 pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
     let (l, r) = runtime::coerce_numeric(left, right);
+    let to_pow_f64 = |v: &Value| -> Option<f64> {
+        runtime::to_float_value(v).or_else(|| match v {
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_zero() {
+                        Some(f64::NAN)
+                    } else if n.sign() == Sign::Minus {
+                        Some(f64::NEG_INFINITY)
+                    } else {
+                        Some(f64::INFINITY)
+                    }
+                } else {
+                    Some(n.to_f64()? / d.to_f64()?)
+                }
+            }
+            _ => None,
+        })
+    };
+    let powf_or_zero = |base: &Value, exp: &Value| -> Value {
+        match (to_pow_f64(base), to_pow_f64(exp)) {
+            (Some(a), Some(b)) => Value::Num(a.powf(b)),
+            _ => Value::Int(0),
+        }
+    };
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
@@ -399,6 +443,26 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 make_big_rat(d.pow(p), n.pow(p))
             }
             (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
+            (Value::BigInt(a), Value::Int(b)) if b >= 0 => {
+                if let Ok(exp_u) = u32::try_from(b) {
+                    Value::BigInt(a.pow(exp_u))
+                } else {
+                    Value::Num(a.to_f64().unwrap_or(0.0).powf(b as f64))
+                }
+            }
+            (Value::BigInt(a), Value::Int(b)) => {
+                if a == NumBigInt::from(1) {
+                    Value::Int(1)
+                } else if a == NumBigInt::from(-1) {
+                    if (-b) % 2 == 0 {
+                        Value::Int(1)
+                    } else {
+                        Value::Int(-1)
+                    }
+                } else {
+                    Value::Num(a.to_f64().unwrap_or(0.0).powf(b as f64))
+                }
+            }
             (Value::Int(a), Value::Num(b)) => {
                 if b.is_finite() && b.fract() == 0.0 && b >= i32::MIN as f64 && b <= i32::MAX as f64
                 {
@@ -423,8 +487,38 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     Value::Num((a as f64).powf(b))
                 }
             }
+            (Value::Int(a), Value::BigInt(b)) => {
+                let is_even = (&b % 2u8) == NumBigInt::from(0u8);
+                if b.is_zero() || a == 1 {
+                    Value::Int(1)
+                } else if a == -1 {
+                    Value::Int(if is_even { 1 } else { -1 })
+                } else if a == 0 && b.sign() != Sign::Minus {
+                    Value::Int(0)
+                } else if let Some(exp_u) = b.to_u32() {
+                    if let Some(result) = a.checked_pow(exp_u) {
+                        Value::Int(result)
+                    } else {
+                        Value::BigInt(NumBigInt::from(a).pow(exp_u))
+                    }
+                } else {
+                    Value::Num((a as f64).powf(b.to_f64().unwrap_or(f64::INFINITY)))
+                }
+            }
+            (Value::Num(a), Value::BigInt(b)) => {
+                let is_even = (&b % 2u8) == NumBigInt::from(0u8);
+                if b.is_zero() || a == 1.0 {
+                    Value::Num(1.0)
+                } else if a == -1.0 {
+                    Value::Num(if is_even { 1.0 } else { -1.0 })
+                } else if a == 0.0 && b.sign() != Sign::Minus {
+                    Value::Num(0.0)
+                } else {
+                    Value::Num(a.powf(b.to_f64().unwrap_or(f64::INFINITY)))
+                }
+            }
             (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
-            _ => Value::Int(0),
+            (base, exp) => powf_or_zero(&base, &exp),
         }
     }
 }

@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::ws;
 use super::super::parse_result::{
@@ -10,6 +12,8 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::{ident, parse_statement_modifier, var_name};
+
+static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompoundAssignOp {
@@ -78,6 +82,40 @@ impl CompoundAssignOp {
     }
 }
 
+fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
+    if matches!(op, CompoundAssignOp::Mul | CompoundAssignOp::Power) {
+        Expr::Ternary {
+            cond: Box::new(Expr::Call {
+                name: "defined".to_string(),
+                args: vec![lhs.clone()],
+            }),
+            then_expr: Box::new(lhs),
+            else_expr: Box::new(Expr::Literal(Value::Int(1))),
+        }
+    } else {
+        lhs
+    }
+}
+
+pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs: Expr) -> Expr {
+    if matches!(op, CompoundAssignOp::DefinedOr) {
+        Expr::Ternary {
+            cond: Box::new(Expr::Call {
+                name: "defined".to_string(),
+                args: vec![lhs.clone()],
+            }),
+            then_expr: Box::new(lhs),
+            else_expr: Box::new(rhs),
+        }
+    } else {
+        Expr::Binary {
+            left: Box::new(autoviv_compound_lhs(lhs, op)),
+            op: op.token_kind(),
+            right: Box::new(rhs),
+        }
+    }
+}
+
 pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::DefinedOr,
     CompoundAssignOp::LogicalOr,
@@ -104,10 +142,19 @@ pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAss
             return Some((stripped, *op));
         }
     }
+    // Metaop zip compound assignment (`Z+=`, `Z//=`, ...).
+    // For now this reuses the base compound-assignment operator parsing.
+    if let Some(after_z) = input.strip_prefix('Z') {
+        for op in COMPOUND_ASSIGN_OPS {
+            if let Some(stripped) = after_z.strip_prefix(op.symbol()) {
+                return Some((stripped, *op));
+            }
+        }
+    }
     None
 }
 
-fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, String)> {
+pub(crate) fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, String)> {
     let mut chars = input.char_indices();
     let (_, first) = chars.next()?;
     if !first.is_alphabetic() && first != '_' {
@@ -220,6 +267,125 @@ fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) 
     }
 }
 
+fn compound_index_assign_expr<F>(target: Expr, index: Expr, build_assigned_value: F) -> Expr
+where
+    F: FnOnce(Expr) -> Expr,
+{
+    let tmp_idx = format!(
+        "__mutsu_idx_{}",
+        TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+    let lhs_expr = Expr::Index {
+        target: Box::new(target.clone()),
+        index: Box::new(tmp_idx_expr.clone()),
+    };
+    let assigned_value = build_assigned_value(lhs_expr);
+    Expr::DoBlock {
+        body: vec![
+            Stmt::VarDecl {
+                name: tmp_idx.clone(),
+                expr: index,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+            },
+            Stmt::Expr(Expr::IndexAssign {
+                target: Box::new(target),
+                index: Box::new(tmp_idx_expr.clone()),
+                value: Box::new(assigned_value),
+            }),
+        ],
+        label: None,
+    }
+}
+
+fn build_compound_assign_expr(lhs: Expr, op: CompoundAssignOp, rhs: Expr) -> Result<Expr, PError> {
+    Ok(match lhs {
+        Expr::Var(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, rhs)),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(compound_assigned_value_expr(Expr::ArrayVar(name), op, rhs)),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, rhs)),
+        },
+        Expr::Index { target, index } => {
+            return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
+                compound_assigned_value_expr(lhs_expr, op, rhs)
+            }));
+        }
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } if name == "AT-POS" && args.len() == 1 => {
+            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::Nil));
+            return Ok(compound_index_assign_expr(*target, index, |lhs_expr| {
+                compound_assigned_value_expr(lhs_expr, op, rhs)
+            }));
+        }
+        _ => return Err(PError::expected("assignment expression")),
+    })
+}
+
+fn build_custom_compound_assign_expr(
+    lhs: Expr,
+    op_name: String,
+    rhs: Expr,
+) -> Result<Expr, PError> {
+    Ok(match lhs {
+        Expr::Var(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(Expr::Var(name)),
+                right: vec![rhs],
+                modifier: None,
+            }),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name.clone()),
+            expr: Box::new(Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(Expr::ArrayVar(name)),
+                right: vec![rhs],
+                modifier: None,
+            }),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name.clone()),
+            expr: Box::new(Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(Expr::HashVar(name)),
+                right: vec![rhs],
+                modifier: None,
+            }),
+        },
+        Expr::Index { target, index } => {
+            return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
+                Expr::InfixFunc {
+                    name: op_name,
+                    left: Box::new(lhs_expr),
+                    right: vec![rhs],
+                    modifier: None,
+                }
+            }));
+        }
+        _ => return Err(PError::expected("assignment expression")),
+    })
+}
+
 fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
@@ -244,6 +410,26 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![Expr::Literal(Value::Str(name)), rhs],
             },
         ));
+    }
+    if let Some((stripped, op)) = parse_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, build_compound_assign_expr(lhs, op, rhs)?));
+    }
+    if let Some((stripped, op_name)) = parse_custom_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, build_custom_compound_assign_expr(lhs, op_name, rhs)?));
     }
     if (!rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>"))
         && !rest.starts_with("⚛=")
@@ -506,11 +692,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             rest,
             Expr::AssignExpr {
                 name,
-                expr: Box::new(Expr::Binary {
-                    left: Box::new(Expr::Var(var.to_string())),
-                    op: op.token_kind(),
-                    right: Box::new(rhs),
-                }),
+                expr: Box::new(compound_assigned_value_expr(
+                    Expr::Var(var.to_string()),
+                    op,
+                    rhs,
+                )),
             },
         ));
     }
@@ -823,12 +1009,9 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
-        let expr = Expr::Binary {
-            left: Box::new(Expr::Var(name.clone())),
-            op: op.token_kind(),
-            right: Box::new(rhs),
-        };
+        let expr = compound_assigned_value_expr(Expr::Var(name.clone()), op, rhs);
         let stmt = Stmt::Assign {
             name,
             expr,
@@ -844,6 +1027,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Assign {
             name: name.clone(),
@@ -867,6 +1051,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         .map_err(|err| PError {
             messages: merge_expected_messages("expected method name after '.='", &err.messages),
             remaining_len: err.remaining_len.or(Some(stripped.len())),
+            exception: None,
         })?;
         let method_name = method_name.to_string();
         let (r, args) = if r.starts_with('(') {
@@ -875,10 +1060,30 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let (r, a) = parse_call_arg_list(r).map_err(|err| PError {
                 messages: merge_expected_messages("expected method call arguments", &err.messages),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             (r, a)
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = expression(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = expression(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (r, Vec::new())
         };
@@ -927,6 +1132,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Expr(Expr::Call {
             name: "__mutsu_atomic_add_var".to_string(),
@@ -951,6 +1157,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         if is_atomic {
             let stmt = Stmt::Expr(Expr::Call {
@@ -975,6 +1182,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Assign {
             name,

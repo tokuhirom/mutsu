@@ -34,7 +34,7 @@ fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
 #[inline]
 fn is_coercion_constraint(constraint: &str) -> bool {
     let bytes = constraint.as_bytes();
-    bytes.last() == Some(&b')') && bytes.contains(&b'(')
+    bytes.last() == Some(&b')') && bytes.contains(&b'(') && !bytes.contains(&b'[')
 }
 
 /// Coerce a value to the target type.
@@ -304,6 +304,145 @@ fn sub_signature_target_from_remaining_args(args: &[Value]) -> Value {
     }
 }
 
+fn callable_signature_info(
+    interpreter: &mut Interpreter,
+    value: &Value,
+) -> Option<crate::value::signature::SigInfo> {
+    use crate::value::signature::param_defs_to_sig_info;
+
+    let callable = match value {
+        Value::WeakSub(weak) => weak.upgrade().map(Value::Sub)?,
+        other => other.clone(),
+    };
+    if !interpreter.type_matches_value("Callable", &callable) {
+        return None;
+    }
+
+    match &callable {
+        Value::Sub(data) => {
+            let return_type = interpreter
+                .callable_return_type(&callable)
+                .or_else(|| interpreter.routine_return_spec_by_name(&data.name));
+            Some(param_defs_to_sig_info(&data.param_defs, return_type))
+        }
+        Value::Routine { name, .. } => {
+            let (params, param_defs) = interpreter.callable_signature(&callable);
+            let defs = if !param_defs.is_empty() {
+                param_defs
+            } else {
+                params
+                    .into_iter()
+                    .map(|name| ParamDef {
+                        name,
+                        default: None,
+                        multi_invocant: true,
+                        required: true,
+                        named: false,
+                        slurpy: false,
+                        double_slurpy: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: false,
+                        shape_constraints: None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let return_type = interpreter.routine_return_spec_by_name(name);
+            Some(param_defs_to_sig_info(&defs, return_type))
+        }
+        _ => {
+            let (params, param_defs) = interpreter.callable_signature(&callable);
+            let defs = if !param_defs.is_empty() {
+                param_defs
+            } else {
+                params
+                    .into_iter()
+                    .map(|name| ParamDef {
+                        name,
+                        default: None,
+                        multi_invocant: true,
+                        required: true,
+                        named: false,
+                        slurpy: false,
+                        double_slurpy: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: false,
+                        shape_constraints: None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            Some(param_defs_to_sig_info(
+                &defs,
+                interpreter.callable_return_type(&callable),
+            ))
+        }
+    }
+}
+
+fn code_signature_matches_value(
+    interpreter: &mut Interpreter,
+    expected_params: &[ParamDef],
+    expected_return_type: &Option<String>,
+    value: &Value,
+) -> bool {
+    use crate::value::signature::{param_defs_to_sig_info, signature_smartmatch};
+
+    fn resolve_captured_constraint(interpreter: &Interpreter, constraint: &str) -> String {
+        if let Some(captured) = constraint.strip_prefix("::")
+            && let Some(Value::Package(name)) = interpreter.env.get(captured)
+        {
+            return name.clone();
+        }
+        if let Some(Value::Package(name)) = interpreter.env.get(constraint) {
+            return name.clone();
+        }
+        constraint.to_string()
+    }
+
+    fn specialize_code_signature_params(
+        interpreter: &Interpreter,
+        params: &[ParamDef],
+    ) -> Vec<ParamDef> {
+        params
+            .iter()
+            .map(|p| {
+                let mut next = p.clone();
+                if let Some(tc) = &next.type_constraint {
+                    next.type_constraint = Some(resolve_captured_constraint(interpreter, tc));
+                }
+                next
+            })
+            .collect()
+    }
+
+    let Some(actual_info) = callable_signature_info(interpreter, value) else {
+        return false;
+    };
+    let specialized_expected = specialize_code_signature_params(interpreter, expected_params);
+    let specialized_return = expected_return_type
+        .as_ref()
+        .map(|rt| resolve_captured_constraint(interpreter, rt));
+    let expected_info = param_defs_to_sig_info(&specialized_expected, specialized_return);
+    // Function-type compatibility: candidate callable must be at least as general
+    // as the required signature to safely accept all required calls.
+    signature_smartmatch(&actual_info, &expected_info)
+}
+
 /// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
 /// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
 pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
@@ -338,6 +477,11 @@ impl Interpreter {
     /// Restore the readonly_vars set (call after function body execution).
     pub(crate) fn restore_readonly_vars(&mut self, saved: HashSet<String>) {
         self.readonly_vars = saved;
+    }
+
+    /// Mark a variable as readonly.
+    pub(crate) fn mark_readonly(&mut self, name: &str) {
+        self.readonly_vars.insert(name.to_string());
     }
 
     /// Check if a variable is readonly and return an error if so.
@@ -664,6 +808,19 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        // Metamodel:: is an alias for Perl6::Metamodel::
+        if constraint.starts_with("Metamodel::") {
+            let full = format!("Perl6::{}", constraint);
+            if full == value_type {
+                return true;
+            }
+        }
+        if value_type.starts_with("Metamodel::") {
+            let full = format!("Perl6::{}", value_type);
+            if full == constraint {
+                return true;
+            }
+        }
         // Native type aliases: num → Num, int → Int, str → Str
         if constraint == "num" && value_type == "Num" {
             return true;
@@ -675,6 +832,10 @@ impl Interpreter {
             return true;
         }
         if constraint == "str" && value_type == "Str" {
+            return true;
+        }
+        // Native integer types match Int values
+        if crate::runtime::native_types::is_native_int_type(constraint) && value_type == "Int" {
             return true;
         }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
@@ -706,6 +867,9 @@ impl Interpreter {
             return true;
         }
         if constraint == "Routine" && matches!(value_type, "Sub" | "Method" | "Routine") {
+            return true;
+        }
+        if constraint == "Variable" && matches!(value_type, "Scalar" | "Array" | "Hash" | "Sub") {
             return true;
         }
         // Role-like type relationships
@@ -770,14 +934,33 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args)) = self.extract_role_application(&right) {
-            return self.compose_role_on_value(left, &role_name, &args);
+            let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
+            if let Some(target_name) = Self::var_target_name_from_value(&left) {
+                self.set_var_meta_value(&target_name, result.clone());
+            }
+            return Ok(result);
         }
         let role_name = right.to_string_value();
         Ok(Value::Bool(left.does_check(&role_name)))
     }
 
+    fn var_target_name_from_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Mixin(inner, _) => Self::var_target_name_from_value(inner),
+            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
+                Some(Value::Str(name)) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
         match rhs {
+            Value::ParametricRole {
+                base_name,
+                type_args,
+            } if self.roles.contains_key(base_name) => Some((base_name.clone(), type_args.clone())),
             Value::Pair(name, boxed) if self.roles.contains_key(name) => {
                 if let Value::Array(args, ..) = boxed.as_ref() {
                     Some((name.clone(), args.as_ref().clone()))
@@ -827,6 +1010,15 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if let Some((base, _)) = constraint.split_once(':')
+            && base == "Variable"
+            && varref_from_value(value).is_some()
+        {
+            return true;
+        }
+        if constraint == "Variable" && varref_from_value(value).is_some() {
+            return true;
+        }
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
             let package_base = package_name.split('[').next().unwrap_or(package_name);
             let (package_base, _) = strip_type_smiley(package_base);
@@ -968,6 +1160,70 @@ impl Interpreter {
         // Role constraints should accept composed role instances/mixins.
         if self.roles.contains_key(constraint) && value.does_check(constraint) {
             return true;
+        }
+        // Type-object checks: Package values should respect declared class/role ancestry.
+        if let Value::Package(package_name) = value {
+            if Self::type_matches(constraint, package_name) {
+                return true;
+            }
+            let mro = self.class_mro(package_name);
+            if mro.iter().any(|parent| parent == constraint) {
+                return true;
+            }
+            // Check transitive role composition through class_composed_roles and role_parents
+            if self.roles.contains_key(constraint) {
+                let mut role_stack: Vec<String> = Vec::new();
+                let mut seen_roles = HashSet::new();
+                // Collect all composed roles from the class and its parents
+                for cn in &mro {
+                    if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
+                        for cr in composed {
+                            let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                            role_stack.push(base.to_string());
+                        }
+                    }
+                }
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if role_name == constraint {
+                        return true;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name) {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                role_stack.push(rp_base.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(constraint_base) = constraint.split_once('[').map(|(base, _)| base)
+                && mro.iter().any(|parent| {
+                    parent == constraint_base || parent.starts_with(&format!("{constraint_base}["))
+                })
+            {
+                return true;
+            }
+            if self.roles.contains_key(package_name) {
+                let mut stack = vec![package_name.clone()];
+                let mut seen = HashSet::new();
+                while let Some(role) = stack.pop() {
+                    if !seen.insert(role.clone()) {
+                        continue;
+                    }
+                    if let Some(parents) = self.role_parents.get(&role) {
+                        for parent in parents {
+                            if parent == constraint {
+                                return true;
+                            }
+                            stack.push(parent.clone());
+                        }
+                    }
+                }
+            }
         }
         // Check Instance class name against constraint (including parent classes)
         if let Value::Instance { class_name, .. } = value {
@@ -1115,6 +1371,17 @@ impl Interpreter {
                         if !ok {
                             return false;
                         }
+                    } else if constraint == "Num"
+                        && matches!(
+                            arg,
+                            Value::Int(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        )
+                    {
+                        // Multi-dispatch numeric widening: Int/Rat/FatRat can satisfy Num.
                     } else if !is_coercion_constraint(constraint)
                         && !self.type_matches_value(constraint, arg)
                     {
@@ -1127,6 +1394,14 @@ impl Interpreter {
                         return false;
                     };
                     if !sub_signature_matches_value(self, sub_params, arg) {
+                        return false;
+                    }
+                }
+                if let Some((sig_params, sig_ret)) = &pd.code_signature {
+                    let Some(arg) = arg_for_checks.as_ref() else {
+                        return false;
+                    };
+                    if !code_signature_matches_value(self, sig_params, sig_ret, arg) {
                         return false;
                     }
                 }
@@ -1155,6 +1430,22 @@ impl Interpreter {
                     i = args.len();
                 } else if !pd.slurpy {
                     i += 1;
+                }
+            }
+            let has_named_slurpy = param_defs
+                .iter()
+                .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
+            if !has_named_slurpy {
+                for arg in args {
+                    let arg = unwrap_varref_value(arg.clone());
+                    if let Value::Pair(key, _) = arg {
+                        let consumed = param_defs.iter().any(|pd| {
+                            (pd.named && pd.name == key) || pd.name == format!(":{}", key)
+                        });
+                        if !consumed {
+                            return false;
+                        }
+                    }
                 }
             }
             true
@@ -1461,6 +1752,23 @@ impl Interpreter {
                     if let Value::Pair(key, val) = arg
                         && key == match_key
                     {
+                        if let Some((sig_params, sig_ret)) = &pd.code_signature
+                            && !code_signature_matches_value(self, sig_params, sig_ret, &val)
+                        {
+                            let mut err = RuntimeError::new(format!(
+                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
+                                pd.name,
+                                super::value_type_name(&val)
+                            ));
+                            let mut ex_attrs = std::collections::HashMap::new();
+                            ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+                            let exception = Value::make_instance(
+                                "X::TypeCheck::Binding::Parameter".to_string(),
+                                ex_attrs,
+                            );
+                            err.exception = Some(Box::new(exception));
+                            return Err(err);
+                        }
                         self.bind_param_value(&pd.name, *val.clone());
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                         if let Some(sub_params) = &pd.sub_signature {
@@ -1473,6 +1781,23 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     let value = self.checked_default_param_value(pd, value)?;
+                    if let Some((sig_params, sig_ret)) = &pd.code_signature
+                        && !code_signature_matches_value(self, sig_params, sig_ret, &value)
+                    {
+                        let mut err = RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
+                            pd.name,
+                            super::value_type_name(&value)
+                        ));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+                        let exception = Value::make_instance(
+                            "X::TypeCheck::Binding::Parameter".to_string(),
+                            ex_attrs,
+                        );
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
+                    }
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
@@ -1610,6 +1935,17 @@ impl Interpreter {
                                     super::value_type_name(&value)
                                 )));
                             }
+                        } else if constraint == "Num"
+                            && matches!(
+                                value,
+                                Value::Int(_)
+                                    | Value::Num(_)
+                                    | Value::Rat(_, _)
+                                    | Value::FatRat(_, _)
+                                    | Value::BigRat(_, _)
+                            )
+                        {
+                            // Binding accepts numeric widening into Num parameters.
                         } else if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
                                 "{}: Type check failed for {}: expected {}, got {}",
@@ -1633,6 +1969,23 @@ impl Interpreter {
                             }
                             value = Value::hash(map);
                         }
+                    }
+                    if let Some((sig_params, sig_ret)) = &pd.code_signature
+                        && !code_signature_matches_value(self, sig_params, sig_ret, &value)
+                    {
+                        let mut err = RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
+                            pd.name,
+                            super::value_type_name(&value)
+                        ));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+                        let exception = Value::make_instance(
+                            "X::TypeCheck::Binding::Parameter".to_string(),
+                            ex_attrs,
+                        );
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
                     }
                     if !pd.name.is_empty()
                         && pd.name != "__type_only__"

@@ -365,7 +365,9 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '\''
             || c == '*'
             || c.is_ascii_digit()
-            || c.is_ascii_alphabetic()
+            || c.is_alphabetic()
+            || crate::builtins::unicode::unicode_rat_value(c).is_some()
+            || crate::builtins::unicode::unicode_numeric_int_value(c).is_some()
     };
     if input.starts_with('!')
         && !input.starts_with("!!")
@@ -571,5 +573,6 @@ pub(super) fn enrich_expected_error(
     PError {
         messages: merge_expected_messages(context, &err.messages),
         remaining_len: err.remaining_len.or(Some(remaining_len_fallback)),
+        exception: None,
     }
 }

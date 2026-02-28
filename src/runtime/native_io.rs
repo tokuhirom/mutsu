@@ -268,8 +268,17 @@ impl Interpreter {
                 Ok(Value::Str(content))
             }
             "open" => {
-                let (read, write, append, bin, line_separators) = self.parse_io_flags_values(&args);
-                self.open_file_handle(&path_buf, read, write, append, bin, line_separators)
+                let (read, write, append, bin, line_chomp, line_separators) =
+                    self.parse_io_flags_values(&args);
+                self.open_file_handle(
+                    &path_buf,
+                    read,
+                    write,
+                    append,
+                    bin,
+                    line_chomp,
+                    line_separators,
+                )
             }
             "copy" => {
                 let dest = args

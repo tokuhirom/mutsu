@@ -1,6 +1,18 @@
 use super::*;
 
 impl Value {
+    /// Bit-exact identity (Raku `===` operator).
+    /// Unlike PartialEq, this distinguishes 0e0 from -0e0 and different NaN payloads.
+    pub(crate) fn strict_identical(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),
+            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+                ar.to_bits() == br.to_bits() && ai.to_bits() == bi.to_bits()
+            }
+            _ => self == other,
+        }
+    }
+
     /// Type-strict value equivalence (Raku `eqv` operator).
     /// Unlike PartialEq (used for `==`), this does NOT allow cross-type comparisons.
     /// Two values are eqv only if they are the same type AND have the same value.
@@ -49,15 +61,19 @@ impl Value {
             (Value::Seq(a), Value::Seq(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
+            // Num: use bit-exact comparison to distinguish signed zeros
+            (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),
+            // Complex: use bit-exact comparison for both components
+            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+                ar.to_bits() == br.to_bits() && ai.to_bits() == bi.to_bits()
+            }
             // Same-type scalar comparisons delegate to PartialEq
             (Value::Int(_), Value::Int(_))
-            | (Value::Num(_), Value::Num(_))
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
             | (Value::Rat(_, _), Value::Rat(_, _))
             | (Value::FatRat(_, _), Value::FatRat(_, _))
             | (Value::BigRat(_, _), Value::BigRat(_, _))
-            | (Value::Complex(_, _), Value::Complex(_, _))
             | (Value::Set(_), Value::Set(_))
             | (Value::Bag(_), Value::Bag(_))
             | (Value::Mix(_), Value::Mix(_))
@@ -369,6 +385,8 @@ impl Value {
                     if class_name == "Pod::Block"
                         || class_name == "Pod::Block::Comment"
                         || class_name == "Pod::Block::Para"
+                        || class_name == "Pod::Block::Named"
+                        || class_name == "Pod::Heading"
                         || class_name == "Pod::Block::Table"
                         || class_name == "Pod::Item"
             ),

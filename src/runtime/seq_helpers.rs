@@ -1,5 +1,7 @@
 use super::*;
 use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
+#[cfg(feature = "pcre2")]
+use pcre2::bytes::{Regex as PcreRegex, RegexBuilder as PcreRegexBuilder};
 
 impl Interpreter {
     fn signature_capture_like(value: &Value) -> Option<(Vec<Value>, HashMap<String, Value>)> {
@@ -276,11 +278,14 @@ impl Interpreter {
         out
     }
 
-    fn compile_p5_regex(&self, pattern: &str) -> Option<fancy_regex::Regex> {
+    #[cfg(feature = "pcre2")]
+    fn compile_p5_regex(&self, pattern: &str) -> Option<PcreRegex> {
         let interpolated = self.expand_p5_interpolation(pattern);
         let converted = Self::p5_pattern_to_rust_regex(&interpolated);
         let transformed = Self::transform_p5_pattern(&converted);
-        fancy_regex::Regex::new(&transformed).ok()
+        let mut builder = PcreRegexBuilder::new();
+        builder.utf(true).ucp(true);
+        builder.build(&transformed).ok()
     }
 
     /// Transform P5 regex patterns to handle Perl 5 semantics that
@@ -340,6 +345,21 @@ impl Interpreter {
                 out.push(chars[i]);
                 i += 1;
                 continue;
+            }
+            // Handle Perl code assertions (?{...}) as zero-width no-op.
+            if !in_char_class
+                && chars[i] == '('
+                && i + 2 < chars.len()
+                && chars[i + 1] == '?'
+                && chars[i + 2] == '{'
+                && let Some(end) = Self::find_matching_brace(&chars, i + 2)
+            {
+                let after = end + 1;
+                if after < chars.len() && chars[after] == ')' {
+                    out.push_str("(?:)");
+                    i = after + 1;
+                    continue;
+                }
             }
             // Handle P5 conditional patterns: (?(COND)yes|no)
             if !in_char_class && chars[i] == '(' && i + 1 < chars.len() && chars[i + 1] == '?' {
@@ -570,6 +590,30 @@ impl Interpreter {
         None
     }
 
+    fn find_matching_brace(chars: &[char], start: usize) -> Option<usize> {
+        if start >= chars.len() || chars[start] != '{' {
+            return None;
+        }
+        let mut depth = 1;
+        let mut i = start + 1;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                i += 2;
+                continue;
+            }
+            if chars[i] == '{' {
+                depth += 1;
+            } else if chars[i] == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            i += 1;
+        }
+        None
+    }
+
     /// Parse `yes|no)` or `yes)` branches of a conditional pattern.
     /// Returns (yes_branch, no_branch, position_after_closing_paren).
     fn parse_conditional_branches(chars: &[char], start: usize) -> Option<(String, String, usize)> {
@@ -692,79 +736,88 @@ impl Interpreter {
         0
     }
 
+    #[cfg(feature = "pcre2")]
     fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
-        let captures = re.captures(text).ok()??;
-        let m0 = captures.get(0)?;
-        let names: Vec<Option<&str>> = re.capture_names().collect();
+        let mut locs = re.capture_locations();
+        let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
+        let names = re.capture_names();
         let mut out = RegexCaptures {
-            matched: m0.as_str().to_string(),
+            matched: text.get(m0.start()..m0.end())?.to_string(),
             from: m0.start(),
             to: m0.end(),
             ..RegexCaptures::default()
         };
-        for idx in 1..captures.len() {
-            if names.get(idx).is_some_and(|n| n.is_none()) {
-                if let Some(m) = captures.get(idx) {
-                    out.positional.push(m.as_str().to_string());
-                    out.positional_offsets.push((m.start(), m.end()));
-                    out.positional_slots
-                        .push(Some((m.as_str().to_string(), m.start(), m.end())));
+        for idx in 1..locs.len() {
+            if names.get(idx).is_some_and(Option::is_none) {
+                if let Some((start, end)) = locs.get(idx) {
+                    let captured = text.get(start..end)?.to_string();
+                    out.positional.push(captured.clone());
+                    out.positional_offsets.push((start, end));
+                    out.positional_slots.push(Some((captured, start, end)));
                 } else {
                     out.positional_slots.push(None);
                 }
                 continue;
             }
-            if let (Some(Some(name)), Some(m)) = (names.get(idx), captures.get(idx)) {
+            if let (Some(Some(name)), Some((start, end))) = (names.get(idx), locs.get(idx)) {
+                let captured = text.get(start..end)?.to_string();
                 out.named
-                    .entry((*name).to_string())
+                    .entry(name.to_string())
                     .or_default()
-                    .push(m.as_str().to_string());
+                    .push(captured);
             }
         }
         Some(out)
     }
 
+    #[cfg(feature = "pcre2")]
     fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
         let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
         };
-        let names: Vec<Option<&str>> = re.capture_names().collect();
+        let names = re.capture_names();
         let mut out = Vec::new();
-        let mut start = 0;
-        while start <= text.len() {
-            let Ok(Some(captures)) = re.captures_from_pos(text, start) else {
+        let mut start = 0usize;
+        let bytes = text.as_bytes();
+        let mut locs = re.capture_locations();
+        while start <= bytes.len() {
+            let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
                 break;
             };
-            let Some(m0) = captures.get(0) else {
+            let Some(matched) = text.get(m0.start()..m0.end()) else {
                 break;
             };
             let mut item = RegexCaptures {
-                matched: m0.as_str().to_string(),
+                matched: matched.to_string(),
                 from: m0.start(),
                 to: m0.end(),
                 ..RegexCaptures::default()
             };
-            for idx in 1..captures.len() {
-                if names.get(idx).is_some_and(|n| n.is_none()) {
-                    if let Some(m) = captures.get(idx) {
-                        item.positional.push(m.as_str().to_string());
-                        item.positional_offsets.push((m.start(), m.end()));
-                        item.positional_slots.push(Some((
-                            m.as_str().to_string(),
-                            m.start(),
-                            m.end(),
-                        )));
+            for idx in 1..locs.len() {
+                if names.get(idx).is_some_and(Option::is_none) {
+                    if let Some((c_start, c_end)) = locs.get(idx) {
+                        let Some(captured) = text.get(c_start..c_end) else {
+                            continue;
+                        };
+                        item.positional.push(captured.to_string());
+                        item.positional_offsets.push((c_start, c_end));
+                        item.positional_slots
+                            .push(Some((captured.to_string(), c_start, c_end)));
                     } else {
                         item.positional_slots.push(None);
                     }
                     continue;
                 }
-                if let (Some(Some(name)), Some(m)) = (names.get(idx), captures.get(idx)) {
+                if let (Some(Some(name)), Some((c_start, c_end))) = (names.get(idx), locs.get(idx))
+                {
+                    let Some(captured) = text.get(c_start..c_end) else {
+                        continue;
+                    };
                     item.named
-                        .entry((*name).to_string())
+                        .entry(name.to_string())
                         .or_default()
-                        .push(m.as_str().to_string());
+                        .push(captured.to_string());
                 }
             }
             // Advance past the match (at least 1 byte to avoid infinite loop)
@@ -1009,7 +1062,11 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
-                if let Some(captures) = self.regex_match_with_captures_p5(pat, &text) {
+                #[cfg(feature = "pcre2")]
+                let result = self.regex_match_with_captures_p5(pat, &text);
+                #[cfg(not(feature = "pcre2"))]
+                let result = self.regex_match_with_captures(pat, &text);
+                if let Some(captures) = result {
                     self.apply_single_regex_captures(&captures);
                     return true;
                 }
@@ -1028,7 +1085,14 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 let mut all = if *perl5 {
-                    self.regex_match_all_with_captures_p5(pattern, &text)
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
                 } else {
                     self.regex_match_all_with_captures(pattern, &text)
                 };
@@ -1037,26 +1101,30 @@ impl Interpreter {
                     return false;
                 }
                 let selected = if let Some(needed) = *repeat {
-                    let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
-                    all.retain(|c| c.from == earliest);
-                    if all.len() < needed {
-                        self.env.insert("/".to_string(), Value::Nil);
-                        return false;
-                    }
-                    all.into_iter().take(needed).collect::<Vec<_>>()
-                } else {
-                    let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
-                        std::collections::BTreeMap::new();
-                    for capture in all {
-                        let key = capture.from;
-                        match best_by_start.get(&key) {
-                            Some(existing) if capture.to <= existing.to => {}
-                            _ => {
-                                best_by_start.insert(key, capture);
+                    if needed == 0 {
+                        let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
+                            std::collections::BTreeMap::new();
+                        for capture in all {
+                            let key = capture.from;
+                            match best_by_start.get(&key) {
+                                Some(existing) if capture.to <= existing.to => {}
+                                _ => {
+                                    best_by_start.insert(key, capture);
+                                }
                             }
                         }
+                        best_by_start.into_values().collect::<Vec<_>>()
+                    } else {
+                        let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
+                        all.retain(|c| c.from == earliest);
+                        if all.len() < needed {
+                            self.env.insert("/".to_string(), Value::Nil);
+                            return false;
+                        }
+                        all.into_iter().take(needed).collect::<Vec<_>>()
                     }
-                    best_by_start.into_values().collect::<Vec<_>>()
+                } else {
+                    all
                 };
                 if selected.is_empty() {
                     self.env.insert("/".to_string(), Value::Nil);
@@ -1240,6 +1308,19 @@ impl Interpreter {
                     type_args: rhs_args,
                 },
             ) => {
+                // For Package values (type objects), check class hierarchy
+                if let Value::Package(_) = left_value {
+                    let args_str = rhs_args
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) => n.clone(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let full_name = format!("{}[{}]", rhs_base, args_str);
+                    return self.type_matches_value(&full_name, left_value);
+                }
                 if !left_value.does_check(rhs_base) {
                     return false;
                 }
@@ -1819,19 +1900,79 @@ impl Interpreter {
         chars.into_iter().collect()
     }
 
-    // Compute the predecessor of a string (decrement the last character)
-    pub(super) fn string_pred(s: &str) -> String {
+    pub(super) fn digit_string_succ_radix(s: &str, radix: u32) -> String {
+        if s.is_empty() || !(2..=10).contains(&radix) {
+            return s.to_string();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        let mut carry = true;
+        for ch in chars.iter_mut().rev() {
+            if !carry {
+                break;
+            }
+            if !ch.is_ascii_digit() {
+                return Self::string_succ(s);
+            }
+            let mut digit = (*ch as u8 - b'0') as u32;
+            if digit + 1 >= radix {
+                digit = 0;
+                *ch = (b'0' + digit as u8) as char;
+            } else {
+                digit += 1;
+                *ch = (b'0' + digit as u8) as char;
+                carry = false;
+            }
+        }
+        if carry {
+            chars.insert(0, '1');
+        }
+        chars.into_iter().collect()
+    }
+
+    pub(super) fn digit_string_pred_radix(s: &str, radix: u32) -> Result<String, RuntimeError> {
+        if s.is_empty() || !(2..=10).contains(&radix) {
+            return Self::string_pred(s);
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        let mut borrow = true;
+        for ch in chars.iter_mut().rev() {
+            if !borrow {
+                break;
+            }
+            if !ch.is_ascii_digit() {
+                return Self::string_pred(s);
+            }
+            let mut digit = (*ch as u8 - b'0') as u32;
+            if digit == 0 {
+                digit = radix - 1;
+                *ch = (b'0' + digit as u8) as char;
+            } else {
+                digit -= 1;
+                *ch = (b'0' + digit as u8) as char;
+                borrow = false;
+            }
+        }
+        if borrow {
+            return Err(RuntimeError::new("Decrement out of range"));
+        }
+        Ok(chars.into_iter().collect())
+    }
+
+    // Compute the predecessor of a string (decrement the last character).
+    // For multi-char alphabetic/digit strings, the leftmost character is never
+    // removed; underflow (e.g. "AA".pred) is an error.
+    pub(super) fn string_pred(s: &str) -> Result<String, RuntimeError> {
         if s.is_empty() {
-            return String::new();
+            return Ok(String::new());
         }
         let mut chars: Vec<char> = s.chars().collect();
         // For single-char strings, just decrement the codepoint
         if chars.len() == 1 {
             let ch = chars[0];
             if let Some(prev) = char::from_u32(ch as u32 - 1) {
-                return prev.to_string();
+                return Ok(prev.to_string());
             }
-            return s.to_string();
+            return Ok(s.to_string());
         }
         // Multi-char: decrement from end with borrow
         let mut borrow = true;
@@ -1868,10 +2009,9 @@ impl Interpreter {
             }
         }
         if borrow && chars.len() > 1 {
-            // Remove leading character on borrow
-            chars.remove(0);
+            return Err(RuntimeError::new("Decrement out of range"));
         }
-        chars.into_iter().collect()
+        Ok(chars.into_iter().collect())
     }
 
     // Add step to a sequence value, preserving type where possible

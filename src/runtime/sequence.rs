@@ -374,11 +374,25 @@ impl Interpreter {
                         // Check direction from last two strings
                         let last_two = &seeds[seeds.len() - 2..];
                         if let (Value::Str(a), Value::Str(b)) = (&last_two[0], &last_two[1]) {
-                            if b < a {
-                                SeqMode::Arithmetic(-1.0) // descending
-                            } else {
-                                SeqMode::Arithmetic(1.0) // ascending
+                            let mut step = if b < a { -1.0 } else { 1.0 };
+                            // With two string seeds and an explicit string endpoint,
+                            // prefer a direction that can actually reach the endpoint.
+                            if seeds.len() == 2
+                                && let Some(Value::Str(ep)) = endpoint.as_ref()
+                            {
+                                let toward_endpoint = if b < ep {
+                                    1.0
+                                } else if b > ep {
+                                    -1.0
+                                } else {
+                                    0.0
+                                };
+                                if toward_endpoint != 0.0 && (step > 0.0) != (toward_endpoint > 0.0)
+                                {
+                                    step = toward_endpoint;
+                                }
                             }
+                            SeqMode::Arithmetic(step)
                         } else {
                             SeqMode::Arithmetic(1.0)
                         }
@@ -688,6 +702,58 @@ impl Interpreter {
                 None => true,
                 _ => false,
             };
+        let digit_string_radix = if is_string_seq
+            && let Some(Value::Str(ep)) = endpoint.as_ref()
+            && let Some(seed_len) = seeds.iter().find_map(|v| match v {
+                Value::Str(s) => Some(s.len()),
+                _ => None,
+            })
+            && seed_len > 1
+            && seeds.iter().all(|v| matches!(v, Value::Str(s) if s.len() == seed_len && s.chars().all(|c| c.is_ascii_digit())))
+            && ep.len() == seed_len
+            && ep.chars().all(|c| c.is_ascii_digit())
+            && (seeds.iter().any(|v| matches!(v, Value::Str(s) if s.starts_with('0')))
+                || ep.starts_with('0'))
+        {
+            let max_digit = seeds
+                .iter()
+                .filter_map(|v| match v {
+                    Value::Str(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .chain(std::iter::once(ep.as_str()))
+                .flat_map(|s| s.bytes())
+                .map(|b| b - b'0')
+                .max()
+                .unwrap_or(9);
+            if max_digit <= 7 { Some(8u32) } else { None }
+        } else {
+            None
+        };
+        let uniform_string_alphabet = if is_string_seq
+            && let Some(Value::Str(ep)) = endpoint.as_ref()
+            && seeds.len() == 1
+            && matches!(mode, SeqMode::Arithmetic(step) if step != 0.0)
+            && let Value::Str(seed) = &seeds[0]
+        {
+            let seed_chars: Vec<char> = seed.chars().collect();
+            let ep_chars: Vec<char> = ep.chars().collect();
+            if seed_chars.len() > 1
+                && seed_chars.len() == ep_chars.len()
+                && seed_chars.iter().all(|c| *c == seed_chars[0])
+                && ep_chars.iter().all(|c| *c == ep_chars[0])
+            {
+                let a = seed_chars[0] as u32;
+                let b = ep_chars[0] as u32;
+                let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                let alpha: Vec<char> = (lo..=hi).filter_map(char::from_u32).collect();
+                if alpha.len() >= 2 { Some(alpha) } else { None }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         'seq_gen: for _ in 0..max_gen {
             let next = match &mode {
@@ -862,7 +928,45 @@ impl Interpreter {
                             // String predecessor sequence: use .pred
                             let last = result.last().unwrap();
                             if let Value::Str(s) = last {
-                                Value::Str(Self::string_pred(s))
+                                if let Some(alpha) = uniform_string_alphabet.as_ref() {
+                                    let mut idxs: Vec<usize> =
+                                        Vec::with_capacity(s.chars().count());
+                                    for ch in s.chars() {
+                                        let Some(pos) = alpha.iter().position(|a| *a == ch) else {
+                                            idxs.clear();
+                                            break;
+                                        };
+                                        idxs.push(pos);
+                                    }
+                                    if idxs.is_empty() {
+                                        Value::Str(Self::string_pred(s)?)
+                                    } else {
+                                        let mut borrow = true;
+                                        for idx in idxs.iter_mut().rev() {
+                                            if !borrow {
+                                                break;
+                                            }
+                                            if *idx == 0 {
+                                                *idx = alpha.len() - 1;
+                                            } else {
+                                                *idx -= 1;
+                                                borrow = false;
+                                            }
+                                        }
+                                        if borrow {
+                                            return Err(RuntimeError::new(
+                                                "Decrement out of range",
+                                            ));
+                                        }
+                                        Value::Str(
+                                            idxs.into_iter().map(|i| alpha[i]).collect::<String>(),
+                                        )
+                                    }
+                                } else if let Some(radix) = digit_string_radix {
+                                    Value::Str(Self::digit_string_pred_radix(s, radix)?)
+                                } else {
+                                    Value::Str(Self::string_pred(s)?)
+                                }
                             } else {
                                 break;
                             }
@@ -870,7 +974,45 @@ impl Interpreter {
                             // String succession sequence: use .succ
                             let last = result.last().unwrap();
                             if let Value::Str(s) = last {
-                                Value::Str(Self::string_succ(s))
+                                if let Some(alpha) = uniform_string_alphabet.as_ref() {
+                                    let mut idxs: Vec<usize> =
+                                        Vec::with_capacity(s.chars().count());
+                                    for ch in s.chars() {
+                                        let Some(pos) = alpha.iter().position(|a| *a == ch) else {
+                                            idxs.clear();
+                                            break;
+                                        };
+                                        idxs.push(pos);
+                                    }
+                                    if idxs.is_empty() {
+                                        Value::Str(Self::string_succ(s))
+                                    } else {
+                                        let mut carry = true;
+                                        for idx in idxs.iter_mut().rev() {
+                                            if !carry {
+                                                break;
+                                            }
+                                            if *idx + 1 >= alpha.len() {
+                                                *idx = 0;
+                                            } else {
+                                                *idx += 1;
+                                                carry = false;
+                                            }
+                                        }
+                                        if carry {
+                                            return Err(RuntimeError::new(
+                                                "Increment out of range",
+                                            ));
+                                        }
+                                        Value::Str(
+                                            idxs.into_iter().map(|i| alpha[i]).collect::<String>(),
+                                        )
+                                    }
+                                } else if let Some(radix) = digit_string_radix {
+                                    Value::Str(Self::digit_string_succ_radix(s, radix))
+                                } else {
+                                    Value::Str(Self::string_succ(s))
+                                }
                             } else {
                                 break;
                             }

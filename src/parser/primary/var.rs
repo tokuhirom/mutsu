@@ -26,7 +26,7 @@ pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
     } else {
         (input, "")
     };
-    let (rest_after_name, name) = parse_qualified_ident_with_hyphens_or_empty(rest);
+    let (rest_after_name, name) = parse_interpolation_qualified_ident_with_hyphens_or_empty(rest);
     let (rest_after_name, name) = parse_var_name_adverb_suffixes(rest_after_name, name);
     let full_name = if twigil.is_empty() {
         name
@@ -72,6 +72,15 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                 Ok((rest, Expr::HashVar(full_name)))
             };
         }
+    }
+    // Handle nested scalar dereference syntax ($$x / $&f) by parsing the
+    // inner variable term. This keeps '$' from being misparsed as an
+    // anonymous bare-sigil state variable in expressions like `is($$o, ...)`.
+    if input.starts_with('$') {
+        return scalar_var(input);
+    }
+    if input.starts_with('&') {
+        return code_var(input);
     }
     // Handle $_ special variable
     if input.starts_with('_')
@@ -250,14 +259,6 @@ fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String>
     Ok((rest, normalize_raku_identifier(&full)))
 }
 
-fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
-    if let Ok((rest, name)) = parse_qualified_ident_with_hyphens(input) {
-        (rest, name)
-    } else {
-        (input, String::new())
-    }
-}
-
 fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, String) {
     while rest.starts_with(':') && !rest.starts_with("::") {
         let after_colon = &rest[1..];
@@ -277,6 +278,42 @@ fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, St
     (rest, name)
 }
 
+fn parse_interpolation_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
+    // Interpolation variable names should stop before Unicode superscript
+    // exponent markers (e.g. "$no²" -> var "no", then literal "²").
+    let mut rest = input;
+    let mut full = String::new();
+    let mut parsed_any = false;
+    while let Some(first) = rest.chars().next() {
+        if !(first.is_ascii_alphabetic() || first == '_') {
+            break;
+        }
+        let mut end = first.len_utf8();
+        for c in rest[end..].chars() {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if parsed_any {
+            full.push_str("::");
+        }
+        full.push_str(&rest[..end]);
+        rest = &rest[end..];
+        parsed_any = true;
+        if let Some(after_scope) = rest.strip_prefix("::") {
+            rest = after_scope;
+        } else {
+            break;
+        }
+    }
+    if parsed_any {
+        (rest, full)
+    } else {
+        (input, String::new())
+    }
+}
 /// Parse an @array variable reference.
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;

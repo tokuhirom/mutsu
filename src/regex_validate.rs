@@ -21,7 +21,23 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 continue;
             }
             // Valid metacharacters (includes word boundary markers «»)
-            '.' | '^' | '|' | '&' | '~' | '%' | '=' | ',' | '«' | '»' => {
+            '.' | '^' | '|' | '&' | '~' | '=' | ',' | '«' | '»' => {
+                prev_was_quantifier = false;
+            }
+            // % is a separator quantifier modifier, but %var is a hash interpolation (reserved)
+            '%' => {
+                if chars
+                    .peek()
+                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                {
+                    let msg = "The use of hash variables in regexes is reserved";
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                    let ex = Value::make_instance("X::Syntax::Reserved".to_string(), attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
                 prev_was_quantifier = false;
             }
             // Variable interpolation: $, @
@@ -29,6 +45,30 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // After the variable reference, '=' is valid (capture aliasing)
             '$' | '@' => {
                 prev_was_quantifier = false;
+                // Check for attribute interpolation: $!attr (prohibited in regex)
+                if c == '$' && chars.peek() == Some(&'!') {
+                    let mut symbol = String::from("$!");
+                    let mut peeked = chars.clone();
+                    peeked.next(); // skip '!'
+                    while let Some(&ch) = peeked.peek() {
+                        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                            symbol.push(ch);
+                            peeked.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    if symbol.len() > 2 {
+                        let msg = "Cannot interpolate attribute in a regex";
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                        attrs.insert("symbol".to_string(), Value::Str(symbol.to_string()));
+                        let ex = Value::make_instance("X::Attribute::Regex".to_string(), attrs);
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
                 skip_variable_ref(&mut chars);
             }
             // Quantifiers
@@ -101,7 +141,49 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Assertions/named rules — skip balanced <...>
             '<' => {
                 prev_was_quantifier = false;
-                skip_balanced(&mut chars, '<', '>');
+                // Collect the content to check for longname aliases
+                let mut content = String::new();
+                let mut depth = 1u32;
+                while let Some(&ch) = chars.peek() {
+                    chars.next();
+                    if ch == '<' {
+                        depth += 1;
+                        content.push(ch);
+                    } else if ch == '>' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                        content.push(ch);
+                    } else {
+                        content.push(ch);
+                    }
+                }
+                // Check for attribute interpolation: <$!attr>
+                let ct = content.trim();
+                if ct.starts_with("$!") && ct.len() > 2 {
+                    let msg = "Cannot interpolate attribute in a regex";
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                    attrs.insert("symbol".to_string(), Value::Str(ct.to_string()));
+                    let ex = Value::make_instance("X::Attribute::Regex".to_string(), attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+                // Check for longname alias: <Name::Path=alias>
+                if content.contains("::") && content.contains('=') {
+                    let msg = "Can't use a long name as a regex alias";
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                    let ex = Value::make_instance(
+                        "X::Syntax::Regex::Alias::LongName".to_string(),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
             }
             // Grouping — skip balanced content
             '[' => {
@@ -114,7 +196,46 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             }
             '{' => {
                 prev_was_quantifier = false;
-                skip_balanced(&mut chars, '{', '}');
+                // Collect content inside braces to check for $!attr
+                let mut content = String::new();
+                let mut depth = 1u32;
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' {
+                        content.push(ch);
+                        if let Some(esc) = chars.next() {
+                            content.push(esc);
+                        }
+                        continue;
+                    }
+                    if ch == '{' {
+                        depth += 1;
+                    } else if ch == '}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    content.push(ch);
+                }
+                // Check for $!attr inside the code block
+                if let Some(pos) = content.find("$!") {
+                    let after = &content[pos + 2..];
+                    let symbol_name: String = after
+                        .chars()
+                        .take_while(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                        .collect();
+                    if !symbol_name.is_empty() {
+                        let symbol = format!("$!{}", symbol_name);
+                        let msg = "Cannot interpolate attribute in a regex";
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                        attrs.insert("symbol".to_string(), Value::Str(symbol));
+                        let ex = Value::make_instance("X::Attribute::Regex".to_string(), attrs);
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
             }
             // Closing brackets — just skip
             ']' | ')' | '}' | '>' => {
@@ -132,6 +253,13 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Modifier colon in regex (e.g., :i, :s, :11, :my $var = expr;)
             ':' => {
                 prev_was_quantifier = false;
+                // Backtracking control modifier (e.g., [ ... ]:!).
+                // It applies to the preceding atom and is valid as a standalone
+                // modifier marker with no name.
+                if chars.peek() == Some(&'!') {
+                    chars.next();
+                    continue;
+                }
                 // Check if it's followed by digits only (unrecognized modifier)
                 let mut digits = String::new();
                 while let Some(&ch) = chars.peek() {
