@@ -1,5 +1,6 @@
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/array.t
+roast/S01-perl-5-integration/basic.t
 roast/S01-perl-5-integration/class.t
 roast/S01-perl-5-integration/context.t
 roast/S01-perl-5-integration/eval_lex.t
