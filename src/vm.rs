@@ -766,7 +766,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SetIntersect => {
-                self.exec_set_intersect_op();
+                self.exec_set_intersect_op()?;
                 *ip += 1;
             }
             OpCode::SetDiff => {
