@@ -496,7 +496,29 @@ impl Interpreter {
             });
             self.prepare_definite_return_slot(return_spec.as_deref());
             let let_mark = self.let_saves.len();
-            let result = self.eval_block_value(&data.body);
+            let result = match self.eval_block_value(&data.body) {
+                Err(mut e) if e.is_leave => {
+                    let routine_key = format!("{}::{}", data.package, data.name);
+                    let matches_frame = if let Some(target_id) = e.leave_callable_id {
+                        target_id == data.id
+                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
+                        target_routine == &routine_key
+                    } else {
+                        e.label.is_none()
+                    };
+                    if matches_frame {
+                        e.is_leave = false;
+                        e.is_last = false;
+                        if e.return_value.is_none() {
+                            e.return_value = Some(Value::Nil);
+                        }
+                        Err(e)
+                    } else {
+                        Err(e)
+                    }
+                }
+                other => other,
+            };
             self.block_stack.pop();
             self.routine_stack.pop();
             // Manage let saves based on sub result
@@ -539,6 +561,10 @@ impl Interpreter {
             {
                 return Ok(self.fail_error_to_failure_value(e));
             }
+            let result = match result {
+                Err(e) if e.is_leave => return Err(e),
+                other => other,
+            };
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, data.is_rw));
         }

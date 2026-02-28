@@ -850,6 +850,22 @@ impl Compiler {
         body: &[Stmt],
         label: &Option<String>,
     ) {
+        // Parser currently lowers labeled `do { ... }` / labeled bare blocks into
+        // a dummy single-iteration `for Nil` with a label. Preserve block semantics
+        // here so control flow like `LABEL.leave(...)` returns the block value.
+        if param.is_none()
+            && params.is_empty()
+            && matches!(
+                iterable,
+                Expr::ArrayLiteral(items)
+                    if items.len() == 1
+                        && matches!(items[0], Expr::Literal(Value::Nil))
+            )
+        {
+            self.compile_do_block_expr(body, label);
+            return;
+        }
+
         let (_pre_stmts, mut loop_body, _post_stmts) =
             self.expand_loop_phasers(body, label.as_deref());
         let param_idx = param

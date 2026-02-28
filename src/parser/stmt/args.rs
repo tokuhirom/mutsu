@@ -142,6 +142,30 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         messages: merge_expected_messages("expected first call argument", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
     })?;
+    let (rest_ws, _) = ws(rest)?;
+    if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
+        let invocant_expr = match first {
+            CallArg::Positional(expr) => expr,
+            _ => {
+                return Err(PError::expected(
+                    "positional argument before invocant colon",
+                ));
+            }
+        };
+        args.push(CallArg::Invocant(invocant_expr));
+        let after_colon = &rest_ws[1..];
+        let (after_colon, _) = ws(after_colon)?;
+        if after_colon.starts_with(';')
+            || after_colon.is_empty()
+            || after_colon.starts_with('}')
+            || after_colon.starts_with(')')
+        {
+            return Ok((after_colon, args));
+        }
+        let (after_args, mut more) = parse_remaining_call_args(after_colon)?;
+        args.append(&mut more);
+        return Ok((after_args, args));
+    }
     args.push(first);
     loop {
         let (r, _) = ws(rest)?;

@@ -46,7 +46,10 @@ pub struct RuntimeError {
     pub is_succeed: bool,
     pub is_fail: bool,
     pub is_warn: bool,
+    pub is_leave: bool,
     pub label: Option<String>,
+    pub leave_callable_id: Option<u64>,
+    pub leave_routine: Option<String>,
     /// Container name for Scalar container binding (e.g. when/default returning $a)
     pub container_name: Option<String>,
     /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
@@ -70,7 +73,10 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             is_warn: false,
+            is_leave: false,
             label: None,
+            leave_callable_id: None,
+            leave_routine: None,
             container_name: None,
             exception: None,
         }
@@ -97,7 +103,10 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             is_warn: false,
+            is_leave: false,
             label: None,
+            leave_callable_id: None,
+            leave_routine: None,
             container_name: None,
             exception: None,
         }

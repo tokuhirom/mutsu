@@ -104,6 +104,18 @@ impl Interpreter {
                 Ok(value)
             });
         }
+        // EVAL q[[ ... ]] sometimes carries one outer statement-list bracket pair.
+        if result.is_err()
+            && let Some(inner) = unwrap_bracketed_statements(trimmed)
+        {
+            result = parse_dispatch::parse_source(inner).and_then(|(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            });
+        }
         // EVAL should accept routine declarations in snippet context.
         // If unit-scope parsing rejects a declaration, retry inside an implicit block.
         if result.is_err()
@@ -368,4 +380,28 @@ fn unwrap_parenthesized_statements(code: &str) -> Option<&str> {
         return None;
     }
     Some(inner)
+}
+
+fn unwrap_bracketed_statements(code: &str) -> Option<&str> {
+    if !code.starts_with('[') || !code.ends_with(']') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (i, ch) in code.char_indices() {
+        if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            if depth == 0 && i + ch.len_utf8() != code.len() {
+                return None;
+            }
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    Some(&code[1..code.len() - 1])
 }

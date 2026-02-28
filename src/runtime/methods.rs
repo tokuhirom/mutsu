@@ -1637,6 +1637,10 @@ impl Interpreter {
             }
         }
 
+        if method == "leave" {
+            return self.builtin_leave_method(target, &args);
+        }
+
         // Primary method dispatch by name
         match method {
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {

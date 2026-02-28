@@ -2093,7 +2093,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
     "dd", "exit", "proceed", "succeed", "push", "pop", "shift", "unshift", "append", "prepend",
-    "elems", "chars", "defined", "warn", "EVAL", "EVALFILE",
+    "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.
