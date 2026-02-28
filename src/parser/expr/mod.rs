@@ -1264,6 +1264,53 @@ mod tests {
     }
 
     #[test]
+    fn parse_unicode_set_union_infix() {
+        let (rest, expr) = expression("1 ∪ 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::SetUnion,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_whatever_with_unicode_set_union_infix() {
+        let (rest, expr) = expression("* ∪ *").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { body, .. }
+                if matches!(
+                    body.as_slice(),
+                    [Stmt::Expr(Expr::Binary { op: TokenKind::SetUnion, .. })]
+                )
+        ));
+    }
+
+    #[test]
+    fn parse_zip_metaop_with_set_union_ascii() {
+        let (rest, expr) = expression("1..3 Z(|) 2..4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "Z" && op == "(|)"
+        ));
+    }
+
+    #[test]
+    fn parse_zip_metaop_with_set_union_unicode() {
+        let (rest, expr) = expression("1..3 Z∪ 2..4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "Z" && op == "∪"
+        ));
+    }
+
+    #[test]
     fn parse_pair_lvalue_colonparen_form() {
         let (rest, expr) = expression(":(:$a is raw)").unwrap();
         assert_eq!(rest, "");
