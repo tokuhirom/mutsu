@@ -192,26 +192,260 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn builtin_min(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        Ok(args
-            .iter()
-            .cloned()
-            .min_by(|a, b| match (a, b) {
-                (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                _ => a.to_string_value().cmp(&b.to_string_value()),
-            })
-            .unwrap_or(Value::Nil))
+    fn failure_exception_from_value(value: &Value) -> Option<Value> {
+        match value {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => attributes.get("exception").cloned(),
+            Value::Mixin(inner, mixins) => {
+                if let Some(mixed) = mixins.get("Failure")
+                    && let Some(ex) = Self::failure_exception_from_value(mixed)
+                {
+                    return Some(ex);
+                }
+                Self::failure_exception_from_value(inner)
+            }
+            _ => None,
+        }
     }
 
-    pub(super) fn builtin_max(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        Ok(args
+    fn is_failure_like(value: &Value) -> bool {
+        Self::failure_exception_from_value(value).is_some()
+    }
+
+    fn extrema_from_values(
+        &mut self,
+        args: &[Value],
+        want_max: bool,
+    ) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Ok(Value::Nil);
+        }
+
+        let failures: Vec<Value> = args
             .iter()
+            .filter(|v| Self::is_failure_like(v))
             .cloned()
-            .max_by(|a, b| match (a, b) {
-                (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                _ => a.to_string_value().cmp(&b.to_string_value()),
+            .collect();
+        if failures.len() >= 2
+            && let Some(ex) = Self::failure_exception_from_value(&failures[0])
+        {
+            let mut err = RuntimeError::new(ex.to_string_value());
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        if failures.len() == 1 {
+            return Ok(failures[0].clone());
+        }
+
+        let mut filtered: Vec<Value> = args
+            .iter()
+            .filter(|v| !matches!(v, Value::Package(name) if name == "Any"))
+            .cloned()
+            .collect();
+        if filtered.is_empty() {
+            return Ok(args[0].clone());
+        }
+        let mut best = filtered.remove(0);
+        for value in filtered {
+            let cmp = crate::runtime::compare_values(&value, &best);
+            if (want_max && cmp > 0) || (!want_max && cmp < 0) {
+                best = value;
+            }
+        }
+        Ok(best)
+    }
+
+    fn extrema_from_hash(
+        &mut self,
+        map: &std::sync::Arc<HashMap<String, Value>>,
+        by: Option<Value>,
+        want_max: bool,
+    ) -> Result<Value, RuntimeError> {
+        let mut best_pair: Option<Value> = None;
+        let mut best_key: Option<Value> = None;
+
+        for (k, v) in map.as_ref() {
+            let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+            let key = if let Some(by_callable) = &by {
+                match self.call_sub_value(by_callable.clone(), vec![pair.clone()], true) {
+                    Ok(value) => value,
+                    Err(_) => v.clone(),
+                }
+            } else {
+                Value::Str(k.clone())
+            };
+
+            let replace = if let Some(current_key) = &best_key {
+                let cmp = crate::runtime::compare_values(&key, current_key);
+                (want_max && cmp > 0) || (!want_max && cmp < 0)
+            } else {
+                true
+            };
+            if replace {
+                best_pair = Some(pair);
+                best_key = Some(key);
+            }
+        }
+
+        Ok(best_pair.unwrap_or(Value::Nil))
+    }
+
+    pub(super) fn builtin_min(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let by = args.iter().find_map(|arg| match arg {
+            Value::Pair(name, value) if name == "by" => Some((**value).clone()),
+            Value::ValuePair(key, value)
+                if matches!(key.as_ref(), Value::Str(name) if name == "by") =>
+            {
+                Some((**value).clone())
+            }
+            _ => None,
+        });
+        let positional: Vec<Value> = args
+            .iter()
+            .filter(|arg| {
+                !matches!(arg, Value::Pair(name, _) if name == "by")
+                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
             })
-            .unwrap_or(Value::Nil))
+            .cloned()
+            .collect();
+
+        if positional.len() == 1
+            && let Value::Hash(map) = &positional[0]
+        {
+            return self.extrema_from_hash(map, by, false);
+        }
+        if positional.len() == 1
+            && let Value::Instance { class_name, .. } = &positional[0]
+            && class_name == "Hash"
+        {
+            let method_args = by.map_or_else(Vec::new, |v| vec![v]);
+            return self.call_method_with_values(positional[0].clone(), "min", method_args);
+        }
+        self.extrema_from_values(&positional, false)
+    }
+
+    pub(super) fn builtin_max(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let by = args.iter().find_map(|arg| match arg {
+            Value::Pair(name, value) if name == "by" => Some((**value).clone()),
+            Value::ValuePair(key, value)
+                if matches!(key.as_ref(), Value::Str(name) if name == "by") =>
+            {
+                Some((**value).clone())
+            }
+            _ => None,
+        });
+        let positional: Vec<Value> = args
+            .iter()
+            .filter(|arg| {
+                !matches!(arg, Value::Pair(name, _) if name == "by")
+                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+            })
+            .cloned()
+            .collect();
+
+        if positional.len() == 1
+            && let Value::Hash(map) = &positional[0]
+        {
+            return self.extrema_from_hash(map, by, true);
+        }
+        if positional.len() == 1
+            && let Value::Instance { class_name, .. } = &positional[0]
+            && class_name == "Hash"
+        {
+            let method_args = by.map_or_else(Vec::new, |v| vec![v]);
+            return self.call_method_with_values(positional[0].clone(), "max", method_args);
+        }
+        self.extrema_from_values(&positional, true)
+    }
+
+    fn collect_minmax_candidates(value: &Value, out: &mut Vec<Value>) {
+        match value {
+            Value::Range(a, b)
+            | Value::RangeExcl(a, b)
+            | Value::RangeExclStart(a, b)
+            | Value::RangeExclBoth(a, b) => {
+                out.push(Value::Int(*a));
+                out.push(Value::Int(*b));
+            }
+            Value::GenericRange { start, end, .. } => {
+                out.push((**start).clone());
+                out.push((**end).clone());
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                out.extend(items.iter().cloned());
+            }
+            other => out.push(other.clone()),
+        }
+    }
+
+    fn make_inclusive_range_value(left: Value, right: Value) -> Value {
+        match (&left, &right) {
+            (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
+            (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
+                Value::Range(*a, i64::MAX)
+            }
+            (Value::Int(a), Value::Whatever) => Value::Range(*a, i64::MAX),
+            (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
+                Value::Range(i64::MIN, *b)
+            }
+            (Value::Str(a), Value::Str(b)) => Value::GenericRange {
+                start: Box::new(Value::Str(a.clone())),
+                end: Box::new(Value::Str(b.clone())),
+                excl_start: false,
+                excl_end: false,
+            },
+            (l, r) if l.is_numeric() && r.is_numeric() => Value::GenericRange {
+                start: Box::new(l.clone()),
+                end: Box::new(r.clone()),
+                excl_start: false,
+                excl_end: false,
+            },
+            (Value::Str(a), r) if r.is_numeric() => Value::GenericRange {
+                start: Box::new(Value::Str(a.clone())),
+                end: Box::new(r.clone()),
+                excl_start: false,
+                excl_end: false,
+            },
+            (l, Value::Str(b)) if l.is_numeric() => Value::GenericRange {
+                start: Box::new(l.clone()),
+                end: Box::new(Value::Str(b.clone())),
+                excl_start: false,
+                excl_end: false,
+            },
+            (_, Value::Sub(_)) | (Value::Sub(_), _) => Value::GenericRange {
+                start: Box::new(left),
+                end: Box::new(right),
+                excl_start: false,
+                excl_end: false,
+            },
+            _ => Value::Nil,
+        }
+    }
+
+    pub(super) fn builtin_minmax(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut candidates = Vec::new();
+        for arg in args {
+            Self::collect_minmax_candidates(arg, &mut candidates);
+        }
+        if candidates.is_empty() {
+            return Ok(Value::Nil);
+        }
+
+        let mut min_value = candidates[0].clone();
+        let mut max_value = candidates[0].clone();
+        for value in candidates.iter().skip(1) {
+            if crate::runtime::compare_values(value, &min_value) < 0 {
+                min_value = value.clone();
+            }
+            if crate::runtime::compare_values(value, &max_value) > 0 {
+                max_value = value.clone();
+            }
+        }
+
+        Ok(Self::make_inclusive_range_value(min_value, max_value))
     }
 
     pub(super) fn builtin_shift(&self, args: &[Value]) -> Result<Value, RuntimeError> {

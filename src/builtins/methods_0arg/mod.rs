@@ -1283,6 +1283,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
@@ -1295,6 +1296,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
@@ -1527,7 +1529,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             attrs.insert("bytes".to_string(), Value::array(bytes));
             Some(Ok(Value::make_instance("Buf".to_string(), attrs)))
         }
-        "sink" => Some(Ok(Value::Nil)),
+        "sink" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => {
+                if let Some(ex) = attributes.get("exception") {
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex.clone()));
+                    Some(Err(err))
+                } else {
+                    Some(Ok(Value::Nil))
+                }
+            }
+            _ => Some(Ok(Value::Nil)),
+        },
         "item" => Some(Ok(target.clone())),
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array

@@ -2033,6 +2033,24 @@ impl Interpreter {
                 return self.eval_map_over_items(args.first().cloned(), items);
             }
             "max" | "min" => {
+                if matches!(target, Value::Hash(_)) {
+                    let mut call_args = vec![target.clone()];
+                    if let Some(first) = args.first() {
+                        if matches!(
+                            first,
+                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        ) {
+                            call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                        } else {
+                            call_args.extend(args.clone());
+                        }
+                    }
+                    return if method == "max" {
+                        self.builtin_max(&call_args)
+                    } else {
+                        self.builtin_min(&call_args)
+                    };
+                }
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {
@@ -4560,7 +4578,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let len = text.chars().count() as i64;
         if start < 0 {
-            return Err(RuntimeError::new("X::OutOfRange"));
+            return Err(self.out_of_range_error(Value::Int(start)));
         }
         if start > len {
             return Ok(Value::Nil);
@@ -4621,20 +4639,35 @@ impl Interpreter {
             .collect()
     }
 
+    fn out_of_range_error(&self, got: Value) -> RuntimeError {
+        let mut attrs = HashMap::new();
+        attrs.insert("got".to_string(), got);
+        attrs.insert(
+            "message".to_string(),
+            Value::Str("X::OutOfRange".to_string()),
+        );
+        let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+        let mut err = RuntimeError::new("X::OutOfRange".to_string());
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     fn value_to_position(&self, pos: &Value) -> Result<i64, RuntimeError> {
         match pos {
             Value::Int(i) => Ok(*i),
             Value::Num(f) => {
                 if f.abs() > i64::MAX as f64 {
-                    Err(RuntimeError::new("X::OutOfRange"))
+                    Err(self.out_of_range_error(Value::Num(*f)))
                 } else {
                     Ok(*f as i64)
                 }
             }
             Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
             Value::BigInt(b) => {
-                if b > &num_bigint::BigInt::from(i64::MAX) {
-                    Err(RuntimeError::new("X::OutOfRange"))
+                if b > &num_bigint::BigInt::from(i64::MAX)
+                    || b < &num_bigint::BigInt::from(i64::MIN)
+                {
+                    Err(self.out_of_range_error(Value::BigInt(b.clone())))
                 } else {
                     Ok(b.to_string().parse::<i64>().unwrap_or(0))
                 }
@@ -4658,7 +4691,7 @@ impl Interpreter {
         };
         let len = text.chars().count() as i64;
         if start < 0 || start > len {
-            return Err(RuntimeError::new("X::OutOfRange"));
+            return Err(self.out_of_range_error(Value::Int(start)));
         }
         let substr: String = text
             .chars()

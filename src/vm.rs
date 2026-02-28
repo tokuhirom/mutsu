@@ -21,17 +21,7 @@ mod vm_string_regex_ops;
 mod vm_var_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
-    match (left, right) {
-        (Value::Int(a), Value::Int(b)) => a.cmp(b),
-        (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Int(a), Value::Num(b)) => (*a as f64)
-            .partial_cmp(b)
-            .unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Num(a), Value::Int(b)) => a
-            .partial_cmp(&(*b as f64))
-            .unwrap_or(std::cmp::Ordering::Equal),
-        _ => left.to_string_value().cmp(&right.to_string_value()),
-    }
+    crate::runtime::compare_values(left, right).cmp(&0)
 }
 
 pub(crate) struct VM {
