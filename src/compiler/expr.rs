@@ -860,14 +860,46 @@ impl Compiler {
                 self.code.emit(OpCode::CallMethodDynamic { arity });
             }
             // Hyper method call: target».method(args)
-            Expr::HyperMethodCall { target, name, args } => {
+            Expr::HyperMethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } => {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::HyperMethodCall { name_idx, arity });
+                let modifier_idx =
+                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                self.code.emit(OpCode::HyperMethodCall {
+                    name_idx,
+                    arity,
+                    modifier_idx,
+                    quoted: *quoted,
+                });
+            }
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                modifier,
+            } => {
+                self.compile_expr(target);
+                self.compile_expr(name_expr);
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_method_arg(arg);
+                }
+                let modifier_idx =
+                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                self.code.emit(OpCode::HyperMethodCallDynamic {
+                    arity,
+                    modifier_idx,
+                });
             }
             // Indexing
             Expr::Index { target, index } => {

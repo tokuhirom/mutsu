@@ -90,6 +90,7 @@ struct RoleDef {
     attributes: Vec<(String, bool, Option<Expr>, bool)>,
     methods: HashMap<String, Vec<MethodDef>>,
     is_stub_role: bool,
+    is_hidden: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +141,7 @@ struct IoHandleState {
     mode: IoHandleMode,
     path: Option<String>,
     line_separators: Vec<Vec<u8>>,
+    line_chomp: bool,
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
@@ -308,8 +310,10 @@ pub struct Interpreter {
     hidden_classes: HashSet<String>,
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
+    class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
     roles: HashMap<String, RoleDef>,
     role_parents: HashMap<String, Vec<String>>,
+    role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
@@ -1162,6 +1166,7 @@ impl Interpreter {
             hidden_classes: HashSet::new(),
             hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
+            class_composed_roles: HashMap::new(),
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -1170,6 +1175,7 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
+                        is_hidden: false,
                     },
                 );
                 roles.insert(
@@ -1178,6 +1184,7 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
+                        is_hidden: false,
                     },
                 );
                 roles.insert(
@@ -1186,11 +1193,13 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
+                        is_hidden: false,
                     },
                 );
                 roles
             },
             role_parents: HashMap::new(),
+            role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
@@ -2069,8 +2078,10 @@ impl Interpreter {
             hidden_classes: self.hidden_classes.clone(),
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
+            class_composed_roles: self.class_composed_roles.clone(),
             roles: self.roles.clone(),
             role_parents: self.role_parents.clone(),
+            role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
