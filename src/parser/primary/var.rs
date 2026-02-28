@@ -73,6 +73,15 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             };
         }
     }
+    // Handle nested scalar dereference syntax ($$x / $&f) by parsing the
+    // inner variable term. This keeps '$' from being misparsed as an
+    // anonymous bare-sigil state variable in expressions like `is($$o, ...)`.
+    if input.starts_with('$') {
+        return scalar_var(input);
+    }
+    if input.starts_with('&') {
+        return code_var(input);
+    }
     // Handle $_ special variable
     if input.starts_with('_')
         && (input.len() == 1
