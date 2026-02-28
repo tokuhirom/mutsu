@@ -3719,6 +3719,15 @@ impl Interpreter {
             }
         }
 
+        if let Some(callable) = self.env.get(&format!("&{}", method)).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            return self.call_sub_value(callable, args, true);
+        }
+
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target {
@@ -7388,6 +7397,7 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
+                let mut positional_ctor_args: Vec<Value> = Vec::new();
                 for (attr_name, _is_public, default, _is_rw) in
                     self.collect_class_attributes(class_key)
                 {
@@ -7415,8 +7425,19 @@ impl Interpreter {
                                 }
                             }
                         }
-                        _ => {}
+                        _ => {
+                            positional_ctor_args.push(val.clone());
+                        }
                     }
+                }
+                if class_mro.iter().any(|name| name == "Array")
+                    && !attrs.contains_key("__array_items")
+                    && !positional_ctor_args.is_empty()
+                {
+                    attrs.insert(
+                        "__array_items".to_string(),
+                        Value::array(positional_ctor_args),
+                    );
                 }
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
