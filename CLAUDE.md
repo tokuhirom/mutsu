@@ -268,30 +268,36 @@ Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI
 - **`ai-next-roast.sh`** — Continuously picks random failing roast tests (via `pick-next-roast.sh`), coordinates with other instances via `wip.txt` to avoid duplicate work, and delegates each test to `ai-run-roast.sh`.
 - **`ai-supervisor.sh`** — Monitors open PRs for merge conflicts and CI failures. Dispatches agents to rebase/fix them. When idle, triggers roast history updates. Polls every 10 minutes.
 
-### Starting the fleet
+### Starting the fleet (tmux)
+
+Each worker and the supervisor should run in its own tmux window so that logs are visible and manageable.
 
 ```bash
-# Launch N workers (each picks and fixes roast tests continuously)
-dotenvx run -- ./scripts/ai-next-roast.sh --agent codex &
-dotenvx run -- ./scripts/ai-next-roast.sh --agent codex &
-dotenvx run -- ./scripts/ai-next-roast.sh --agent codex &
+# Launch N workers in separate tmux windows
+tmux new-window -n 'codex-1' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent codex'
+tmux new-window -n 'codex-2' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent codex'
+tmux new-window -n 'codex-3' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent codex'
+tmux new-window -n 'claude'  -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-next-roast.sh --agent claude'
 
-# Launch 1 supervisor (fixes broken PRs, updates history)
-dotenvx run -- ./scripts/ai-supervisor.sh --agent codex &
+# Launch 1 supervisor
+tmux new-window -n 'supervisor' -d 'cd /path/to/mutsu && dotenvx run -- ./scripts/ai-supervisor.sh --agent codex'
 ```
 
 ### Monitoring
 
-- **Worker status**: `ps aux | grep ai-next-roast`
+- **List windows**: `tmux list-windows -F '#{window_index} #{window_name}'`
+- **Read worker output**: `tmux capture-pane -t ":N" -p -S -30` (N = window index)
+- **Worker processes**: `ps aux | grep ai-next-roast`
 - **PR progress**: `gh pr list --state open`
 - **Supervisor status**: `dotenvx run -- ./scripts/ai-supervisor.sh --list`
 - **Agent logs** (claude): pipe through `python3 scripts/stream-json-pretty.py`
-- **Restart dead workers**: re-run the `ai-next-roast.sh` command
+- **Restart dead workers**: `tmux send-keys -t ":N" 'dotenvx run -- ./scripts/ai-next-roast.sh --agent codex' Enter`
 
 ### Parent AI responsibilities
 
-- Periodically check that child processes are alive and restart any that died
-- Review agent logs and identify patterns in failures
+- Periodically run `tmux capture-pane -t ":N" -p -S -30` for each worker window to check progress
+- Check that child processes are alive (`tmux list-panes -t ":N" -F '#{pane_pid} #{pane_dead}'`) and restart any that died
+- Review captured logs and identify patterns in failures
 - Improve prompts and scripts based on observed failure modes
 - Record failure reasons in `TODO_roast/` to accumulate knowledge
 - Monitor `wip.txt` for stale entries (agents that died mid-task)
