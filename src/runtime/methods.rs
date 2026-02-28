@@ -1,8 +1,6 @@
 use super::*;
 use crate::ast::CallArg;
-use crate::value::signature::{
-    make_params_value_from_param_defs, make_signature_value, param_defs_to_sig_info,
-};
+use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
 impl Interpreter {
     pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
@@ -136,9 +134,25 @@ impl Interpreter {
                     }
                 }
                 Expr::MethodCall { target, args, .. }
-                | Expr::DynamicMethodCall { target, args, .. }
                 | Expr::HyperMethodCall { target, args, .. } => {
                     scan_expr(target, positional, named);
+                    for a in args {
+                        scan_expr(a, positional, named);
+                    }
+                }
+                Expr::DynamicMethodCall {
+                    target,
+                    name_expr,
+                    args,
+                }
+                | Expr::HyperMethodCallDynamic {
+                    target,
+                    name_expr,
+                    args,
+                    ..
+                } => {
+                    scan_expr(target, positional, named);
+                    scan_expr(name_expr, positional, named);
                     for a in args {
                         scan_expr(a, positional, named);
                     }
@@ -346,6 +360,28 @@ impl Interpreter {
         }
     }
 
+    fn varref_parts(value: &Value) -> Option<(String, Value)> {
+        if let Value::Capture { positional, named } = value
+            && positional.is_empty()
+            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            return Some((name.clone(), inner.clone()));
+        }
+        None
+    }
+
+    fn var_target_from_meta_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
+            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
+                Some(Value::Str(name)) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn candidate_matches_call_args(&mut self, candidate: &Value, args: &[Value]) -> bool {
         match candidate {
             Value::Sub(data) => {
@@ -494,7 +530,59 @@ impl Interpreter {
         make_signature_value(info)
     }
 
-    fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
+    fn signature_required_positional_count(info: &crate::value::signature::SigInfo) -> i64 {
+        info.params
+            .iter()
+            .filter(|p| !p.named && !p.slurpy && !p.has_default && !p.optional_marker)
+            .count() as i64
+    }
+
+    fn signature_positional_count(info: &crate::value::signature::SigInfo) -> Option<i64> {
+        let mut count = 0i64;
+        for p in &info.params {
+            if p.named || (p.slurpy && p.sigil == '%') {
+                continue;
+            }
+            if p.slurpy {
+                return None;
+            }
+            count += 1;
+        }
+        Some(count)
+    }
+
+    fn signature_count_value(info: &crate::value::signature::SigInfo) -> Value {
+        match Self::signature_positional_count(info) {
+            Some(count) => Value::Int(count),
+            None => Value::Num(f64::INFINITY),
+        }
+    }
+
+    fn candidate_arity_value(infos: &[crate::value::signature::SigInfo]) -> Value {
+        let arity = infos
+            .iter()
+            .map(Self::signature_required_positional_count)
+            .min()
+            .unwrap_or(0);
+        Value::Int(arity)
+    }
+
+    fn candidate_count_value(infos: &[crate::value::signature::SigInfo]) -> Value {
+        let mut max_count = 0i64;
+        for info in infos {
+            match Self::signature_positional_count(info) {
+                Some(count) => {
+                    if count > max_count {
+                        max_count = count;
+                    }
+                }
+                None => return Value::Num(f64::INFINITY),
+            }
+        }
+        Value::Int(max_count)
+    }
+
+    pub(super) fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
         let shape_val = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
             _ => None,
@@ -536,7 +624,7 @@ impl Interpreter {
         if dims.is_empty() { None } else { Some(dims) }
     }
 
-    fn make_shaped_array(dims: &[usize]) -> Value {
+    pub(super) fn make_shaped_array(dims: &[usize]) -> Value {
         if dims.is_empty() {
             return Value::Nil;
         }
@@ -569,7 +657,7 @@ impl Interpreter {
         Some(shape)
     }
 
-    fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
+    pub(super) fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
         let base_end = name.find('[')?;
         if !name.ends_with(']') {
             return None;
@@ -585,12 +673,139 @@ impl Interpreter {
         Some((base, args))
     }
 
+    pub(crate) fn call_method_all_with_values(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id: target_id,
+        } = &target
+        {
+            if let Some(private_method_name) = method.strip_prefix('!')
+                && let Some((resolved_owner, method_def)) =
+                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+            {
+                let (result, updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                return Ok(vec![result]);
+            }
+
+            if let Some((owner_class, private_method_name)) = method.split_once("::")
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
+                    class_name,
+                    owner_class,
+                    private_method_name,
+                    &args,
+                )
+            {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
+                let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                    || self
+                        .class_trusts
+                        .get(&resolved_owner)
+                        .is_some_and(|trusted| {
+                            caller_class
+                                .as_ref()
+                                .is_some_and(|caller| trusted.contains(caller))
+                        });
+                if !caller_allowed {
+                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+                }
+                let (result, updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                return Ok(vec![result]);
+            }
+
+            let candidates = self.resolve_all_methods_with_owner(class_name, method, &args);
+            if !candidates.is_empty() {
+                let mut attrs = (**attributes).clone();
+                let mut out = Vec::with_capacity(candidates.len());
+                for (resolved_owner, method_def) in candidates {
+                    let (result, updated) = self.run_instance_method_resolved(
+                        class_name,
+                        &resolved_owner,
+                        method_def,
+                        attrs,
+                        args.clone(),
+                        Some(target.clone()),
+                    )?;
+                    attrs = updated;
+                    out.push(result);
+                }
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, attrs);
+                return Ok(out);
+            }
+        }
+
+        Ok(vec![self.call_method_with_values(target, method, args)?])
+    }
+
+    pub(crate) fn overwrite_array_items_by_identity_for_vm(
+        &mut self,
+        needle: &std::sync::Arc<Vec<Value>>,
+        updated_items: Vec<Value>,
+        is_array: bool,
+    ) {
+        self.overwrite_array_bindings_by_identity(
+            needle,
+            Value::Array(std::sync::Arc::new(updated_items), is_array),
+        );
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let mut args = args;
+        if matches!(method, "log" | "exp" | "atan2") {
+            for arg in &mut args {
+                if !matches!(arg, Value::Instance { .. }) {
+                    continue;
+                }
+                let original = arg.clone();
+                if let Ok(coerced) = self
+                    .call_method_with_values(original.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(original.clone(), "Bridge", vec![]))
+                {
+                    *arg = coerced;
+                }
+            }
+        }
+        if matches!(method, "arity" | "count")
+            && args.is_empty()
+            && let Some(sig_info) = extract_sig_info(&target)
+        {
+            return Ok(if method == "arity" {
+                Value::Int(Self::signature_required_positional_count(&sig_info))
+            } else {
+                Self::signature_count_value(&sig_info)
+            });
+        }
+
         if let Value::Instance {
             class_name,
             attributes,
@@ -610,13 +825,62 @@ impl Interpreter {
                 _ => {}
             }
         }
-        if matches!(method, "max" | "min" | "lines")
+        if method == "gist" && args.is_empty() {
+            fn collection_contains_instance(value: &Value) -> bool {
+                match value {
+                    Value::Instance { .. } => true,
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        items.iter().any(collection_contains_instance)
+                    }
+                    Value::Hash(map) => map.values().any(collection_contains_instance),
+                    _ => false,
+                }
+            }
+            fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
+                match value {
+                    Value::Nil => "Nil".to_string(),
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        let inner = items
+                            .iter()
+                            .map(|item| gist_item(interp, item))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        format!("({inner})")
+                    }
+                    other => match interp.call_method_with_values(other.clone(), "gist", vec![]) {
+                        Ok(Value::Str(s)) => s,
+                        Ok(v) => v.to_string_value(),
+                        Err(_) => other.to_string_value(),
+                    },
+                }
+            }
+            match &target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
+                    if items.iter().any(collection_contains_instance) =>
+                {
+                    let inner = items
+                        .iter()
+                        .map(|item| gist_item(self, item))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    return Ok(Value::Str(format!("({inner})")));
+                }
+                _ => {}
+            }
+        }
+        if matches!(method, "max" | "min" | "lines" | "delayed")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
                 "Cannot call .{} on a Supply type object",
                 method
             )));
+        }
+        if method == "delayed"
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+            && args.first().is_some_and(|delay| delay.to_f64() <= 0.0)
+        {
+            return Ok(target);
         }
         if let Value::Array(items, is_array) = &target {
             match (method, args.as_slice()) {
@@ -678,6 +942,10 @@ impl Interpreter {
                         "Cannot delete from a natively typed array",
                     ));
                 }
+                ("clone", _) => {
+                    let cloned = items.to_vec();
+                    return Ok(Value::Array(Arc::new(cloned), *is_array));
+                }
                 _ => {}
             }
         }
@@ -717,6 +985,18 @@ impl Interpreter {
                     continue;
                 };
                 role_has_method = true;
+                let role_param_bindings: Vec<(String, Value)> = mixins
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        key.strip_prefix("__mutsu_role_param__")
+                            .map(|name| (name.to_string(), value.clone()))
+                    })
+                    .collect();
+                let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
+                for (name, value) in &role_param_bindings {
+                    saved_role_params.push((name.clone(), self.env.get(name).cloned()));
+                    self.env.insert(name.clone(), value.clone());
+                }
                 for def in overloads {
                     if def.is_private || !self.method_args_match(&args, &def.param_defs) {
                         continue;
@@ -728,18 +1008,6 @@ impl Interpreter {
                                 .map(|attr| (attr.to_string(), value.clone()))
                         })
                         .collect();
-                    let role_param_bindings: Vec<(String, Value)> = mixins
-                        .iter()
-                        .filter_map(|(key, value)| {
-                            key.strip_prefix("__mutsu_role_param__")
-                                .map(|name| (name.to_string(), value.clone()))
-                        })
-                        .collect();
-                    let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
-                    for (name, value) in &role_param_bindings {
-                        saved_role_params.push((name.clone(), self.env.get(name).cloned()));
-                        self.env.insert(name.clone(), value.clone());
-                    }
                     let method_result = self.run_instance_method_resolved(
                         &role_name,
                         &role_name,
@@ -748,15 +1016,22 @@ impl Interpreter {
                         args,
                         Some(target.clone()),
                     );
-                    for (name, previous) in saved_role_params {
+                    for (name, previous) in &saved_role_params {
                         if let Some(prev) = previous {
-                            self.env.insert(name, prev);
+                            self.env.insert(name.clone(), prev.clone());
                         } else {
-                            self.env.remove(&name);
+                            self.env.remove(name);
                         }
                     }
                     let (result, _updated) = method_result?;
                     return Ok(result);
+                }
+                for (name, previous) in saved_role_params {
+                    if let Some(prev) = previous {
+                        self.env.insert(name, prev);
+                    } else {
+                        self.env.remove(&name);
+                    }
                 }
             }
             if role_has_method {
@@ -837,6 +1112,192 @@ impl Interpreter {
             }
         }
 
+        // Enum type-object dispatch for Bool and user enums (e.g. `Order.roll`).
+        let enum_type_name = match &target {
+            Value::Package(type_name) => Some(type_name),
+            Value::Str(type_name) if self.enum_types.contains_key(type_name) => Some(type_name),
+            Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
+                Value::Enum { enum_type, .. } if self.enum_types.contains_key(enum_type) => {
+                    Some(enum_type)
+                }
+                _ => None,
+            }),
+            _ => None,
+        };
+        if let Some(type_name) = enum_type_name
+            && matches!(method, "pick" | "roll")
+            && args.len() <= 1
+        {
+            let pool: Option<Vec<Value>> = if type_name == "Bool" {
+                Some(vec![Value::Bool(false), Value::Bool(true)])
+            } else {
+                self.enum_types.get(type_name).map(|variants| {
+                    variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, value))| Value::Enum {
+                            enum_type: type_name.clone(),
+                            key: key.clone(),
+                            value: *value,
+                            index,
+                        })
+                        .collect()
+                })
+            };
+            if let Some(pool) = pool {
+                if pool.is_empty() {
+                    return Ok(Value::Nil);
+                }
+                if args.is_empty() {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    return Ok(pool[idx].clone());
+                }
+                let count = match &args[0] {
+                    Value::Int(i) if *i > 0 => Some(*i as usize),
+                    Value::Int(_) => Some(0),
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                    Value::Whatever => None,
+                    Value::Str(s) => s.trim().parse::<i64>().ok().map(|n| n.max(0) as usize),
+                    _ => None,
+                };
+                let Some(count) = count else {
+                    if method == "pick" {
+                        let mut items = pool.clone();
+                        let len = items.len();
+                        for i in (1..len).rev() {
+                            let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64)
+                                as usize
+                                % (i + 1);
+                            items.swap(i, j);
+                        }
+                        return Ok(Value::array(items));
+                    }
+                    let generated = 1024usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
+                        let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64)
+                            as usize
+                            % pool.len();
+                        out.push(pool[idx].clone());
+                    }
+                    return Ok(Value::LazyList(std::sync::Arc::new(
+                        crate::value::LazyList {
+                            body: vec![],
+                            env: HashMap::new(),
+                            cache: std::sync::Mutex::new(Some(out)),
+                        },
+                    )));
+                };
+                if method == "pick" {
+                    if count == 0 {
+                        return Ok(Value::array(Vec::new()));
+                    }
+                    let mut items = pool.clone();
+                    let mut out = Vec::with_capacity(count.min(items.len()));
+                    for _ in 0..count.min(items.len()) {
+                        let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                            as usize
+                            % items.len();
+                        out.push(items.swap_remove(idx));
+                    }
+                    return Ok(Value::array(out));
+                }
+                if count == 0 {
+                    return Ok(Value::array(Vec::new()));
+                }
+                if count == 1 {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    return Ok(pool[idx].clone());
+                }
+                let mut out = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                        % pool.len();
+                    out.push(pool[idx].clone());
+                }
+                return Ok(Value::array(out));
+            }
+        }
+
+        // String pick/roll (character-wise), used when VM bypasses native fast path.
+        if let Value::Str(s) = &target
+            && matches!(method, "pick" | "roll")
+            && args.len() <= 1
+        {
+            let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+            if chars.is_empty() {
+                return Ok(if args.is_empty() {
+                    Value::Nil
+                } else {
+                    Value::array(Vec::new())
+                });
+            }
+            if args.is_empty() {
+                let idx = (crate::builtins::rng::builtin_rand() * chars.len() as f64) as usize
+                    % chars.len();
+                return Ok(chars[idx].clone());
+            }
+            let count = match &args[0] {
+                Value::Int(i) if *i > 0 => Some(*i as usize),
+                Value::Int(_) => Some(0),
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Whatever => None,
+                Value::Str(n) => n.trim().parse::<i64>().ok().map(|v| v.max(0) as usize),
+                _ => None,
+            };
+            let Some(count) = count else {
+                if method == "pick" {
+                    let mut items = chars.clone();
+                    let len = items.len();
+                    for i in (1..len).rev() {
+                        let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize
+                            % (i + 1);
+                        items.swap(i, j);
+                    }
+                    return Ok(Value::array(items));
+                }
+                let generated = 1024usize;
+                let mut out = Vec::with_capacity(generated);
+                for _ in 0..generated {
+                    let idx = (crate::builtins::rng::builtin_rand() * chars.len() as f64) as usize
+                        % chars.len();
+                    out.push(chars[idx].clone());
+                }
+                return Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList {
+                        body: vec![],
+                        env: HashMap::new(),
+                        cache: std::sync::Mutex::new(Some(out)),
+                    },
+                )));
+            };
+            if method == "pick" {
+                if count == 0 {
+                    return Ok(Value::array(Vec::new()));
+                }
+                let mut items = chars.clone();
+                let mut out = Vec::with_capacity(count.min(items.len()));
+                for _ in 0..count.min(items.len()) {
+                    let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize
+                        % items.len();
+                    out.push(items.swap_remove(idx));
+                }
+                return Ok(Value::array(out));
+            }
+            if count == 0 {
+                return Ok(Value::array(Vec::new()));
+            }
+            let mut out = Vec::with_capacity(count);
+            for _ in 0..count {
+                let idx = (crate::builtins::rng::builtin_rand() * chars.len() as f64) as usize
+                    % chars.len();
+                out.push(chars[idx].clone());
+            }
+            return Ok(Value::array(out));
+        }
+
         // Skip native fast path for pseudo-methods when called with quoted syntax
         let skip_pseudo = self
             .skip_pseudo_method_native
@@ -850,10 +1311,14 @@ impl Interpreter {
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
         );
         let bypass_native_fastpath = skip_pseudo
+            || method == "squish"
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || (matches!(&target, Value::Instance { .. })
+                && (target.does_check("Real") || target.does_check("Numeric")))
+            || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, "Bridge"))
             || (!is_pseudo_method
                 && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
@@ -1003,6 +1468,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "arity"
+                        | "count"
                         | "candidates"
                         | "cando"
                         | "of"
@@ -1014,6 +1481,63 @@ impl Interpreter {
                         | "can"
                 );
                 return Ok(Value::Bool(can));
+            }
+            if matches!(method, "arity" | "count") && args.is_empty() {
+                let candidates = self.routine_candidate_subs(package, name);
+                if !candidates.is_empty() {
+                    let mut infos = Vec::new();
+                    for candidate in candidates {
+                        if let Value::Sub(data) = candidate {
+                            let sig = self.sub_signature_value(&data);
+                            if let Some(info) = extract_sig_info(&sig) {
+                                infos.push(info);
+                            }
+                        }
+                    }
+                    if infos.is_empty() {
+                        return Ok(Value::Int(0));
+                    }
+                    return Ok(if method == "arity" {
+                        Self::candidate_arity_value(&infos)
+                    } else {
+                        Self::candidate_count_value(&infos)
+                    });
+                }
+
+                let (params, param_defs) = self.callable_signature(&target);
+                let defs = if !param_defs.is_empty() {
+                    param_defs
+                } else {
+                    params
+                        .into_iter()
+                        .map(|name| ParamDef {
+                            name,
+                            default: None,
+                            multi_invocant: true,
+                            required: true,
+                            named: false,
+                            slurpy: false,
+                            double_slurpy: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
+                            is_invocant: false,
+                            shape_constraints: None,
+                        })
+                        .collect()
+                };
+                let info = param_defs_to_sig_info(&defs, None);
+                return Ok(if method == "arity" {
+                    Value::Int(Self::signature_required_positional_count(&info))
+                } else {
+                    Self::signature_count_value(&info)
+                });
             }
         }
         if let Value::Sub(data) = &target {
@@ -1126,6 +1650,17 @@ impl Interpreter {
                     .unwrap_or_else(|| "Mu".to_string());
                 return Ok(Value::Package(type_name));
             }
+            if matches!(method, "arity" | "count") && args.is_empty() {
+                let sig = self.sub_signature_value(data);
+                if let Some(info) = extract_sig_info(&sig) {
+                    return Ok(if method == "arity" {
+                        Value::Int(Self::signature_required_positional_count(&info))
+                    } else {
+                        Self::signature_count_value(&info)
+                    });
+                }
+                return Ok(Value::Int(0));
+            }
             if method == "can" {
                 let method_name = args
                     .first()
@@ -1135,6 +1670,8 @@ impl Interpreter {
                     method_name.as_str(),
                     "assuming"
                         | "signature"
+                        | "arity"
+                        | "count"
                         | "candidates"
                         | "cando"
                         | "of"
@@ -1152,6 +1689,27 @@ impl Interpreter {
             && let Some(strong) = weak.upgrade()
         {
             return self.call_method_with_values(Value::Sub(strong), method, args);
+        }
+
+        if method == "VAR"
+            && args.is_empty()
+            && let Some((source_name, inner)) = Self::varref_parts(&target)
+        {
+            return self.call_method_mut_with_values(&source_name, inner, "VAR", vec![]);
+        }
+
+        if method == "var"
+            && args.is_empty()
+            && let Some(source_name) = Self::var_target_from_meta_value(&target)
+        {
+            let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::Nil);
+            let mut named = std::collections::HashMap::new();
+            named.insert("__mutsu_varref_name".to_string(), Value::Str(source_name));
+            named.insert("__mutsu_varref_value".to_string(), source_value);
+            return Ok(Value::Capture {
+                positional: Vec::new(),
+                named,
+            });
         }
 
         if method == "join"
@@ -1172,7 +1730,9 @@ impl Interpreter {
         }
 
         if let Value::Instance { class_name, .. } = &target
-            && class_name == "Perl6::Metamodel::ClassHOW"
+            && (class_name == "Perl6::Metamodel::ClassHOW"
+                || class_name == "Perl6::Metamodel::CurriedRoleHOW"
+                || class_name == "Perl6::Metamodel::ParametricRoleGroupHOW")
             && matches!(
                 method,
                 "can"
@@ -1180,14 +1740,45 @@ impl Interpreter {
                     | "lookup"
                     | "find_method"
                     | "add_method"
+                    | "archetypes"
                     | "name"
                     | "ver"
                     | "auth"
                     | "mro"
+                    | "mro_unhidden"
                     | "methods"
+                    | "concretization"
+                    | "curried_role"
             )
         {
-            return self.dispatch_classhow_method(method, args);
+            let mut how_args = args.to_vec();
+            if let Value::Instance { attributes, .. } = &target
+                && !matches!(
+                    how_args.first(),
+                    Some(Value::Package(_))
+                        | Some(Value::Instance { .. })
+                        | Some(Value::ParametricRole { .. })
+                )
+                && let Some(Value::Str(type_name)) = attributes.get("name")
+            {
+                how_args.insert(0, Value::Package(type_name.clone()));
+            }
+            return self.dispatch_classhow_method(method, how_args);
+        }
+
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Perl6::Metamodel::Archetypes"
+            && method == "composable"
+            && args.is_empty()
+        {
+            return Ok(attributes
+                .get("composable")
+                .cloned()
+                .unwrap_or(Value::Bool(false)));
         }
 
         // CREATE method: allocate a bare instance without BUILD
@@ -1255,6 +1846,10 @@ impl Interpreter {
             }
         }
 
+        if method == "leave" {
+            return self.builtin_leave_method(target, &args);
+        }
+
         // Primary method dispatch by name
         match method {
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
@@ -1279,6 +1874,92 @@ impl Interpreter {
             }
             "are" => {
                 return self.dispatch_are(target, &args);
+            }
+            "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") =>
+            {
+                let mut positional: Vec<Value> = Vec::new();
+                let mut label: Option<String> = None;
+                let mut repeat = false;
+
+                for arg in &args {
+                    if let Value::Pair(name, value) = arg {
+                        if name == "label" {
+                            label = Some(value.to_string_value());
+                            continue;
+                        }
+                        if name == "repeat" {
+                            repeat = value.truthy();
+                            continue;
+                        }
+                        continue;
+                    }
+                    if let Value::ValuePair(name, value) = arg {
+                        if let Value::Str(key) = name.as_ref() {
+                            if key == "label" {
+                                label = Some(value.to_string_value());
+                                continue;
+                            }
+                            if key == "repeat" {
+                                repeat = value.truthy();
+                                continue;
+                            }
+                        }
+                        continue;
+                    }
+                    positional.push(arg.clone());
+                }
+
+                let Some(body_callable) = positional.first().cloned() else {
+                    return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+                };
+                let cond_callable = positional.get(1).cloned();
+                let step_callable = positional.get(2).cloned();
+
+                let label_matches = |error_label: &Option<String>| {
+                    error_label.as_deref() == label.as_deref() || error_label.is_none()
+                };
+
+                let mut items = Vec::new();
+                let mut first_iteration = true;
+
+                'from_loop: loop {
+                    if (!first_iteration || !repeat)
+                        && let Some(cond) = cond_callable.clone()
+                    {
+                        let cond_value = self.call_sub_value(cond, vec![], true)?;
+                        if !cond_value.truthy() {
+                            break;
+                        }
+                    }
+                    first_iteration = false;
+
+                    'body_redo: loop {
+                        match self.call_sub_value(body_callable.clone(), vec![], true) {
+                            Ok(value) => {
+                                if !matches!(value, Value::Nil) {
+                                    items.push(value);
+                                }
+                                break 'body_redo;
+                            }
+                            Err(e) if e.is_redo && label_matches(&e.label) => continue 'body_redo,
+                            Err(e) if e.is_next && label_matches(&e.label) => break 'body_redo,
+                            Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
+                            Err(e) => return Err(e),
+                        }
+                    }
+
+                    if let Some(step) = step_callable.clone() {
+                        match self.call_sub_value(step, vec![], true) {
+                            Ok(_) => {}
+                            Err(e) if e.is_next && label_matches(&e.label) => continue 'from_loop,
+                            Err(e) if e.is_redo && label_matches(&e.label) => continue 'from_loop,
+                            Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                }
+
+                return Ok(Value::Seq(std::sync::Arc::new(items)));
             }
             "say" if args.is_empty() => {
                 let s = format!("{}\n", crate::runtime::gist_value(&target));
@@ -1567,6 +2248,7 @@ impl Interpreter {
                     Value::Routine { .. } => "Sub",
                     Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                         Some(Value::Str(kind)) if kind == "Method" => "Method",
+                        Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
                         _ => "Sub",
                     },
                     Value::WeakSub(_) => "Sub",
@@ -1642,6 +2324,28 @@ impl Interpreter {
                 {
                     return Ok(*how.clone());
                 }
+                // Return CurriedRoleHOW for parameterized roles
+                if let Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } = &target
+                {
+                    let args_str = type_args
+                        .iter()
+                        .map(|v| match v {
+                            Value::Package(n) => n.clone(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let full_name = format!("{}[{}]", base_name, args_str);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("name".to_string(), Value::Str(full_name));
+                    return Ok(Value::make_instance(
+                        "Perl6::Metamodel::CurriedRoleHOW".to_string(),
+                        attrs,
+                    ));
+                }
                 // Return a meta-object (ClassHOW) for any value
                 let type_name = match &target {
                     Value::Package(name) => name.clone(),
@@ -1662,12 +2366,15 @@ impl Interpreter {
                         tn.to_string()
                     }
                 };
+                // Use ParametricRoleGroupHOW for role type objects
+                let how_name = if self.roles.contains_key(&type_name) && !type_name.contains('[') {
+                    "Perl6::Metamodel::ParametricRoleGroupHOW"
+                } else {
+                    "Perl6::Metamodel::ClassHOW"
+                };
                 let mut attrs = HashMap::new();
                 attrs.insert("name".to_string(), Value::Str(type_name));
-                return Ok(Value::make_instance(
-                    "Perl6::Metamodel::ClassHOW".to_string(),
-                    attrs,
-                ));
+                return Ok(Value::make_instance(how_name.to_string(), attrs));
             }
             "WHO" if args.is_empty() => {
                 if let Value::Package(name) = &target {
@@ -1704,6 +2411,20 @@ impl Interpreter {
                     Value::Package(name) => name.clone(),
                     Value::Instance { class_name, .. } => class_name.clone(),
                     Value::Promise(p) => p.class_name(),
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str = type_args
+                            .iter()
+                            .map(|v| match v {
+                                Value::Package(n) => n.clone(),
+                                other => other.to_string_value(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        format!("{}[{}]", base_name, args_str)
+                    }
                     other => value_type_name(other).to_string(),
                 }));
             }
@@ -1940,6 +2661,7 @@ impl Interpreter {
                 return Ok(match target {
                     Value::Seq(_) => target,
                     Value::Array(items, ..) => Value::Seq(items),
+                    Value::Slip(items) => Value::Seq(items),
                     Value::Instance {
                         class_name,
                         attributes,
@@ -1998,11 +2720,55 @@ impl Interpreter {
                 {
                     return Ok(target);
                 }
+                if let Value::Seq(items) = &target {
+                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
+                        for key in meta.revert_remove {
+                            self.env.remove(&key);
+                        }
+                        for (key, value) in meta.revert_values {
+                            self.env.insert(key, value);
+                        }
+                        let mut attrs = HashMap::new();
+                        attrs.insert("squish_source".to_string(), Value::array(meta.source_items));
+                        attrs.insert("squish_as".to_string(), meta.as_func.unwrap_or(Value::Nil));
+                        attrs.insert(
+                            "squish_with".to_string(),
+                            meta.with_func.unwrap_or(Value::Nil),
+                        );
+                        attrs.insert("squish_scan_index".to_string(), Value::Int(0));
+                        attrs.insert("squish_prev_key".to_string(), Value::Nil);
+                        attrs.insert("squish_initialized".to_string(), Value::Bool(false));
+                        return Ok(Value::make_instance("Iterator".to_string(), attrs));
+                    }
+                }
                 let items = crate::runtime::utils::value_to_list(&target);
                 let mut attrs = HashMap::new();
                 attrs.insert("items".to_string(), Value::array(items));
                 attrs.insert("index".to_string(), Value::Int(0));
                 return Ok(Value::make_instance("Iterator".to_string(), attrs));
+            }
+            "produce" => {
+                let callable = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("produce expects a callable"))?;
+                if !matches!(
+                    target,
+                    Value::Array(_, _)
+                        | Value::Seq(_)
+                        | Value::Slip(_)
+                        | Value::LazyList(_)
+                        | Value::Range(_, _)
+                        | Value::RangeExcl(_, _)
+                        | Value::RangeExclStart(_, _)
+                        | Value::RangeExclBoth(_, _)
+                        | Value::GenericRange { .. }
+                        | Value::Hash(_)
+                ) {
+                    return Ok(target);
+                }
+                return self.call_function("produce", vec![callable, target]);
             }
             "map" => {
                 if let Value::Instance {
@@ -2062,6 +2828,24 @@ impl Interpreter {
                 return self.eval_map_over_items(args.first().cloned(), items);
             }
             "max" | "min" => {
+                if matches!(target, Value::Hash(_)) {
+                    let mut call_args = vec![target.clone()];
+                    if let Some(first) = args.first() {
+                        if matches!(
+                            first,
+                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        ) {
+                            call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                        } else {
+                            call_args.extend(args.clone());
+                        }
+                    }
+                    return if method == "max" {
+                        self.builtin_max(&call_args)
+                    } else {
+                        self.builtin_min(&call_args)
+                    };
+                }
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {
@@ -2076,6 +2860,9 @@ impl Interpreter {
             }
             "unique" => {
                 return self.dispatch_unique(target, &args);
+            }
+            "squish" => {
+                return self.dispatch_squish(target, &args);
             }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
@@ -2269,6 +3056,40 @@ impl Interpreter {
                     return Ok(Value::make_instance("Date".to_string(), attrs));
                 }
             }
+            "DateTime" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Date"
+                    && let Some(Value::Int(days)) = attributes.get("days")
+                {
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "epoch".to_string(),
+                        Value::Num(Self::date_days_to_epoch_with_leap_seconds(*days)),
+                    );
+                    return Ok(Value::make_instance("DateTime".to_string(), attrs));
+                }
+            }
+            "Instant" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "DateTime"
+                {
+                    let epoch = attributes
+                        .get("epoch")
+                        .and_then(to_float_value)
+                        .unwrap_or(0.0);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("value".to_string(), Value::Num(epoch));
+                    return Ok(Value::make_instance("Instant".to_string(), attrs));
+                }
+            }
             "grab" => {
                 if let Value::Instance {
                     ref class_name,
@@ -2340,6 +3161,42 @@ impl Interpreter {
             "grep" => {
                 return self.dispatch_grep(target, &args);
             }
+            "eager" if args.is_empty() => {
+                return match target {
+                    Value::LazyList(list) => Ok(Value::array(self.force_lazy_list_bridge(&list)?)),
+                    Value::Array(..) | Value::Seq(..) | Value::Slip(..) => Ok(target),
+                    Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. } => {
+                        Ok(Value::array(crate::runtime::utils::value_to_list(&target)))
+                    }
+                    other => Ok(other),
+                };
+            }
+            "is-lazy" if args.is_empty() => {
+                let value_is_lazy = |v: &Value| match v {
+                    Value::LazyList(_) => true,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                    Value::GenericRange { end, .. } => {
+                        let end_f = end.to_f64();
+                        end_f.is_infinite() && end_f.is_sign_positive()
+                    }
+                    _ => false,
+                };
+                let is_lazy = match &target {
+                    v if value_is_lazy(v) => true,
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        items.iter().any(value_is_lazy)
+                    }
+                    _ => false,
+                };
+                return Ok(Value::Bool(is_lazy));
+            }
             "first" if !args.is_empty() => {
                 return self.dispatch_first(target, &args);
             }
@@ -2357,6 +3214,21 @@ impl Interpreter {
                 Value::Pair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 Value::ValuePair(_, value) => return Ok(Value::array(vec![*value.clone()])),
                 _ => return Ok(Value::array(Vec::new())),
+            },
+            "AT-KEY" if args.len() == 1 => match (&target, &args[0]) {
+                (Value::Pair(key, value), idx) => {
+                    if key == &idx.to_string_value() {
+                        return Ok(*value.clone());
+                    }
+                    return Ok(Value::Nil);
+                }
+                (Value::ValuePair(key, value), idx) => {
+                    if key.to_string_value() == idx.to_string_value() {
+                        return Ok(*value.clone());
+                    }
+                    return Ok(Value::Nil);
+                }
+                _ => {}
             },
             "rotate" => {
                 return self.dispatch_rotate(target, &args);
@@ -2424,236 +3296,12 @@ impl Interpreter {
 
         // SharedPromise dispatch
         if let Value::Promise(ref shared) = target {
-            return match method {
-                "result" => {
-                    let status = shared.status();
-                    if status == "Broken" {
-                        // .result on a Broken promise throws the cause as X::AdHoc
-                        let (result, _, _) = shared.wait();
-                        let msg = result.to_string_value();
-                        let mut attrs = HashMap::new();
-                        attrs.insert("payload".to_string(), Value::Str(msg.clone()));
-                        attrs.insert("message".to_string(), Value::Str(msg.clone()));
-                        let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(ex));
-                        Err(err)
-                    } else {
-                        // Planned blocks, Kept returns value
-                        let result = shared.result_blocking();
-                        // Replay deferred taps for Proc::Async results
-                        if let Value::Instance {
-                            ref class_name,
-                            ref attributes,
-                            ..
-                        } = result
-                            && class_name == "Proc"
-                        {
-                            self.replay_proc_taps(attributes);
-                        }
-                        Ok(result)
-                    }
-                }
-                "status" => Ok(Value::Str(shared.status())),
-                "then" => {
-                    let block = args.into_iter().next().unwrap_or(Value::Nil);
-                    let orig = shared.clone();
-                    let new_promise = SharedPromise::new_with_class(shared.class_name());
-                    let ret = Value::Promise(new_promise.clone());
-                    let mut thread_interp = self.clone_for_thread();
-                    std::thread::spawn(move || {
-                        let (result, output, stderr) = orig.wait();
-                        match thread_interp.call_sub_value(block, vec![result], false) {
-                            Ok(v) => {
-                                let out = std::mem::take(&mut thread_interp.output);
-                                let err = std::mem::take(&mut thread_interp.stderr_output);
-                                new_promise.keep(
-                                    v,
-                                    format!("{}{}", output, out),
-                                    format!("{}{}", stderr, err),
-                                );
-                            }
-                            Err(e) => {
-                                let out = std::mem::take(&mut thread_interp.output);
-                                let err = std::mem::take(&mut thread_interp.stderr_output);
-                                let error_val = if let Some(ex) = e.exception {
-                                    *ex
-                                } else {
-                                    Value::Str(e.message)
-                                };
-                                new_promise.break_with(
-                                    error_val,
-                                    format!("{}{}", output, out),
-                                    format!("{}{}", stderr, err),
-                                );
-                            }
-                        }
-                    });
-                    Ok(ret)
-                }
-                "keep" => {
-                    let value = args.into_iter().next().unwrap_or(Value::Bool(true));
-                    if let Err(_status) = shared.try_keep(value) {
-                        let mut attrs = HashMap::new();
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::Str(
-                                "Access denied to keep/break this Promise; already vowed"
-                                    .to_string(),
-                            ),
-                        );
-                        let ex = Value::make_instance("X::Promise::Vowed".to_string(), attrs);
-                        let mut err = RuntimeError::new(
-                            "Access denied to keep/break this Promise; already vowed".to_string(),
-                        );
-                        err.exception = Some(Box::new(ex));
-                        Err(err)
-                    } else {
-                        Ok(Value::Nil)
-                    }
-                }
-                "break" => {
-                    let reason_val = args
-                        .into_iter()
-                        .next()
-                        .unwrap_or_else(|| Value::Str("Died".to_string()));
-                    if let Err(_status) = shared.try_break(reason_val) {
-                        let mut attrs = HashMap::new();
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::Str(
-                                "Access denied to keep/break this Promise; already vowed"
-                                    .to_string(),
-                            ),
-                        );
-                        let ex = Value::make_instance("X::Promise::Vowed".to_string(), attrs);
-                        let mut err = RuntimeError::new(
-                            "Access denied to keep/break this Promise; already vowed".to_string(),
-                        );
-                        err.exception = Some(Box::new(ex));
-                        Err(err)
-                    } else {
-                        Ok(Value::Nil)
-                    }
-                }
-                "cause" => {
-                    let status = shared.status();
-                    if status != "Broken" {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("status".to_string(), Value::Str(status.clone()));
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::Str(format!(
-                                "Can only call '.cause' on a broken promise (status: {})",
-                                status
-                            )),
-                        );
-                        let ex = Value::make_instance(
-                            "X::Promise::CauseOnlyValidOnBroken".to_string(),
-                            attrs,
-                        );
-                        let mut err = RuntimeError::new(format!(
-                            "Can only call '.cause' on a broken promise (status: {})",
-                            status
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        Err(err)
-                    } else {
-                        // Broken
-                        let (result, _, _) = shared.wait();
-                        // Wrap in X::AdHoc if it's a plain string
-                        let cause = match &result {
-                            Value::Instance { class_name, .. }
-                                if class_name.contains("Exception")
-                                    || class_name.starts_with("X::") =>
-                            {
-                                result
-                            }
-                            _ => {
-                                let mut attrs = HashMap::new();
-                                attrs.insert(
-                                    "payload".to_string(),
-                                    Value::Str(result.to_string_value()),
-                                );
-                                attrs.insert(
-                                    "message".to_string(),
-                                    Value::Str(result.to_string_value()),
-                                );
-                                Value::make_instance("X::AdHoc".to_string(), attrs)
-                            }
-                        };
-                        Ok(cause)
-                    }
-                }
-                "Bool" => Ok(Value::Bool(shared.is_resolved())),
-                "vow" => {
-                    // Return a simple Vow object
-                    let mut attrs = HashMap::new();
-                    attrs.insert("promise".to_string(), target.clone());
-                    Ok(Value::make_instance("Promise::Vow".to_string(), attrs))
-                }
-                "WHAT" => Ok(Value::Package(shared.class_name())),
-                "raku" | "perl" => Ok(Value::Str(format!(
-                    "Promise.new(status => {})",
-                    shared.status()
-                ))),
-                "Str" | "gist" => Ok(Value::Str(format!("Promise({})", shared.status()))),
-                "isa" => {
-                    let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                        Value::Package(name) => name,
-                        Value::Str(name) => name,
-                        other => other.to_string_value(),
-                    };
-                    let cn = shared.class_name();
-                    let is_match = cn == target_name
-                        || target_name == "Promise"
-                        || target_name == "Any"
-                        || target_name == "Mu"
-                        || self.class_mro(&cn).contains(&target_name);
-                    Ok(Value::Bool(is_match))
-                }
-                _ => Err(RuntimeError::new(format!(
-                    "No method '{}' on Promise",
-                    method
-                ))),
-            };
+            return self.dispatch_promise_method(shared, method, args, &target);
         }
 
         // SharedChannel dispatch
         if let Value::Channel(ref ch) = target {
-            return match method {
-                "send" => {
-                    let value = args.into_iter().next().unwrap_or(Value::Nil);
-                    ch.send(value);
-                    Ok(Value::Nil)
-                }
-                "receive" => Ok(ch.receive()),
-                "poll" => Ok(ch.poll().unwrap_or(Value::Nil)),
-                "close" => {
-                    ch.close();
-                    Ok(Value::Nil)
-                }
-                "list" | "List" | "Seq" => {
-                    // Drain the channel into a list (blocks until closed)
-                    let mut items = Vec::new();
-                    loop {
-                        let val = ch.receive();
-                        if val == Value::Nil && ch.closed() {
-                            break;
-                        }
-                        items.push(val);
-                    }
-                    Ok(Value::array(items))
-                }
-                "closed" => Ok(Value::Bool(ch.closed())),
-                "Bool" => Ok(Value::Bool(true)),
-                "WHAT" => Ok(Value::Package("Channel".to_string())),
-                "Str" | "gist" => Ok(Value::Str("Channel".to_string())),
-                _ => Err(RuntimeError::new(format!(
-                    "No method '{}' on Channel",
-                    method
-                ))),
-            };
+            return self.dispatch_channel_method(ch, method, args);
         }
 
         if let Value::Mixin(inner, mixins) = &target {
@@ -2696,7 +3344,11 @@ impl Interpreter {
                     &args,
                 )
             {
-                let caller_class = self.method_class_stack.last().cloned();
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
                 let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                     || self
                         .class_trusts
@@ -2896,6 +3548,63 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
+            if method == "Bool"
+                && args.is_empty()
+                && ((target.does_check("Real") || target.does_check("Numeric"))
+                    || self.has_user_method(class_name, "Bridge"))
+                && let Ok(coerced) = self
+                    .call_method_with_values(target.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
+            {
+                return Ok(Value::Bool(coerced.truthy()));
+            }
+            if method == "Bridge"
+                && args.is_empty()
+                && target.does_check("Real")
+                && !self.has_user_method(class_name, "Bridge")
+            {
+                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+                    && coerced != target
+                {
+                    return Ok(coerced);
+                }
+                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
+                    && coerced != target
+                {
+                    return Ok(coerced);
+                }
+            }
+            if method == "Bridge"
+                && args.is_empty()
+                && self.has_user_method(class_name, "Num")
+                && !self.has_user_method(class_name, "Bridge")
+                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
+                && coerced != target
+            {
+                return Ok(coerced);
+            }
+            if method == "log"
+                && args.len() == 1
+                && self.has_user_method(class_name, "Bridge")
+                && let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![])
+            {
+                let base = if let Some(arg) = args.first() {
+                    if matches!(arg, Value::Instance { class_name, .. }
+                        if self.has_user_method(class_name, "Bridge"))
+                    {
+                        self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                            .or_else(|_| {
+                                self.call_method_with_values(arg.clone(), "Bridge", vec![])
+                            })
+                            .unwrap_or_else(|_| arg.clone())
+                    } else {
+                        arg.clone()
+                    }
+                } else {
+                    Value::Nil
+                };
+                return self.call_method_with_values(bridged, "log", vec![base]);
+            }
             // User-defined methods take priority over auto-generated accessors
             if self.has_user_method(class_name, method) {
                 let (result, updated) = self.run_instance_method(
@@ -2933,8 +3642,130 @@ impl Interpreter {
             }
         }
 
+        // For user-defined numeric/real-like objects, delegate unknown methods through
+        // their coercion bridge so default Real behavior is available.
+        if matches!(target, Value::Instance { ref class_name, .. }
+            if (target.does_check("Real") || target.does_check("Numeric"))
+                || self.has_user_method(class_name, "Bridge"))
+        {
+            if matches!(method, "Bridge" | "Real")
+                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+                && coerced != target
+            {
+                return Ok(coerced);
+            }
+            if !matches!(method, "Numeric" | "Real" | "Bridge")
+                && let Ok(coerced) = self
+                    .call_method_with_values(target.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
+                && coerced != target
+                && let Ok(result) = {
+                    let mut delegated_args = Vec::with_capacity(args.len());
+                    for arg in &args {
+                        let coerced_arg = if matches!(arg, Value::Instance { class_name, .. }
+                            if self.has_user_method(class_name, "Bridge")
+                                || arg.does_check("Real")
+                                || arg.does_check("Numeric"))
+                        {
+                            self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                                .or_else(|_| {
+                                    self.call_method_with_values(arg.clone(), "Bridge", vec![])
+                                })
+                                .unwrap_or_else(|_| arg.clone())
+                        } else {
+                            arg.clone()
+                        };
+                        delegated_args.push(coerced_arg);
+                    }
+                    if delegated_args.is_empty()
+                        && let Some(result) = crate::builtins::native_method_0arg(&coerced, method)
+                    {
+                        result
+                    } else if delegated_args.len() == 1
+                        && let Some(result) = crate::builtins::native_method_1arg(
+                            &coerced,
+                            method,
+                            &delegated_args[0],
+                        )
+                    {
+                        result
+                    } else if delegated_args.len() == 2
+                        && let Some(result) = crate::builtins::native_method_2arg(
+                            &coerced,
+                            method,
+                            &delegated_args[0],
+                            &delegated_args[1],
+                        )
+                    {
+                        result
+                    } else {
+                        self.call_method_with_values(coerced, method, delegated_args)
+                    }
+                }
+            {
+                return Ok(result);
+            }
+        }
+
         // Package (type object) dispatch — private method call
         if let Value::Package(ref name) = target {
+            let normalized_method: String = method
+                .chars()
+                .map(|ch| {
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        ch
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            if name == "Instant" && normalized_method == "from_posix" {
+                let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
+                let mut attrs = HashMap::new();
+                // Match Rakudo's Instant.from-posix behavior (TAI includes leap-second offset).
+                attrs.insert("value".to_string(), Value::Num(secs + 10.0));
+                return Ok(Value::make_instance("Instant".to_string(), attrs));
+            }
+            if name == "Supply" && method == "interval" {
+                let seconds = args.first().map_or(1.0, |value| match value {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(n) => *n,
+                    other => other.to_string_value().parse::<f64>().unwrap_or(1.0),
+                });
+                let period_secs = if seconds.is_finite() && seconds > 0.0 {
+                    seconds
+                } else {
+                    1.0
+                };
+
+                let supply_id = super::native_methods::next_supply_id();
+                let (tx, rx) = std::sync::mpsc::channel();
+                if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+                    map.insert(supply_id, rx);
+                }
+
+                std::thread::spawn(move || {
+                    let delay = std::time::Duration::from_secs_f64(period_secs);
+                    let mut tick = 0i64;
+                    loop {
+                        std::thread::sleep(delay);
+                        if tx
+                            .send(super::native_methods::SupplyEvent::Emit(Value::Int(tick)))
+                            .is_err()
+                        {
+                            break;
+                        }
+                        tick = tick.saturating_add(1);
+                    }
+                });
+
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+                attrs.insert("live".to_string(), Value::Bool(true));
+                return Ok(Value::make_instance("Supply".to_string(), attrs));
+            }
             if let Some(private_method_name) = method.strip_prefix('!')
                 && let Some((resolved_owner, method_def)) =
                     self.resolve_private_method_any_owner(name, private_method_name, &args)
@@ -3037,6 +3868,15 @@ impl Interpreter {
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
                 }
             }
+        }
+
+        if let Some(callable) = self.env.get(&format!("&{}", method)).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            return self.call_sub_value(callable, args, true);
         }
 
         // Fallback methods
@@ -3199,133 +4039,6 @@ impl Interpreter {
         }
     }
 
-    fn translate_newlines_for_encode(&self, input: &str) -> String {
-        match self.newline_mode {
-            NewlineMode::Lf => input.to_string(),
-            NewlineMode::Cr => input.replace('\n', "\r"),
-            NewlineMode::Crlf => input.replace('\n', "\r\n"),
-        }
-    }
-
-    fn translate_newlines_for_decode(&self, input: &str) -> String {
-        match self.newline_mode {
-            NewlineMode::Lf => input.to_string(),
-            NewlineMode::Cr => input.replace('\r', "\n"),
-            NewlineMode::Crlf => input.replace("\r\n", "\n"),
-        }
-    }
-
-    fn encode_with_encoding(
-        &self,
-        input: &str,
-        encoding_name: &str,
-    ) -> Result<Vec<u8>, RuntimeError> {
-        let encoding = self
-            .find_encoding(encoding_name)
-            .map(|e| e.name.as_str())
-            .unwrap_or(encoding_name)
-            .to_lowercase();
-
-        match encoding.as_str() {
-            "ascii" => Ok(input
-                .chars()
-                .map(|c| if (c as u32) <= 0x7F { c as u8 } else { b'?' })
-                .collect()),
-            "iso-8859-1" => Ok(input
-                .chars()
-                .map(|c| if (c as u32) <= 0xFF { c as u8 } else { b'?' })
-                .collect()),
-            "utf-16" | "utf-16le" => {
-                Ok(input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect())
-            }
-            "utf-16be" => Ok(input.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()),
-            _ => {
-                if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
-                    if matches!(encoding.as_str(), "windows-1251" | "windows-1252") {
-                        return Ok(Self::encode_single_byte_with_encoding_rs(input, enc));
-                    }
-                    let (encoded, _used_encoding, _had_errors) = enc.encode(input);
-                    return Ok(encoded.into_owned());
-                }
-                Ok(input.as_bytes().to_vec())
-            }
-        }
-    }
-
-    fn decode_with_encoding(
-        &self,
-        bytes: &[u8],
-        encoding_name: &str,
-    ) -> Result<String, RuntimeError> {
-        let encoding = self
-            .find_encoding(encoding_name)
-            .map(|e| e.name.as_str())
-            .unwrap_or(encoding_name)
-            .to_lowercase();
-
-        match encoding.as_str() {
-            "ascii" => Ok(bytes
-                .iter()
-                .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
-                .collect()),
-            "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
-            "utf-16" | "utf-16le" => {
-                if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
-                }
-                let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                    .collect();
-                Ok(String::from_utf16_lossy(&units))
-            }
-            "utf-16be" => {
-                if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new("Invalid utf-16be byte length"));
-                }
-                let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
-                    .collect();
-                Ok(String::from_utf16_lossy(&units))
-            }
-            _ => {
-                if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
-                    let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
-                    return Ok(decoded.into_owned());
-                }
-                Ok(String::from_utf8_lossy(bytes).into_owned())
-            }
-        }
-    }
-
-    fn lookup_encoding_rs_codec(encoding: &str) -> Option<&'static encoding_rs::Encoding> {
-        let label = match encoding {
-            "windows-932" => "shift_jis",
-            _ => encoding,
-        };
-        encoding_rs::Encoding::for_label(label.as_bytes())
-    }
-
-    fn encode_single_byte_with_encoding_rs(
-        input: &str,
-        enc: &'static encoding_rs::Encoding,
-    ) -> Vec<u8> {
-        let mut reverse = HashMap::with_capacity(256);
-        for b in 0u8..=255 {
-            let one = [b];
-            let (decoded, _used_encoding, _had_errors) = enc.decode(&one);
-            let mut chars = decoded.chars();
-            if let (Some(ch), None) = (chars.next(), chars.next()) {
-                reverse.insert(ch, b);
-            }
-        }
-        input
-            .chars()
-            .map(|ch| reverse.get(&ch).copied().unwrap_or(b'?'))
-            .collect()
-    }
-
     fn dispatch_are(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         let values = Self::value_to_list(&target);
         match args {
@@ -3418,3489 +4131,5 @@ impl Interpreter {
             Value::Instance { class_name, .. } => class_name.clone(),
             _ => crate::runtime::utils::value_type_name(value).to_string(),
         }
-    }
-
-    fn dispatch_package_parse(
-        &mut self,
-        package_name: &str,
-        method: &str,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let mut source_arg: Option<String> = None;
-        let mut start_rule = "TOP".to_string();
-        let mut rule_args: Vec<Value> = Vec::new();
-        for arg in args {
-            if let Value::Pair(key, value) = arg {
-                if key == "rule" || key == "token" {
-                    start_rule = value.to_string_value();
-                } else if key == "args" {
-                    // :args(\(42)) passes a Capture; :args(42,) passes an Array
-                    match value.as_ref() {
-                        Value::Capture {
-                            positional,
-                            named: _,
-                        } => {
-                            rule_args = positional.clone();
-                        }
-                        Value::Array(arr, _) => {
-                            rule_args = arr.as_ref().clone();
-                        }
-                        other => {
-                            rule_args = vec![other.clone()];
-                        }
-                    }
-                }
-                continue;
-            }
-            if source_arg.is_none() {
-                source_arg = Some(arg.to_string_value());
-            }
-        }
-        let Some(source_text) = source_arg else {
-            return Err(RuntimeError::new(
-                "Too few positionals passed; expected 2 arguments but got 1",
-            ));
-        };
-        let text = if method == "parsefile" {
-            match std::fs::read_to_string(&source_text) {
-                Ok(contents) => contents,
-                Err(err) => return Err(RuntimeError::new(err.to_string())),
-            }
-        } else {
-            source_text
-        };
-
-        let saved_package = self.current_package.clone();
-        let saved_topic = self.env.get("_").cloned();
-        let saved_made = self.env.get("made").cloned();
-        self.env.remove("made");
-        self.current_package = package_name.to_string();
-        let has_start_rule =
-            self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
-        if !has_start_rule {
-            self.current_package = saved_package;
-            if let Some(old_topic) = saved_topic {
-                self.env.insert("_".to_string(), old_topic);
-            } else {
-                self.env.remove("_");
-            }
-            return Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                method
-            )));
-        }
-        self.env.insert("_".to_string(), Value::Str(text.clone()));
-        let result = (|| -> Result<Value, RuntimeError> {
-            let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
-                Ok(Some(pattern)) => pattern,
-                Ok(None) => {
-                    self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(self.parse_failure_for_pattern(&text, None));
-                }
-                Err(err)
-                    if err
-                        .message
-                        .contains("No matching candidates for proto token") =>
-                {
-                    self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(self.parse_failure_for_pattern(&text, None));
-                }
-                Err(err) => return Err(err),
-            };
-
-            // Bind rule args to the env so code assertions { ... } can access them
-            if !rule_args.is_empty()
-                && let Some(def) = self
-                    .resolve_token_defs(&start_rule)
-                    .and_then(|defs| defs.into_iter().next())
-            {
-                let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
-            }
-
-            let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
-                self.env.insert("/".to_string(), Value::Nil);
-                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
-            };
-            self.execute_regex_code_blocks(&captures.code_blocks);
-            if captures.from != 0 {
-                self.env.insert("/".to_string(), Value::Nil);
-                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
-            }
-            if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
-                self.env.insert("/".to_string(), Value::Nil);
-                return Ok(self.make_parse_failure_value(&text, captures.to));
-            }
-            for (i, v) in captures.positional.iter().enumerate() {
-                self.env.insert(i.to_string(), Value::Str(v.clone()));
-            }
-            let match_obj = Value::make_match_object_full(
-                captures.matched,
-                captures.from as i64,
-                captures.to as i64,
-                &captures.positional,
-                &captures.named,
-                &captures.named_subcaps,
-                Some(&text),
-            );
-            let match_obj = if let Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } = &match_obj
-            {
-                let mut attrs = attributes.as_ref().clone();
-                if let Some(ast) = self.env.get("made").cloned() {
-                    attrs.insert("ast".to_string(), ast);
-                }
-                Value::make_instance(class_name.clone(), attrs)
-            } else {
-                match_obj
-            };
-            // Set named capture env vars from match object
-            if let Value::Instance { attributes, .. } = &match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.get("named")
-            {
-                for (k, v) in named_hash.iter() {
-                    self.env.insert(format!("<{}>", k), v.clone());
-                }
-            }
-            self.env.insert("/".to_string(), match_obj.clone());
-            Ok(match_obj)
-        })();
-
-        self.current_package = saved_package;
-        if let Some(old_topic) = saved_topic {
-            self.env.insert("_".to_string(), old_topic);
-        } else {
-            self.env.remove("_");
-        }
-        if let Some(old_made) = saved_made {
-            self.env.insert("made".to_string(), old_made);
-        } else {
-            self.env.remove("made");
-        }
-        result
-    }
-
-    fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {
-        let best_end = pattern
-            .map(|pat| self.longest_complete_prefix_end(pat, text))
-            .unwrap_or(0);
-        self.make_parse_failure_value(text, best_end)
-    }
-
-    fn longest_complete_prefix_end(&mut self, pattern: &str, text: &str) -> usize {
-        let chars: Vec<char> = text.chars().collect();
-        for end in (0..=chars.len()).rev() {
-            let prefix: String = chars[..end].iter().collect();
-            if let Some(captures) = self.regex_match_with_captures(pattern, &prefix)
-                && captures.from == 0
-                && captures.to == end
-            {
-                return end;
-            }
-        }
-        0
-    }
-
-    fn make_parse_failure_value(&self, text: &str, best_end: usize) -> Value {
-        let chars: Vec<char> = text.chars().collect();
-        let pos = best_end.saturating_sub(1).min(chars.len());
-        let line_start = chars[..pos]
-            .iter()
-            .rposition(|ch| *ch == '\n')
-            .map(|idx| idx + 1)
-            .unwrap_or(0);
-        let line_end = chars[pos..]
-            .iter()
-            .position(|ch| *ch == '\n')
-            .map(|offset| pos + offset)
-            .unwrap_or(chars.len());
-        let pre: String = chars[line_start..pos].iter().collect();
-        let post = if pos >= chars.len() || chars[pos] == '\n' {
-            "<EOL>".to_string()
-        } else {
-            chars[pos..line_end].iter().collect()
-        };
-        let line = chars[..pos].iter().filter(|ch| **ch == '\n').count() as i64 + 1;
-
-        let mut ex_attrs = HashMap::new();
-        ex_attrs.insert("reason".to_string(), Value::Str("unknown".to_string()));
-        ex_attrs.insert("filename".to_string(), Value::Str("<anon>".to_string()));
-        ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
-        ex_attrs.insert("line".to_string(), Value::Int(line));
-        ex_attrs.insert("pre".to_string(), Value::Str(pre));
-        ex_attrs.insert("post".to_string(), Value::Str(post));
-        ex_attrs.insert("highexpect".to_string(), Value::array(Vec::new()));
-        let exception = Value::make_instance("X::Syntax::Confused".to_string(), ex_attrs);
-
-        let mut failure_attrs = HashMap::new();
-        failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
-        Value::make_instance("Failure".to_string(), failure_attrs)
-    }
-
-    fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
-        let Value::Package(class_name) = invocant else {
-            return None;
-        };
-        let class_def = self.classes.get(class_name)?;
-        let defs = class_def.methods.get(method_name)?;
-        let def = defs.first()?;
-        Some(Value::make_sub(
-            class_name.clone(),
-            method_name.to_string(),
-            def.params.clone(),
-            def.param_defs.clone(),
-            def.body.clone(),
-            def.is_rw,
-            HashMap::new(),
-        ))
-    }
-
-    fn classhow_find_method(&self, invocant: &Value, method_name: &str) -> Option<Value> {
-        if matches!(
-            method_name,
-            "name"
-                | "ver"
-                | "auth"
-                | "mro"
-                | "isa"
-                | "can"
-                | "lookup"
-                | "find_method"
-                | "add_method"
-                | "methods"
-        ) {
-            return Some(Value::Str(method_name.to_string()));
-        }
-        if let Some(value) = self.classhow_lookup(invocant, method_name) {
-            return Some(value);
-        }
-        // CREATE is a built-in method on all types
-        if method_name == "CREATE" {
-            return Some(Value::Routine {
-                package: "Mu".to_string(),
-                name: "CREATE".to_string(),
-                is_regex: false,
-            });
-        }
-        if let Value::Package(class_name) = invocant
-            && let Some(class_def) = self.classes.get(class_name)
-            && class_def.native_methods.contains(method_name)
-        {
-            return Some(Value::Str(method_name.to_string()));
-        }
-        None
-    }
-
-    fn dispatch_classhow_method(
-        &mut self,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "name" if args.len() == 1 => Ok(Value::Str(match &args[0] {
-                Value::Package(name) => name.clone(),
-                Value::Instance { class_name, .. } => class_name.clone(),
-                other => value_type_name(other).to_string(),
-            })),
-            "ver" if args.len() == 1 => {
-                let invocant_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                        ));
-                    }
-                };
-                let Some(meta) = self.type_metadata.get(&invocant_name) else {
-                    if invocant_name == "Grammar" {
-                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
-                    }
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                    ));
-                };
-                let Some(value) = meta.get("ver").cloned() else {
-                    if invocant_name == "Grammar" {
-                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
-                    }
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                    ));
-                };
-                Ok(Self::version_from_value(value))
-            }
-            "auth" if args.len() == 1 => {
-                let invocant_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
-                        ));
-                    }
-                };
-                let Some(meta) = self.type_metadata.get(&invocant_name) else {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
-                    ));
-                };
-                let Some(value) = meta.get("auth").cloned() else {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
-                    ));
-                };
-                Ok(Value::Str(value.to_string_value()))
-            }
-            "isa" if args.len() == 2 => {
-                let Value::Package(class_name) = &args[0] else {
-                    return Ok(Value::Bool(false));
-                };
-                let Value::Package(other_name) = &args[1] else {
-                    return Ok(Value::Bool(false));
-                };
-                let is_same = class_name == other_name;
-                if is_same {
-                    return Ok(Value::Bool(true));
-                }
-                let mro = self.class_mro(class_name);
-                Ok(Value::Bool(mro.iter().any(|p| p == other_name)))
-            }
-            "mro" if args.len() == 1 => {
-                let mro = self.classhow_mro_names(&args[0]);
-                Ok(Value::array(
-                    mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
-                ))
-            }
-            "can" if args.len() >= 2 => {
-                let invocant = &args[0];
-                let method_name = args[1].to_string_value();
-                if let Some(value) = self.classhow_find_method(invocant, &method_name) {
-                    return Ok(Value::array(vec![value]));
-                }
-                Ok(Value::array(Vec::new()))
-            }
-            "lookup" if args.len() >= 2 => {
-                let invocant = &args[0];
-                let method_name = args[1].to_string_value();
-                Ok(self
-                    .classhow_lookup(invocant, &method_name)
-                    .unwrap_or(Value::Nil))
-            }
-            "find_method" if args.len() >= 2 => {
-                let invocant = &args[0];
-                let method_name = args[1].to_string_value();
-                Ok(self
-                    .classhow_find_method(invocant, &method_name)
-                    .unwrap_or(Value::Nil))
-            }
-            "add_method" if args.len() >= 3 => {
-                let class_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Str(name) => name.clone(),
-                    _ => {
-                        return Err(RuntimeError::new("add_method target must be a type object"));
-                    }
-                };
-                let method_name = args[1].to_string_value();
-                let method_value = args[2].clone();
-                let Value::Sub(sub_data) = method_value else {
-                    return Ok(Value::Nil);
-                };
-                let def = MethodDef {
-                    params: sub_data.params.clone(),
-                    param_defs: sub_data
-                        .params
-                        .iter()
-                        .map(|name| ParamDef {
-                            name: name.clone(),
-                            default: None,
-                            multi_invocant: true,
-                            required: false,
-                            named: false,
-                            slurpy: false,
-                            double_slurpy: false,
-                            sigilless: false,
-                            type_constraint: None,
-                            literal_value: None,
-                            sub_signature: None,
-                            where_constraint: None,
-                            traits: Vec::new(),
-                            optional_marker: false,
-                            outer_sub_signature: None,
-                            code_signature: None,
-                            is_invocant: false,
-                            shape_constraints: None,
-                        })
-                        .collect(),
-                    body: sub_data.body.clone(),
-                    is_rw: false,
-                    is_private: false,
-                    return_type: None,
-                };
-                if let Some(class_def) = self.classes.get_mut(&class_name) {
-                    class_def.methods.insert(method_name, vec![def]);
-                    return Ok(Value::Nil);
-                }
-                Err(RuntimeError::new(format!(
-                    "Unknown class for add_method: {}",
-                    class_name
-                )))
-            }
-            "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
-            _ => Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                method
-            ))),
-        }
-    }
-
-    fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
-        let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
-            other => value_type_name(other).to_string(),
-        };
-        let mut mro = if self.classes.contains_key(&class_name) {
-            self.class_mro(&class_name)
-        } else {
-            vec![class_name.clone()]
-        };
-        if self.package_looks_like_grammar(&class_name) {
-            for parent in ["Grammar", "Match", "Capture", "Cool", "Any", "Mu"] {
-                if !mro.iter().any(|name| name == parent) {
-                    mro.push(parent.to_string());
-                }
-            }
-            return mro;
-        }
-        if class_name != "Mu" && !mro.iter().any(|name| name == "Any") {
-            mro.push("Any".to_string());
-        }
-        if !mro.iter().any(|name| name == "Mu") {
-            mro.push("Mu".to_string());
-        }
-        mro
-    }
-
-    fn package_looks_like_grammar(&self, package_name: &str) -> bool {
-        let prefix = format!("{package_name}::");
-        self.token_defs.keys().any(|key| key.starts_with(&prefix))
-    }
-
-    fn dispatch_classhow_methods(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let invocant = &args[0];
-        let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
-            other => value_type_name(other).to_string(),
-        };
-
-        // Parse named arguments
-        let mut local = false;
-        let mut all = false;
-        let mut private = false;
-        let mut tree = false;
-        for arg in &args[1..] {
-            if let Value::Pair(key, value) = arg {
-                match key.as_str() {
-                    "local" => local = value.truthy(),
-                    "all" => all = value.truthy(),
-                    "private" => private = value.truthy(),
-                    "tree" => tree = value.truthy(),
-                    _ => {}
-                }
-            }
-        }
-
-        if tree {
-            return self.classhow_methods_tree(&class_name, private);
-        }
-
-        let mut result = Vec::new();
-
-        if local {
-            // Only methods defined directly on this class
-            self.collect_class_methods(&class_name, private, &mut result);
-        } else {
-            // Walk MRO (already includes the class itself)
-            let mro = self.class_mro(&class_name);
-
-            for cn in &mro {
-                if !all && (cn == "Any" || cn == "Mu") {
-                    continue;
-                }
-                self.collect_class_methods(cn, private, &mut result);
-            }
-
-            // For built-in types that don't have class defs, add known methods
-            if result.is_empty() || !self.classes.contains_key(&class_name) {
-                self.collect_builtin_type_methods(&class_name, &mut result);
-                if all {
-                    self.collect_builtin_type_methods("Any", &mut result);
-                    self.collect_builtin_type_methods("Mu", &mut result);
-                }
-            }
-        }
-
-        Ok(Value::array(result))
-    }
-
-    fn collect_builtin_type_methods(&self, type_name: &str, result: &mut Vec<Value>) {
-        let methods: &[&str] = match type_name {
-            "Str" => &[
-                "chars",
-                "codes",
-                "comb",
-                "chomp",
-                "chop",
-                "contains",
-                "ends-with",
-                "fc",
-                "flip",
-                "index",
-                "indices",
-                "lc",
-                "lines",
-                "match",
-                "ords",
-                "pred",
-                "rindex",
-                "split",
-                "starts-with",
-                "substr",
-                "succ",
-                "tc",
-                "trim",
-                "trim-leading",
-                "trim-trailing",
-                "uc",
-                "words",
-                "wordcase",
-                "NFC",
-                "NFD",
-                "NFKC",
-                "NFKD",
-                "encode",
-                "IO",
-                "Numeric",
-                "Int",
-                "Num",
-                "Rat",
-                "Bool",
-                "Str",
-                "gist",
-                "raku",
-                "elems",
-                "fmt",
-            ],
-            "Int" | "Num" | "Rat" | "Complex" => &[
-                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp",
-                "is-prime", "chr", "base", "polymod", "pred", "succ", "Numeric", "Int", "Num",
-                "Rat", "Bool", "Str", "gist", "raku",
-            ],
-            "List" | "Array" => &[
-                "elems",
-                "end",
-                "keys",
-                "values",
-                "kv",
-                "pairs",
-                "antipairs",
-                "join",
-                "map",
-                "grep",
-                "first",
-                "sort",
-                "reverse",
-                "rotate",
-                "unique",
-                "repeated",
-                "squish",
-                "flat",
-                "eager",
-                "lazy",
-                "head",
-                "tail",
-                "skip",
-                "push",
-                "pop",
-                "shift",
-                "unshift",
-                "splice",
-                "append",
-                "prepend",
-                "classify",
-                "categorize",
-                "min",
-                "max",
-                "minmax",
-                "sum",
-                "pick",
-                "roll",
-                "permutations",
-                "combinations",
-                "rotor",
-                "batch",
-                "produce",
-                "reduce",
-                "Bool",
-                "Str",
-                "gist",
-                "raku",
-                "Numeric",
-                "Int",
-                "Array",
-                "List",
-            ],
-            "Hash" => &[
-                "elems",
-                "keys",
-                "values",
-                "kv",
-                "pairs",
-                "antipairs",
-                "push",
-                "append",
-                "classify-list",
-                "categorize-list",
-                "Bool",
-                "Str",
-                "gist",
-                "raku",
-                "Numeric",
-                "Int",
-            ],
-            "Bool" => &[
-                "pred", "succ", "pick", "roll", "Numeric", "Int", "Num", "Rat", "Bool", "Str",
-                "gist", "raku",
-            ],
-            "Range" => &[
-                "min", "max", "bounds", "elems", "list", "flat", "reverse", "pick", "roll", "sum",
-                "rand", "minmax", "infinite", "is-int", "Bool", "Str", "gist", "raku", "Numeric",
-                "Int",
-            ],
-            "Sub" | "Method" | "Block" | "Routine" | "Code" => &[
-                "name",
-                "signature",
-                "arity",
-                "count",
-                "of",
-                "returns",
-                "Bool",
-                "Str",
-                "gist",
-                "raku",
-            ],
-            "Signature" => &[
-                "params", "arity", "count", "returns", "Bool", "Str", "gist", "raku",
-            ],
-            "Any" => &[
-                "say",
-                "put",
-                "print",
-                "note",
-                "so",
-                "not",
-                "defined",
-                "WHAT",
-                "WHERE",
-                "HOW",
-                "WHY",
-                "iterator",
-                "flat",
-                "eager",
-                "lazy",
-                "map",
-                "grep",
-                "first",
-                "sort",
-                "reverse",
-                "unique",
-                "repeated",
-                "squish",
-                "head",
-                "tail",
-                "skip",
-                "min",
-                "max",
-                "minmax",
-                "elems",
-                "end",
-                "keys",
-                "values",
-                "kv",
-                "pairs",
-                "antipairs",
-                "classify",
-                "categorize",
-                "join",
-                "pick",
-                "roll",
-                "sum",
-                "reduce",
-                "produce",
-                "rotor",
-                "batch",
-                "Bool",
-                "Str",
-                "gist",
-                "raku",
-                "Numeric",
-                "Int",
-            ],
-            "Mu" => &[
-                "defined", "WHAT", "WHERE", "HOW", "WHY", "WHICH", "Bool", "Str", "gist", "raku",
-                "clone", "new",
-            ],
-            _ => &[],
-        };
-        for name in methods {
-            if !result.iter().any(|v| {
-                if let Value::Instance { attributes, .. } = v {
-                    attributes
-                        .get("name")
-                        .map(|n| n.to_string_value())
-                        .as_deref()
-                        == Some(name)
-                } else {
-                    false
-                }
-            }) {
-                result.push(self.make_native_method_object(name));
-            }
-        }
-    }
-
-    fn collect_class_methods(
-        &self,
-        class_name: &str,
-        include_private: bool,
-        result: &mut Vec<Value>,
-    ) {
-        if let Some(class_def) = self.classes.get(class_name) {
-            // First add accessor methods for public attributes (in order)
-            for (attr_name, is_public, ..) in &class_def.attributes {
-                if *is_public && !class_def.methods.contains_key(attr_name) {
-                    result.push(self.make_native_method_object(attr_name));
-                }
-            }
-            // Then add explicit methods
-            for (method_name, overloads) in &class_def.methods {
-                if overloads.is_empty() {
-                    continue;
-                }
-                // Skip private methods unless :private
-                let first = &overloads[0];
-                if first.is_private && !include_private {
-                    continue;
-                }
-                let is_multi = overloads.len() > 1;
-                let return_type = first.return_type.clone();
-                let method_obj = self.make_method_object(method_name, first, is_multi, return_type);
-                result.push(method_obj);
-            }
-            // Also include native (built-in) methods
-            for native_name in &class_def.native_methods {
-                let method_obj = self.make_native_method_object(native_name);
-                result.push(method_obj);
-            }
-        }
-    }
-
-    fn make_native_method_object(&self, name: &str) -> Value {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(name.to_string()));
-        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
-        let sig_attrs = {
-            let mut sa = std::collections::HashMap::new();
-            sa.insert("params".to_string(), Value::array(Vec::new()));
-            sa
-        };
-        attrs.insert(
-            "signature".to_string(),
-            Value::make_instance("Signature".to_string(), sig_attrs),
-        );
-        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
-        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
-        Value::make_instance("Method".to_string(), attrs)
-    }
-
-    fn make_method_object(
-        &self,
-        name: &str,
-        method_def: &MethodDef,
-        is_dispatcher: bool,
-        return_type: Option<String>,
-    ) -> Value {
-        let mut attrs = std::collections::HashMap::new();
-
-        // Store the display name (with ! prefix for private methods)
-        let display_name = if method_def.is_private {
-            format!("!{}", name)
-        } else {
-            name.to_string()
-        };
-        attrs.insert("name".to_string(), Value::Str(display_name));
-        attrs.insert("is_dispatcher".to_string(), Value::Bool(is_dispatcher));
-
-        // Build a Signature object for this method
-        let param_defs = &method_def.param_defs;
-        let sig_attrs = {
-            let mut sa = std::collections::HashMap::new();
-            sa.insert(
-                "params".to_string(),
-                make_params_value_from_param_defs(param_defs),
-            );
-            sa
-        };
-        attrs.insert(
-            "signature".to_string(),
-            Value::make_instance("Signature".to_string(), sig_attrs),
-        );
-
-        // Return type
-        let rt = return_type.unwrap_or_else(|| "Mu".to_string());
-        attrs.insert("returns".to_string(), Value::Package(rt.clone()));
-        attrs.insert("of".to_string(), Value::Package(rt));
-
-        Value::make_instance("Method".to_string(), attrs)
-    }
-
-    fn classhow_methods_tree(
-        &self,
-        class_name: &str,
-        include_private: bool,
-    ) -> Result<Value, RuntimeError> {
-        let mut result = Vec::new();
-
-        // First: own methods
-        self.collect_class_methods(class_name, include_private, &mut result);
-
-        // Then: each parent's tree as a nested array
-        if let Some(class_def) = self.classes.get(class_name) {
-            for parent in &class_def.parents {
-                let subtree = self.classhow_methods_tree(parent, include_private)?;
-                result.push(subtree);
-            }
-        }
-
-        Ok(Value::array(result))
-    }
-
-    fn dispatch_subst(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        let text = target.to_string_value();
-        let mut positional: Vec<Value> = Vec::new();
-        let mut global = false;
-        for arg in args {
-            if let Value::Pair(key, value) = arg {
-                match key.as_str() {
-                    "g" | "global" => global = value.truthy(),
-                    _ => {}
-                }
-            } else {
-                positional.push(arg.clone());
-            }
-        }
-        let pattern = positional
-            .first()
-            .ok_or_else(|| RuntimeError::new("subst requires a pattern argument"))?;
-        let replacement_val = positional.get(1).cloned();
-        let is_closure = matches!(
-            replacement_val,
-            Some(Value::Sub(_)) | Some(Value::WeakSub(_))
-        );
-        let replacement_str = if is_closure {
-            String::new()
-        } else {
-            replacement_val
-                .as_ref()
-                .map(|v| v.to_string_value())
-                .unwrap_or_default()
-        };
-
-        match pattern {
-            Value::Regex(pat) => {
-                let matches = self.regex_find_all(pat, &text);
-                if matches.is_empty() {
-                    return Ok(Value::Str(text));
-                }
-                let chars: Vec<char> = text.chars().collect();
-                if global {
-                    let mut result = String::new();
-                    let mut last_end = 0;
-                    for (start, end) in &matches {
-                        let prefix: String = chars[last_end..*start].iter().collect();
-                        result.push_str(&prefix);
-                        let matched_text: String = chars[*start..*end].iter().collect();
-                        let repl = self.eval_subst_replacement(
-                            &replacement_val,
-                            is_closure,
-                            &replacement_str,
-                            &matched_text,
-                        )?;
-                        result.push_str(&repl);
-                        last_end = *end;
-                    }
-                    let suffix: String = chars[last_end..].iter().collect();
-                    result.push_str(&suffix);
-                    Ok(Value::Str(result))
-                } else {
-                    // Replace first match only
-                    if let Some((start, end)) = matches.first() {
-                        let prefix: String = chars[..*start].iter().collect();
-                        let suffix: String = chars[*end..].iter().collect();
-                        let matched_text: String = chars[*start..*end].iter().collect();
-                        let repl = self.eval_subst_replacement(
-                            &replacement_val,
-                            is_closure,
-                            &replacement_str,
-                            &matched_text,
-                        )?;
-                        Ok(Value::Str(format!("{}{}{}", prefix, repl, suffix)))
-                    } else {
-                        Ok(Value::Str(text))
-                    }
-                }
-            }
-            Value::Str(pat) => {
-                if global {
-                    Ok(Value::Str(text.replace(pat, &replacement_str)))
-                } else {
-                    Ok(Value::Str(text.replacen(pat, &replacement_str, 1)))
-                }
-            }
-            _ => {
-                let pat_str = pattern.to_string_value();
-                if global {
-                    Ok(Value::Str(text.replace(&pat_str, &replacement_str)))
-                } else {
-                    Ok(Value::Str(text.replacen(&pat_str, &replacement_str, 1)))
-                }
-            }
-        }
-    }
-
-    /// Evaluate a subst replacement — either a static string or a closure call.
-    fn eval_subst_replacement(
-        &mut self,
-        replacement_val: &Option<Value>,
-        is_closure: bool,
-        replacement_str: &str,
-        matched_text: &str,
-    ) -> Result<String, RuntimeError> {
-        if !is_closure {
-            return Ok(replacement_str.to_string());
-        }
-        let sub_data = match replacement_val {
-            Some(Value::Sub(data)) => data.clone(),
-            Some(Value::WeakSub(weak)) => weak
-                .upgrade()
-                .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
-            _ => return Ok(replacement_str.to_string()),
-        };
-        let saved = self.env.clone();
-        // Set up closure environment
-        for (k, v) in &sub_data.env {
-            self.env.insert(k.clone(), v.clone());
-        }
-        // Set $/ to the matched text
-        let match_val = Value::Str(matched_text.to_string());
-        self.env.insert("/".to_string(), match_val.clone());
-        self.env.insert("$_".to_string(), match_val);
-        let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
-        self.env = saved;
-        Ok(result.to_string_value())
-    }
-
-    fn dispatch_contains(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mut positional: Vec<Value> = Vec::new();
-        let mut ignore_case = false;
-        for arg in args {
-            if let Value::Pair(key, value) = arg {
-                if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
-                    ignore_case = value.truthy();
-                }
-            } else {
-                positional.push(arg.clone());
-            }
-        }
-        let needle = positional
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        let start = if let Some(pos) = positional.get(1) {
-            match pos {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
-                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
-                Value::BigInt(b) => {
-                    if b > &num_bigint::BigInt::from(i64::MAX) {
-                        return Err(RuntimeError::new("X::OutOfRange"));
-                    }
-                    b.to_string().parse::<i64>().unwrap_or(0)
-                }
-                _ => 0,
-            }
-        } else {
-            0
-        };
-        let text = target.to_string_value();
-        let len = text.chars().count() as i64;
-        if start < 0 || start > len {
-            return Err(RuntimeError::new("X::OutOfRange"));
-        }
-        let hay: String = text.chars().skip(start as usize).collect();
-        let ok = if ignore_case {
-            hay.to_lowercase().contains(&needle.to_lowercase())
-        } else {
-            hay.contains(&needle)
-        };
-        Ok(Value::Bool(ok))
-    }
-
-    fn dispatch_starts_with(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        self.dispatch_prefix_suffix_check(target, args, true)
-    }
-
-    fn dispatch_ends_with(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        self.dispatch_prefix_suffix_check(target, args, false)
-    }
-
-    fn dispatch_prefix_suffix_check(
-        &self,
-        target: Value,
-        args: &[Value],
-        is_prefix: bool,
-    ) -> Result<Value, RuntimeError> {
-        let method_name = if is_prefix {
-            "starts-with"
-        } else {
-            "ends-with"
-        };
-        // Separate positional and named args first
-        let mut positional: Vec<Value> = Vec::new();
-        let mut ignore_case = false;
-        let mut ignore_mark = false;
-        for arg in args {
-            if let Value::Pair(key, value) = arg {
-                match key.as_str() {
-                    "i" | "ignorecase" => ignore_case = value.truthy(),
-                    "m" | "ignoremark" => ignore_mark = value.truthy(),
-                    _ => {}
-                }
-            } else {
-                positional.push(arg.clone());
-            }
-        }
-        // Type objects (Package) as needle should throw
-        if let Some(Value::Package(type_name)) = positional.first() {
-            return Err(RuntimeError::new(format!(
-                "Cannot resolve caller {}({}:U)",
-                method_name, type_name
-            )));
-        }
-        let needle = positional
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        let text = target.to_string_value();
-
-        let ok = match (ignore_case, ignore_mark) {
-            (false, false) => {
-                if is_prefix {
-                    text.starts_with(needle.as_str())
-                } else {
-                    text.ends_with(needle.as_str())
-                }
-            }
-            (true, false) => {
-                let t = text.to_lowercase();
-                let n = needle.to_lowercase();
-                if is_prefix {
-                    t.starts_with(n.as_str())
-                } else {
-                    t.ends_with(n.as_str())
-                }
-            }
-            (false, true) => {
-                let t = self.strip_marks(&text);
-                let n = self.strip_marks(&needle);
-                if is_prefix {
-                    t.starts_with(n.as_str())
-                } else {
-                    t.ends_with(n.as_str())
-                }
-            }
-            (true, true) => {
-                let t = self.strip_marks(&text).to_lowercase();
-                let n = self.strip_marks(&needle).to_lowercase();
-                if is_prefix {
-                    t.starts_with(n.as_str())
-                } else {
-                    t.ends_with(n.as_str())
-                }
-            }
-        };
-        Ok(Value::Bool(ok))
-    }
-
-    fn dispatch_index(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        // Type objects (Package) as needle are not allowed
-        if let Some(Value::Package(type_name)) = args.first() {
-            return Err(RuntimeError::new(format!(
-                "Cannot resolve caller index({}:U)",
-                type_name
-            )));
-        }
-        let mut positional: Vec<Value> = Vec::new();
-        let mut ignore_case = false;
-        let mut ignore_mark = false;
-        for arg in args {
-            if let Value::Pair(key, value) = arg {
-                match key.as_str() {
-                    "i" | "ignorecase" => ignore_case = value.truthy(),
-                    "m" | "ignoremark" => ignore_mark = value.truthy(),
-                    _ => {}
-                }
-            } else {
-                positional.push(arg.clone());
-            }
-        }
-        // Handle list of needles: \(<a o>) passes an Array as first arg
-        let needles: Vec<String> = if let Some(Value::Array(items, ..)) = positional.first() {
-            items.iter().map(|v| v.to_string_value()).collect()
-        } else {
-            vec![
-                positional
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default(),
-            ]
-        };
-        let start = if let Some(pos) = positional.get(1) {
-            self.value_to_position(pos)?
-        } else {
-            0
-        };
-        let text = target.to_string_value();
-        let len = text.chars().count() as i64;
-        if start < 0 {
-            return Err(RuntimeError::new("X::OutOfRange"));
-        }
-        if start > len {
-            return Ok(Value::Nil);
-        }
-        let hay: String = text.chars().skip(start as usize).collect();
-        let mut best: Option<usize> = None;
-        for needle in &needles {
-            let pos = if ignore_case && ignore_mark {
-                self.index_ignorecase_ignoremark(&hay, needle)
-            } else if ignore_case {
-                self.index_ignorecase(&hay, needle)
-            } else if ignore_mark {
-                self.index_ignoremark(&hay, needle)
-            } else {
-                hay.find(needle.as_str()).map(|p| hay[..p].chars().count())
-            };
-            if let Some(char_pos) = pos {
-                best = Some(match best {
-                    Some(prev) => prev.min(char_pos),
-                    None => char_pos,
-                });
-            }
-        }
-        match best {
-            Some(char_pos) => Ok(Value::Int(char_pos as i64 + start)),
-            None => Ok(Value::Nil),
-        }
-    }
-
-    fn index_ignorecase(&self, hay: &str, needle: &str) -> Option<usize> {
-        let hay_lower = hay.to_lowercase();
-        let needle_lower = needle.to_lowercase();
-        hay_lower
-            .find(&needle_lower)
-            .map(|byte_pos| hay_lower[..byte_pos].chars().count())
-    }
-
-    fn index_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
-        let hay_stripped = self.strip_marks(hay);
-        let needle_stripped = self.strip_marks(needle);
-        hay_stripped
-            .find(&needle_stripped)
-            .map(|byte_pos| hay_stripped[..byte_pos].chars().count())
-    }
-
-    fn index_ignorecase_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
-        let hay_stripped = self.strip_marks(hay).to_lowercase();
-        let needle_stripped = self.strip_marks(needle).to_lowercase();
-        hay_stripped
-            .find(&needle_stripped)
-            .map(|byte_pos| hay_stripped[..byte_pos].chars().count())
-    }
-
-    fn strip_marks(&self, s: &str) -> String {
-        use unicode_normalization::UnicodeNormalization;
-        s.nfd()
-            .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
-            .collect()
-    }
-
-    fn value_to_position(&self, pos: &Value) -> Result<i64, RuntimeError> {
-        match pos {
-            Value::Int(i) => Ok(*i),
-            Value::Num(f) => {
-                if f.abs() > i64::MAX as f64 {
-                    Err(RuntimeError::new("X::OutOfRange"))
-                } else {
-                    Ok(*f as i64)
-                }
-            }
-            Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
-            Value::BigInt(b) => {
-                if b > &num_bigint::BigInt::from(i64::MAX) {
-                    Err(RuntimeError::new("X::OutOfRange"))
-                } else {
-                    Ok(b.to_string().parse::<i64>().unwrap_or(0))
-                }
-            }
-            _ => Ok(0),
-        }
-    }
-
-    fn dispatch_substr_eq(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        if args.is_empty() {
-            return Err(RuntimeError::new(
-                "Too few positionals passed to 'substr-eq'",
-            ));
-        }
-        let text = target.to_string_value();
-        let needle = args[0].to_string_value();
-        let start = if let Some(pos) = args.get(1) {
-            self.value_to_position(pos)?
-        } else {
-            0
-        };
-        let len = text.chars().count() as i64;
-        if start < 0 || start > len {
-            return Err(RuntimeError::new("X::OutOfRange"));
-        }
-        let substr: String = text
-            .chars()
-            .skip(start as usize)
-            .take(needle.len())
-            .collect();
-        Ok(Value::Bool(substr == needle))
-    }
-
-    fn dispatch_substr(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        let s = target.to_string_value();
-        let chars: Vec<char> = s.chars().collect();
-        let total_len = chars.len();
-
-        // First arg: start position
-        let start = if let Some(pos) = args.first() {
-            match pos {
-                Value::Int(i) => {
-                    let i = *i;
-                    if i < 0 {
-                        (total_len as i64 + i).max(0) as usize
-                    } else {
-                        i as usize
-                    }
-                }
-                other => other.to_string_value().parse::<i64>().unwrap_or(0).max(0) as usize,
-            }
-        } else {
-            0
-        };
-
-        // Second arg: length (can be Int, WhateverCode/Sub, or absent)
-        let end = if let Some(len_val) = args.get(1) {
-            match len_val {
-                Value::Int(i) => {
-                    let len = (*i).max(0) as usize;
-                    (start + len).min(total_len)
-                }
-                Value::Sub { .. } => {
-                    // WhateverCode: call with remaining length to get actual length
-                    let remaining = if start <= total_len {
-                        (total_len - start) as i64
-                    } else {
-                        0
-                    };
-                    let result =
-                        self.eval_call_on_value(len_val.clone(), vec![Value::Int(remaining)])?;
-                    let len = match &result {
-                        Value::Int(i) => (*i).max(0) as usize,
-                        _ => 0,
-                    };
-                    (start + len).min(total_len)
-                }
-                _ => total_len, // default: take rest
-            }
-        } else {
-            total_len // no length: take rest
-        };
-
-        let start = start.min(total_len);
-        Ok(Value::Str(chars[start..end].iter().collect()))
-    }
-
-    fn dispatch_to_set(&self, target: Value) -> Result<Value, RuntimeError> {
-        let mut elems = HashSet::new();
-        match target {
-            Value::Set(_) => return Ok(target),
-            Value::Array(items, ..) => {
-                for item in items.iter() {
-                    elems.insert(item.to_string_value());
-                }
-            }
-            Value::Hash(items) => {
-                for (k, v) in items.iter() {
-                    if v.truthy() {
-                        elems.insert(k.clone());
-                    }
-                }
-            }
-            Value::Bag(b) => {
-                for k in b.keys() {
-                    elems.insert(k.clone());
-                }
-            }
-            Value::Mix(m) => {
-                for k in m.keys() {
-                    elems.insert(k.clone());
-                }
-            }
-            other => {
-                elems.insert(other.to_string_value());
-            }
-        }
-        Ok(Value::set(elems))
-    }
-
-    fn dispatch_to_bag(&self, target: Value) -> Result<Value, RuntimeError> {
-        let mut counts: HashMap<String, i64> = HashMap::new();
-        match target {
-            Value::Bag(_) => return Ok(target),
-            Value::Array(items, ..) => {
-                for item in items.iter() {
-                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
-                }
-            }
-            Value::Set(s) => {
-                for k in s.iter() {
-                    counts.insert(k.clone(), 1);
-                }
-            }
-            Value::Mix(m) => {
-                for (k, v) in m.iter() {
-                    counts.insert(k.clone(), *v as i64);
-                }
-            }
-            other => {
-                counts.insert(other.to_string_value(), 1);
-            }
-        }
-        Ok(Value::bag(counts))
-    }
-
-    fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
-        let mut weights: HashMap<String, f64> = HashMap::new();
-        match target {
-            Value::Mix(_) => return Ok(target),
-            Value::Array(items, ..) => {
-                for item in items.iter() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            let w = match v.as_ref() {
-                                Value::Int(i) => *i as f64,
-                                Value::Num(n) => *n,
-                                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                _ => 1.0,
-                            };
-                            *weights.entry(k.clone()).or_insert(0.0) += w;
-                        }
-                        Value::ValuePair(k, v) => {
-                            let w = match v.as_ref() {
-                                Value::Int(i) => *i as f64,
-                                Value::Num(n) => *n,
-                                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                _ => 1.0,
-                            };
-                            *weights.entry(k.to_string_value()).or_insert(0.0) += w;
-                        }
-                        _ => {
-                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
-                        }
-                    }
-                }
-            }
-            Value::Set(s) => {
-                for k in s.iter() {
-                    weights.insert(k.clone(), 1.0);
-                }
-            }
-            Value::Bag(b) => {
-                for (k, v) in b.iter() {
-                    weights.insert(k.clone(), *v as f64);
-                }
-            }
-            other => {
-                weights.insert(other.to_string_value(), 1.0);
-            }
-        }
-        Ok(Value::mix(weights))
-    }
-
-    fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
-        match target {
-            Value::Hash(_) => Ok(target),
-            Value::Array(items, ..) => {
-                let mut map = HashMap::new();
-                let mut iter = items.iter();
-                while let Some(item) = iter.next() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            map.insert(k.clone(), *v.clone());
-                        }
-                        Value::ValuePair(k, v) => {
-                            map.insert(k.to_string_value(), *v.clone());
-                        }
-                        other => {
-                            let key = other.to_string_value();
-                            let value = iter.next().cloned().unwrap_or(Value::Nil);
-                            map.insert(key, value);
-                        }
-                    }
-                }
-                Ok(Value::hash(map))
-            }
-            Value::Seq(items) | Value::Slip(items) => {
-                let mut map = HashMap::new();
-                let mut iter = items.iter();
-                while let Some(item) = iter.next() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            map.insert(k.clone(), *v.clone());
-                        }
-                        Value::ValuePair(k, v) => {
-                            map.insert(k.to_string_value(), *v.clone());
-                        }
-                        other => {
-                            let key = other.to_string_value();
-                            let value = iter.next().cloned().unwrap_or(Value::Nil);
-                            map.insert(key, value);
-                        }
-                    }
-                }
-                Ok(Value::hash(map))
-            }
-            Value::Set(s) => {
-                let mut map = HashMap::new();
-                for k in s.iter() {
-                    map.insert(k.clone(), Value::Bool(true));
-                }
-                Ok(Value::hash(map))
-            }
-            Value::Bag(b) => {
-                let mut map = HashMap::new();
-                for (k, v) in b.iter() {
-                    map.insert(k.clone(), Value::Int(*v));
-                }
-                Ok(Value::hash(map))
-            }
-            Value::Mix(m) => {
-                let mut map = HashMap::new();
-                for (k, v) in m.iter() {
-                    map.insert(k.clone(), Value::Num(*v));
-                }
-                Ok(Value::hash(map))
-            }
-            Value::Instance {
-                ref class_name,
-                ref attributes,
-                ..
-            } if class_name == "Match" => {
-                // %($/) returns the named captures hash
-                if let Some(named) = attributes.get("named") {
-                    Ok(named.clone())
-                } else {
-                    Ok(Value::hash(HashMap::new()))
-                }
-            }
-            other => {
-                let mut map = HashMap::new();
-                map.insert(other.to_string_value(), Value::Bool(true));
-                Ok(Value::hash(map))
-            }
-        }
-    }
-
-    fn dispatch_rotate(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        let items = match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            Value::Capture { positional, .. } => positional,
-            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
-            _ => return Ok(Value::Nil),
-        };
-        if items.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-        let len = items.len() as i64;
-        let by = match args.first() {
-            Some(Value::Int(i)) => *i,
-            Some(Value::Num(n)) => *n as i64,
-            Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
-            None => 1,
-        };
-        let shift = ((by % len) + len) % len;
-        let mut out = vec![Value::Nil; items.len()];
-        for (i, item) in items.into_iter().enumerate() {
-            let dst = ((i as i64 + len - shift) % len) as usize;
-            out[dst] = item;
-        }
-        Ok(Value::array(out))
-    }
-
-    fn dispatch_minmaxpairs(&mut self, target: Value, method: &str) -> Result<Value, RuntimeError> {
-        if matches!(target, Value::Instance { .. })
-            && let Ok(pairs) = self.call_method_with_values(target.clone(), "pairs", Vec::new())
-        {
-            return Ok(pairs);
-        }
-        let want_max = method == "maxpairs";
-        let to_pairs = |items: &[Value]| -> Value {
-            let mut best: Option<Value> = None;
-            let mut out: Vec<Value> = Vec::new();
-            for (idx, item) in items.iter().enumerate() {
-                if matches!(item, Value::Nil) || matches!(item, Value::Package(n) if n == "Any") {
-                    continue;
-                }
-                let ord = if let Some(current) = &best {
-                    // Use `cmp` semantics: numeric comparison for numeric
-                    // pairs, string comparison otherwise
-                    match (item, current) {
-                        (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                        (Value::Num(a), Value::Num(b)) => {
-                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                        }
-                        (Value::Int(a), Value::Num(b)) => (*a as f64)
-                            .partial_cmp(b)
-                            .unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Num(a), Value::Int(b)) => a
-                            .partial_cmp(&(*b as f64))
-                            .unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Rat(..), _) | (_, Value::Rat(..)) => {
-                            if let (Some((an, ad)), Some((bn, bd))) = (
-                                crate::runtime::to_rat_parts(item),
-                                crate::runtime::to_rat_parts(current),
-                            ) {
-                                crate::runtime::compare_rat_parts((an, ad), (bn, bd))
-                            } else {
-                                item.to_string_value().cmp(&current.to_string_value())
-                            }
-                        }
-                        _ => item.to_string_value().cmp(&current.to_string_value()),
-                    }
-                } else {
-                    std::cmp::Ordering::Equal
-                };
-                let replace = best.is_none()
-                    || (want_max && ord == std::cmp::Ordering::Greater)
-                    || (!want_max && ord == std::cmp::Ordering::Less);
-                if replace {
-                    best = Some(item.clone());
-                    out.clear();
-                    out.push(Value::ValuePair(
-                        Box::new(Value::Int(idx as i64)),
-                        Box::new(item.clone()),
-                    ));
-                } else if ord == std::cmp::Ordering::Equal {
-                    out.push(Value::ValuePair(
-                        Box::new(Value::Int(idx as i64)),
-                        Box::new(item.clone()),
-                    ));
-                }
-            }
-            Value::Seq(Arc::new(out))
-        };
-        Ok(match target {
-            Value::Array(items, ..) => to_pairs(&items),
-            other => Value::Seq(Arc::new(vec![Value::ValuePair(
-                Box::new(Value::Int(0)),
-                Box::new(other),
-            )])),
-        })
-    }
-
-    fn dispatch_supply_running_extrema(
-        &mut self,
-        target: Value,
-        method: &str,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let Value::Instance { attributes, .. } = target else {
-            return Err(RuntimeError::new("Expected Supply instance"));
-        };
-        let values = if let Some(Value::Array(items, ..)) = attributes.get("values") {
-            items.to_vec()
-        } else {
-            Vec::new()
-        };
-        let want_max = method == "max";
-
-        let build_supply = |vals: Vec<Value>| {
-            let mut attrs = HashMap::new();
-            attrs.insert("values".to_string(), Value::array(vals));
-            attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            attrs.insert("live".to_string(), Value::Bool(false));
-            Value::make_instance("Supply".to_string(), attrs)
-        };
-
-        let compare_or_key_fn = args.first().cloned();
-        if let Some(ref fn_val) = compare_or_key_fn
-            && !matches!(
-                fn_val,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
-            )
-        {
-            return Err(RuntimeError::new("must be code if specified"));
-        }
-        if values.is_empty() {
-            return Ok(build_supply(Vec::new()));
-        }
-
-        let Some(compare_or_key_fn) = compare_or_key_fn else {
-            let mut emitted = Vec::new();
-            let mut best = values[0].clone();
-            emitted.push(best.clone());
-            for item in values.iter().skip(1) {
-                let cmp = compare_values(item, &best);
-                let is_better = if want_max { cmp > 0 } else { cmp < 0 };
-                if is_better {
-                    best = item.clone();
-                    emitted.push(item.clone());
-                }
-            }
-            return Ok(build_supply(emitted));
-        };
-
-        let is_binary_comparator =
-            matches!(&compare_or_key_fn, Value::Sub(data) if data.params.len() >= 2);
-        let mut emitted = Vec::new();
-        let mut best = values[0].clone();
-        emitted.push(best.clone());
-
-        if is_binary_comparator {
-            for item in values.into_iter().skip(1) {
-                let cmp_val = self.call_sub_value(
-                    compare_or_key_fn.clone(),
-                    vec![item.clone(), best.clone()],
-                    true,
-                )?;
-                let cmp = match cmp_val {
-                    Value::Enum {
-                        ref enum_type,
-                        value,
-                        ..
-                    } if enum_type == "Order" => value,
-                    other => {
-                        let n = other.to_f64();
-                        if n > 0.0 {
-                            1
-                        } else if n < 0.0 {
-                            -1
-                        } else {
-                            0
-                        }
-                    }
-                };
-                let is_better = if want_max { cmp > 0 } else { cmp < 0 };
-                if is_better {
-                    best = item.clone();
-                    emitted.push(item);
-                }
-            }
-        } else {
-            let mut best_key =
-                self.call_sub_value(compare_or_key_fn.clone(), vec![best.clone()], true)?;
-            for item in values.into_iter().skip(1) {
-                let key =
-                    self.call_sub_value(compare_or_key_fn.clone(), vec![item.clone()], true)?;
-                let cmp = compare_values(&key, &best_key);
-                let is_better = if want_max { cmp > 0 } else { cmp < 0 };
-                if is_better {
-                    best_key = key;
-                    emitted.push(item);
-                }
-            }
-        }
-
-        Ok(build_supply(emitted))
-    }
-
-    pub(crate) fn dispatch_sort(
-        &mut self,
-        target: Value,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        match target {
-            Value::Array(mut items, ..) => {
-                let items_mut = Arc::make_mut(&mut items);
-                // Handle Routine comparator (e.g. &[<=>], &infix:<+>)
-                if let Some(comparator @ Value::Routine { .. }) = args.first().cloned() {
-                    items_mut.sort_by(|a, b| {
-                        let call_args = vec![a.clone(), b.clone()];
-                        match self.eval_call_on_value(comparator.clone(), call_args) {
-                            Ok(result) => match &result {
-                                Value::Int(n) => n.cmp(&0),
-                                Value::Enum {
-                                    enum_type, value, ..
-                                } if enum_type == "Order" => value.cmp(&0),
-                                _ => std::cmp::Ordering::Equal,
-                            },
-                            Err(_) => std::cmp::Ordering::Equal,
-                        }
-                    });
-                } else if let Some(Value::Sub(data)) = args.first().cloned() {
-                    let is_key_extractor = data.params.len() <= 1;
-                    if is_key_extractor {
-                        items_mut.sort_by(|a, b| {
-                            let saved = self.env.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if let Some(p) = data.params.first() {
-                                self.env.insert(p.clone(), a.clone());
-                            }
-                            self.env.insert("_".to_string(), a.clone());
-                            let key_a = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                            self.env = saved.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if let Some(p) = data.params.first() {
-                                self.env.insert(p.clone(), b.clone());
-                            }
-                            self.env.insert("_".to_string(), b.clone());
-                            let key_b = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                            self.env = saved;
-                            compare_values(&key_a, &key_b).cmp(&0)
-                        });
-                    } else {
-                        items_mut.sort_by(|a, b| {
-                            let saved = self.env.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if data.params.len() >= 2 {
-                                self.env.insert(data.params[0].clone(), a.clone());
-                                self.env.insert(data.params[1].clone(), b.clone());
-                            } else if let Some(p) = data.params.first() {
-                                self.env.insert(p.clone(), a.clone());
-                            }
-                            self.env.insert("_".to_string(), a.clone());
-                            let result = self.eval_block_value(&data.body).unwrap_or(Value::Int(0));
-                            self.env = saved;
-                            match result {
-                                Value::Int(n) => n.cmp(&0),
-                                Value::Enum {
-                                    enum_type, value, ..
-                                } if enum_type == "Order" => value.cmp(&0),
-                                _ => std::cmp::Ordering::Equal,
-                            }
-                        });
-                    }
-                } else {
-                    items_mut.sort_by(|a, b| compare_values(a, b).cmp(&0));
-                }
-                Ok(Value::Array(items, false))
-            }
-            Value::Hash(map) => {
-                // Convert hash to list of pairs, then sort
-                let items: Vec<Value> = map
-                    .iter()
-                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                    .collect();
-                self.dispatch_sort(Value::array(items), args)
-            }
-            other => Ok(other),
-        }
-    }
-
-    fn dispatch_unique(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mut as_func: Option<Value> = None;
-        let mut with_func: Option<Value> = None;
-        for arg in args {
-            if let Value::Pair(key, value) = arg {
-                if key == "as" && value.truthy() {
-                    as_func = Some(value.as_ref().clone());
-                    continue;
-                }
-                if key == "with" && value.truthy() {
-                    with_func = Some(value.as_ref().clone());
-                    continue;
-                }
-            }
-        }
-
-        let items: Vec<Value> = match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
-            v @ (Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }) => Self::value_to_list(&v),
-            other => vec![other],
-        };
-
-        let mut seen_keys: Vec<Value> = Vec::new();
-        let mut unique_items: Vec<Value> = Vec::new();
-        for item in items {
-            let key = if let Some(func) = as_func.clone() {
-                self.call_sub_value(func, vec![item.clone()], true)?
-            } else {
-                item.clone()
-            };
-
-            let mut duplicate = false;
-            for seen in &seen_keys {
-                let is_same = if let Some(func) = with_func.clone() {
-                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
-                        .truthy()
-                } else {
-                    values_identical(seen, &key)
-                };
-                if is_same {
-                    duplicate = true;
-                    break;
-                }
-            }
-
-            if !duplicate {
-                seen_keys.push(key);
-                unique_items.push(item);
-            }
-        }
-
-        Ok(Value::array(unique_items))
-    }
-
-    fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
-        fn case_profile(s: &str) -> Vec<u8> {
-            s.chars()
-                .map(|ch| {
-                    if ch.is_lowercase() {
-                        0
-                    } else if ch.is_uppercase() {
-                        1
-                    } else {
-                        2
-                    }
-                })
-                .collect()
-        }
-
-        fn collate_sorted(values: Vec<Value>) -> Vec<Value> {
-            let mut keyed: Vec<(String, Vec<u8>, String, Value)> = values
-                .into_iter()
-                .map(|value| {
-                    let s = value.to_string_value();
-                    (s.to_lowercase(), case_profile(&s), s.clone(), value)
-                })
-                .collect();
-            keyed.sort_by(|a, b| {
-                a.0.cmp(&b.0)
-                    .then_with(|| a.1.cmp(&b.1))
-                    .then_with(|| a.2.cmp(&b.2))
-            });
-            keyed.into_iter().map(|(_, _, _, value)| value).collect()
-        }
-
-        match target {
-            Value::Package(class_name) if class_name == "Supply" => {
-                Ok(Value::Seq(Arc::new(vec![Value::Package(class_name)])))
-            }
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Supply" => {
-                let values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
-                    _ => Vec::new(),
-                };
-                let mut attrs = HashMap::new();
-                attrs.insert("values".to_string(), Value::array(collate_sorted(values)));
-                attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), attrs))
-            }
-            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sorted(items.to_vec())))),
-            other => {
-                let values = Self::value_to_list(&other);
-                Ok(Value::Seq(Arc::new(collate_sorted(values))))
-            }
-        }
-    }
-
-    fn dispatch_new(&mut self, target: Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
-        if let Value::ParametricRole {
-            base_name,
-            type_args,
-        } = &target
-            && let Some(role) = self.roles.get(base_name).cloned()
-        {
-            let mut named_args: HashMap<String, Value> = HashMap::new();
-            let mut positional_args: Vec<Value> = Vec::new();
-            for arg in &args {
-                if let Value::Pair(key, value) = arg {
-                    named_args.insert(key.clone(), *value.clone());
-                } else {
-                    positional_args.push(arg.clone());
-                }
-            }
-
-            let mut mixins = HashMap::new();
-            mixins.insert(format!("__mutsu_role__{}", base_name), Value::Bool(true));
-            mixins.insert(
-                format!("__mutsu_role_typeargs__{}", base_name),
-                Value::array(type_args.clone()),
-            );
-            if let Some(param_names) = self.role_type_params.get(base_name) {
-                for (param_name, type_arg) in param_names.iter().zip(type_args.iter()) {
-                    mixins.insert(
-                        format!("__mutsu_role_param__{}", param_name),
-                        type_arg.clone(),
-                    );
-                }
-            }
-            for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
-                role.attributes.iter().enumerate()
-            {
-                let value = if let Some(v) = named_args.get(attr_name) {
-                    v.clone()
-                } else if let Some(v) = positional_args.get(idx) {
-                    v.clone()
-                } else if let Some(expr) = default_expr {
-                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-                } else {
-                    Value::Nil
-                };
-                mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
-            }
-            return Ok(Value::Mixin(
-                Box::new(Value::make_instance(base_name.clone(), HashMap::new())),
-                mixins,
-            ));
-        }
-
-        if let Value::Package(class_name) = &target {
-            let parametric = Self::parse_parametric_type_name(class_name);
-            let (base_class_name, type_args) = if let Some((base, args)) = &parametric {
-                (base.as_str(), Some(args.clone()))
-            } else {
-                (class_name.as_str(), None)
-            };
-            match class_name.as_str() {
-                "Array" | "List" | "Positional" | "array" => {
-                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
-                        // Check for :data argument to populate the shaped array
-                        let data = args.iter().find_map(|arg| match arg {
-                            Value::Pair(name, value) if name == "data" => {
-                                Some(value.as_ref().clone())
-                            }
-                            _ => None,
-                        });
-                        let shaped = Self::make_shaped_array(&dims);
-                        if let Some(data_val) = data {
-                            // Populate the shaped array with data
-                            let data_items = match data_val {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items.to_vec(),
-                                other => vec![other],
-                            };
-                            if let Value::Array(ref items, is_arr) = shaped {
-                                let mut new_items = items.as_ref().clone();
-                                for (i, val) in data_items.into_iter().enumerate() {
-                                    if i < new_items.len() {
-                                        new_items[i] = val;
-                                    }
-                                }
-                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
-                                crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
-                                return Ok(result);
-                            }
-                        }
-                        return Ok(shaped);
-                    }
-                    let mut items = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Slip(vals) => items.extend(vals.iter().cloned()),
-                            other => items.push(other.clone()),
-                        }
-                    }
-                    let result = if matches!(class_name.as_str(), "Array" | "array") {
-                        Value::real_array(items)
-                    } else {
-                        Value::array(items)
-                    };
-                    return Ok(result);
-                }
-                "Hash" | "Map" => {
-                    let mut flat = Vec::new();
-                    for arg in &args {
-                        flat.extend(Self::value_to_list(arg));
-                    }
-                    let mut map = HashMap::new();
-                    let mut iter = flat.into_iter();
-                    while let Some(item) = iter.next() {
-                        match item {
-                            Value::Pair(k, v) => {
-                                map.insert(k, *v);
-                            }
-                            Value::ValuePair(k, v) => {
-                                map.insert(k.to_string_value(), *v);
-                            }
-                            other => {
-                                let key = other.to_string_value();
-                                let value = iter.next().unwrap_or(Value::Nil);
-                                map.insert(key, value);
-                            }
-                        }
-                    }
-                    return Ok(Value::hash(map));
-                }
-                "Uni" => {
-                    let codepoints: Vec<Value> = args
-                        .iter()
-                        .map(|a| match a {
-                            Value::Int(i) => Value::Int(*i),
-                            Value::Num(f) => Value::Int(*f as i64),
-                            other => {
-                                Value::Int(other.to_string_value().parse::<i64>().unwrap_or(0))
-                            }
-                        })
-                        .collect();
-                    return Ok(Value::array(codepoints));
-                }
-                "Seq" => {
-                    // Seq.new(iterator) — pull all items from the iterator
-                    if let Some(iterator) = args.first() {
-                        let mut items = Vec::new();
-                        loop {
-                            let val =
-                                self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                            if matches!(&val, Value::Str(s) if s == "IterationEnd") {
-                                break;
-                            }
-                            items.push(val);
-                        }
-                        return Ok(Value::Seq(std::sync::Arc::new(items)));
-                    }
-                    return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
-                }
-                "Version" => {
-                    let arg = args.first().cloned().unwrap_or(Value::Nil);
-                    return Ok(Self::version_from_value(arg));
-                }
-                "Duration" => {
-                    let secs = args.first().map(to_float_value).unwrap_or(Some(0.0));
-                    return Ok(Value::Num(secs.unwrap_or(0.0)));
-                }
-                "Promise" => {
-                    return Ok(Value::Promise(SharedPromise::new()));
-                }
-                "Channel" => {
-                    return Ok(Value::Channel(SharedChannel::new()));
-                }
-                "Stash" => {
-                    // Stash is essentially a Hash but with type Stash
-                    return Ok(Value::make_instance("Stash".to_string(), HashMap::new()));
-                }
-                "Supply" => return Ok(self.make_supply_instance()),
-                "Supplier" => {
-                    let mut attrs = HashMap::new();
-                    attrs.insert("emitted".to_string(), Value::array(Vec::new()));
-                    attrs.insert("done".to_string(), Value::Bool(false));
-                    attrs.insert(
-                        "supplier_id".to_string(),
-                        Value::Int(super::native_methods::next_supplier_id() as i64),
-                    );
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
-                }
-                "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
-                    return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
-                }
-                "Proxy" => {
-                    let mut fetcher = Value::Nil;
-                    let mut storer = Value::Nil;
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg {
-                            match key.as_str() {
-                                "FETCH" => fetcher = *value.clone(),
-                                "STORE" => storer = *value.clone(),
-                                _ => {}
-                            }
-                        }
-                    }
-                    return Ok(Value::Proxy {
-                        fetcher: Box::new(fetcher),
-                        storer: Box::new(storer),
-                    });
-                }
-                "CompUnit::DependencySpecification" => {
-                    // Extract :short-name from named args
-                    let mut short_name: Option<String> = None;
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg
-                            && key == "short-name"
-                        {
-                            if let Value::Str(s) = value.as_ref() {
-                                short_name = Some(s.clone());
-                            } else {
-                                return Err(RuntimeError::new(
-                                    "CompUnit::DependencySpecification.new: :short-name must be a Str",
-                                ));
-                            }
-                        }
-                    }
-                    let short_name = short_name.ok_or_else(|| {
-                        RuntimeError::new(
-                            "CompUnit::DependencySpecification.new: :short-name is required",
-                        )
-                    })?;
-                    return Ok(Value::CompUnitDepSpec { short_name });
-                }
-                "CompUnit::Repository::FileSystem" => {
-                    let mut prefix = ".".to_string();
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg
-                            && key == "prefix"
-                        {
-                            prefix = value.to_string_value();
-                        }
-                    }
-                    let prefix_path = if prefix.is_empty() { "." } else { &prefix };
-                    let canonical_prefix = std::fs::canonicalize(prefix_path)
-                        .unwrap_or_else(|_| std::path::PathBuf::from(prefix_path))
-                        .to_string_lossy()
-                        .to_string();
-                    let cache_key = format!("__mutsu_repo_fs::{}", canonical_prefix);
-                    if let Some(existing) = self.env.get(&cache_key).cloned() {
-                        return Ok(existing);
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "prefix".to_string(),
-                        self.make_io_path_instance(&canonical_prefix),
-                    );
-                    attrs.insert("short-id".to_string(), Value::Str("file".to_string()));
-                    let repo = Value::make_instance(class_name.clone(), attrs);
-                    self.env.insert(cache_key, repo.clone());
-                    return Ok(repo);
-                }
-                "Proc::Async" => {
-                    let mut positional = Vec::new();
-                    let mut w_flag = false;
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "w" => {
-                                w_flag = value.truthy();
-                            }
-                            _ => positional.push(arg.clone()),
-                        }
-                    }
-                    let stdout_id = super::native_methods::next_supply_id();
-                    let stderr_id = super::native_methods::next_supply_id();
-                    let mut stdout_supply_attrs = HashMap::new();
-                    stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    stdout_supply_attrs
-                        .insert("supply_id".to_string(), Value::Int(stdout_id as i64));
-                    let mut stderr_supply_attrs = HashMap::new();
-                    stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    stderr_supply_attrs
-                        .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
-
-                    let mut attrs = HashMap::new();
-                    attrs.insert("cmd".to_string(), Value::array(positional));
-                    attrs.insert("started".to_string(), Value::Bool(false));
-                    attrs.insert(
-                        "stdout".to_string(),
-                        Value::make_instance("Supply".to_string(), stdout_supply_attrs),
-                    );
-                    attrs.insert(
-                        "stderr".to_string(),
-                        Value::make_instance("Supply".to_string(), stderr_supply_attrs),
-                    );
-                    if w_flag {
-                        attrs.insert("w".to_string(), Value::Bool(true));
-                    }
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
-                }
-                "IO::Path" => {
-                    let mut path = String::new();
-                    let mut cwd_attr: Option<String> = None;
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "CWD" => {
-                                cwd_attr = Some(value.to_string_value());
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if path.is_empty() && class_name == "IO::Path" => {
-                                path = attributes
-                                    .get("path")
-                                    .map(|v| v.to_string_value())
-                                    .unwrap_or_default();
-                                if cwd_attr.is_none() {
-                                    cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
-                                }
-                            }
-                            _ if path.is_empty() => {
-                                path = arg.to_string_value();
-                            }
-                            _ => {}
-                        }
-                    }
-                    if path.contains('\0') {
-                        return Err(RuntimeError::new(
-                            "X::IO::Null: Found null byte in pathname",
-                        ));
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert("path".to_string(), Value::Str(path));
-                    if let Some(cwd) = cwd_attr {
-                        attrs.insert("cwd".to_string(), Value::Str(cwd));
-                    }
-                    return Ok(Value::make_instance("IO::Path".to_string(), attrs));
-                }
-                "utf8" | "utf16" => {
-                    let elems: Vec<Value> = args
-                        .iter()
-                        .flat_map(|a| match a {
-                            Value::Int(i) => vec![Value::Int(*i)],
-                            Value::Array(items, ..) => items.to_vec(),
-                            Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
-                            Value::RangeExcl(start, end) => {
-                                (*start..*end).map(Value::Int).collect()
-                            }
-                            _ => vec![],
-                        })
-                        .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(elems));
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
-                }
-                "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
-                | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
-                    let byte_vals: Vec<Value> = args
-                        .iter()
-                        .flat_map(|a| match a {
-                            Value::Int(i) => vec![Value::Int(*i)],
-                            Value::Array(items, ..) => items.to_vec(),
-                            Value::Seq(items) => items.to_vec(),
-                            Value::Slip(items) => items.to_vec(),
-                            Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
-                            Value::RangeExcl(start, end) => {
-                                (*start..*end).map(Value::Int).collect()
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "Buf"
-                                || class_name == "Blob"
-                                || class_name.starts_with("Buf[")
-                                || class_name.starts_with("Blob[")
-                                || class_name.starts_with("buf")
-                                || class_name.starts_with("blob") =>
-                            {
-                                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                                    items.to_vec()
-                                } else {
-                                    Vec::new()
-                                }
-                            }
-                            _ => vec![],
-                        })
-                        .collect();
-                    let is_blob = class_name.starts_with("Blob") || class_name.starts_with("blob");
-                    let type_name = if is_blob { "Blob" } else { "Buf" }.to_string();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(type_name, attrs));
-                }
-                "Rat" => {
-                    let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
-                    };
-                    let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
-                    };
-                    return Ok(make_rat(a, b));
-                }
-                "FatRat" => {
-                    let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
-                    };
-                    let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
-                    };
-                    return Ok(Value::FatRat(a, b));
-                }
-                "Set" | "SetHash" => {
-                    let mut elems = HashSet::new();
-                    for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            elems.insert(item.to_string_value());
-                        }
-                    }
-                    return Ok(Value::set(elems));
-                }
-                "Bag" | "BagHash" => {
-                    let mut counts: HashMap<String, i64> = HashMap::new();
-                    for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
-                        }
-                    }
-                    return Ok(Value::bag(counts));
-                }
-                "Mix" | "MixHash" => {
-                    let mut weights: HashMap<String, f64> = HashMap::new();
-                    for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
-                        }
-                    }
-                    return Ok(Value::mix(weights));
-                }
-                "Complex" => {
-                    let re = match args.first() {
-                        Some(Value::Int(i)) => *i as f64,
-                        Some(Value::Num(f)) => *f,
-                        _ => 0.0,
-                    };
-                    let im = match args.get(1) {
-                        Some(Value::Int(i)) => *i as f64,
-                        Some(Value::Num(f)) => *f,
-                        _ => 0.0,
-                    };
-                    return Ok(Value::Complex(re, im));
-                }
-                "Backtrace" => {
-                    let file = self
-                        .env
-                        .get("?FILE")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let mut frame_attrs = HashMap::new();
-                    frame_attrs.insert("file".to_string(), Value::Str(file));
-                    let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
-                    return Ok(Value::array(vec![frame]));
-                }
-                "Lock" | "Lock::Async" => {
-                    let mut attrs = HashMap::new();
-                    let lock_id = super::native_methods::next_lock_id() as i64;
-                    attrs.insert("lock-id".to_string(), Value::Int(lock_id));
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
-                }
-                "Slip" => {
-                    return Ok(Value::slip(args.clone()));
-                }
-                "Match" => {
-                    // Match.new(:orig("..."), :from(N), :pos(N), :list(...), :hash(...))
-                    let mut orig = String::new();
-                    let mut from: i64 = 0;
-                    let mut to: i64 = 0;
-                    let mut list = Value::array(Vec::new());
-                    let mut hash = Value::hash(HashMap::new());
-                    for arg in &args {
-                        if let Value::Pair(key, value) = arg {
-                            match key.as_str() {
-                                "orig" => orig = value.to_string_value(),
-                                "from" => from = to_int(value),
-                                "pos" | "to" => to = to_int(value),
-                                "list" => list = *value.clone(),
-                                "hash" => hash = *value.clone(),
-                                _ => {}
-                            }
-                        }
-                    }
-                    // Compute matched string from orig[from..pos]
-                    let matched: String = orig
-                        .chars()
-                        .skip(from as usize)
-                        .take((to - from) as usize)
-                        .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("str".to_string(), Value::Str(matched));
-                    attrs.insert("from".to_string(), Value::Int(from));
-                    attrs.insert("to".to_string(), Value::Int(to));
-                    attrs.insert("orig".to_string(), Value::Str(orig));
-                    // Convert list to positional captures
-                    if let Value::Array(items, ..) = &list {
-                        attrs.insert("list".to_string(), Value::array(items.to_vec()));
-                    } else {
-                        attrs.insert("list".to_string(), Value::array(Vec::new()));
-                    }
-                    // Convert hash (Map) to named captures
-                    if let Value::Hash(map, ..) = &hash {
-                        attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
-                    } else {
-                        attrs.insert("named".to_string(), Value::hash(HashMap::new()));
-                    }
-                    return Ok(Value::make_instance("Match".to_string(), attrs));
-                }
-                // Types that cannot be instantiated with .new
-                "HyperWhatever" | "Whatever" | "Junction" => {
-                    return Err(RuntimeError::new(format!(
-                        "X::Cannot::New: Cannot create new object of type {}",
-                        class_name
-                    )));
-                }
-                _ => {}
-            }
-            // Parametric package handling (e.g. Array[Int], Hash[Int,Str], A[Int]).
-            if let Some(type_args) = type_args.as_ref() {
-                if matches!(base_class_name, "Array" | "List" | "Positional" | "array") {
-                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
-                        let data = args.iter().find_map(|arg| match arg {
-                            Value::Pair(name, value) if name == "data" => {
-                                Some(value.as_ref().clone())
-                            }
-                            _ => None,
-                        });
-                        let shaped = Self::make_shaped_array(&dims);
-                        let result = if let Some(data_val) = data {
-                            let data_items = match data_val {
-                                Value::Array(items, ..)
-                                | Value::Seq(items)
-                                | Value::Slip(items) => items.to_vec(),
-                                other => vec![other],
-                            };
-                            if let Value::Array(ref items, is_arr) = shaped {
-                                let mut new_items = items.as_ref().clone();
-                                for (i, val) in data_items.into_iter().enumerate() {
-                                    if i < new_items.len() {
-                                        new_items[i] = val;
-                                    }
-                                }
-                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
-                                crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
-                                result
-                            } else {
-                                shaped
-                            }
-                        } else {
-                            shaped
-                        };
-                        let value_type = type_args
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| "Any".to_string());
-                        self.register_container_type_metadata(
-                            &result,
-                            crate::runtime::ContainerTypeInfo {
-                                value_type,
-                                key_type: None,
-                                declared_type: Some(class_name.clone()),
-                            },
-                        );
-                        return Ok(result);
-                    }
-                    let mut items = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Slip(vals) => items.extend(vals.iter().cloned()),
-                            other => items.push(other.clone()),
-                        }
-                    }
-                    let result = if matches!(base_class_name, "Array" | "array") {
-                        Value::real_array(items)
-                    } else {
-                        Value::array(items)
-                    };
-                    let value_type = type_args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| "Any".to_string());
-                    self.register_container_type_metadata(
-                        &result,
-                        crate::runtime::ContainerTypeInfo {
-                            value_type,
-                            key_type: None,
-                            declared_type: Some(class_name.clone()),
-                        },
-                    );
-                    return Ok(result);
-                }
-                if matches!(base_class_name, "Hash" | "Map") {
-                    let mut flat = Vec::new();
-                    for arg in &args {
-                        flat.extend(Self::value_to_list(arg));
-                    }
-                    let mut map = HashMap::new();
-                    let mut iter = flat.into_iter();
-                    while let Some(item) = iter.next() {
-                        match item {
-                            Value::Pair(k, v) => {
-                                map.insert(k, *v);
-                            }
-                            Value::ValuePair(k, v) => {
-                                map.insert(k.to_string_value(), *v);
-                            }
-                            other => {
-                                let key = other.to_string_value();
-                                let value = iter.next().unwrap_or(Value::Nil);
-                                map.insert(key, value);
-                            }
-                        }
-                    }
-                    let result = Value::hash(map);
-                    let value_type = type_args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| "Any".to_string());
-                    let key_type = type_args.get(1).cloned();
-                    self.register_container_type_metadata(
-                        &result,
-                        crate::runtime::ContainerTypeInfo {
-                            value_type,
-                            key_type,
-                            declared_type: Some(class_name.clone()),
-                        },
-                    );
-                    return Ok(result);
-                }
-            }
-            if let Some(role) = self.roles.get(class_name).cloned() {
-                let mut named_args: HashMap<String, Value> = HashMap::new();
-                let mut positional_args: Vec<Value> = Vec::new();
-                for arg in &args {
-                    if let Value::Pair(key, value) = arg {
-                        named_args.insert(key.clone(), *value.clone());
-                    } else {
-                        positional_args.push(arg.clone());
-                    }
-                }
-
-                let mut mixins = HashMap::new();
-                mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
-                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
-                    role.attributes.iter().enumerate()
-                {
-                    let value = if let Some(v) = named_args.get(attr_name) {
-                        v.clone()
-                    } else if let Some(v) = positional_args.get(idx) {
-                        v.clone()
-                    } else if let Some(expr) = default_expr {
-                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-                    } else {
-                        Value::Nil
-                    };
-                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
-                }
-                return Ok(Value::Mixin(
-                    Box::new(Value::make_instance(class_name.clone(), HashMap::new())),
-                    mixins,
-                ));
-            }
-            if self.classes.contains_key(class_name)
-                || type_args
-                    .as_ref()
-                    .is_some_and(|_| self.classes.contains_key(base_class_name))
-            {
-                let class_key = if self.classes.contains_key(class_name) {
-                    class_name.as_str()
-                } else {
-                    base_class_name
-                };
-                // Check for user-defined .new method first
-                if self.has_user_method(class_key, "new") {
-                    let empty_attrs = HashMap::new();
-                    let (result, _updated) =
-                        self.run_instance_method(class_name, empty_attrs, "new", args, None)?;
-                    return Ok(result);
-                }
-                let mut attrs = HashMap::new();
-                for (attr_name, _is_public, default, _is_rw) in
-                    self.collect_class_attributes(class_key)
-                {
-                    let val = if let Some(expr) = default {
-                        self.eval_block_value(&[Stmt::Expr(expr)])?
-                    } else {
-                        Value::Nil
-                    };
-                    attrs.insert(attr_name, val);
-                }
-                let class_mro = self.class_mro(class_key);
-                for val in &args {
-                    match val {
-                        Value::Pair(k, v) => {
-                            attrs.insert(k.clone(), *v.clone());
-                        }
-                        Value::Instance {
-                            class_name: src_class,
-                            attributes: src_attrs,
-                            ..
-                        } if class_mro.iter().any(|name| name == src_class) => {
-                            for (attr, value) in src_attrs.iter() {
-                                if attrs.contains_key(attr) {
-                                    attrs.insert(attr.clone(), value.clone());
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                let class_def = self.classes.get(class_key);
-                let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
-                let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
-                if self.class_has_method(class_name, "BUILD") {
-                    let build_args = if has_direct_build {
-                        args.clone()
-                    } else {
-                        Vec::new()
-                    };
-                    let (_v, updated) = self.run_instance_method(
-                        class_name,
-                        attrs.clone(),
-                        "BUILD",
-                        build_args,
-                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
-                    )?;
-                    attrs = updated;
-                }
-                if self.class_has_method(class_name, "TWEAK") {
-                    let tweak_args = if has_direct_tweak {
-                        args.clone()
-                    } else {
-                        Vec::new()
-                    };
-                    let (_v, updated) = self.run_instance_method(
-                        class_name,
-                        attrs.clone(),
-                        "TWEAK",
-                        tweak_args,
-                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
-                    )?;
-                    attrs = updated;
-                }
-                let instance = Value::make_instance(class_name.clone(), attrs);
-                if let Some(type_args) = type_args.as_ref() {
-                    if self.class_mro(class_key).iter().any(|n| n == "Array") {
-                        let value_type = type_args
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| "Any".to_string());
-                        self.register_container_type_metadata(
-                            &instance,
-                            crate::runtime::ContainerTypeInfo {
-                                value_type,
-                                key_type: None,
-                                declared_type: Some(class_name.clone()),
-                            },
-                        );
-                    } else if self.class_mro(class_key).iter().any(|n| n == "Hash") {
-                        let value_type = type_args
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| "Any".to_string());
-                        let key_type = type_args.get(1).cloned();
-                        self.register_container_type_metadata(
-                            &instance,
-                            crate::runtime::ContainerTypeInfo {
-                                value_type,
-                                key_type,
-                                declared_type: Some(class_name.clone()),
-                            },
-                        );
-                    }
-                }
-                return Ok(instance);
-            }
-        }
-        // Fallback .new on basic types
-        match target {
-            Value::Package(name) if name == "CallFrame" => {
-                // CallFrame.new(depth) — equivalent to callframe(depth)
-                let depth = args
-                    .first()
-                    .and_then(|v| match v {
-                        Value::Int(i) => Some(*i as usize),
-                        Value::Num(f) => Some(*f as usize),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                self.builtin_callframe(&args, depth)
-            }
-            Value::Package(name) => Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
-                name
-            ))),
-            Value::Str(_) => Ok(Value::Str(String::new())),
-            Value::Int(_) => Ok(Value::Int(0)),
-            Value::Num(_) => Ok(Value::Num(0.0)),
-            Value::Bool(_) => Ok(Value::Bool(false)),
-            Value::Nil => Ok(Value::Nil),
-            _ => Err(RuntimeError::new(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
-            )),
-        }
-    }
-
-    fn dispatch_grep(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        match target {
-            Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
-                "Cannot call .grep on a Supply type object",
-            )),
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Supply" => {
-                let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback")
-                {
-                    let emitter = Value::make_instance("Supplier".to_string(), {
-                        let mut a = HashMap::new();
-                        a.insert("emitted".to_string(), Value::array(Vec::new()));
-                        a.insert("done".to_string(), Value::Bool(false));
-                        a
-                    });
-                    self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
-                } else {
-                    attributes
-                        .get("values")
-                        .and_then(|v| {
-                            if let Value::Array(items, ..) = v {
-                                Some(items.to_vec())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default()
-                };
-                let filtered = self.eval_grep_over_items(args.first().cloned(), source_values)?;
-                let filtered_values = Self::value_to_list(&filtered);
-                let mut attrs = HashMap::new();
-                attrs.insert("values".to_string(), Value::array(filtered_values));
-                attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert(
-                    "live".to_string(),
-                    attributes
-                        .get("live")
-                        .cloned()
-                        .unwrap_or(Value::Bool(false)),
-                );
-                Ok(Value::make_instance("Supply".to_string(), attrs))
-            }
-            Value::Array(items, ..) => {
-                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
-            }
-            Value::Range(a, b) => {
-                let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::RangeExcl(a, b) => {
-                let items: Vec<Value> = (a..b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::RangeExclStart(a, b) => {
-                let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::RangeExclBoth(a, b) => {
-                let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::GenericRange { .. } => {
-                let items = crate::runtime::utils::value_to_list(&target);
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            other => Ok(other),
-        }
-    }
-
-    fn dispatch_first(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        // Separate named args (Pairs) from positional args
-        let mut positional = Vec::new();
-        let mut has_neg_v = false;
-        let mut has_end = false;
-        let mut has_k = false;
-        let mut has_kv = false;
-        let mut has_p = false;
-        for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "v" => {
-                    if !value.truthy() {
-                        has_neg_v = true;
-                    }
-                }
-                Value::Pair(key, value) if key == "end" => {
-                    if value.truthy() {
-                        has_end = true;
-                    }
-                }
-                Value::Pair(key, value) if key == "k" => {
-                    has_k = value.truthy();
-                }
-                Value::Pair(key, value) if key == "kv" => {
-                    has_kv = value.truthy();
-                }
-                Value::Pair(key, value) if key == "p" => {
-                    has_p = value.truthy();
-                }
-                _ => positional.push(arg.clone()),
-            }
-        }
-        if has_neg_v {
-            return Err(RuntimeError::new(
-                "Throwing `:!v` on first is not supported",
-            ));
-        }
-        // Check for Bool matcher (X::Match::Bool)
-        if matches!(positional.first(), Some(Value::Bool(_))) {
-            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
-            err.exception = Some(Box::new(Value::make_instance(
-                "X::Match::Bool".to_string(),
-                std::collections::HashMap::new(),
-            )));
-            return Err(err);
-        }
-        let func = positional.first().cloned();
-        let items = crate::runtime::utils::value_to_list(&target);
-        if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
-            return Ok(super::builtins_collection::format_first_result(
-                idx, value, has_k, has_kv, has_p,
-            ));
-        }
-        Ok(Value::Nil)
-    }
-
-    /// `$n.polymod(@divisors)` — successive modular decomposition.
-    fn method_polymod(&mut self, target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        fn val_to_f64(v: &Value) -> f64 {
-            match v {
-                Value::Int(n) => *n as f64,
-                Value::Num(n) => *n,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::Bool(b) => {
-                    if *b {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
-                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                _ => 0.0,
-            }
-        }
-        fn f64_to_val(n: f64) -> Value {
-            if n.is_finite() && n == n.trunc() && n.abs() < i64::MAX as f64 {
-                Value::Int(n as i64)
-            } else {
-                Value::Num(n)
-            }
-        }
-        let mut n = val_to_f64(target);
-        // Flatten args into a list of divisors
-        let mut divisors = Vec::new();
-        for arg in args {
-            match arg {
-                Value::Array(items, ..) => divisors.extend(items.iter().cloned()),
-                _ => divisors.push(arg.clone()),
-            }
-        }
-        let mut result = Vec::new();
-        for d in &divisors {
-            let d_val = val_to_f64(d);
-            if d_val == 0.0 {
-                result.push(f64_to_val(n));
-                n = f64::INFINITY;
-                continue;
-            }
-            let rem = n % d_val;
-            let quot = ((n - rem) / d_val).trunc();
-            result.push(f64_to_val(rem));
-            n = quot;
-            // Modulo 1 always yields remainder 0 and quotient = n; stop infinite loops
-            if d_val == 1.0 {
-                break;
-            }
-        }
-        result.push(f64_to_val(n));
-        Ok(Value::array(result))
-    }
-
-    fn dispatch_tree(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        // Non-iterable: .tree(anything) returns self
-        let items = match &target {
-            Value::Array(items, ..) => items.clone(),
-            _ => return Ok(target),
-        };
-
-        let arg = &args[0];
-        match arg {
-            // .tree(0) — identity
-            Value::Int(0) => Ok(target),
-            // .tree(n) — tree to n levels
-            Value::Int(n) if *n > 0 => Ok(Value::array(self.tree_depth(&items, *n as usize)?)),
-            // .tree(*) — full depth (same as .tree()); * compiles to Inf
-            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                Ok(Value::array(self.tree_depth(&items, usize::MAX)?))
-            }
-            // .tree([&first, *@rest]) — array of closures form
-            Value::Array(closure_list, ..) => {
-                if closure_list.is_empty() {
-                    return Ok(target);
-                }
-                let first = &closure_list[0];
-                self.call_sub_value(first.clone(), vec![target], false)
-            }
-            // .tree(&closure, ...) — apply closures at depth levels
-            Value::Sub(_) => {
-                let closures: Vec<Value> = args.to_vec();
-                self.tree_with_closures(&items, &closures, 0)
-            }
-            _ => Ok(target),
-        }
-    }
-
-    fn tree_depth(&mut self, items: &[Value], depth: usize) -> Result<Vec<Value>, RuntimeError> {
-        let mut result = Vec::new();
-        for item in items {
-            match item {
-                Value::Array(inner, ..) if depth > 0 => {
-                    result.push(Value::array(self.tree_depth(inner, depth - 1)?));
-                }
-                other => result.push(other.clone()),
-            }
-        }
-        Ok(result)
-    }
-
-    fn tree_with_closures(
-        &mut self,
-        items: &[Value],
-        closures: &[Value],
-        depth: usize,
-    ) -> Result<Value, RuntimeError> {
-        let mut processed = Vec::new();
-        for item in items {
-            match item {
-                Value::Array(inner, ..) if closures.len() > depth + 1 => {
-                    let sub_result = self.tree_with_closures(inner, closures, depth + 1)?;
-                    processed.push(sub_result);
-                }
-                Value::Array(inner, ..) => {
-                    // Apply the last closure to leaf arrays
-                    if let Some(closure) = closures.last()
-                        && closures.len() > 1
-                    {
-                        processed.push(self.call_sub_value(
-                            closure.clone(),
-                            vec![Value::Array(inner.clone(), false)],
-                            false,
-                        )?);
-                    } else {
-                        processed.push(Value::Array(inner.clone(), false)); // already Arc-wrapped
-                    }
-                }
-                other => processed.push(other.clone()),
-            }
-        }
-        // Apply the closure at this depth level
-        if let Some(closure) = closures.get(depth) {
-            self.call_sub_value(closure.clone(), vec![Value::array(processed)], false)
-        } else {
-            Ok(Value::array(processed))
-        }
-    }
-
-    pub(super) fn dispatch_socket_connect(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let host = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        let port = args
-            .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
-            })
-            .unwrap_or(0);
-        let addr = format!("{}:{}", host, port);
-        let stream = std::net::TcpStream::connect_timeout(
-            &addr
-                .to_socket_addrs()
-                .map_err(|e| RuntimeError::new(format!("Failed to resolve '{}': {}", addr, e)))?
-                .next()
-                .ok_or_else(|| RuntimeError::new(format!("No addresses found for '{}'", addr)))?,
-            Duration::from_secs(10),
-        )
-        .map_err(|e| RuntimeError::new(format!("Failed to connect to '{}': {}", addr, e)))?;
-        let id = self.next_handle_id;
-        self.next_handle_id += 1;
-        let state = IoHandleState {
-            target: IoHandleTarget::Socket,
-            mode: IoHandleMode::ReadWrite,
-            path: None,
-            line_separators: self.default_line_separators(),
-            encoding: "utf-8".to_string(),
-            file: None,
-            socket: Some(stream),
-            closed: false,
-            bin: false,
-        };
-        self.handles.insert(id, state);
-        let mut attrs = HashMap::new();
-        attrs.insert("handle".to_string(), Value::Int(id as i64));
-        attrs.insert("host".to_string(), Value::Str(host));
-        attrs.insert("port".to_string(), Value::Int(port as i64));
-        Ok(Value::make_instance("IO::Socket::INET".to_string(), attrs))
-    }
-
-    /// Replay deferred Proc::Async taps on the main thread.
-    /// Called when a Proc result is retrieved via .result or await.
-    pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
-        let stdout_taps = match attributes.get("stdout_taps") {
-            Some(Value::Array(taps, ..)) => taps.to_vec(),
-            _ => Vec::new(),
-        };
-        let stderr_taps = match attributes.get("stderr_taps") {
-            Some(Value::Array(taps, ..)) => taps.to_vec(),
-            _ => Vec::new(),
-        };
-        let collected_stdout = match attributes.get("collected_stdout") {
-            Some(Value::Str(s)) => s.clone(),
-            _ => String::new(),
-        };
-        let collected_stderr = match attributes.get("collected_stderr") {
-            Some(Value::Str(s)) => s.clone(),
-            _ => String::new(),
-        };
-
-        if !collected_stdout.is_empty() && !stdout_taps.is_empty() {
-            for tap in &stdout_taps {
-                let _ = self.call_sub_value(
-                    tap.clone(),
-                    vec![Value::Str(collected_stdout.clone())],
-                    true,
-                );
-            }
-        }
-        if !collected_stderr.is_empty() && !stderr_taps.is_empty() {
-            for tap in &stderr_taps {
-                let _ = self.call_sub_value(
-                    tap.clone(),
-                    vec![Value::Str(collected_stderr.clone())],
-                    true,
-                );
-            }
-        }
-    }
-
-    /// Returns Some(class_name) if target is Promise or a Promise subclass package.
-    fn promise_class_name(&mut self, target: &Value) -> Option<String> {
-        match target {
-            Value::Package(name) => {
-                if name == "Promise" {
-                    Some("Promise".to_string())
-                } else if self.class_mro(name).contains(&"Promise".to_string()) {
-                    Some(name.clone())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    fn dispatch_encoding_registry_find(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let name = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        if let Some(entry) = self.find_encoding(&name) {
-            if let Some(ref user_type) = entry.user_type {
-                // User-registered encoding: return an instance of the user's type
-                return Ok(user_type.clone());
-            }
-            // Built-in encoding: create an Encoding::Builtin instance
-            let mut attrs = HashMap::new();
-            attrs.insert("name".to_string(), Value::Str(entry.name.clone()));
-            let alt_names: Vec<Value> = entry
-                .alternative_names
-                .iter()
-                .map(|s| Value::Str(s.clone()))
-                .collect();
-            attrs.insert("alternative-names".to_string(), Value::array(alt_names));
-            Ok(Value::make_instance("Encoding::Builtin".to_string(), attrs))
-        } else {
-            // Throw X::Encoding::Unknown
-            let mut ex_attrs = HashMap::new();
-            ex_attrs.insert("name".to_string(), Value::Str(name.clone()));
-            let ex = Value::make_instance("X::Encoding::Unknown".to_string(), ex_attrs);
-            let mut err = RuntimeError::new(format!("Unknown encoding '{}'", name));
-            err.exception = Some(Box::new(ex));
-            Err(err)
-        }
-    }
-
-    fn dispatch_encoding_registry_register(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let encoding_val = args.first().cloned().unwrap_or(Value::Nil);
-        // The encoding is a type object (Package) or class instance.
-        // We need to call .name and .alternative-names on it to get registration info.
-        let enc_name = self.call_method_with_values(encoding_val.clone(), "name", vec![])?;
-        let enc_name_str = enc_name.to_string_value();
-
-        let alt_names_val = self
-            .call_method_with_values(encoding_val.clone(), "alternative-names", vec![])
-            .unwrap_or(Value::array(Vec::new()));
-        let alt_names: Vec<String> = match alt_names_val {
-            Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
-            Value::Slip(items) => items.iter().map(|v| v.to_string_value()).collect(),
-            _ => Vec::new(),
-        };
-
-        let entry = super::EncodingEntry {
-            name: enc_name_str.clone(),
-            alternative_names: alt_names,
-            user_type: Some(encoding_val),
-        };
-
-        match self.register_encoding(entry) {
-            Ok(()) => Ok(Value::Nil),
-            Err(conflicting_name) => {
-                let mut ex_attrs = HashMap::new();
-                ex_attrs.insert("name".to_string(), Value::Str(conflicting_name.clone()));
-                let ex =
-                    Value::make_instance("X::Encoding::AlreadyRegistered".to_string(), ex_attrs);
-                let mut err = RuntimeError::new(format!(
-                    "Encoding '{}' is already registered",
-                    conflicting_name
-                ));
-                err.exception = Some(Box::new(ex));
-                Err(err)
-            }
-        }
-    }
-
-    fn dispatch_rotor(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        use crate::runtime::utils::to_float_value;
-
-        // Extract :partial named arg
-        let mut partial = false;
-        let mut positional_args: Vec<Value> = Vec::new();
-        for arg in args {
-            match arg {
-                Value::Pair(key, val) if key == "partial" => {
-                    partial = val.truthy();
-                }
-                _ => positional_args.push(arg.clone()),
-            }
-        }
-
-        // Build spec list from positional args
-        // If single arg is a list/array, use its elements as specs
-        let specs = if positional_args.len() == 1 {
-            match &positional_args[0] {
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Seq(items) => items.to_vec(),
-                Value::LazyList(_) => Self::value_to_list(&positional_args[0]),
-                other => vec![other.clone()],
-            }
-        } else {
-            positional_args
-        };
-
-        // Parse each spec into (count, gap) pairs
-        // count can be: Int, Whatever (*), Inf, Range
-        // gap is from Pair's value
-        struct RotorSpec {
-            count: RotorCount,
-            gap: i64,
-        }
-        #[derive(Clone)]
-        enum RotorCount {
-            Fixed(usize),
-            Whatever,        // * — take everything remaining
-            Inf,             // Inf — take everything remaining
-            Range(Vec<i64>), // 1..* or similar — cycling counts
-        }
-
-        // Flatten any nested Seq/Array specs into a flat list
-        let mut flat_specs: Vec<Value> = Vec::new();
-        let mut to_process: std::collections::VecDeque<Value> = specs.into();
-        while let Some(spec) = to_process.pop_front() {
-            match &spec {
-                Value::Seq(items) => {
-                    for item in items.iter() {
-                        to_process.push_back(item.clone());
-                    }
-                }
-                Value::Array(items, ..) => {
-                    for item in items.iter() {
-                        to_process.push_back(item.clone());
-                    }
-                }
-                _ => flat_specs.push(spec),
-            }
-        }
-
-        let mut rotor_specs: Vec<RotorSpec> = Vec::new();
-        for spec in &flat_specs {
-            match spec {
-                Value::Int(n) => {
-                    let count = *n;
-                    if count < 0 {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("got".to_string(), Value::Int(count));
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::Str(format!(
-                                "Expected a non-negative integer for rotor count, got {}",
-                                count
-                            )),
-                        );
-                        let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
-                        let mut err = RuntimeError::new(format!(
-                            "X::OutOfRange: Expected non-negative count, got {}",
-                            count
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
-                    }
-                    rotor_specs.push(RotorSpec {
-                        count: RotorCount::Fixed(count as usize),
-                        gap: 0,
-                    });
-                }
-                Value::Whatever => {
-                    rotor_specs.push(RotorSpec {
-                        count: RotorCount::Inf,
-                        gap: 0,
-                    });
-                }
-                Value::Num(n) if n.is_infinite() && n.is_sign_positive() => {
-                    rotor_specs.push(RotorSpec {
-                        count: RotorCount::Inf,
-                        gap: 0,
-                    });
-                }
-                Value::Num(n) => {
-                    rotor_specs.push(RotorSpec {
-                        count: RotorCount::Fixed(*n as usize),
-                        gap: 0,
-                    });
-                }
-                Value::Rat(n, d) => {
-                    let count = if *d != 0 { n / d } else { 0 };
-                    rotor_specs.push(RotorSpec {
-                        count: RotorCount::Fixed(count as usize),
-                        gap: 0,
-                    });
-                }
-                Value::Pair(..) | Value::ValuePair(..) => {
-                    let (count_val, gap_val) = match spec {
-                        Value::Pair(k, v) => (Value::Str(k.clone()), v.as_ref().clone()),
-                        Value::ValuePair(k, v) => (k.as_ref().clone(), v.as_ref().clone()),
-                        _ => unreachable!(),
-                    };
-                    let count = match &count_val {
-                        Value::Int(n) => RotorCount::Fixed(*n as usize),
-                        Value::Num(n) => RotorCount::Fixed(*n as usize),
-                        Value::Rat(n, d) => {
-                            RotorCount::Fixed(if *d != 0 { (n / d) as usize } else { 0 })
-                        }
-                        Value::Str(s) => RotorCount::Fixed(s.parse::<i64>().unwrap_or(0) as usize),
-                        _ => RotorCount::Fixed(0),
-                    };
-                    let gap = match &gap_val {
-                        Value::Int(n) => *n,
-                        Value::Num(n) => *n as i64,
-                        Value::Rat(n, d) => {
-                            if *d != 0 {
-                                n / d
-                            } else {
-                                0
-                            }
-                        }
-                        _ => 0,
-                    };
-                    rotor_specs.push(RotorSpec { count, gap });
-                }
-                Value::HyperWhatever => {
-                    rotor_specs.push(RotorSpec {
-                        count: RotorCount::Whatever,
-                        gap: 0,
-                    });
-                }
-                Value::Range(start, end) | Value::RangeExcl(start, end) => {
-                    let is_excl = matches!(spec, Value::RangeExcl(..));
-                    let end_val = if is_excl { *end - 1 } else { *end };
-                    if end_val == i64::MAX || *end == i64::MAX {
-                        // 1..* — infinite range, treated like cycling counts
-                        let mut counts = Vec::new();
-                        for i in *start.. {
-                            counts.push(i);
-                            if counts.len() > 10000 {
-                                break; // safety limit
-                            }
-                        }
-                        rotor_specs.push(RotorSpec {
-                            count: RotorCount::Range(counts),
-                            gap: 0,
-                        });
-                    } else {
-                        let mut counts = Vec::new();
-                        for i in *start..=end_val {
-                            counts.push(i);
-                        }
-                        rotor_specs.push(RotorSpec {
-                            count: RotorCount::Range(counts),
-                            gap: 0,
-                        });
-                    }
-                }
-                _ => {
-                    // Try to coerce to int
-                    if let Some(n) = to_float_value(spec) {
-                        if n.is_infinite() && n.is_sign_positive() {
-                            rotor_specs.push(RotorSpec {
-                                count: RotorCount::Inf,
-                                gap: 0,
-                            });
-                        } else {
-                            rotor_specs.push(RotorSpec {
-                                count: RotorCount::Fixed(n as usize),
-                                gap: 0,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        if rotor_specs.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
-        }
-
-        // Get the items to rotor over (force LazyList if needed)
-        let target = if let Value::LazyList(ll) = &target {
-            Value::array(self.force_lazy_list_bridge(ll)?)
-        } else {
-            target
-        };
-        let items = Self::value_to_list(&target);
-
-        if items.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
-        }
-
-        let mut result: Vec<Value> = Vec::new();
-        let mut pos = 0usize;
-        let mut spec_idx = 0usize;
-        let mut range_sub_idx = 0usize; // for Range specs
-
-        loop {
-            if pos >= items.len() {
-                break;
-            }
-
-            let spec = &rotor_specs[spec_idx % rotor_specs.len()];
-
-            let count = match &spec.count {
-                RotorCount::Fixed(n) => *n,
-                RotorCount::Whatever | RotorCount::Inf => items.len() - pos,
-                RotorCount::Range(counts) => {
-                    let c = counts[range_sub_idx % counts.len()];
-                    if c == i64::MAX {
-                        items.len() - pos
-                    } else {
-                        c as usize
-                    }
-                }
-            };
-
-            let gap = spec.gap;
-
-            // Take `count` items starting at pos
-            let end = std::cmp::min(pos.saturating_add(count), items.len());
-            let chunk_len = end - pos;
-            let chunk: Vec<Value> = items[pos..end].to_vec();
-
-            if (chunk_len == count || partial) && (!chunk.is_empty() || count == 0) {
-                result.push(Value::array(chunk));
-            }
-
-            if chunk_len < count && !partial {
-                break;
-            }
-
-            // Advance position: count + gap (gap can be negative for overlap)
-            let new_pos = (pos as i64).saturating_add((count as i64).saturating_add(gap));
-            if new_pos < 0 {
-                // Negative gap past start of list
-                let mut attrs = HashMap::new();
-                attrs.insert("got".to_string(), Value::Int(new_pos));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::Str(
-                        "Rotoring gap is too large and causes an index below zero".to_string(),
-                    ),
-                );
-                let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
-                let mut err =
-                    RuntimeError::new("X::OutOfRange: Rotoring gap is too large".to_string());
-                err.exception = Some(Box::new(ex));
-                return Err(err);
-            }
-            pos = new_pos as usize;
-
-            // Advance spec index
-            match &spec.count {
-                RotorCount::Range(counts) => {
-                    range_sub_idx += 1;
-                    if range_sub_idx >= counts.len() {
-                        range_sub_idx = 0;
-                        spec_idx += 1;
-                    }
-                }
-                _ => {
-                    spec_idx += 1;
-                }
-            }
-        }
-
-        Ok(Value::Seq(Arc::new(result)))
     }
 }

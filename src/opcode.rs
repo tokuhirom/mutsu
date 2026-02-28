@@ -296,6 +296,8 @@ pub(crate) enum OpCode {
     // -- Given/When control --
     Proceed,
     Succeed,
+    /// `done` — terminate the innermost react event loop
+    ReactDone,
     /// Tag the current value as coming from a named container (for Scalar binding)
     TagContainerRef(u32),
 
@@ -333,6 +335,8 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
+    /// Mark a variable as readonly (for `:=` binding).
+    MarkVarReadonly(u32),
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).
@@ -342,6 +346,7 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
         collect: bool,
+        isolate_topic: bool,
     },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
@@ -352,6 +357,8 @@ pub(crate) enum OpCode {
         label: Option<String>,
         arity: u32,
         collect: bool,
+        /// When true, run the loop body in a spawned thread (race for / hyper for).
+        threaded: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
@@ -445,6 +452,12 @@ pub(crate) enum OpCode {
     HyperMethodCall {
         name_idx: u32,
         arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+    },
+    HyperMethodCallDynamic {
+        arity: u32,
+        modifier_idx: Option<u32>,
     },
 
     // -- HyperOp (>>op<<) --
@@ -553,6 +566,13 @@ pub(crate) enum OpCode {
     RegisterVarExport {
         name_idx: u32,
         tags_idx: Option<u32>,
+    },
+    /// Apply a custom variable trait via trait_mod:<is>.
+    /// When `has_arg` is true, pops trait argument value from stack.
+    ApplyVarTrait {
+        name_idx: u32,
+        trait_name_idx: u32,
+        has_arg: bool,
     },
 
     /// Get a variable from the caller's scope ($CALLER::varname).

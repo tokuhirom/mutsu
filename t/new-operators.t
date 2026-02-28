@@ -1,5 +1,5 @@
 use Test;
-plan 24;
+plan 26;
 
 # xx operator (list repetition)
 is ("a" xx 3).elems, 3, 'xx creates list with correct count';
@@ -18,6 +18,12 @@ is $b, 2, '%= modulo assignment';
 my $c = 2;
 $c **= 3;
 is $c, 8, '**= power assignment';
+
+my $decl_pow **= $decl_pow;
+is $decl_pow, 1, 'declaration-time **= autovivifies from neutral element';
+
+my $decl_add += 4;
+is $decl_add, 4, 'declaration-time += autovivifies and assigns';
 
 # x= compound assignment
 my $d = "ab";

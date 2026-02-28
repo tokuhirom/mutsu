@@ -118,6 +118,21 @@ fi
 
 require_cmd gh
 SCRIPT_DIR_CHECK="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR_CHECK}/.." && pwd)"
+STOP_FILE="${REPO_ROOT}/tmp/.stop"
+STOP_FILE_PID="${STOP_FILE}.$$"
+
+check_stop_file() {
+    if [[ -f "$STOP_FILE_PID" ]]; then
+        echo "PID stop file detected ($STOP_FILE_PID). Exiting gracefully."
+        rm -f "$STOP_FILE_PID"
+        exit 0
+    fi
+    if [[ -f "$STOP_FILE" ]]; then
+        echo "Stop file detected ($STOP_FILE). Exiting gracefully."
+        exit 0
+    fi
+}
 if [[ ! -x "${SCRIPT_DIR_CHECK}/ai-sandbox.sh" ]]; then
     echo "Error: ${SCRIPT_DIR_CHECK}/ai-sandbox.sh not found or not executable" >&2
     exit 1
@@ -138,9 +153,12 @@ build_history_prompt() {
     cat <<EOF
 Update roast history on branch $branch_name.
 
-Follow the repository PR workflow in CLAUDE.md and handle this end-to-end:
-1. Checkout main and sync latest origin/main
-2. Create and switch to branch: $branch_name
+Steps:
+1. Sync to the latest main:
+   git fetch origin
+   git checkout main
+   git reset --hard origin/main
+2. Create and switch to branch: git checkout -b $branch_name
 3. Run ./scripts/roast-history.sh --commit
 4. If there are no changes, report and stop (do not open a PR)
 5. Otherwise push the branch and open a PR with gh pr create
@@ -162,11 +180,11 @@ run_history_update() {
     branch_name="update-history-${timestamp}"
     prompt="$(build_history_prompt "$branch_name")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" codex-fa "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" codex --full-auto "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" codex exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "$branch_name" claude -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "No fixable PR found. Running roast history update on: $branch_name"
@@ -208,28 +226,91 @@ collect_candidates_tsv() {
         '
 }
 
+fetch_ci_failure_summary() {
+    local pr_number="$1"
+    local run_id job_id log_text summary
+
+    # Get the latest failed check run URL from PR status
+    run_id="$(gh pr view "$pr_number" \
+        --json statusCheckRollup \
+        --jq '[.statusCheckRollup[] | select(.conclusion == "FAILURE")] | first | .detailsUrl' \
+        2>/dev/null | grep -oP '/runs/\K[0-9]+' | head -1)"
+
+    if [[ -z "$run_id" ]]; then
+        return
+    fi
+
+    # Get the failed job ID
+    job_id="$(gh api "repos/{owner}/{repo}/actions/runs/${run_id}/jobs" --jq '
+        [.jobs[] | select(.conclusion == "failure")] | first | .id
+    ' 2>/dev/null)"
+
+    if [[ -z "$job_id" ]]; then
+        return
+    fi
+
+    # Download job log and extract failure lines
+    log_text="$(gh api "repos/{owner}/{repo}/actions/jobs/${job_id}/logs" 2>/dev/null)"
+    if [[ -z "$log_text" ]]; then
+        return
+    fi
+
+    summary="$(printf '%s\n' "$log_text" | grep -E '(not ok |FAILED|Failed [1-9]|Wstat: [^0]|Result: FAIL|panicked)' | tail -30)"
+    if [[ -n "$summary" ]]; then
+        printf '%s\n' "$summary"
+    fi
+}
+
 build_prompt() {
     local pr_number="$1"
     local reason="$2"
     local head_ref="$3"
     local url="$4"
+    local ci_summary="$5"
+
     cat <<EOF
 Fix PR #$pr_number ($head_ref). Reason: $reason.
 PR URL: $url
+EOF
 
-Follow the PR workflow in CLAUDE.md and handle this end-to-end:
-1. Inspect PR checks and merge/conflict status
-2. If needed, rebase/merge main and resolve conflicts
-3. Reproduce failing checks locally
-4. Implement minimal, general fixes (no test-specific hacks)
-5. Run make test and make roast
-6. Commit and push fixes to the PR branch
-7. Ensure CI passes and merge the PR
+    if [[ "$reason" == "conflict" ]]; then
+        cat <<'EOF'
+
+This PR has merge conflicts with main. Steps:
+1. Rebase the branch onto origin/main and resolve conflicts
+2. Run make test and make roast to verify no regressions
+3. ONLY if both make test and make roast pass (exit 0), force-push the rebased branch
+4. If make roast fails, do NOT push. Investigate and fix the failures first.
+5. Verify CI passes after pushing
+EOF
+    elif [[ "$reason" == "ci-fail" ]]; then
+        cat <<'EOF'
+
+This PR has CI failures. Steps:
+1. First rebase onto origin/main (the failure may already be fixed on main)
+2. Build and reproduce the failure locally
+3. Fix the code (no test-specific hacks or hardcoded results)
+4. Run make test and make roast
+5. ONLY if both pass (exit 0), push fixes. Do NOT push if tests fail.
+6. Verify CI passes after pushing
+EOF
+        if [[ -n "$ci_summary" ]]; then
+            cat <<EOF
+
+CI failure log (key lines):
+$ci_summary
+EOF
+        fi
+    fi
+
+    cat <<'EOF'
+
+After fixing, push and ensure CI passes. If the PR already has auto-merge enabled, it will merge automatically.
 
 Constraints:
 - Do not modify anything under roast/
 - Keep changes focused on the PR scope
-- If PR is already merged/closed, report and stop for that PR
+- If PR is already merged/closed, report and stop
 EOF
 }
 
@@ -240,14 +321,20 @@ run_for_pr() {
     local url="$4"
     local prompt
     local cmd
+    local ci_summary=""
 
-    prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url")"
+    if [[ "$reason" == "ci-fail" ]]; then
+        echo "Fetching CI failure summary for PR #$pr_number..."
+        ci_summary="$(fetch_ci_failure_summary "$pr_number")"
+    fi
+
+    prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url" "$ci_summary")"
     if [[ "$AGENT" == "codex" && "$FULL_AUTO" -eq 1 ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" codex-fa "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" codex --full-auto "$prompt")
     elif [[ "$AGENT" == "codex" ]]; then
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" codex exec "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" --recreate "pr-${pr_number}" claude -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
     fi
 
     echo "Target PR #$pr_number [$reason] $head_ref"
@@ -306,14 +393,19 @@ if [[ "$RUN_ALL" -eq 1 ]]; then
         exit 0
     fi
     while IFS=$'\t' read -r number reason head_ref _title url; do
+        check_stop_file
         run_for_pr "$number" "$reason" "$head_ref" "$url"
     done <<<"$CANDIDATES"
     exit 0
 fi
 
 while true; do
+    check_stop_file
     if [[ -z "$CANDIDATES" ]]; then
         run_history_update
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            exit 0
+        fi
         echo "No open PRs with conflicts or CI failures were found. Sleeping ${POLL_INTERVAL_SECONDS}s..."
         sleep "$POLL_INTERVAL_SECONDS"
         CANDIDATES="$(collect_candidates_tsv)"
@@ -323,5 +415,8 @@ while true; do
     FIRST="$(printf '%s\n' "$CANDIDATES" | head -n 1)"
     IFS=$'\t' read -r number reason head_ref _title url <<<"$FIRST"
     run_for_pr "$number" "$reason" "$head_ref" "$url"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        exit 0
+    fi
     CANDIDATES="$(collect_candidates_tsv)"
 done

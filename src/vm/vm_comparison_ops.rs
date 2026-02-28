@@ -62,7 +62,8 @@ impl VM {
     pub(super) fn exec_num_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
                 || matches!(l, Value::Nil)
                 || matches!(l, Value::Rat(_, _));
@@ -81,7 +82,8 @@ impl VM {
     pub(super) fn exec_num_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                 Ok(Value::Bool(
                     runtime::to_float_value(&l) != runtime::to_float_value(&r),
@@ -97,7 +99,8 @@ impl VM {
     pub(super) fn exec_num_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
         })?;
         self.stack.push(result);
@@ -107,7 +110,8 @@ impl VM {
     pub(super) fn exec_num_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o <= 0)
         })?;
         self.stack.push(result);
@@ -117,7 +121,8 @@ impl VM {
     pub(super) fn exec_num_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o > 0)
         })?;
         self.stack.push(result);
@@ -127,7 +132,8 @@ impl VM {
     pub(super) fn exec_num_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o >= 0)
         })?;
         self.stack.push(result);
@@ -137,6 +143,7 @@ impl VM {
     pub(super) fn exec_approx_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let tolerance = self
             .interpreter
             .env()
@@ -256,6 +263,7 @@ impl VM {
     pub(super) fn exec_spaceship_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let ord = Self::numeric_spaceship_ordering(&left, &right)?;
         self.stack.push(runtime::make_order(ord));
         Ok(())
@@ -264,6 +272,9 @@ impl VM {
     pub(super) fn exec_before_after_op(&mut self, is_before: bool) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self
+            .coerce_numeric_bridge_pair(left.clone(), right.clone())
+            .unwrap_or((left, right));
         let ord = Self::spaceship_ordering(&left, &right);
         let result = if is_before {
             ord == std::cmp::Ordering::Less
@@ -276,6 +287,9 @@ impl VM {
     pub(super) fn exec_cmp_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let (left, right) = self
+            .coerce_numeric_bridge_pair(left.clone(), right.clone())
+            .unwrap_or((left, right));
         let ord = Self::spaceship_ordering(&left, &right);
         self.stack.push(runtime::make_order(ord));
     }
@@ -290,13 +304,13 @@ impl VM {
     pub(super) fn exec_strict_eq_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left == right));
+        self.stack.push(Value::Bool(left.strict_identical(&right)));
     }
 
     pub(super) fn exec_strict_ne_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left != right));
+        self.stack.push(Value::Bool(!left.strict_identical(&right)));
     }
 
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {

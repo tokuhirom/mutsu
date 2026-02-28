@@ -171,6 +171,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // Fatal parse errors (e.g. bare say/print/put) pass through directly
                 let mut err = RuntimeError::new(format!("{}", e));
                 err.code = Some(RuntimeErrorCode::ParseGeneric);
+                if let Some(ex) = e.exception {
+                    err.exception = Some(ex);
+                }
                 return Err(err);
             }
             if let Some(consumed) = e.consumed_from(source.len()) {
@@ -235,14 +238,17 @@ pub(crate) fn parse_program_with_operators(
     input: &str,
     operator_names: &[String],
     operator_assoc: &std::collections::HashMap<String, String>,
+    imported_function_names: &[String],
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
     stmt::set_eval_operator_preseed(operator_names.to_vec());
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
+    stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     let result = parse_program(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
+    stmt::set_eval_imported_function_preseed(Vec::new());
     result
 }
 
@@ -365,12 +371,42 @@ mod tests {
     #[test]
     fn parse_program_accepts_unicode_single_quoted_regex_atoms() {
         let src = r#"
-ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");
-ok("ab/cd" ~~ m/ab ‚/’ c d/, "low-high single quote");
-ok("ab/cd" ~~ m/ab ‚/‘ c d/, "low-curly single quote");
-ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
-"#;
+	ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");
+	ok("ab/cd" ~~ m/ab ‚/’ c d/, "low-high single quote");
+	ok("ab/cd" ~~ m/ab ‚/‘ c d/, "low-curly single quote");
+	ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
+	"#;
         let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 4);
+    }
+
+    #[test]
+    fn parse_program_accepts_unicode_and_ascii_minus_angle_complex_in_is_deeply() {
+        let src = "use Test;\nis-deeply −<42+2i>, -<42+2i>, 'prefix, Complex';";
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn parse_program_accepts_test_call_with_bracket_metaop_assign_argument() {
+        let src = r#"use Test; my $y = 5; is $y [R/]= 1, 1/5, "[R/]= works correctly (1)";"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_reverse_roast_block() {
+        let src = r#"
+use Test;
+{
+    my $y = 5;
+    is $y [R/]= 1, 1/5, '[R/]= works correctly (1)';
+    sub r2cf(Rat $x is copy) {
+        gather $x [R/]= 1 while ($x -= take $x.floor) > 0
+    }
+}
+"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
     }
 }

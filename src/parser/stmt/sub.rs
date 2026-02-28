@@ -1,7 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
-use crate::token_kind::lookup_unicode_char_by_name;
+use crate::token_kind::{TokenKind, lookup_unicode_char_by_name};
 
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
@@ -53,6 +53,34 @@ fn static_default_type(expr: &Expr) -> Option<String> {
         Expr::Literal(Value::Str(_)) => Some("Str".to_string()),
         Expr::Literal(Value::Package(name)) => Some(name.clone()),
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
+        _ => None,
+    }
+}
+
+fn negate_literal_value(value: &Value) -> Option<Value> {
+    match value {
+        Value::Int(n) => Some(Value::Int(-n)),
+        Value::BigInt(n) => Some(Value::BigInt(-n)),
+        Value::Num(n) => Some(Value::Num(-n)),
+        Value::Rat(n, d) => Some(crate::value::make_rat(-n, *d)),
+        Value::FatRat(n, d) => Some(Value::FatRat(-n, *d)),
+        Value::BigRat(n, d) => Some(crate::value::make_big_rat(-n.clone(), d.clone())),
+        Value::Complex(re, im) => Some(Value::Complex(-re, -im)),
+        _ => None,
+    }
+}
+
+fn literal_value_from_expr(expr: &Expr) -> Option<Value> {
+    match expr {
+        Expr::Literal(v) => Some(v.clone()),
+        Expr::Unary { op, expr } => {
+            let inner = literal_value_from_expr(expr)?;
+            match op {
+                TokenKind::Plus => Some(inner),
+                TokenKind::Minus => negate_literal_value(&inner),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -1651,6 +1679,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         if r2.starts_with('$')
             || r2.starts_with('@')
             || r2.starts_with('%')
+            || r2.starts_with('&')
             || (r2.starts_with('*')
                 && r2.len() > 1
                 && (r2.as_bytes()[1] == b'$'
@@ -1721,19 +1750,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
-    // Handle literal value parameters: multi sub foo(0) { ... }
-    if rest.starts_with(|c: char| c.is_ascii_digit())
-        || (rest.starts_with('"') || rest.starts_with('\''))
+    // Handle literal value parameters: multi sub foo(0), foo(-١), foo(Inf), foo("x")
+    if let Ok((lit_rest, lit_expr)) = expression(rest)
+        && let Some(v) = literal_value_from_expr(&lit_expr)
+        && let Ok((after_lit, _)) = ws(lit_rest)
+        && (after_lit.starts_with(')')
+            || after_lit.starts_with(',')
+            || after_lit.starts_with(';')
+            || after_lit.starts_with(']')
+            || after_lit.starts_with("-->"))
     {
-        let (rest, lit_expr) = expression(rest)?;
-        let literal_value = match &lit_expr {
-            Expr::Literal(v) => Some(v.clone()),
-            _ => None,
-        };
         let mut p = make_param("__literal__".to_string());
         p.type_constraint = type_constraint;
-        p.literal_value = literal_value;
-        return Ok((rest, p));
+        p.literal_value = Some(v);
+        return Ok((after_lit, p));
     }
 
     // Sigilless parameter: \name
@@ -1945,6 +1975,50 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((after_q, p));
     }
 
+    // Anonymous callable parameter with code signature: &:(Str --> Bool)
+    if rest.starts_with("&:(") {
+        let r = &rest[1..]; // skip '&'
+        let (r, _) = parse_char(r, ':')?;
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, (sig_params, sig_ret)) = parse_param_list_with_return(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let (r, required, opt_marker) = parse_required_suffix(r);
+        let (r, _) = ws(r)?;
+
+        let mut p = make_param("&".to_string());
+        p.named = named;
+        p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
+        p.type_constraint = type_constraint;
+        p.code_signature = Some((sig_params, sig_ret));
+        p.required = required;
+        p.optional_marker = opt_marker;
+
+        let mut param_traits = Vec::new();
+        let (mut r, _) = ws(r)?;
+        while let Some(r2) = keyword("is", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            validate_param_trait(&trait_name, &param_traits, r2)?;
+            param_traits.push(trait_name);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        p.traits = param_traits;
+
+        let (r, where_constraint) = if let Some(r2) = keyword("where", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, constraint) = parse_where_constraint_expr(r2)?;
+            (r2, Some(Box::new(constraint)))
+        } else {
+            (r, None)
+        };
+        p.where_constraint = where_constraint;
+        return Ok((r, p));
+    }
+
     // Bare & (anonymous callable parameter)
     if rest.starts_with('&')
         && (rest.len() == 1
@@ -2029,6 +2103,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 Some('@') => format!("@{}", name),
                 _ => name,
             }
+        } else if named && original_sigil == b'&' {
+            name
         } else {
             match original_sigil {
                 b'@' => format!("@{}", name),
@@ -2101,6 +2177,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             Some('@') => format!("@{}", name),
             _ => name,
         }
+    } else if named && original_sigil == b'&' {
+        name
     } else if param_sigil == Some(b'@') {
         format!("@{}", name)
     } else if param_sigil == Some(b'%') {

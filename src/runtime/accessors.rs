@@ -802,6 +802,14 @@ impl Interpreter {
         self.proto_tokens = proto_tokens;
     }
 
+    pub(crate) fn push_block_scope_depth(&mut self) {
+        self.block_scope_depth += 1;
+    }
+
+    pub(crate) fn pop_block_scope_depth(&mut self) {
+        self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
+    }
+
     /// Push a saved variable value for `let` scope management.
     pub(crate) fn let_saves_push(&mut self, name: String, value: Value) {
         self.let_saves.push((name, value));

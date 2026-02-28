@@ -72,7 +72,12 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
             ($expr:expr) => {
                 match $expr {
                     Ok(r) => return Ok(r),
-                    Err(err) => update_best_error(&mut best_error, err, input_len),
+                    Err(err) => {
+                        if err.is_fatal() {
+                            return Err(err);
+                        }
+                        update_best_error(&mut best_error, err, input_len);
+                    }
                 }
             };
         }
@@ -80,6 +85,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
         try_primary!(number::integer(input));
+        try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::smart_single_quoted_string(input));
@@ -230,6 +236,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_typed_hash_literal_with_non_string_keys() {
+        let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Hash(pairs) => {
+                assert_eq!(pairs.len(), 3);
+                assert_eq!(pairs[0].0, "foo");
+                assert_eq!(pairs[1].0, "True");
+                assert_eq!(pairs[2].0, "42");
+            }
+            _ => panic!("expected hash literal"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
@@ -278,6 +299,19 @@ mod tests {
         let (rest, expr) = primary("q:c/%0{$bits}b/").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(ref parts) if parts.len() == 3));
+    }
+
+    #[test]
+    fn parse_pointy_slurpy_param_method_call() {
+        let (rest, expr) = primary("(-> *@a { }).count").unwrap();
+        assert_eq!(rest, ".count");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { ref param_defs, .. }
+                if param_defs.len() == 1
+                    && param_defs[0].slurpy
+                    && param_defs[0].name == "@a"
+        ));
     }
 
     #[test]
@@ -392,6 +426,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_match_regex_with_adverb_and_ws_before_braced_delim() {
+        let (rest, expr) = primary("m:exhaustive { s o+ }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MatchRegex(Value::RegexWithAdverbs {
+                pattern: ref s,
+                exhaustive: true,
+                repeat: None,
+                perl5: false,
+                ..
+            }) if s == " s o+ "
+        ));
+    }
+
+    #[test]
     fn parse_hash_literal_with_semicolon_separator() {
         let (rest, expr) = primary("{ out => \"x\"; }").unwrap();
         assert_eq!(rest, "");
@@ -462,6 +512,19 @@ mod tests {
     fn primary_reports_missing_listop_argument() {
         let err = primary("shift :").unwrap_err();
         assert!(err.message().contains("listop argument expression"));
+    }
+
+    #[test]
+    fn primary_parses_produce_as_expr_listop() {
+        let (rest, expr) = primary("produce *+*, 1..10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args, .. } => {
+                assert_eq!(name, "produce");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("expected produce call expression"),
+        }
     }
 
     #[test]
