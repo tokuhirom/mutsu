@@ -1611,6 +1611,9 @@ fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
         "+&" => Some(TokenKind::BitAnd),
         "+|" => Some(TokenKind::BitOr),
         "+^" => Some(TokenKind::BitXor),
+        "~&" => Some(TokenKind::Ident("~&".to_string())),
+        "~|" => Some(TokenKind::Ident("~|".to_string())),
+        "~^" => Some(TokenKind::Ident("~^".to_string())),
         // Word operators are represented as Ident tokens
         "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "min" | "max" | "gcd" | "lcm"
         | "and" | "or" | "not" | "after" | "before" => Some(TokenKind::Ident(op.to_string())),
@@ -1668,9 +1671,9 @@ fn flatten_bracket_op(s: &str) -> String {
 /// Known operators for bracket infix and meta-op bracket notation.
 const KNOWN_OPS: &[&str] = &[
     "...^", "...", "…^", "…", "**", "==", "!=", "<=", ">=", "<=>", "===", "~~", "%%", "//", "||",
-    "&&", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|", "?^", "cmp", "min",
-    "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and", "or", "not", "after", "before", "gcd",
-    "lcm", ",",
+    "&&", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|",
+    "?^", "cmp", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and", "or", "not",
+    "after", "before", "gcd", "lcm", ",",
 ];
 
 /// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.
@@ -1703,8 +1706,8 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
 
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
-        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+",
-        "-", "*", "/", "%", "<", ">",
+        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "+&", "+|",
+        "+^", "+<", "+>", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">",
     ];
     for op in ops {
         if r.starts_with(op) {
@@ -2014,8 +2017,8 @@ fn classify_base_op(op: &str) -> OpPrecedence {
         s = rest;
     }
     match s {
-        "*" | "/" | "%" | "gcd" | "lcm" => OpPrecedence::Multiplicative,
-        "+" | "-" => OpPrecedence::Additive,
+        "*" | "/" | "%" | "gcd" | "lcm" | "~&" => OpPrecedence::Multiplicative,
+        "+" | "-" | "~|" | "~^" => OpPrecedence::Additive,
         "~" => OpPrecedence::Concatenation,
         "==" | "!=" | "<" | ">" | "<=" | ">=" | "<=>" | "===" | "eq" | "ne" | "lt" | "gt"
         | "le" | "ge" | "leg" | "cmp" | "~~" | "%%" => OpPrecedence::Comparison,

@@ -801,8 +801,15 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            acc =
-                self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, acc, rhs.clone()))])?;
+            if let Ok(value) = Self::apply_reduction_op(op, &acc, rhs) {
+                acc = value;
+            } else {
+                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(
+                    op,
+                    acc,
+                    rhs.clone(),
+                ))])?;
+            }
         }
         Ok(acc)
     }
