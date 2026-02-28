@@ -798,57 +798,6 @@ impl Interpreter {
                 }
             }
         }
-        if let Value::Instance { class_name, .. } = &target
-            && self.has_user_method(class_name, "Bridge")
-            && !matches!(method, "Bridge" | "Numeric" | "Real")
-        {
-            let mut delegated_args = Vec::with_capacity(args.len());
-            for arg in &args {
-                let coerced_arg = if matches!(arg, Value::Instance { class_name, .. }
-                    if self.has_user_method(class_name, "Bridge")
-                        || arg.does_check("Real")
-                        || arg.does_check("Numeric"))
-                {
-                    self.call_method_with_values(arg.clone(), "Numeric", vec![])
-                        .or_else(|_| self.call_method_with_values(arg.clone(), "Bridge", vec![]))
-                        .unwrap_or_else(|_| arg.clone())
-                } else {
-                    arg.clone()
-                };
-                delegated_args.push(coerced_arg);
-            }
-            if let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![]) {
-                let bridged_for_fallback = bridged.clone();
-                if delegated_args.is_empty()
-                    && let Some(result) =
-                        crate::builtins::native_method_0arg(&bridged_for_fallback, method)
-                {
-                    return result;
-                }
-                if delegated_args.len() == 1
-                    && let Some(result) = crate::builtins::native_method_1arg(
-                        &bridged_for_fallback,
-                        method,
-                        &delegated_args[0],
-                    )
-                {
-                    return result;
-                }
-                if delegated_args.len() == 2
-                    && let Some(result) = crate::builtins::native_method_2arg(
-                        &bridged_for_fallback,
-                        method,
-                        &delegated_args[0],
-                        &delegated_args[1],
-                    )
-                {
-                    return result;
-                }
-                if let Ok(result) = self.call_method_with_values(bridged, method, delegated_args) {
-                    return Ok(result);
-                }
-            }
-        }
         if matches!(method, "arity" | "count")
             && args.is_empty()
             && let Some(sig_info) = extract_sig_info(&target)
@@ -3615,7 +3564,11 @@ impl Interpreter {
             {
                 return Ok(Value::Bool(coerced.truthy()));
             }
-            if method == "Bridge" && args.is_empty() && target.does_check("Real") {
+            if method == "Bridge"
+                && args.is_empty()
+                && target.does_check("Real")
+                && !self.has_user_method(class_name, "Bridge")
+            {
                 if let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
                     && coerced != target
                 {
@@ -3630,6 +3583,7 @@ impl Interpreter {
             if method == "Bridge"
                 && args.is_empty()
                 && self.has_user_method(class_name, "Num")
+                && !self.has_user_method(class_name, "Bridge")
                 && let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
                 && coerced != target
             {
