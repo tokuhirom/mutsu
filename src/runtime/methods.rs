@@ -2820,6 +2820,40 @@ impl Interpreter {
                     return Ok(Value::make_instance("Date".to_string(), attrs));
                 }
             }
+            "DateTime" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Date"
+                    && let Some(Value::Int(days)) = attributes.get("days")
+                {
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "epoch".to_string(),
+                        Value::Num(Self::date_days_to_epoch_with_leap_seconds(*days)),
+                    );
+                    return Ok(Value::make_instance("DateTime".to_string(), attrs));
+                }
+            }
+            "Instant" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "DateTime"
+                {
+                    let epoch = attributes
+                        .get("epoch")
+                        .and_then(to_float_value)
+                        .unwrap_or(0.0);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("value".to_string(), Value::Num(epoch));
+                    return Ok(Value::make_instance("Instant".to_string(), attrs));
+                }
+            }
             "grab" => {
                 if let Value::Instance {
                     ref class_name,
@@ -6516,6 +6550,56 @@ impl Interpreter {
         }
     }
 
+    fn civil_to_epoch_days(year: i64, month: i64, day: i64) -> i64 {
+        let y = year - i64::from(month <= 2);
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = y - era * 400;
+        let mp = month + if month > 2 { -3 } else { 9 };
+        let doy = (153 * mp + 2) / 5 + day - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146_097 + doe - 719_468
+    }
+
+    fn leap_seconds_before_day(epoch_days: i64) -> i64 {
+        const LEAP_EFFECTIVE_DATES: &[(i64, i64, i64)] = &[
+            (1972, 7, 1),
+            (1973, 1, 1),
+            (1974, 1, 1),
+            (1975, 1, 1),
+            (1976, 1, 1),
+            (1977, 1, 1),
+            (1978, 1, 1),
+            (1979, 1, 1),
+            (1980, 1, 1),
+            (1981, 7, 1),
+            (1982, 7, 1),
+            (1983, 7, 1),
+            (1985, 7, 1),
+            (1988, 1, 1),
+            (1990, 1, 1),
+            (1991, 1, 1),
+            (1992, 7, 1),
+            (1993, 7, 1),
+            (1994, 7, 1),
+            (1996, 1, 1),
+            (1997, 7, 1),
+            (1999, 1, 1),
+            (2006, 1, 1),
+            (2009, 1, 1),
+            (2012, 7, 1),
+            (2015, 7, 1),
+            (2017, 1, 1),
+        ];
+        LEAP_EFFECTIVE_DATES
+            .iter()
+            .filter(|&&(y, m, d)| Self::civil_to_epoch_days(y, m, d) <= epoch_days)
+            .count() as i64
+    }
+
+    fn date_days_to_epoch_with_leap_seconds(days: i64) -> f64 {
+        (days * 86_400 + Self::leap_seconds_before_day(days)) as f64
+    }
+
     fn dispatch_new(&mut self, target: Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
         if let Value::ParametricRole {
             base_name,
@@ -6739,6 +6823,41 @@ impl Interpreter {
                 "Duration" => {
                     let secs = args.first().map(to_float_value).unwrap_or(Some(0.0));
                     return Ok(Value::Num(secs.unwrap_or(0.0)));
+                }
+                "Date" => {
+                    let mut year: i64 = 1970;
+                    let mut month: i64 = 1;
+                    let mut day: i64 = 1;
+                    let mut positional = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Pair(key, value) => match key.as_str() {
+                                "year" => year = to_int(value),
+                                "month" => month = to_int(value),
+                                "day" => day = to_int(value),
+                                _ => {}
+                            },
+                            other => positional.push(other),
+                        }
+                    }
+                    if let Some(v) = positional.first() {
+                        year = to_int(v);
+                    }
+                    if let Some(v) = positional.get(1) {
+                        month = to_int(v);
+                    }
+                    if let Some(v) = positional.get(2) {
+                        day = to_int(v);
+                    }
+                    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+                        return Err(RuntimeError::new("Date.new: invalid month/day"));
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "days".to_string(),
+                        Value::Int(Self::civil_to_epoch_days(year, month, day)),
+                    );
+                    return Ok(Value::make_instance("Date".to_string(), attrs));
                 }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));

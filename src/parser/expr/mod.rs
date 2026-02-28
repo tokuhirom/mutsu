@@ -1362,6 +1362,52 @@ mod tests {
     }
 
     #[test]
+    fn parse_ascii_minus_on_angle_complex_literal() {
+        let (rest, expr) = expression("-<42+2i>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Minus,
+                expr,
+            } => {
+                assert!(matches!(
+                    *expr,
+                    Expr::Literal(Value::Mixin(inner, _))
+                        if matches!(*inner, Value::Complex(42.0, 2.0))
+                ));
+            }
+            _ => panic!("expected unary minus expression"),
+        }
+    }
+
+    #[test]
+    fn parse_is_deeply_with_unicode_and_ascii_minus_complex_literals() {
+        let (rest, expr) = expression("is-deeply −<42+2i>, -<42+2i>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "is-deeply");
+                assert!(args.len() >= 2);
+                assert!(matches!(
+                    args[0],
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+                assert!(matches!(
+                    args[1],
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+            }
+            _ => panic!("expected is-deeply call"),
+        }
+    }
+
+    #[test]
     fn parse_ampersand_sigiled_callable_invocation() {
         let (rest, expr) = expression("&$x()").unwrap();
         assert_eq!(rest, "");

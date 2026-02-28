@@ -456,7 +456,8 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            return self.call_infix_routine(op, args);
+            let normalized = if op == "−" { "-" } else { op };
+            return self.call_infix_routine(normalized, args);
         }
         if let Some(op) = name
             .strip_prefix("prefix:<")
@@ -472,17 +473,18 @@ impl Interpreter {
                 return Ok(Value::Nil);
             }
             let arg = &args[0];
+            let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
-                "-" => crate::builtins::arith_negate(arg.clone()),
+                "-" | "−" => crate::builtins::arith_negate(arg.clone()),
                 "~" => Ok(Value::Str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
                 _ => Err(RuntimeError::new(format!(
                     "Unknown prefix operator: {}",
-                    op
+                    normalized
                 ))),
             };
         }
