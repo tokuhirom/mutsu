@@ -83,6 +83,8 @@ $FILE should pass. Follow the roast workflow in CLAUDE.md.
 
 Required investigation steps:
 1. Run with raku to confirm expected behavior: raku $FILE
+   - If raku itself fails or errors on this test, STOP immediately and report
+     "raku cannot pass this test" — do not attempt to implement it.
 2. Check raku AST for a minimal relevant snippet: raku --target=ast -e '...'
 3. Check mutsu AST: timeout 30 target/release/mutsu --dump-ast $FILE
 4. Run with mutsu: timeout 30 target/release/mutsu $FILE
@@ -91,6 +93,7 @@ Required investigation steps:
 Constraints:
 - Do not modify anything under roast/
 - No test-specific hacks or hardcoded outputs
+- If raku cannot pass the test, do not waste time trying to make mutsu pass it
 
 After implementing:
 - Verify with cargo build --release && timeout 30 target/release/mutsu $FILE

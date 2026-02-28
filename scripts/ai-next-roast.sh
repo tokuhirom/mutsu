@@ -53,7 +53,26 @@ wip_remove() {
     fi
 }
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+STOP_FILE="${REPO_ROOT}/tmp/.stop"
+
+check_stop_file() {
+    if [[ -f "$STOP_FILE" ]]; then
+        echo "Stop file detected ($STOP_FILE). Exiting gracefully."
+        rm -f "$STOP_FILE"
+        exit 0
+    fi
+}
+
+# raku フィルターを生成（raku で通らないテストを除外するため）
+if [[ ! -f "tmp/roast-raku-pass.txt" ]]; then
+    echo "Generating raku filter (tmp/roast-raku-pass.txt)..."
+    ./scripts/roast-raku-check.sh || true
+fi
+
 while true; do
+    check_stop_file
     # Get up to 100 candidates
     CANDIDATES=$(./scripts/pick-next-roast.sh -n 100 2>/dev/null \
         | awk '/^[[:space:]]*[0-9]+[[:space:]]+/ { print $2 }' || true)
