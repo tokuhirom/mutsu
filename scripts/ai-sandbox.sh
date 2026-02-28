@@ -45,7 +45,6 @@ fi
 REPO_ROOT="$(find_repo_root)"
 SANDBOX_BASE="${REPO_ROOT}/.git/sandbox"
 CLONE_DIR="${SANDBOX_BASE}/${BRANCH}"
-SHARED_TARGET="${SANDBOX_BASE}/.shared-target"
 
 # --recreate: 既存クローンを削除して作り直す
 if [[ "$RECREATE" == true && -d "$CLONE_DIR" ]]; then
@@ -88,10 +87,6 @@ if [[ ! -d "$CLONE_DIR" ]]; then
   cd "$REPO_ROOT"
 fi
 
-# 共有 target ディレクトリを作成（cargo ビルドキャッシュ共有用）
-mkdir -p "$SHARED_TARGET"
-mkdir -p "${CLONE_DIR}/target"
-
 case "$TOOL" in
   claude|codex|bash) CMD_ARGS=("$TOOL" "${EXTRA_ARGS[@]}") ;;
   *)         echo "Unknown tool: $TOOL" >&2; usage ;;
@@ -130,10 +125,8 @@ BWRAP_ARGS+=(
   --bind "${HOME}/.claude.json" "${HOME}/.claude.json"
   --bind "${HOME}/.codex" "${HOME}/.codex"
   --ro-bind "${HOME}/.ssh" "${HOME}/.ssh"
-  # クローンディレクトリだけ書き込み可能
+  # クローンディレクトリだけ書き込み可能（target/ も含む）
   --bind "${CLONE_DIR}" "${CLONE_DIR}"
-  # cargo ビルドキャッシュを全サンドボックスで共有
-  --bind "${SHARED_TARGET}" "${CLONE_DIR}/target"
 
   --share-net
   --unshare-pid
