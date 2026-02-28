@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 impl VM {
     fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
@@ -352,31 +353,23 @@ impl VM {
     pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let n = match right {
-            Value::Int(n) => n.max(0) as usize,
-            _ => 0,
-        };
-        // When repeating a Slip, flatten its items into the result
-        if let Value::Slip(ref slip_items) = left {
-            let mut items = Vec::with_capacity(slip_items.len() * n);
-            for _ in 0..n {
-                items.extend(slip_items.iter().cloned());
-            }
-            self.stack.push(Value::Seq(Arc::new(items)));
-            return Ok(());
-        }
         let thunk = match &left {
             Value::Sub(data) => Some(data.clone()),
             Value::WeakSub(weak) => weak.upgrade(),
             _ => None,
         };
-        if let Some(data) = thunk.filter(|data| Self::is_xx_reeval_thunk(data.as_ref())) {
+        if let Some(data) = thunk.filter(|data| Self::is_xx_reeval_thunk(data.as_ref()))
+            && let Value::Int(n) = right
+        {
+            let n = n.max(0) as usize;
             let items = self.interpreter.eval_xx_repeat_thunk(data.as_ref(), n)?;
             self.stack.push(Value::Seq(Arc::new(items)));
             return Ok(());
         }
-        let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
-        self.stack.push(Value::Seq(Arc::new(items)));
+        let result = self
+            .interpreter
+            .call_function("infix:<xx>", vec![left, right])?;
+        self.stack.push(result);
         Ok(())
     }
 

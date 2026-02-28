@@ -1799,6 +1799,13 @@ impl Compiler {
                 | Expr::HyperMethodCall { target, .. }
                 | Expr::HyperMethodCallDynamic { target, .. }
                 | Expr::CallOn { target, .. } if Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::Block(_)
+                | Expr::DoBlock { .. }
+                | Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
         )
     }
 
