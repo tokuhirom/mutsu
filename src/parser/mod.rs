@@ -379,4 +379,11 @@ ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
         let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 4);
     }
+
+    #[test]
+    fn parse_program_accepts_unicode_and_ascii_minus_angle_complex_in_is_deeply() {
+        let src = "use Test;\nis-deeply −<42+2i>, -<42+2i>, 'prefix, Complex';";
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 2);
+    }
 }

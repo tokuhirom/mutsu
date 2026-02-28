@@ -111,6 +111,7 @@ roast/S03-operators/spaceship-and-containers.t
 roast/S03-operators/spaceship.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
+roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
 roast/S03-sequence/misc.t

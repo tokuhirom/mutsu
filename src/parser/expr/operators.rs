@@ -381,6 +381,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '('
             || c == '['
             || c == '{'
+            || c == '<'
             || c == '"'
             || c == '\''
             || c == '*'
