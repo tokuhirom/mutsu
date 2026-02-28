@@ -365,6 +365,36 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     Err(PError::expected("keyword literal"))
 }
 
+/// Check if the input starts with a term keyword (like `i`, `e`, `pi`, etc.)
+/// that can appear as a listop argument without parentheses.
+fn starts_with_term_keyword(input: &str) -> bool {
+    let first = input.chars().next().unwrap_or('\0');
+    if first == '\u{03C0}' || first == '\u{03C4}' || first == '\u{1D452}' {
+        return true;
+    }
+    let word_end = input
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(input.len());
+    let word = &input[..word_end];
+    matches!(
+        word,
+        "i" | "e"
+            | "pi"
+            | "tau"
+            | "Inf"
+            | "NaN"
+            | "True"
+            | "False"
+            | "Nil"
+            | "self"
+            | "Any"
+            | "Mu"
+            | "now"
+            | "time"
+            | "rand"
+    )
+}
+
 /// Check if a name is a Raku keyword (not a function call).
 pub(super) fn is_keyword(name: &str) -> bool {
     matches!(
@@ -1498,6 +1528,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '｢'
             || next == '('
             || next.is_ascii_digit()
+            || starts_with_term_keyword(r)
             || hyphen_forward_call
             || is_user_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)

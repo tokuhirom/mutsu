@@ -877,6 +877,21 @@ impl Interpreter {
             return Ok(Value::Bool(f(ord)));
         }
         let (l, r) = super::coerce_numeric(left, right);
+        // Complex numbers cannot be ordered; throw if either operand has non-zero imaginary part
+        if let Value::Complex(_, im) = &l
+            && *im != 0.0
+        {
+            return Err(RuntimeError::new(
+                "Cannot convert Complex to Real: imaginary part not zero",
+            ));
+        }
+        if let Value::Complex(_, im) = &r
+            && *im != 0.0
+        {
+            return Err(RuntimeError::new(
+                "Cannot convert Complex to Real: imaginary part not zero",
+            ));
+        }
         if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
             && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
         {

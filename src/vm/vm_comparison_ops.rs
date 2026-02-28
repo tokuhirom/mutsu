@@ -1,5 +1,14 @@
 use super::*;
 
+/// Extract (real, imaginary) parts from a value, treating non-Complex as having im=0.
+fn complex_parts(v: &Value) -> (f64, f64) {
+    match v {
+        Value::Complex(re, im) => (*re, *im),
+        Value::Mixin(inner, _) => complex_parts(inner),
+        other => (value_to_f64(other), 0.0),
+    }
+}
+
 pub(super) fn value_to_f64(v: &Value) -> f64 {
     match v {
         Value::Int(n) => *n as f64,
@@ -153,14 +162,18 @@ impl VM {
                 _ => None,
             })
             .unwrap_or(1e-15);
-        let a = value_to_f64(&left);
-        let b = value_to_f64(&right);
-        let max_abs = a.abs().max(b.abs());
-        let result = if max_abs == 0.0 {
-            true
-        } else {
-            (a - b).abs() / max_abs <= tolerance
+        // Extract Complex components, treating Real as Complex with im=0
+        let (lr, li) = complex_parts(&left);
+        let (rr, ri) = complex_parts(&right);
+        let approx_f64 = |a: f64, b: f64| -> bool {
+            let max_abs = a.abs().max(b.abs());
+            if max_abs == 0.0 {
+                true
+            } else {
+                (a - b).abs() / max_abs <= tolerance
+            }
         };
+        let result = approx_f64(lr, rr) && approx_f64(li, ri);
         self.stack.push(Value::Bool(result));
         Ok(())
     }
@@ -232,6 +245,15 @@ impl VM {
     }
 
     fn spaceship_ordering(left: &Value, right: &Value) -> std::cmp::Ordering {
+        // Unwrap Mixin for comparison
+        let left = match left {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        let right = match right {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
             (Value::Rat(_, _), _)
@@ -253,6 +275,44 @@ impl VM {
             (Value::Num(a), Value::Int(b)) => a
                 .partial_cmp(&(*b as f64))
                 .unwrap_or(std::cmp::Ordering::Equal),
+            // Complex cmp: compare real parts first, then imaginary parts
+            // NaN sorts as Greater (More) in Raku
+            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+                if ar.is_nan() || ai.is_nan() {
+                    return std::cmp::Ordering::Greater;
+                }
+                match ar.partial_cmp(br).unwrap_or(std::cmp::Ordering::Greater) {
+                    std::cmp::Ordering::Equal => {
+                        ai.partial_cmp(bi).unwrap_or(std::cmp::Ordering::Greater)
+                    }
+                    ord => ord,
+                }
+            }
+            // Complex vs Real: treat Real as Complex with im=0
+            (Value::Complex(ar, ai), _) => {
+                if ar.is_nan() || ai.is_nan() {
+                    return std::cmp::Ordering::Greater;
+                }
+                let br = value_to_f64(right);
+                match ar.partial_cmp(&br).unwrap_or(std::cmp::Ordering::Greater) {
+                    std::cmp::Ordering::Equal => {
+                        ai.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Greater)
+                    }
+                    ord => ord,
+                }
+            }
+            (_, Value::Complex(br, bi)) => {
+                if br.is_nan() || bi.is_nan() {
+                    return std::cmp::Ordering::Greater;
+                }
+                let ar = value_to_f64(left);
+                match ar.partial_cmp(br).unwrap_or(std::cmp::Ordering::Greater) {
+                    std::cmp::Ordering::Equal => 0.0f64
+                        .partial_cmp(bi)
+                        .unwrap_or(std::cmp::Ordering::Greater),
+                    ord => ord,
+                }
+            }
             (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
                 runtime::version_cmp_parts(ap, bp)
             }
