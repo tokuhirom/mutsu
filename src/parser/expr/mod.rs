@@ -1182,6 +1182,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_space_before_french_quote_list() {
+        let (rest, expr) = expression("| «echo test»").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr
+            } if matches!(
+                *expr,
+                Expr::ArrayLiteral(ref items) if items.len() == 2
+            )
+        ));
+    }
+
+    #[test]
+    fn parse_slip_prefix_with_space_before_var() {
+        let (rest, expr) = expression("|   @cmd").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr
+            } if matches!(*expr, Expr::ArrayVar(ref name) if name == "cmd")
+        ));
+    }
+
+    #[test]
     fn parse_prefix_boolify_codevar_method_call() {
         let (rest, expr) = expression("?&foo.cando($c)").unwrap();
         assert_eq!(rest, "");

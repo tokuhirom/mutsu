@@ -390,6 +390,7 @@ roast/S17-procasync/kill.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-procasync/nonexistent.t
+roast/S17-procasync/stress.t
 roast/S17-procasync/windows-arg-quoting.t
 roast/S17-promise/at.t
 roast/S17-promise/in.t
@@ -495,6 +496,7 @@ roast/S32-list/grep.t
 roast/S32-list/map_function_return_values.t
 roast/S32-list/produce.t
 roast/S32-list/rotor.t
+roast/S32-list/squish.t
 roast/S32-list/unique.t
 roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t

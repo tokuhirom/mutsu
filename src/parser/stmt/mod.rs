@@ -1444,4 +1444,38 @@ mod tests {
         assert!(simple::is_user_declared_sub("outer-func"));
         simple::reset_user_subs();
     }
+
+    #[test]
+    fn done_parses_as_react_done_stmt() {
+        let (rest, stmt) = simple::known_call_stmt("done").unwrap();
+        assert!(rest.is_empty(), "rest should be empty, got: {rest:?}");
+        assert!(
+            matches!(stmt, Stmt::ReactDone),
+            "expected ReactDone, got: {stmt:?}"
+        );
+    }
+
+    #[test]
+    fn done_with_semicolon_parses_as_react_done_stmt() {
+        let (rest, stmt) = simple::known_call_stmt("done;").unwrap();
+        assert!(rest.is_empty(), "rest should be empty, got: {rest:?}");
+        assert!(
+            matches!(stmt, Stmt::ReactDone),
+            "expected ReactDone, got: {stmt:?}"
+        );
+    }
+
+    #[test]
+    fn proceed_parses_as_proceed_stmt() {
+        let (rest, stmt) = simple::known_call_stmt("proceed").unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(stmt, Stmt::Proceed));
+    }
+
+    #[test]
+    fn succeed_parses_as_succeed_stmt() {
+        let (rest, stmt) = simple::known_call_stmt("succeed").unwrap();
+        assert!(rest.is_empty());
+        assert!(matches!(stmt, Stmt::Succeed));
+    }
 }

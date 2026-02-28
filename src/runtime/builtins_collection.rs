@@ -726,6 +726,34 @@ impl Interpreter {
         self.call_method_with_values(target, "unique", method_args)
     }
 
+    pub(super) fn builtin_squish(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+
+        let mut positional = Vec::new();
+        let mut method_args = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Pair(key, _) if key == "as" || key == "with" => {
+                    method_args.push(arg.clone());
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+
+        if positional.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+
+        let target = if positional.len() == 1 {
+            positional[0].clone()
+        } else {
+            Value::array(positional)
+        };
+        self.call_method_with_values(target, "squish", method_args)
+    }
+
     pub(super) fn builtin_map(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let func = args.first().cloned();
         let mut list_items = Vec::new();

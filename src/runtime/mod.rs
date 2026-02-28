@@ -119,6 +119,15 @@ struct MethodDispatchFrame {
     remaining: Vec<(String, MethodDef)>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SquishIteratorMeta {
+    pub(crate) source_items: Vec<Value>,
+    pub(crate) as_func: Option<Value>,
+    pub(crate) with_func: Option<Value>,
+    pub(crate) revert_values: HashMap<String, Value>,
+    pub(crate) revert_remove: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IoHandleTarget {
     Stdout,
@@ -382,6 +391,9 @@ pub struct Interpreter {
     pub(crate) pending_local_updates: Vec<(String, Value)>,
     /// Set of variable names that are readonly (default parameter binding).
     readonly_vars: HashSet<String>,
+    /// Metadata for Seq values produced by `squish` with callbacks, used to
+    /// provide callback-aware iterator behavior.
+    pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,
     /// Metadata for custom types created by Metamodel::Primitives.create_type.
     pub(crate) custom_type_data: HashMap<u64, CustomTypeData>,
     /// Rebless mapping: instance_id -> new HOW value.
@@ -539,6 +551,7 @@ impl Interpreter {
                     "do",
                     "reverse",
                     "split",
+                    "interval",
                     "tail",
                     "delayed",
                     "min",
@@ -1318,6 +1331,7 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
             pending_regex_error: None,
@@ -2214,6 +2228,7 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
             pending_regex_error: None,
