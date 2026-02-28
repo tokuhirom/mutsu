@@ -70,6 +70,7 @@ impl Interpreter {
             "doesn't-hang" => self.test_fn_doesnt_hang(args).map(Some),
             "make-temp-file" | "make-temp-path" => self.test_fn_make_temp_file(args).map(Some),
             "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
+            "is-deeply-junction" => self.test_fn_is_deeply_junction(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -431,6 +432,25 @@ impl Interpreter {
         Ok(Value::Bool(ok))
     }
 
+    fn test_fn_is_deeply_junction(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let left = Self::positional_value(args, 0);
+        let right = Self::positional_value(args, 1);
+        let desc = Self::positional_string(args, 2);
+        let todo = Self::named_bool(args, "todo");
+        let ok = match (left, right) {
+            (Some(left), Some(right)) => match (
+                Self::junction_guts_value(left),
+                Self::junction_guts_value(right),
+            ) {
+                (Some(lg), Some(rg)) => lg.eqv(&rg),
+                _ => false,
+            },
+            _ => false,
+        };
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::Bool(ok))
+    }
+
     /// Extract (left, right, desc) for is-deeply from raw args.
     /// The first two args are always the values being compared (even if they are Pairs).
     /// Only known internal named pairs (__mutsu_test_callsite_line, todo) are skipped.
@@ -460,6 +480,44 @@ impl Interpreter {
         } else {
             v.clone()
         }
+    }
+
+    fn junction_kind_name(kind: &JunctionKind) -> &'static str {
+        match kind {
+            JunctionKind::Any => "any",
+            JunctionKind::All => "all",
+            JunctionKind::One => "one",
+            JunctionKind::None => "none",
+        }
+    }
+
+    fn junction_sort_key(v: &Value) -> String {
+        match v {
+            Value::Array(items, _) => {
+                let parts: Vec<String> = items.iter().map(Self::junction_sort_key).collect();
+                format!("[{}]", parts.join(","))
+            }
+            Value::Junction { .. } => {
+                Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::Nil))
+            }
+            _ => v.to_string_value(),
+        }
+    }
+
+    fn junction_guts_value(v: &Value) -> Option<Value> {
+        let Value::Junction { kind, values } = v else {
+            return None;
+        };
+        // Normalize recursively so nested junction structures compare order-independently.
+        let mut guts: Vec<Value> = values
+            .iter()
+            .map(|value| Self::junction_guts_value(value).unwrap_or_else(|| value.clone()))
+            .collect();
+        guts.sort_by_key(Self::junction_sort_key);
+        Some(Value::array(vec![
+            Value::Str(Self::junction_kind_name(kind).to_string()),
+            Value::array(guts),
+        ]))
     }
 
     /// Perform `eqv` comparison that threads through Junctions,

@@ -1383,9 +1383,20 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    let (rest, expr) = expression(input).map_err(|err| PError {
-        messages: merge_expected_messages("expected expression statement", &err.messages),
-        remaining_len: err.remaining_len.or(Some(input.len())),
+    let (rest, expr) = expression(input).map_err(|err| {
+        if err.is_fatal()
+            && err
+                .messages
+                .first()
+                .is_some_and(|m| m.contains("X::Comp::Trait::Unknown"))
+        {
+            err
+        } else {
+            PError {
+                messages: merge_expected_messages("expected expression statement", &err.messages),
+                remaining_len: err.remaining_len.or(Some(input.len())),
+            }
+        }
     })?;
 
     // Check for index assignment after expression
@@ -1470,6 +1481,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             is_dynamic: false,
                             is_export: false,
                             export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
                         },
                         Stmt::Expr(Expr::IndexAssign {
                             target,
@@ -1560,6 +1572,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             is_dynamic: false,
                             is_export: false,
                             export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
                         },
                         Stmt::Expr(Expr::IndexAssign {
                             target,
@@ -1830,6 +1843,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),

@@ -363,6 +363,28 @@ impl Interpreter {
         }
     }
 
+    fn varref_parts(value: &Value) -> Option<(String, Value)> {
+        if let Value::Capture { positional, named } = value
+            && positional.is_empty()
+            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            return Some((name.clone(), inner.clone()));
+        }
+        None
+    }
+
+    fn var_target_from_meta_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
+            Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
+                Some(Value::Str(name)) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn candidate_matches_call_args(&mut self, candidate: &Value, args: &[Value]) -> bool {
         match candidate {
             Value::Sub(data) => {
@@ -1409,6 +1431,27 @@ impl Interpreter {
             && let Some(strong) = weak.upgrade()
         {
             return self.call_method_with_values(Value::Sub(strong), method, args);
+        }
+
+        if method == "VAR"
+            && args.is_empty()
+            && let Some((source_name, inner)) = Self::varref_parts(&target)
+        {
+            return self.call_method_mut_with_values(&source_name, inner, "VAR", vec![]);
+        }
+
+        if method == "var"
+            && args.is_empty()
+            && let Some(source_name) = Self::var_target_from_meta_value(&target)
+        {
+            let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::Nil);
+            let mut named = std::collections::HashMap::new();
+            named.insert("__mutsu_varref_name".to_string(), Value::Str(source_name));
+            named.insert("__mutsu_varref_value".to_string(), source_value);
+            return Ok(Value::Capture {
+                positional: Vec::new(),
+                named,
+            });
         }
 
         if method == "join"

@@ -178,6 +178,7 @@ impl Compiler {
                 is_dynamic,
                 is_export,
                 export_tags,
+                custom_traits,
             } => {
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
@@ -248,6 +249,17 @@ impl Compiler {
                     self.code
                         .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
+                for (trait_name, trait_arg) in custom_traits {
+                    if let Some(arg) = trait_arg {
+                        self.compile_expr(arg);
+                    }
+                    let trait_name_idx = self.code.add_constant(Value::Str(trait_name.clone()));
+                    self.code.emit(OpCode::ApplyVarTrait {
+                        name_idx,
+                        trait_name_idx,
+                        has_arg: trait_arg.is_some(),
+                    });
+                }
             }
             Stmt::Assign {
                 name,
@@ -316,6 +328,7 @@ impl Compiler {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: vec![],
+                        custom_traits: Vec::new(),
                     };
                     self.compile_stmt(&var_decl);
                     self.compile_condition_expr(&desugared_cond);

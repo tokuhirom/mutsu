@@ -1235,6 +1235,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
@@ -1245,6 +1246,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
         ];
         if let Some(result_var) = result_var.clone() {
@@ -1257,6 +1259,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             });
         }
 
