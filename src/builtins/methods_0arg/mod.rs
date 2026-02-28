@@ -808,8 +808,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(result))
         }
         "end" => match target {
-            Value::Array(items, ..) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-            _ => None,
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                Some(Ok(Value::Int(items.len() as i64 - 1)))
+            }
+            Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Set(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Bag(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Mix(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Junction { values, .. } => Some(Ok(Value::Int(values.len() as i64 - 1))),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf" || class_name == "Blob" => {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Int(bytes.len() as i64 - 1)))
+                } else {
+                    Some(Ok(Value::Int(-1)))
+                }
+            }
+            Value::LazyList(_) => None,
+            _ => Some(Ok(Value::Int(0))),
         },
         "flat" => match target {
             Value::Array(items, ..) => {
