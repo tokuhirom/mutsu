@@ -155,6 +155,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 params,
                 body,
                 label: Some(label),
+                mode: crate::ast::ForMode::Normal,
             },
         ));
     }
@@ -222,6 +223,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 params: Vec::new(),
                 body,
                 label: Some(label),
+                mode: crate::ast::ForMode::Normal,
             },
         ));
     }
@@ -239,6 +241,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 params: Vec::new(),
                 body,
                 label: Some(label),
+                mode: crate::ast::ForMode::Normal,
             },
         ));
     }
@@ -520,6 +523,24 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 }
 
 pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
+    for_stmt_with_mode(input, crate::ast::ForMode::Normal)
+}
+
+/// Parse `race for ...` statement prefix.
+pub(super) fn race_for_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("race", input).ok_or_else(|| PError::expected("race for statement"))?;
+    let (rest, _) = ws1(rest)?;
+    for_stmt_with_mode(rest, crate::ast::ForMode::Race)
+}
+
+/// Parse `hyper for ...` statement prefix.
+pub(super) fn hyper_for_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("hyper", input).ok_or_else(|| PError::expected("hyper for statement"))?;
+    let (rest, _) = ws1(rest)?;
+    for_stmt_with_mode(rest, crate::ast::ForMode::Hyper)
+}
+
+fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stmt> {
     let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, iterable) = parse_comma_or_expr(rest)?;
@@ -550,6 +571,7 @@ pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
             params,
             body,
             label: None,
+            mode,
         },
     ))
 }

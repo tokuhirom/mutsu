@@ -1396,6 +1396,7 @@ impl Compiler {
                     params,
                     body,
                     label,
+                    ..
                 } => {
                     self.compile_do_for_expr(
                         iterable,

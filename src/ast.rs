@@ -314,6 +314,14 @@ pub(crate) enum CallArg {
     Invocant(Expr),
 }
 
+/// Execution mode for `for` loops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ForMode {
+    Normal,
+    Race,
+    Hyper,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -381,6 +389,7 @@ pub(crate) enum Stmt {
         params: Vec<String>,
         body: Vec<Stmt>,
         label: Option<String>,
+        mode: ForMode,
     },
     Say(Vec<Expr>),
     Print(Vec<Expr>),

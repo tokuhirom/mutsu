@@ -632,6 +632,7 @@ impl Interpreter {
                 param,
                 param_def,
                 params,
+                mode,
             } => Stmt::For {
                 iterable: Self::rewrite_proto_dispatch_expr(iterable),
                 body: Self::rewrite_proto_dispatch_stmts(body),
@@ -639,6 +640,7 @@ impl Interpreter {
                 param: param.clone(),
                 param_def: Box::new((**param_def).clone()),
                 params: params.clone(),
+                mode: *mode,
             },
             Stmt::Loop {
                 init,

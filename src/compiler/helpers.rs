@@ -878,6 +878,7 @@ impl Compiler {
             label: label.clone(),
             arity,
             collect: true,
+            threaded: false,
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);
@@ -1137,6 +1138,7 @@ impl Compiler {
                 params,
                 body,
                 label,
+                mode,
             } => Stmt::For {
                 iterable: iterable.clone(),
                 param: param.clone(),
@@ -1144,6 +1146,7 @@ impl Compiler {
                 params: params.clone(),
                 body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
                 label: label.clone(),
+                mode: *mode,
             },
             Stmt::Loop {
                 init,

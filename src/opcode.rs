@@ -352,6 +352,8 @@ pub(crate) enum OpCode {
         label: Option<String>,
         arity: u32,
         collect: bool,
+        /// When true, run the loop body in a spawned thread (race for / hyper for).
+        threaded: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),

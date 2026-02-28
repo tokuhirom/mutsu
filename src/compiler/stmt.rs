@@ -373,6 +373,7 @@ impl Compiler {
                 params,
                 body,
                 label,
+                mode,
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
@@ -408,6 +409,7 @@ impl Compiler {
                     label: label.clone(),
                     arity,
                     collect: false,
+                    threaded: *mode != crate::ast::ForMode::Normal,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
