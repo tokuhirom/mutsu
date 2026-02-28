@@ -644,6 +644,11 @@ impl VM {
                 let v = Self::resolve_hash_entry(&items, &key.to_string());
                 if matches!(v, Value::Nil) { default } else { v }
             }
+            (Value::Hash(items), key) => {
+                let default = self.typed_container_default(&Value::Hash(items.clone()));
+                let v = Self::resolve_hash_entry(&items, &key.to_string_value());
+                if matches!(v, Value::Nil) { default } else { v }
+            }
             (
                 Value::Instance {
                     class_name,

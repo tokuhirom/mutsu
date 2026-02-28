@@ -855,6 +855,39 @@ mod tests {
     }
 
     #[test]
+    fn parse_for_with_parenthesized_positional_destructuring_param() {
+        let (rest, stmts) = program("for @pairs -> ($a, $b) { $a }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::For {
+                param: Some(param),
+                param_def,
+                ..
+            } => {
+                assert_eq!(param, "__for_unpack");
+                let def = param_def.as_ref().as_ref().expect("for param_def");
+                let sub = def.sub_signature.as_ref().expect("for sub_signature");
+                assert_eq!(sub.len(), 2);
+            }
+            _ => panic!("expected for statement with destructuring param"),
+        }
+    }
+
+    #[test]
+    fn parse_for_with_parenthesized_iterable_expression() {
+        let (rest, stmts) = program("for (@a) { .say }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::For { iterable, .. } => {
+                assert!(matches!(iterable, Expr::ArrayVar(name) if name == "a"));
+            }
+            _ => panic!("expected for statement"),
+        }
+    }
+
+    #[test]
     fn parse_chained_inline_modifiers_in_paren_expr() {
         let (rest, stmts) = program("my @odd = ($_ * $_ if $_ % 2 for 0..10);").unwrap();
         assert_eq!(rest, "");

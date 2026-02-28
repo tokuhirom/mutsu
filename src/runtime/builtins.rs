@@ -485,6 +485,11 @@ impl Interpreter {
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;
         }
+        if name == "substr"
+            && let Some((target, rest)) = args.split_first()
+        {
+            return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
+        }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
         if Self::is_builtin_function(name)
             && args.iter().any(|a| matches!(a, Value::Instance { .. }))
