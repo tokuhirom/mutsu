@@ -851,6 +851,11 @@ impl Compiler {
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        if Self::index_assign_target_requires_eval(delete_target) {
+                            // Preserve side effects for targets like DoStmt(VarDecl).
+                            self.compile_expr(delete_target);
+                            self.code.emit(OpCode::Pop);
+                        }
                         self.compile_expr(delete_index);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::DeleteIndexNamed(name_idx));

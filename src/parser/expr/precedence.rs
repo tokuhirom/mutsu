@@ -689,6 +689,32 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                             )
                         })?
                     };
+                    let (r, right) = if meta == "X" {
+                        let (r_ws, _) = ws(r)?;
+                        if let Some(after_op) = r_ws.strip_prefix("~~") {
+                            let (after_op, _) = ws(after_op)?;
+                            let (r_after_rhs, rhs_expr) =
+                                junctive_expr_mode(after_op, ExprMode::Full).map_err(|err| {
+                                    enrich_expected_error(
+                                        err,
+                                        "expected expression after smartmatch",
+                                        after_op.len(),
+                                    )
+                                })?;
+                            (
+                                r_after_rhs,
+                                Expr::Binary {
+                                    left: Box::new(right),
+                                    op: TokenKind::SmartMatch,
+                                    right: Box::new(rhs_expr),
+                                },
+                            )
+                        } else {
+                            (r_ws, right)
+                        }
+                    } else {
+                        (r, right)
+                    };
                     *left = Expr::MetaOp {
                         meta,
                         op,
@@ -739,6 +765,32 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 range_expr(r).map_err(|err| {
                     enrich_expected_error(err, "expected expression after meta operator", r.len())
                 })?
+            };
+            let (r, right) = if meta == "X" {
+                let (r_ws, _) = ws(r)?;
+                if let Some(after_op) = r_ws.strip_prefix("~~") {
+                    let (after_op, _) = ws(after_op)?;
+                    let (r_after_rhs, rhs_expr) = junctive_expr_mode(after_op, ExprMode::Full)
+                        .map_err(|err| {
+                            enrich_expected_error(
+                                err,
+                                "expected expression after smartmatch",
+                                after_op.len(),
+                            )
+                        })?;
+                    (
+                        r_after_rhs,
+                        Expr::Binary {
+                            left: Box::new(right),
+                            op: TokenKind::SmartMatch,
+                            right: Box::new(rhs_expr),
+                        },
+                    )
+                } else {
+                    (r_ws, right)
+                }
+            } else {
+                (r, right)
             };
             *left = Expr::MetaOp {
                 meta,
@@ -1773,6 +1825,9 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         if r.starts_with(op) && !is_ident_char(r.as_bytes().get(op.len()).copied()) {
             return Some((meta.to_string(), op.to_string(), 1 + op.len()));
         }
+    }
+    if let Some((op, len)) = parse_meta_set_op(r) {
+        return Some((meta.to_string(), op, 1 + len));
     }
     // Custom word operators: Xwtf, Zfoo-bar, Rcustom-op
     if let Some((name, len)) = parse_meta_word_op(r) {
