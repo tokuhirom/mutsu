@@ -658,8 +658,7 @@ mod tests {
 
     #[test]
     fn preprocess_block_skip_counts_tap_ok_as_test_assertion() {
-        let src =
-            "#?rakudo skip 'reason'\n{\n    tap-ok $s, [1], 'tap';\n    ok True, 'ok';\n}\n";
+        let src = "#?rakudo skip 'reason'\n{\n    tap-ok $s, [1], 'tap';\n    ok True, 'ok';\n}\n";
         let out = Interpreter::preprocess_roast_directives(src);
         assert_eq!(out.matches("skip 'reason', 1;").count(), 2);
         assert!(!out.contains("tap-ok $s, [1], 'tap';"));
