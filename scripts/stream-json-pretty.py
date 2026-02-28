@@ -16,10 +16,9 @@ GREEN = "\033[32m"
 RED = "\033[31m"
 BOLD = "\033[1m"
 
-# All output goes to stderr so it is visible even when stdout is redirected.
-# text_delta (the assistant's prose) also goes to stderr for consistency;
-# only the final "result" text goes to stdout so callers can capture it.
-out = sys.stderr
+# All output (progress + final result) goes to stdout.
+# Callers pipe through this script to get human-readable progress logs.
+out = sys.stdout
 
 current_tool = None
 tool_input_buf = ""
@@ -115,9 +114,9 @@ def handle_result(data):
     elif result_text:
         # Print final result text (truncated if huge)
         if len(result_text) > 500:
-            print(result_text[:500] + "...", flush=True)
+            print(result_text[:500] + "...", file=out, flush=True)
         else:
-            print(result_text, flush=True)
+            print(result_text, file=out, flush=True)
 
 
 def main():
