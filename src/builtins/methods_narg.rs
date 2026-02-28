@@ -375,6 +375,56 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::array(items[start..].to_vec())))
             }
         },
+        "combinations" => {
+            let items = match target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+                _ => runtime::value_to_list(target),
+            };
+            match arg {
+                Value::Range(a, b) => Some(Ok(Value::Seq(
+                    super::methods_0arg::collection::combinations_range(&items, *a, *b).into(),
+                ))),
+                Value::RangeExcl(a, b) => Some(Ok(Value::Seq(
+                    super::methods_0arg::collection::combinations_range(&items, *a, *b - 1).into(),
+                ))),
+                Value::RangeExclStart(a, b) => Some(Ok(Value::Seq(
+                    super::methods_0arg::collection::combinations_range(&items, *a + 1, *b).into(),
+                ))),
+                Value::RangeExclBoth(a, b) => Some(Ok(Value::Seq(
+                    super::methods_0arg::collection::combinations_range(&items, *a + 1, *b - 1)
+                        .into(),
+                ))),
+                Value::GenericRange {
+                    start,
+                    end,
+                    excl_start,
+                    excl_end,
+                } => {
+                    let mut lo = runtime::to_int(start);
+                    let mut hi = runtime::to_int(end);
+                    if *excl_start {
+                        lo += 1;
+                    }
+                    if *excl_end {
+                        hi -= 1;
+                    }
+                    Some(Ok(Value::Seq(
+                        super::methods_0arg::collection::combinations_range(&items, lo, hi).into(),
+                    )))
+                }
+                _ => {
+                    let k = runtime::to_int(arg);
+                    if k < 0 {
+                        Some(Ok(Value::Seq(Vec::new().into())))
+                    } else {
+                        Some(Ok(Value::Seq(
+                            super::methods_0arg::collection::combinations_k(&items, k as usize)
+                                .into(),
+                        )))
+                    }
+                }
+            }
+        }
         "batch" => {
             let n = match arg {
                 Value::Int(i) => *i,

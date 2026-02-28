@@ -1002,6 +1002,7 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         }
         Value::Complex(r, _) => *r as i64,
         Value::Str(s) => s.parse().unwrap_or(0),
+        Value::Mixin(inner, _) => to_int(inner),
         _ => 0,
     }
 }

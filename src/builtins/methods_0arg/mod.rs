@@ -11,7 +11,7 @@ use super::rng::builtin_rand;
 use super::unicode::titlecase_string;
 
 pub(crate) mod coercion;
-mod collection;
+pub(crate) mod collection;
 
 use std::collections::HashMap;
 
