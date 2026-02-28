@@ -976,14 +976,14 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
-                    let alternatives: Vec<&str> = group_pattern.split('|').collect();
+                    let alternatives = Self::split_top_level_alternation(&group_pattern);
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
                             let parsed_alt = if ignore_case {
                                 self.parse_regex(&format!(":i {}", alt))
                             } else {
-                                self.parse_regex(alt)
+                                self.parse_regex(&alt)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
@@ -1034,15 +1034,15 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
-                    // Parse the group as alternation
-                    let alternatives: Vec<&str> = group_pattern.split('|').collect();
+                    // Parse the group as top-level alternation, including `||`.
+                    let alternatives = Self::split_top_level_alternation(&group_pattern);
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
                             let parsed_alt = if ignore_case {
                                 self.parse_regex(&format!(":i {}", alt))
                             } else {
-                                self.parse_regex(alt)
+                                self.parse_regex(&alt)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
@@ -1106,10 +1106,16 @@ impl Interpreter {
                     _ => RegexQuant::One,
                 };
             }
-            // Handle ':' ratchet modifier (prevents backtracking)
+            // Handle per-token backtracking control.
+            // `:` enables ratchet on this token; `:!` disables it.
             let token_ratchet = if chars.peek() == Some(&':') {
                 chars.next();
-                true
+                if chars.peek() == Some(&'!') {
+                    chars.next();
+                    false
+                } else {
+                    true
+                }
             } else {
                 ratchet // inherit from pattern-level :ratchet flag
             };
@@ -1173,7 +1179,12 @@ impl Interpreter {
                     }
                     if j < chars.len() && j > name_start {
                         let name: String = chars[name_start..j].iter().collect();
-                        let value = self.env.get(&name).cloned().unwrap_or(Value::Nil);
+                        let value = self
+                            .env
+                            .get(&name)
+                            .cloned()
+                            .or_else(|| self.env.get(&format!("${name}")).cloned())
+                            .unwrap_or(Value::Nil);
                         match value {
                             Value::Regex(pat) => out.push_str(&pat),
                             Value::RegexWithAdverbs { pattern, .. } => out.push_str(&pattern),
@@ -1192,12 +1203,65 @@ impl Interpreter {
                         j += 1;
                     }
                     let name: String = chars[name_start..j].iter().collect();
-                    let value = self.env.get(&name).cloned().unwrap_or(Value::Nil);
+                    let value = self
+                        .env
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| self.env.get(&format!("${name}")).cloned())
+                        .unwrap_or(Value::Nil);
                     match value {
                         Value::Regex(pat) => out.push_str(&pat),
                         Value::RegexWithAdverbs { pattern, .. } => out.push_str(&pattern),
                         other => out
                             .push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+            if ch == '@' {
+                let mut j = i + 1;
+                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    let name_start = j;
+                    while j < chars.len()
+                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
+                    {
+                        j += 1;
+                    }
+                    let name: String = chars[name_start..j].iter().collect();
+                    let mut value = self
+                        .env
+                        .get(&format!("@{name}"))
+                        .cloned()
+                        .or_else(|| self.env.get(&name).cloned())
+                        .unwrap_or(Value::Nil);
+                    if matches!(value, Value::Nil)
+                        && let Some(v) = self
+                            .eval_regex_expr_value(&format!("@{name}"), &RegexCaptures::default())
+                    {
+                        value = v;
+                    }
+                    match value {
+                        Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                            let mut alts = Vec::new();
+                            for item in items.iter() {
+                                match item {
+                                    Value::Regex(pat) => alts.push(pat.clone()),
+                                    Value::RegexWithAdverbs { pattern, .. } => {
+                                        alts.push(pattern.clone())
+                                    }
+                                    other => alts.push(Self::escape_regex_scalar_literal(
+                                        &other.to_string_value(),
+                                    )),
+                                }
+                            }
+                            out.push_str(&alts.join("||"));
+                        }
+                        other => {
+                            out.push_str(&Self::escape_regex_scalar_literal(
+                                &other.to_string_value(),
+                            ));
+                        }
                     }
                     i = j;
                     continue;
@@ -1465,5 +1529,25 @@ impl Interpreter {
             positive: positive_items,
             negative: negative_items,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interpolate_array_var_into_alternation() {
+        let mut interp = Interpreter::default();
+        interp.env.insert(
+            "@list".to_string(),
+            Value::array(vec![
+                Value::Str("x".to_string()),
+                Value::Str("xx".to_string()),
+                Value::Str("xxxx".to_string()),
+            ]),
+        );
+        let interpolated = interp.interpolate_regex_scalars(" ||@list ");
+        assert_eq!(interpolated, " ||x||xx||xxxx ");
     }
 }
