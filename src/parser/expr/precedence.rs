@@ -94,6 +94,26 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 }
 
 /// Low-precedence: or / orelse
+/// Parse an operand at additive level or tighter (for loose prefix operators).
+pub(super) fn loose_prefix_operand(input: &str, level: i32) -> PResult<'_, Expr> {
+    use super::super::stmt::simple::*;
+    if level <= PREC_CONCAT {
+        concat_expr(input)
+    } else {
+        additive_expr(input)
+    }
+}
+
+/// Parse an operand at multiplicative level.
+pub(super) fn multiplicative_operand(input: &str) -> PResult<'_, Expr> {
+    multiplicative_expr(input)
+}
+
+/// Parse an operand at power level.
+pub(super) fn power_operand(input: &str) -> PResult<'_, Expr> {
+    power_expr(input)
+}
+
 pub(super) fn or_expr(input: &str) -> PResult<'_, Expr> {
     or_expr_mode(input, ExprMode::Full)
 }
@@ -788,6 +808,8 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         }
         if !ws_before.contains('\n')
             && let Some((name, len)) = parse_custom_infix_word(r)
+            && super::super::stmt::simple::lookup_custom_infix_precedence(&name)
+                .is_none_or(|level| level <= super::super::stmt::simple::PREC_SEQUENCE)
         {
             let mut r = &r[len..];
             let (r2, _) = ws(r)?;
@@ -1952,6 +1974,37 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     None
 }
 
+/// Try to parse a custom infix word operator at a given precedence range.
+/// Returns Some(remaining_input) if a custom infix was parsed, None otherwise.
+/// `min_level` is exclusive, `max_level` is inclusive.
+fn try_custom_infix_at_level<'a>(
+    r: &'a str,
+    left: &mut Expr,
+    min_level: i32,
+    max_level: i32,
+    operand_parser: fn(&str) -> PResult<'_, Expr>,
+) -> Result<Option<&'a str>, PError> {
+    if let Some((name, len)) = parse_custom_infix_word(r)
+        && let Some(level) = super::super::stmt::simple::lookup_custom_infix_precedence(&name)
+        && level > min_level
+        && level <= max_level
+    {
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, right) = operand_parser(r).map_err(|err| {
+            enrich_expected_error(err, "expected expression after infix operator", r.len())
+        })?;
+        *left = Expr::InfixFunc {
+            name: name.clone(),
+            left: Box::new(left.clone()),
+            right: vec![right],
+            modifier: None,
+        };
+        return Ok(Some(r));
+    }
+    Ok(None)
+}
+
 /// String concatenation: ~
 fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = additive_expr(input)?;
@@ -1973,6 +2026,21 @@ fn concat_expr(input: &str) -> PResult<'_, Expr> {
             };
             rest = r;
             continue;
+        }
+        // Custom infix ops between structural and additive levels
+        // (covers is equiv<~>, is tighter<~>, is looser<+>)
+        {
+            use super::super::stmt::simple::{PREC_ADDITIVE, PREC_STRUCTURAL};
+            if let Some(new_rest) = try_custom_infix_at_level(
+                r,
+                &mut left,
+                PREC_STRUCTURAL,
+                PREC_ADDITIVE - 1,
+                additive_expr,
+            )? {
+                rest = new_rest;
+                continue;
+            }
         }
         if let Some((op, len)) = parse_concat_op(r) {
             let r = &r[len..];
@@ -2082,6 +2150,20 @@ fn additive_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // Custom infix ops at additive level exactly (is equiv<+>)
+        {
+            use super::super::stmt::simple::PREC_ADDITIVE;
+            if let Some(new_rest) = try_custom_infix_at_level(
+                r,
+                &mut left,
+                PREC_ADDITIVE - 1,
+                PREC_ADDITIVE,
+                multiplicative_expr,
+            )? {
+                rest = new_rest;
+                continue;
+            }
+        }
         // Try bracket meta-op at additive level: R[+], R[-], [R+], [R-], etc.
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Additive) {
             let r = &r[len..];
@@ -2141,6 +2223,21 @@ fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // Custom infix ops at multiplicative level (between additive and multiplicative inclusive)
+        // (covers is equiv<*>, is tighter<+>, is looser<*>)
+        {
+            use super::super::stmt::simple::{PREC_ADDITIVE, PREC_MULTIPLICATIVE};
+            if let Some(new_rest) = try_custom_infix_at_level(
+                r,
+                &mut left,
+                PREC_ADDITIVE,
+                PREC_MULTIPLICATIVE,
+                power_expr,
+            )? {
+                rest = new_rest;
+                continue;
+            }
+        }
         // Try bracket meta-op at multiplicative level: R[*], R[/], [R*], [R/], etc.
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {
             let r = &r[len..];
@@ -2178,21 +2275,39 @@ fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Exponentiation: **
 pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, base) = prefix_expr(input)?;
-    let (r, _) = ws(rest)?;
-    if let Some(stripped) = r.strip_prefix("**") {
-        let (r, _) = ws(stripped)?;
-        let (r, exp) = power_expr(r).map_err(|err| {
-            enrich_expected_error(err, "expected exponent expression after '**'", r.len())
-        })?; // right-associative
-        return Ok((
-            r,
-            Expr::Binary {
+    let (mut rest, mut base) = prefix_expr(input)?;
+    // Check for custom infixes at power level (tighter than multiplicative)
+    loop {
+        let (r, _) = ws(rest)?;
+        // Custom infix ops at power level (between multiplicative and prefix exclusive)
+        // (covers is equiv<**>, is tighter<*>, is tighter<**>)
+        {
+            use super::super::stmt::simple::{PREC_MULTIPLICATIVE, PREC_PREFIX};
+            if let Some(new_rest) = try_custom_infix_at_level(
+                r,
+                &mut base,
+                PREC_MULTIPLICATIVE,
+                PREC_PREFIX - 1,
+                prefix_expr,
+            )? {
+                rest = new_rest;
+                continue;
+            }
+        }
+        if let Some(stripped) = r.strip_prefix("**") {
+            let (r, _) = ws(stripped)?;
+            let (r, exp) = power_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected exponent expression after '**'", r.len())
+            })?; // right-associative
+            base = Expr::Binary {
                 left: Box::new(base),
                 op: TokenKind::StarStar,
                 right: Box::new(exp),
-            },
-        ));
+            };
+            rest = r;
+            continue;
+        }
+        break;
     }
     Ok((rest, base))
 }

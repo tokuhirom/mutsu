@@ -393,14 +393,46 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input) {
         let rest = &input[len..];
         let (rest, _) = ws(rest)?;
-        let (rest, arg) = prefix_expr(rest)?;
-        return Ok((
-            rest,
-            Expr::Call {
-                name,
-                args: vec![arg],
-            },
-        ));
+        // Check if this prefix has a custom precedence level
+        let prec_level = crate::parser::stmt::simple::lookup_prefix_precedence(&name);
+        let (mut rest, arg) = match prec_level {
+            Some(level) if level <= crate::parser::stmt::simple::PREC_ADDITIVE => {
+                // Looser than additive: grab everything up to additive level
+                super::precedence::loose_prefix_operand(rest, level)?
+            }
+            Some(level) if level <= crate::parser::stmt::simple::PREC_MULTIPLICATIVE => {
+                // Between additive and multiplicative
+                super::precedence::multiplicative_operand(rest)?
+            }
+            Some(level) if level <= crate::parser::stmt::simple::PREC_POWER => {
+                // Between multiplicative and power
+                super::precedence::power_operand(rest)?
+            }
+            _ => prefix_expr(rest)?,
+        };
+        let mut result = Expr::Call {
+            name,
+            args: vec![arg],
+        };
+        // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
+        loop {
+            if let Some((post_name, post_len)) =
+                crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
+            {
+                let post_prec = crate::parser::stmt::simple::lookup_postfix_precedence(&post_name);
+                if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
+                    let after = &rest[post_len..];
+                    result = Expr::Call {
+                        name: post_name,
+                        args: vec![result],
+                    };
+                    rest = after;
+                    continue;
+                }
+            }
+            break;
+        }
+        return Ok((rest, result));
     }
 
     // Hyper prefix metaop: -« expr / -<< expr / +« expr / ?« expr ...
@@ -1635,12 +1667,20 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {
-                expr = Expr::Call {
-                    name,
-                    args: vec![expr],
-                };
-                rest = after;
-                continue;
+                // Skip postfix ops that have a precedence level lower than PREFIX
+                // (declared `is looser(&prefix:<...>)`). These will be handled
+                // at the prefix level after the prefix operand is parsed.
+                let post_prec = crate::parser::stmt::simple::lookup_postfix_precedence(&name);
+                if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
+                    // Don't consume this postfix here; let it be consumed at prefix level
+                } else {
+                    expr = Expr::Call {
+                        name,
+                        args: vec![expr],
+                    };
+                    rest = after;
+                    continue;
+                }
             }
         }
 

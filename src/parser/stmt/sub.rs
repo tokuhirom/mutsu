@@ -485,6 +485,17 @@ pub(super) fn sub_decl_body(
     if traits.is_test_assertion {
         super::simple::register_user_test_assertion_sub(&name);
     }
+    // Register precedence trait if present
+    if let Some((trait_name, ref_op)) = &traits.precedence_trait
+        && let Some(ref_level) = super::simple::resolve_op_precedence(ref_op)
+    {
+        let level = match trait_name.as_str() {
+            "tighter" => ref_level + 5,
+            "looser" => ref_level - 5,
+            _ => ref_level,
+        };
+        super::simple::register_op_precedence(&name, level);
+    }
     let (rest, _) = ws(rest)?;
     let mut signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)> = Vec::new();
     let rest = if multi {
@@ -687,6 +698,10 @@ pub(crate) struct SubTraits {
     pub associativity: Option<String>,
     /// Non-builtin trait names (e.g. `me'd`) for custom `trait_mod:<is>` dispatch.
     pub custom_traits: Vec<String>,
+    /// Precedence trait: (trait_name, reference_operator).
+    /// trait_name is one of "tighter", "looser", "equiv".
+    /// reference_operator is the operator symbol or full name (e.g. "*", "+", "infix:<+>", "prefix:<foo>").
+    pub precedence_trait: Option<(String, String)>,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
@@ -700,6 +715,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut associativity = None;
     let mut custom_traits: Vec<String> = Vec::new();
     let mut seen_traits: Vec<String> = Vec::new();
+    let mut precedence_trait: Option<(String, String)> = None;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -713,6 +729,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     return_type,
                     associativity,
                     custom_traits: custom_traits.clone(),
+                    precedence_trait: precedence_trait.clone(),
                 },
             ));
         }
@@ -765,11 +782,25 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 let (r2, arg) = parse_trait_angle_arg(r)?;
                 if trait_name == "assoc" {
                     associativity = Some(arg);
+                } else if trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv"
+                {
+                    precedence_trait = Some((trait_name.to_string(), arg));
                 }
                 r = r2;
             }
-            // Skip optional parenthesized trait args: is export(:DEFAULT), is equiv(&prefix:<+>)
-            r = skip_balanced_parens(r);
+            // Parse optional parenthesized trait args: is export(:DEFAULT), is equiv(&prefix:<+>)
+            if r.starts_with('(') {
+                let before_parens = r;
+                r = skip_balanced_parens(r);
+                if (trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv")
+                    && precedence_trait.is_none()
+                {
+                    // Extract the reference operator from parenthesized form
+                    let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
+                    let ref_op = paren_content.trim().to_string();
+                    precedence_trait = Some((trait_name.to_string(), ref_op));
+                }
+            }
             input = r;
             continue;
         }
@@ -807,6 +838,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 return_type,
                 associativity,
                 custom_traits: custom_traits.clone(),
+                precedence_trait: precedence_trait.clone(),
             },
         ));
     }
