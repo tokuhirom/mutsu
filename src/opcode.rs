@@ -296,6 +296,8 @@ pub(crate) enum OpCode {
     // -- Given/When control --
     Proceed,
     Succeed,
+    /// `done` — terminate the innermost react event loop
+    ReactDone,
     /// Tag the current value as coming from a named container (for Scalar binding)
     TagContainerRef(u32),
 

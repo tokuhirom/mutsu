@@ -1134,6 +1134,9 @@ impl VM {
             OpCode::Succeed => {
                 return Err(RuntimeError::succeed_signal());
             }
+            OpCode::ReactDone => {
+                return Err(RuntimeError::react_done_signal());
+            }
             OpCode::TagContainerRef(name_idx) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.container_ref_var = Some(name);

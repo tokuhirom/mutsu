@@ -390,6 +390,7 @@ roast/S17-procasync/kill.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-procasync/nonexistent.t
+roast/S17-procasync/stress.t
 roast/S17-procasync/windows-arg-quoting.t
 roast/S17-promise/at.t
 roast/S17-promise/in.t

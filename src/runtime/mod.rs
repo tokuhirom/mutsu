@@ -551,6 +551,7 @@ impl Interpreter {
                     "do",
                     "reverse",
                     "split",
+                    "interval",
                     "tail",
                     "delayed",
                     "min",

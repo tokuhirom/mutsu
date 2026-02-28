@@ -513,8 +513,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // Hyper-prefix slip forms: |<< expr / |>> expr.
     // Lower to the same unary Pipe AST used by plain `|expr`.
     if input.starts_with("|<<") || input.starts_with("|>>") {
-        let rest = &input[3..];
-        let (rest, _) = ws(rest)?;
+        let (rest, _) = ws(&input[3..])?;
         let (rest, expr) = postfix_expr(rest)?;
         return Ok((
             rest,
@@ -524,19 +523,17 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // Prefix slip: `|expr` (e.g. |@a, |$c, |<a b>, |(1,2), |.method)
-    // Parse by delegating to term parsing after `|` so all primary starters work.
+    // |expr — slip/flatten prefix
     if input.starts_with('|') && !input.starts_with("||") {
-        let rest = &input[1..];
-        if let Ok((rest, expr)) = postfix_expr(rest) {
-            return Ok((
-                rest,
-                Expr::Unary {
-                    op: TokenKind::Pipe,
-                    expr: Box::new(expr),
-                },
-            ));
-        }
+        let (rest, _) = ws(&input[1..])?;
+        let (rest, expr) = postfix_expr(rest)?;
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr: Box::new(expr),
+            },
+        ));
     }
     postfix_expr(input)
 }
