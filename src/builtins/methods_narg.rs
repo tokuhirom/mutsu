@@ -609,20 +609,41 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::array(result)))
         }
         "log" => {
-            let base_val = match arg {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                _ => return None,
+            let base_complex = match arg {
+                Value::Int(i) => Some((*i as f64, 0.0)),
+                Value::Num(f) => Some((*f, 0.0)),
+                Value::Rat(n, d) if *d != 0 => Some((*n as f64 / *d as f64, 0.0)),
+                Value::Complex(r, i) => Some((*r, *i)),
+                _ => None,
             };
-            let x = match target {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                _ => return None,
+            let target_complex = match target {
+                Value::Int(i) => Some((*i as f64, 0.0)),
+                Value::Num(f) => Some((*f, 0.0)),
+                Value::Rat(n, d) if *d != 0 => Some((*n as f64 / *d as f64, 0.0)),
+                Value::Complex(r, i) => Some((*r, *i)),
+                _ => None,
             };
-            if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {
-                Some(Ok(Value::Num(x.ln() / base_val.ln())))
-            } else {
-                Some(Ok(Value::Num(f64::NAN)))
+            match (target_complex, base_complex) {
+                (Some((xr, xi)), Some((br, bi))) => {
+                    if bi == 0.0 && xi == 0.0 {
+                        if br.is_finite() && br > 0.0 && br != 1.0 && xr > 0.0 {
+                            return Some(Ok(Value::Num(xr.ln() / br.ln())));
+                        }
+                        return Some(Ok(Value::Num(f64::NAN)));
+                    }
+                    let ln_x_mag = (xr * xr + xi * xi).sqrt().ln();
+                    let ln_x_arg = xi.atan2(xr);
+                    let ln_b_mag = (br * br + bi * bi).sqrt().ln();
+                    let ln_b_arg = bi.atan2(br);
+                    let denom = ln_b_mag * ln_b_mag + ln_b_arg * ln_b_arg;
+                    if denom == 0.0 {
+                        return Some(Ok(Value::Num(f64::NAN)));
+                    }
+                    let re = (ln_x_mag * ln_b_mag + ln_x_arg * ln_b_arg) / denom;
+                    let im = (ln_x_arg * ln_b_mag - ln_x_mag * ln_b_arg) / denom;
+                    Some(Ok(Value::Complex(re, im)))
+                }
+                _ => None,
             }
         }
         "exp" => {
