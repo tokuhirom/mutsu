@@ -181,12 +181,65 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
 
 fn finalize_paren_list(items: Vec<Expr>) -> Expr {
     let lifted = lift_meta_ops_in_paren_list(items);
+    if let Some(expr) = lift_minmax_in_paren_list(&lifted) {
+        return expr;
+    }
     // If lifting produced a single MetaOp, return it unwrapped
     // (the Z/X meta-op already produces a list result)
     if lifted.len() == 1 && matches!(&lifted[0], Expr::MetaOp { .. }) {
         return lifted.into_iter().next().unwrap();
     }
     Expr::ArrayLiteral(lifted)
+}
+
+fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
+    if items.len() < 3 {
+        return None;
+    }
+    let idx = items.iter().position(|expr| {
+        matches!(
+            expr,
+            Expr::InfixFunc {
+                name,
+                modifier: None,
+                right,
+                ..
+            } if name == "minmax" && right.len() == 1
+        )
+    })?;
+    let Expr::InfixFunc {
+        name,
+        left,
+        right,
+        modifier,
+    } = &items[idx]
+    else {
+        return None;
+    };
+
+    let mut lhs_items: Vec<Expr> = items[..idx].to_vec();
+    lhs_items.push((**left).clone());
+
+    let mut rhs_items: Vec<Expr> = vec![right[0].clone()];
+    rhs_items.extend_from_slice(&items[idx + 1..]);
+
+    let lhs = if lhs_items.len() == 1 {
+        lhs_items.remove(0)
+    } else {
+        Expr::ArrayLiteral(lhs_items)
+    };
+    let rhs = if rhs_items.len() == 1 {
+        rhs_items.remove(0)
+    } else {
+        Expr::ArrayLiteral(rhs_items)
+    };
+
+    Some(Expr::InfixFunc {
+        name: name.clone(),
+        left: Box::new(lhs),
+        right: vec![rhs],
+        modifier: modifier.clone(),
+    })
 }
 
 fn normalize_sequence_waypoints(expr: Expr) -> Expr {
