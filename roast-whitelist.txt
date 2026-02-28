@@ -438,6 +438,7 @@ roast/S29-conversions/hash.t
 roast/S32-array/bool.t
 roast/S32-array/create.t
 roast/S32-array/elems.t
+roast/S32-array/end.t
 roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t

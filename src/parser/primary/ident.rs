@@ -451,6 +451,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "sleep"
             | "dir"
             | "elems"
+            | "end"
     ) || is_expr_listop(name)
 }
 
