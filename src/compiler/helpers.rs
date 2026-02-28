@@ -1138,6 +1138,7 @@ impl Compiler {
                 params,
                 body,
                 label,
+                mode,
             } => Stmt::For {
                 iterable: iterable.clone(),
                 param: param.clone(),
@@ -1145,6 +1146,7 @@ impl Compiler {
                 params: params.clone(),
                 body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
                 label: label.clone(),
+                mode: *mode,
             },
             Stmt::Loop {
                 init,
