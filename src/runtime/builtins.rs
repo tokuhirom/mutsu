@@ -289,6 +289,7 @@ impl Interpreter {
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
+            "squish" => self.builtin_squish(&args),
             "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),

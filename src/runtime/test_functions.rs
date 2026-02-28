@@ -1447,7 +1447,13 @@ impl Interpreter {
         let saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
-        self.env = saved_env;
+        let mut merged_env = saved_env.clone();
+        for (k, v) in &self.env {
+            if saved_env.contains_key(k) || k.starts_with("__mutsu_var_meta::") {
+                merged_env.insert(k.clone(), v.clone());
+            }
+        }
+        self.env = merged_env;
         self.functions = saved_functions;
         self.proto_functions = saved_proto_functions;
         self.token_defs = saved_token_defs;

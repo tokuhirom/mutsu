@@ -732,7 +732,11 @@ impl VM {
             );
         let bypass_gist_fastpath =
             method == "gist" && args.is_empty() && collection_contains_instance(target);
-        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath || bypass_gist_fastpath
+        let bypass_squish_fastpath = method == "squish";
+        if bypass_supply_extrema_fastpath
+            || bypass_supplier_supply_fastpath
+            || bypass_gist_fastpath
+            || bypass_squish_fastpath
         {
             return None;
         }
