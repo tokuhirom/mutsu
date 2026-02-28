@@ -765,6 +765,9 @@ impl VM {
             );
         let bypass_gist_fastpath =
             method == "gist" && args.is_empty() && collection_contains_instance(target);
+        let bypass_pickroll_type_fastpath = matches!(method, "pick" | "roll")
+            && args.len() <= 1
+            && matches!(target, Value::Package(_) | Value::Str(_));
         let bypass_squish_fastpath = method == "squish";
         let bypass_numeric_bridge_instance_fastpath = matches!(target, Value::Instance { .. })
             && (self.interpreter.type_matches_value("Real", target)
@@ -774,6 +777,7 @@ impl VM {
         if bypass_supply_extrema_fastpath
             || bypass_supplier_supply_fastpath
             || bypass_gist_fastpath
+            || bypass_pickroll_type_fastpath
             || bypass_squish_fastpath
             || bypass_numeric_bridge_instance_fastpath
         {

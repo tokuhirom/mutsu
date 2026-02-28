@@ -240,6 +240,25 @@ impl Compiler {
                     self.code.emit(OpCode::MakeArray(count as u32));
                     return;
                 }
+                if matches!(op, TokenKind::Ident(name) if name == "xx") {
+                    // Raku's list repeat reevaluates call-like lhs expressions on each
+                    // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
+                    if Self::xx_lhs_needs_reeval(left) {
+                        let thunk = Expr::AnonSubParams {
+                            params: Vec::new(),
+                            param_defs: Vec::new(),
+                            return_type: None,
+                            body: vec![Stmt::Expr((**left).clone())],
+                            is_rw: false,
+                        };
+                        self.compile_expr(&thunk);
+                    } else {
+                        self.compile_expr(left);
+                    }
+                    self.compile_expr(right);
+                    self.code.emit(OpCode::ListRepeat);
+                    return;
+                }
                 // Detect `funcname |capture` pattern (listop call with capture slip)
                 if *op == TokenKind::Pipe
                     && matches!(right.as_ref(), Expr::BareWord(_))
@@ -1819,6 +1838,34 @@ impl Compiler {
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
+    }
+
+    fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll"
+        ) || matches!(
+            expr,
+            Expr::MethodCall { name, target, .. }
+                if name == "rand"
+                    || name == "pick"
+                    || name == "roll"
+                    || name == "take"
+                    || Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::DynamicMethodCall { target, .. }
+                | Expr::HyperMethodCall { target, .. }
+                | Expr::HyperMethodCallDynamic { target, .. }
+                | Expr::CallOn { target, .. } if Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::Block(_)
+                | Expr::DoBlock { .. }
+                | Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+        )
     }
 
     /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_

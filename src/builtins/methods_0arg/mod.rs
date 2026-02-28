@@ -417,6 +417,19 @@ fn raku_value(v: &Value) -> String {
     }
 }
 
+fn hash_pick_item(key: &str, value: &Value) -> Value {
+    match key {
+        "True" => Value::ValuePair(Box::new(Value::Bool(true)), Box::new(value.clone())),
+        "False" => Value::ValuePair(Box::new(Value::Bool(false)), Box::new(value.clone())),
+        _ => {
+            if let Ok(n) = key.parse::<f64>() {
+                return Value::ValuePair(Box::new(Value::Num(n)), Box::new(value.clone()));
+            }
+            Value::Pair(key.to_string(), Box::new(value.clone()))
+        }
+    }
+}
+
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     // CX::Warn methods: message, resume
     if let Value::Instance {
@@ -926,6 +939,66 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(n) => *n as f64,
                 Value::Num(n) => *n,
                 Value::Rat(n, d) => *n as f64 / *d as f64,
+                Value::Range(start, end) => {
+                    let span = (*end - *start + 1).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        *start + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::RangeExcl(start, end) => {
+                    if *start >= *end {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let span = (*end - *start).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        *start + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::RangeExclStart(start, end) => {
+                    if *start >= *end {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let from = *start + 1;
+                    let span = (*end - from + 1).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        from + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::RangeExclBoth(start, end) => {
+                    let from = *start + 1;
+                    let to = *end - 1;
+                    if from > to {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let span = (to - from + 1).max(1) as f64;
+                    return Some(Ok(Value::Int(
+                        from + (builtin_rand() * span).floor() as i64,
+                    )));
+                }
+                Value::GenericRange {
+                    start,
+                    end,
+                    excl_start,
+                    excl_end,
+                } => {
+                    let Some(mut from) = runtime::to_float_value(start) else {
+                        return Some(Ok(Value::Nil));
+                    };
+                    let Some(mut to) = runtime::to_float_value(end) else {
+                        return Some(Ok(Value::Nil));
+                    };
+                    if *excl_start {
+                        from = f64::from_bits(from.to_bits().saturating_add(1));
+                    }
+                    if *excl_end {
+                        to = f64::from_bits(to.to_bits().saturating_sub(1));
+                    }
+                    if !from.is_finite() || !to.is_finite() || from > to {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let v = from + builtin_rand() * (to - from);
+                    return Some(Ok(Value::Num(v)));
+                }
                 _ => return None,
             };
             Some(Ok(Value::Num(builtin_rand() * max)))
@@ -1058,6 +1131,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Some(Ok(Value::array(result)))
             }
+            Value::LazyList(_) => None,
             _ => Some(Ok(target.clone())),
         },
         "floor" => match target {
@@ -1494,7 +1568,35 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
             }
         },
-        "pick" => {
+        "pick" => match target {
+            Value::Hash(items) => {
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    let (key, value) = items.iter().nth(idx).expect("index in range");
+                    Some(Ok(hash_pick_item(key, value)))
+                }
+            }
+            _ => {
+                let items = runtime::value_to_list(target);
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    Some(Ok(items[idx].clone()))
+                }
+            }
+        },
+        "roll" => {
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))

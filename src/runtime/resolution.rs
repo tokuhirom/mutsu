@@ -327,6 +327,75 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
+    pub(crate) fn eval_xx_repeat_thunk(
+        &mut self,
+        data: &crate::value::SubData,
+        n: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut touched_keys: Vec<String> = Vec::with_capacity(data.env.len());
+        for k in data.env.keys() {
+            touched_keys.push(k.clone());
+        }
+        let saved: Vec<(String, Option<Value>)> = touched_keys
+            .iter()
+            .map(|k| (k.clone(), self.env.get(k).cloned()))
+            .collect();
+
+        for (k, v) in &data.env {
+            if matches!(self.env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..)) {
+                continue;
+            }
+            self.env.insert(k.clone(), v.clone());
+        }
+
+        let compiler = crate::compiler::Compiler::new();
+        let (code, compiled_fns) = compiler.compile(&data.body);
+        let interp = std::mem::take(self);
+        let mut vm = crate::vm::VM::new(interp);
+        let mut out = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            match vm.run_reuse(&code, &compiled_fns) {
+                Ok(()) => {
+                    let val = vm
+                        .interpreter()
+                        .env()
+                        .get("_")
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    out.push(val);
+                }
+                Err(e) => {
+                    *self = vm.into_interpreter();
+                    for (k, orig) in saved {
+                        match orig {
+                            Some(v) => {
+                                self.env.insert(k, v);
+                            }
+                            None => {
+                                self.env.remove(&k);
+                            }
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        *self = vm.into_interpreter();
+        for (k, orig) in saved {
+            match orig {
+                Some(v) => {
+                    self.env.insert(k, v);
+                }
+                None => {
+                    self.env.remove(&k);
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
