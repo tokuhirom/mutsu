@@ -18,6 +18,29 @@ fn regex_single_quote_closes(open: char, ch: char) -> bool {
     }
 }
 
+fn is_inside_single_quoted_regex_literal(chars: &[char], pos: usize) -> bool {
+    let mut open: Option<char> = None;
+    let mut escaped = false;
+    for &ch in chars.iter().take(pos) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(open_ch) = open {
+            if regex_single_quote_closes(open_ch, ch) {
+                open = None;
+            }
+        } else if matches!(ch, '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}') {
+            open = Some(ch);
+        }
+    }
+    open.is_some()
+}
+
 fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
     let lit_chars: Vec<char> = literal.chars().collect();
     if lit_chars.is_empty() {
@@ -1393,8 +1416,12 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.env.get(&format!("${name}")).cloned())
                             .unwrap_or(Value::Nil);
-                        Self::check_hash_in_regex(&value)?;
-                        Self::push_value_as_regex_pattern(&value, &mut out);
+                        if !(matches!(value, Value::Nil)
+                            && is_inside_single_quoted_regex_literal(&chars, i))
+                        {
+                            Self::check_hash_in_regex(&value)?;
+                            Self::push_value_as_regex_pattern(&value, &mut out);
+                        }
                         i = j + 1;
                         continue;
                     }
@@ -1412,13 +1439,16 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::Nil);
-                    Self::check_hash_in_regex(&value)?;
-                    Self::push_value_as_regex_pattern(&value, &mut out);
+                    if !(matches!(value, Value::Nil)
+                        && is_inside_single_quoted_regex_literal(&chars, i))
+                    {
+                        Self::check_hash_in_regex(&value)?;
+                        Self::push_value_as_regex_pattern(&value, &mut out);
+                    }
                     i = j;
                     continue;
                 }
             }
-            // Handle @var interpolation in regex — expands to alternation [elt1|elt2|...]
             if ch == '@' {
                 let mut j = i + 1;
                 if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
@@ -1429,32 +1459,34 @@ impl Interpreter {
                         j += 1;
                     }
                     let bare_name: String = chars[name_start..j].iter().collect();
-                    let env_key = format!("@{}", bare_name);
-                    if let Some(value) = self.env.get(&env_key).cloned() {
-                        let elements = match &value {
-                            Value::Array(arr, _) => arr.as_ref().clone(),
-                            _ => vec![value],
-                        };
-                        out.push('[');
-                        for (idx, elt) in elements.iter().enumerate() {
-                            if idx > 0 {
-                                out.push('|');
-                            }
-                            match elt {
-                                Value::Regex(pat) => out.push_str(pat),
-                                Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
-                                other => out.push_str(&Self::escape_regex_scalar_literal(
-                                    &other.to_string_value(),
-                                )),
+                    let sigiled_name = format!("@{bare_name}");
+                    let value = self
+                        .env
+                        .get(&sigiled_name)
+                        .cloned()
+                        .or_else(|| self.env.get(&bare_name).cloned())
+                        .unwrap_or(Value::Nil);
+                    let elements = match &value {
+                        Value::Array(arr, _) => arr.as_ref().clone(),
+                        _ => vec![value],
+                    };
+                    out.push('[');
+                    for (idx, elt) in elements.iter().enumerate() {
+                        if idx > 0 {
+                            out.push('|');
+                        }
+                        match elt {
+                            Value::Regex(pat) => out.push_str(pat),
+                            Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
+                            other => {
+                                out.push_str(&Self::escape_regex_scalar_literal(&other.to_string_value()))
                             }
                         }
-                        out.push(']');
-                        i = j;
-                        continue;
                     }
+                    out.push(']');
+                    i = j;
+                    continue;
                 } else if j < chars.len() && chars[j] == '(' {
-                    // @( expr ) — evaluate expression and use result as alternation
-                    // Collect the expression inside parens
                     j += 1; // skip '('
                     let mut depth = 1usize;
                     let expr_start = j;
@@ -1470,74 +1502,22 @@ impl Interpreter {
                     }
                     let expr_str: String = chars[expr_start..j].iter().collect();
                     j += 1; // skip closing ')'
-                    // Evaluate the expression
                     let val = self.eval_string_as_source(&expr_str);
                     let elements = match &val {
                         Value::Array(arr, _) => arr.as_ref().clone(),
                         _ => vec![val],
                     };
-                    out.push('[');
-                    for (idx, elt) in elements.iter().enumerate() {
-                        if idx > 0 {
-                            out.push('|');
-                        }
+                    let mut alts = Vec::new();
+                    for elt in elements.iter() {
                         match elt {
-                            Value::Regex(pat) => out.push_str(pat),
-                            Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
-                            other => out.push_str(&Self::escape_regex_scalar_literal(
-                                &other.to_string_value(),
-                            )),
-                        }
-                    }
-                    out.push(']');
-                    i = j;
-                    continue;
-                }
-            }
-            if ch == '@' {
-                let mut j = i + 1;
-                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
-                    let name_start = j;
-                    while j < chars.len()
-                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
-                    {
-                        j += 1;
-                    }
-                    let name: String = chars[name_start..j].iter().collect();
-                    let mut value = self
-                        .env
-                        .get(&format!("@{name}"))
-                        .cloned()
-                        .or_else(|| self.env.get(&name).cloned())
-                        .unwrap_or(Value::Nil);
-                    if matches!(value, Value::Nil)
-                        && let Some(v) = self
-                            .eval_regex_expr_value(&format!("@{name}"), &RegexCaptures::default())
-                    {
-                        value = v;
-                    }
-                    match value {
-                        Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
-                            let mut alts = Vec::new();
-                            for item in items.iter() {
-                                match item {
-                                    Value::Regex(pat) => alts.push(pat.clone()),
-                                    Value::RegexWithAdverbs { pattern, .. } => {
-                                        alts.push(pattern.clone())
-                                    }
-                                    other => alts.push(Self::escape_regex_scalar_literal(
-                                        &other.to_string_value(),
-                                    )),
-                                }
+                            Value::Regex(pat) => alts.push(pat.clone()),
+                            Value::RegexWithAdverbs { pattern, .. } => alts.push(pattern.clone()),
+                            other => {
+                                alts.push(Self::escape_regex_scalar_literal(&other.to_string_value()))
                             }
-                            out.push_str(&alts.join("||"));
-                        }
-                        other => {
-                            out.push_str(&Self::escape_regex_scalar_literal(
-                                &other.to_string_value(),
-                            ));
                         }
                     }
+                    out.push_str(&alts.join("||"));
                     i = j;
                     continue;
                 }
@@ -1949,6 +1929,7 @@ impl Interpreter {
             Err(e) => e.return_value.unwrap_or(Value::Nil),
         }
     }
+
 }
 
 #[cfg(test)]
@@ -1966,7 +1947,14 @@ mod tests {
                 Value::Str("xxxx".to_string()),
             ]),
         );
-        let interpolated = interp.interpolate_regex_scalars(" ||@list ");
-        assert_eq!(interpolated, " ||x||xx||xxxx ");
+        let interpolated = interp.interpolate_regex_scalars(" ||@list ").unwrap();
+        assert_eq!(interpolated, " ||[x|xx|xxxx] ");
+    }
+
+    #[test]
+    fn undefined_scalar_inside_single_quoted_regex_atom_interpolates_to_empty() {
+        let interp = Interpreter::default();
+        let interpolated = interp.interpolate_regex_scalars("'$param'").unwrap();
+        assert_eq!(interpolated, "''");
     }
 }
