@@ -347,9 +347,11 @@ pub struct Interpreter {
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values keyed by Arc pointer identity.
-    array_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Each entry stores a Weak reference to detect stale entries from Arc address reuse.
+    array_type_metadata: HashMap<usize, (std::sync::Weak<Vec<Value>>, ContainerTypeInfo)>,
     /// Type metadata for Hash values keyed by Arc pointer identity.
-    hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Each entry stores a Weak reference to detect stale entries from Arc address reuse.
+    hash_type_metadata: HashMap<usize, (std::sync::Weak<HashMap<String, Value>>, ContainerTypeInfo)>,
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value)>,
@@ -363,6 +365,9 @@ pub struct Interpreter {
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
+    /// When set, tracks the source variable name for method calls that need write-back
+    /// (e.g., `.map(* *= 2)` on arrays should mutate the original).
+    pub(crate) method_target_var: Option<String>,
     /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
     /// Each entry is (remaining_candidates, original_args).
     multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
@@ -851,6 +856,20 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Kernel".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["name", "bits", "gist", "Str", "raku"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["Kernel".to_string()],
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Perl".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -1221,6 +1240,7 @@ impl Interpreter {
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
+            method_target_var: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
@@ -1745,11 +1765,13 @@ impl Interpreter {
         match value {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata.insert(id, info);
+                self.array_type_metadata
+                    .insert(id, (Arc::downgrade(items), info));
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata.insert(id, info);
+                self.hash_type_metadata
+                    .insert(id, (Arc::downgrade(items), info));
             }
             Value::Instance { id, .. } => {
                 self.instance_type_metadata.insert(*id, info);
@@ -1759,15 +1781,50 @@ impl Interpreter {
         }
     }
 
+    /// Remove container type metadata for a value.
+    /// Should be called before dropping/replacing a shaped array to prevent
+    /// stale entries from causing false positives via address reuse.
+    pub(crate) fn unregister_container_type_metadata(&mut self, value: &Value) {
+        match value {
+            Value::Array(items, ..) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.array_type_metadata.remove(&id);
+            }
+            Value::Hash(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.hash_type_metadata.remove(&id);
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
         match value {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.array_type_metadata.get(&id).cloned()
+                if let Some((weak, info)) = self.array_type_metadata.get(&id) {
+                    // Validate the entry is not stale: the Weak must still be alive
+                    // and point to the same Arc (same address).
+                    if weak.upgrade().is_some() {
+                        Some(info.clone())
+                    } else {
+                        None // Stale entry — original Arc was freed, address reused
+                    }
+                } else {
+                    None
+                }
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
-                self.hash_type_metadata.get(&id).cloned()
+                if let Some((weak, info)) = self.hash_type_metadata.get(&id) {
+                    if weak.upgrade().is_some() {
+                        Some(info.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
             Value::Instance { id, .. } => self.instance_type_metadata.get(id).cloned(),
             Value::Mixin(inner, _) => self.container_type_metadata(inner),
@@ -2101,6 +2158,7 @@ impl Interpreter {
             shared_vars: Arc::clone(&self.shared_vars),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
+            method_target_var: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),

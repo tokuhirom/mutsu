@@ -39,6 +39,49 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
             Expr::HashVar(name) => Some((format!("%{}", name), Expr::HashVar(name.clone()))),
             _ => None,
         };
+        // Handle index slice assignment in parens: (@arr[1,2] = 69, 70)
+        // After expression_no_sequence, IndexAssign has value=69. If followed by comma,
+        // merge remaining values into the IndexAssign value.
+        if let Expr::IndexAssign {
+            target,
+            index,
+            value,
+        } = &var_expr
+        {
+            if r2.starts_with(',') && !r2.starts_with(",,") {
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let mut items = vec![*value.clone()];
+                let (mut r2, next) = expression_no_sequence(r2)?;
+                items.push(next);
+                loop {
+                    let (r3, _) = ws(r2)?;
+                    if !r3.starts_with(',') || r3.starts_with(",,") {
+                        r2 = r3;
+                        break;
+                    }
+                    let (r3, _) = parse_char(r3, ',')?;
+                    let (r3, _) = ws(r3)?;
+                    if r3.starts_with(')') {
+                        r2 = r3;
+                        break;
+                    }
+                    let (r3, next) = expression_no_sequence(r3)?;
+                    items.push(next);
+                    r2 = r3;
+                }
+                let (r2, _) = ws(r2)?;
+                let (r2, _) = parse_char(r2, ')')?;
+                return Ok((
+                    r2,
+                    Expr::IndexAssign {
+                        target: target.clone(),
+                        index: index.clone(),
+                        value: Box::new(Expr::ArrayLiteral(items)),
+                    },
+                ));
+            }
+        }
         if let Some((assign_name, lhs_expr)) = assign_target {
             if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
                 // Simple assignment: ($var = expr)
@@ -50,6 +93,20 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::AssignExpr {
                         name: assign_name,
                         expr: Box::new(rhs),
+                        is_bind: false,
+                    },
+                )
+            } else if r2.starts_with(":=") && !r2.starts_with("::=") {
+                // Binding expression: (@arr := expr)
+                let r2 = &r2[2..];
+                let (r2, _) = ws(r2)?;
+                let (r2, rhs) = expression(r2)?;
+                (
+                    r2,
+                    Expr::AssignExpr {
+                        name: assign_name,
+                        expr: Box::new(rhs),
+                        is_bind: true,
                     },
                 )
             } else if let Some((stripped, op)) =
@@ -67,6 +124,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                             op: op.token_kind(),
                             right: Box::new(rhs),
                         }),
+                        is_bind: false,
                     },
                 )
             } else {

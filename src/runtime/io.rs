@@ -407,6 +407,29 @@ impl Interpreter {
         let vm = Self::make_vm_instance();
         self.env.insert("$*VM".to_string(), vm.clone());
         self.env.insert("*VM".to_string(), vm);
+        let kernel = Self::make_kernel_instance();
+        self.env.insert("*KERNEL".to_string(), kernel);
+    }
+
+    fn make_kernel_instance() -> Value {
+        let mut attrs = HashMap::new();
+        let name = if cfg!(target_os = "linux") {
+            "linux"
+        } else if cfg!(target_os = "macos") {
+            "darwin"
+        } else if cfg!(windows) {
+            "win32"
+        } else {
+            "unknown"
+        };
+        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        let bits = if cfg!(target_pointer_width = "64") {
+            64i64
+        } else {
+            32i64
+        };
+        attrs.insert("bits".to_string(), Value::Int(bits));
+        Value::make_instance("Kernel".to_string(), attrs)
     }
 
     pub(super) fn create_handle(

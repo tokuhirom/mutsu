@@ -624,6 +624,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
                 Value::Complex(r, _) => Value::Int(*r as i64),
+                Value::Array(items, ..) => Value::Int(items.len() as i64),
                 _ => return None,
             };
             Some(Ok(result))
@@ -1151,15 +1152,45 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Str(s.clone())))
                 }
             }
-            Value::Array(_, _) if method == "raku" || method == "perl" => {
-                Some(Ok(Value::Str(raku_value(target))))
+            Value::Array(items, _) if method == "raku" || method == "perl" => {
+                // For shaped arrays, return None to let the slow path handle it
+                // (needs container type metadata from interpreter)
+                if crate::runtime::utils::is_shaped_array(target) {
+                    None
+                } else {
+                    Some(Ok(Value::Str(raku_value(target))))
+                }
             }
             Value::Seq(_) if method == "raku" || method == "perl" => {
                 Some(Ok(Value::Str(raku_value(target))))
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
-                if method == "gist" =>
-            {
+            Value::Array(items, is_arr) if method == "gist" => {
+                fn gist_item(v: &Value) -> String {
+                    match v {
+                        Value::Nil => "Nil".to_string(),
+                        Value::Array(inner, is_arr) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            if *is_arr {
+                                format!("[{}]", elems)
+                            } else {
+                                format!("({})", elems)
+                            }
+                        }
+                        Value::Seq(inner) | Value::Slip(inner) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            format!("({})", elems)
+                        }
+                        other => other.to_string_value(),
+                    }
+                }
+                let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                if *is_arr {
+                    Some(Ok(Value::Str(format!("[{}]", inner))))
+                } else {
+                    Some(Ok(Value::Str(format!("({})", inner))))
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
                     match v {
                         Value::Nil => "Nil".to_string(),
@@ -1258,7 +1289,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
             }
         },
-        "pick" => {
+        "pick" | "roll" => {
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))

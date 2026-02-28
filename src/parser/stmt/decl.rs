@@ -134,7 +134,29 @@ pub(super) fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
     Ok((rest, dims))
 }
 
-fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
+fn is_native_type(tc: &str) -> bool {
+    matches!(
+        tc,
+        "int" | "int8" | "int16" | "int32" | "int64"
+            | "uint" | "uint8" | "uint16" | "uint32" | "uint64"
+            | "num" | "num32" | "num64"
+            | "str"
+    )
+}
+
+fn shaped_array_target_expr(type_constraint: Option<&str>) -> Expr {
+    if let Some(tc) = type_constraint {
+        if is_native_type(tc) {
+            return Expr::Index {
+                target: Box::new(Expr::BareWord("array".to_string())),
+                index: Box::new(Expr::BareWord(tc.to_string())),
+            };
+        }
+    }
+    Expr::BareWord("Array".to_string())
+}
+
+fn shaped_array_new_expr(dims: Vec<Expr>, type_constraint: Option<&str>) -> Expr {
     let shape_value = if dims.len() == 1 {
         dims.into_iter()
             .next()
@@ -144,7 +166,7 @@ fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
     };
 
     Expr::MethodCall {
-        target: Box::new(Expr::BareWord("Array".to_string())),
+        target: Box::new(shaped_array_target_expr(type_constraint)),
         name: "new".to_string(),
         args: vec![Expr::Binary {
             left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
@@ -158,7 +180,7 @@ fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
 
 /// Generate `Array.new(:shape(N), :data(expr))` for shaped array declarations
 /// with an assignment expression (e.g. `my @b[3] = <a b c>`).
-fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
+fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr, type_constraint: Option<&str>) -> Expr {
     let shape_value = if dims.len() == 1 {
         dims.into_iter()
             .next()
@@ -168,7 +190,7 @@ fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
     };
 
     Expr::MethodCall {
-        target: Box::new(Expr::BareWord("Array".to_string())),
+        target: Box::new(shaped_array_target_expr(type_constraint)),
         name: "new".to_string(),
         args: vec![
             Expr::Binary {
@@ -460,6 +482,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: true,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -479,6 +502,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -496,6 +520,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             },
         ));
     }
@@ -538,6 +563,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: true,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -557,6 +583,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -576,6 +603,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             },
         ));
     }
@@ -739,7 +767,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             };
         }
         let expr = if let Some(dims) = shape_dims {
-            shaped_array_new_with_data_expr(dims, expr)
+            shaped_array_new_with_data_expr(dims, expr, type_constraint.as_deref())
         } else {
             expr
         };
@@ -752,6 +780,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            is_bind: false,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -792,7 +821,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         // For shaped array declarations with assignment (e.g. my @b[3] = <a b c>),
         // create a shaped array and populate it with the assigned data.
         let expr = if let Some(dims) = shape_dims {
-            shaped_array_new_with_data_expr(dims, expr)
+            shaped_array_new_with_data_expr(dims, expr, type_constraint.as_deref())
         } else {
             expr
         };
@@ -805,6 +834,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            is_bind: false,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -847,6 +877,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            is_bind: false,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -879,6 +910,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            is_bind: true,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -889,7 +921,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let (rest, _) = opt_char(rest, ';');
     let expr = if is_array {
         if let Some(dims) = shape_dims {
-            shaped_array_new_expr(dims)
+            shaped_array_new_expr(dims, type_constraint.as_deref())
         } else {
             Expr::Literal(Value::real_array(Vec::new()))
         }
@@ -911,6 +943,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags,
+            is_bind: false,
         },
     ))
 }
@@ -973,6 +1006,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            is_bind: false,
         }];
         for (i, var_name) in names.iter().enumerate() {
             stmts.push(Stmt::VarDecl {
@@ -987,6 +1021,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             });
         }
         return Ok((rest, Stmt::SyntheticBlock(stmts)));
@@ -1005,6 +1040,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            is_bind: false,
         });
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
@@ -1360,6 +1396,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
+                is_bind: false,
             },
         ));
     }
@@ -1375,6 +1412,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export,
             export_tags,
+            is_bind: false,
         },
     ))
 }

@@ -13,6 +13,8 @@ pub(crate) enum OpCode {
     // -- Variables --
     GetLocal(u32),
     SetLocal(u32),
+    /// Like SetLocal but for `:=` bindings — preserves shaped array identity.
+    SetLocalBind(u32),
     GetGlobal(u32),
     SetGlobal(u32),
     SetVarType {
@@ -276,6 +278,9 @@ pub(crate) enum OpCode {
     MakeBlockClosure(u32),
     // -- Indexing --
     Index,
+    /// Like Index, but the index value came from a scalar context.
+    /// Ranges are numified (to .elems) instead of expanded to slices.
+    IndexScalar,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Hash hyperslice: recursively iterate hash with given adverb mode.
@@ -325,6 +330,8 @@ pub(crate) enum OpCode {
     AssignExpr(u32),
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
+    /// Like AssignExprLocal but for `:=` bindings — skips STORE semantics.
+    AssignExprBindLocal(u32),
     IndexAssignExprNested(u32),
     /// Generic index assignment on a stack-computed target.
     /// Stack: [target, index, value] → assigns value to target[index].

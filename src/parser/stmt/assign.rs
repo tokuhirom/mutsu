@@ -145,7 +145,7 @@ fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, String)> {
     None
 }
 
-pub(super) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
+pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     // Try to parse a chained assignment: $var op= ...
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
         // After a chained assign, check for comma list at this level
@@ -257,9 +257,17 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         &rest[1..]
     };
     let (rest, _) = ws(rest)?;
+    // For index assignments (slice assign), parse RHS with commas: (@arr[1,2] = 69, 70)
+    let use_full_expr = matches!(lhs, Expr::Index { .. });
     let (rest, rhs) = match try_parse_assign_expr(rest) {
         Ok(r) => r,
-        Err(_) => expression_no_sequence(rest)?,
+        Err(_) => {
+            if use_full_expr {
+                expression(rest)?
+            } else {
+                expression_no_sequence(rest)?
+            }
+        }
     };
     let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, ')')?;
@@ -267,14 +275,17 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         },
         Expr::Index { target, index } => Expr::IndexAssign {
             target,
@@ -309,7 +320,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         _ => return Err(PError::expected("assignment expression")),
     };
     if is_atomic {
-        if let Expr::AssignExpr { name, expr } = expr {
+        if let Expr::AssignExpr { name, expr, .. } = expr {
             return Ok((
                 rest,
                 Expr::Call {
@@ -491,6 +502,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     modifier: None,
                     quoted: false,
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -511,6 +523,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     op: op.token_kind(),
                     right: Box::new(rhs),
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -531,6 +544,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     right: vec![rhs],
                     modifier: None,
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -579,6 +593,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             Expr::AssignExpr {
                 name,
                 expr: Box::new(rhs),
+                is_bind: false,
             },
         ));
     }

@@ -45,6 +45,8 @@ pub(crate) struct VM {
     container_ref_var: Option<String>,
     /// Source variable name for topic binding in for loops
     topic_source_var: Option<String>,
+    /// Current loop index for writing back to source container elements
+    topic_source_index: Option<usize>,
 }
 
 impl VM {
@@ -89,6 +91,7 @@ impl VM {
             last_topic_value: None,
             container_ref_var: None,
             topic_source_var: None,
+            topic_source_index: None,
         }
     }
 
@@ -398,6 +401,14 @@ impl VM {
                     }
                 }) {
                     self.interpreter.env_mut().insert(alias_name, val.clone());
+                }
+                // STORE semantics for shaped arrays: fill elements in-place
+                if name.starts_with('@') {
+                    if let Some(result_val) = self.try_shaped_array_store(&name, &val, None)? {
+                        self.set_env_with_main_alias(&name, result_val);
+                        *ip += 1;
+                        return Ok(());
+                    }
                 }
                 self.set_env_with_main_alias(&name, val);
                 *ip += 1;
@@ -1055,6 +1066,24 @@ impl VM {
                 self.exec_index_op()?;
                 *ip += 1;
             }
+            OpCode::IndexScalar => {
+                // Numify range indices from scalar context
+                // (e.g., @arr[my $ = ^2] → @arr[2])
+                let idx = self.stack.last_mut().unwrap();
+                match idx {
+                    Value::Range(a, b) => {
+                        let elems = (*b - *a + 1).max(0);
+                        *idx = Value::Int(elems);
+                    }
+                    Value::RangeExcl(a, b) => {
+                        let elems = (*b - *a).max(0);
+                        *idx = Value::Int(elems);
+                    }
+                    _ => {}
+                }
+                self.exec_index_op()?;
+                *ip += 1;
+            }
             OpCode::DeleteIndexNamed(name_idx) => {
                 self.exec_delete_index_named_op(code, *name_idx)?;
                 *ip += 1;
@@ -1585,6 +1614,10 @@ impl VM {
                 self.exec_set_local_op(code, *idx)?;
                 *ip += 1;
             }
+            OpCode::SetLocalBind(idx) => {
+                self.exec_set_local_bind_op(code, *idx)?;
+                *ip += 1;
+            }
             OpCode::SetVarDynamic { name_idx, dynamic } => {
                 self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
                 *ip += 1;
@@ -1625,6 +1658,10 @@ impl VM {
             }
             OpCode::AssignExprLocal(idx) => {
                 self.exec_assign_expr_local_op(code, *idx)?;
+                *ip += 1;
+            }
+            OpCode::AssignExprBindLocal(idx) => {
+                self.exec_assign_expr_bind_local_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::AssignReadOnly => {

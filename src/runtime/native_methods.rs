@@ -646,6 +646,7 @@ impl Interpreter {
             "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
+            "Kernel" => self.native_kernel(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Compiler" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),
@@ -2366,6 +2367,36 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Distro",
+                method
+            ))),
+        }
+    }
+
+    // --- Kernel ---
+
+    fn native_kernel(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "name" | "bits" => Ok(attributes.get(method).cloned().unwrap_or(Value::Nil)),
+            "gist" | "Str" => {
+                let n = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::Str(n))
+            }
+            "raku" => {
+                let n = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::Str(format!("Kernel.new(name => \"{}\")", n)))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Kernel",
                 method
             ))),
         }

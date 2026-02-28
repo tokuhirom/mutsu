@@ -583,6 +583,19 @@ impl Interpreter {
         let result = self.run_compiled_block(&code, &compiled_fns);
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
+        // If the last statement is a VarDecl, return the variable's value
+        // (Raku semantics: `my @a = 1,2,3` returns @a)
+        if let Ok(ref val) = result {
+            if matches!(val, Value::Nil) {
+                if let Some(last_stmt) = body.last() {
+                    if let crate::ast::Stmt::VarDecl { name, .. } = last_stmt {
+                        if let Some(v) = self.env().get(name).cloned() {
+                            return Ok(v);
+                        }
+                    }
+                }
+            }
+        }
         result
     }
 
@@ -603,9 +616,9 @@ impl Interpreter {
                 interp.set_state_var(key.clone(), val);
             }
         }
-        let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
+        let topic = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
-        result.map(|_last_value| value)
+        result.map(|_last_value| topic)
     }
 
     pub(super) fn eval_map_over_items(
@@ -773,6 +786,29 @@ impl Interpreter {
                     }
                 }
             }
+            // Write map results back to the source array (mutating map semantics)
+            if let Some(ref var_name) = self.method_target_var {
+                let old_shape = self.env.get(var_name)
+                    .and_then(crate::runtime::utils::shaped_array_shape);
+                let old_ct = self.env.get(var_name)
+                    .and_then(|v| self.container_type_metadata(v));
+                if let Some(Value::Array(items, _)) = self.env.get_mut(var_name) {
+                    let items_mut = std::sync::Arc::make_mut(items);
+                    for (idx, val) in result.iter().enumerate() {
+                        if idx < items_mut.len() {
+                            items_mut[idx] = val.clone();
+                        }
+                    }
+                    if let Some(ref shape) = old_shape {
+                        crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+                    }
+                }
+                if let Some(ct_info) = old_ct {
+                    if let Some(container) = self.env.get(var_name).cloned() {
+                        self.register_container_type_metadata(&container, ct_info);
+                    }
+                }
+            }
             return Ok(Value::array(result));
         }
         if let Some(func) = func {
@@ -782,6 +818,29 @@ impl Interpreter {
                 match value {
                     Value::Slip(elems) => result.extend(elems.iter().cloned()),
                     v => result.push(v),
+                }
+            }
+            // Write map results back to the source array (mutating map semantics)
+            if let Some(ref var_name) = self.method_target_var {
+                let old_shape = self.env.get(var_name)
+                    .and_then(crate::runtime::utils::shaped_array_shape);
+                let old_ct = self.env.get(var_name)
+                    .and_then(|v| self.container_type_metadata(v));
+                if let Some(Value::Array(items, _)) = self.env.get_mut(var_name) {
+                    let items_mut = std::sync::Arc::make_mut(items);
+                    for (idx, val) in result.iter().enumerate() {
+                        if idx < items_mut.len() {
+                            items_mut[idx] = val.clone();
+                        }
+                    }
+                    if let Some(ref shape) = old_shape {
+                        crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+                    }
+                }
+                if let Some(ct_info) = old_ct {
+                    if let Some(container) = self.env.get(var_name).cloned() {
+                        self.register_container_type_metadata(&container, ct_info);
+                    }
                 }
             }
             return Ok(Value::array(result));

@@ -95,6 +95,17 @@ impl Compiler {
         }
     }
 
+    fn emit_bind_named_var(&mut self, name: &str) {
+        if let Some(&slot) = self.local_map.get(name) {
+            self.code.emit(OpCode::SetLocalBind(slot));
+        } else {
+            let idx = self
+                .code
+                .add_constant(Value::Str(self.qualify_variable_name(name)));
+            self.code.emit(OpCode::SetGlobal(idx));
+        }
+    }
+
     fn compile_exprs(&mut self, exprs: &[Expr]) {
         for expr in exprs {
             self.compile_expr(expr);
@@ -146,6 +157,7 @@ impl Compiler {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    is_bind: false,
                 }
             } else {
                 Stmt::Assign {

@@ -178,6 +178,7 @@ impl Compiler {
                 is_dynamic,
                 is_export,
                 export_tags,
+                is_bind,
             } => {
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
@@ -223,7 +224,11 @@ impl Compiler {
                     if *is_our {
                         self.code.emit(OpCode::Dup);
                     }
-                    self.code.emit(OpCode::SetLocal(slot));
+                    if *is_bind {
+                        self.code.emit(OpCode::SetLocalBind(slot));
+                    } else {
+                        self.code.emit(OpCode::SetLocal(slot));
+                    }
                     if *is_our {
                         let qualified = self.qualify_variable_name(name);
                         let idx = self.code.add_constant(Value::Str(qualified));
@@ -295,7 +300,11 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::CheckReadOnly(name_idx));
                 self.compile_expr(expr);
-                self.emit_set_named_var(name);
+                if matches!(op, AssignOp::Bind) {
+                    self.emit_bind_named_var(name);
+                } else {
+                    self.emit_set_named_var(name);
+                }
             }
             Stmt::If {
                 cond,
@@ -316,6 +325,7 @@ impl Compiler {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: vec![],
+                        is_bind: false,
                     };
                     self.compile_stmt(&var_decl);
                     self.compile_condition_expr(&desugared_cond);
@@ -386,6 +396,19 @@ impl Compiler {
                 };
                 let normalized_iterable = Self::normalize_for_iterable(iterable);
                 self.compile_expr(&normalized_iterable);
+                // Tag the container ref so $_ write-back works in mutating for loops
+                match iterable {
+                    Expr::Var(name) => {
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                    }
+                    Expr::ArrayVar(name) => {
+                        let full_name = format!("@{}", name);
+                        let name_idx = self.code.add_constant(Value::Str(full_name));
+                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                    }
+                    _ => {}
+                }
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local: None,

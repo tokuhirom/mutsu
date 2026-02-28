@@ -63,14 +63,30 @@ impl Interpreter {
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();
         // General case: parse and evaluate as Raku code
-        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names, &op_assoc)
-            .and_then(|(stmts, _)| {
+        // Save and clear the topic variable ($_) so that outer scope topics
+        // (e.g. from `$_++ for @arr`) don't leak into the EVAL's return value
+        // when the EVAL block doesn't produce an explicit result.
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), Value::Nil);
+        let parse_result =
+            crate::parser::parse_program_with_operators(trimmed, &op_names, &op_assoc);
+        let mut result = match parse_result {
+            Ok((stmts, _)) => {
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                    Err(RuntimeError::new("X::Undeclared::Symbols"))
+                } else {
+                    Ok(value)
                 }
-                Ok(value)
-            });
+            }
+            Err(e) => Err(e),
+        };
+        // Restore the topic
+        if let Some(topic) = saved_topic {
+            self.env.insert("_".to_string(), topic);
+        } else {
+            self.env.remove("_");
+        }
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
         }

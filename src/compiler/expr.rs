@@ -598,6 +598,7 @@ impl Compiler {
                                     is_dynamic: false,
                                     is_export: false,
                                     export_tags: Vec::new(),
+                                    is_bind: false,
                                 },
                                 Stmt::If {
                                     cond: Expr::Binary {
@@ -663,6 +664,7 @@ impl Compiler {
                                 target: Box::new(args[1].clone()),
                                 args: vec![args[0].clone()],
                             }),
+                            is_bind: false,
                         };
                         self.compile_expr(&assign_expr);
                     } else {
@@ -890,8 +892,15 @@ impl Compiler {
                     }
                 } else {
                     self.compile_expr(target);
+                    // Containerized index: my $ = expr in index position
+                    // should numify (e.g., @arr[my $ = ^2] → @arr[2])
+                    let is_containerized = Self::is_scalar_index_expr(index);
                     self.compile_expr(index);
-                    self.code.emit(OpCode::Index);
+                    if is_containerized {
+                        self.code.emit(OpCode::IndexScalar);
+                    } else {
+                        self.code.emit(OpCode::Index);
+                    }
                 }
             }
             // Hash hyperslice: %hash{**}:adverb
@@ -982,10 +991,18 @@ impl Compiler {
                 }
             }
             // Assignment as expression
-            Expr::AssignExpr { name, expr } => {
+            Expr::AssignExpr {
+                name,
+                expr,
+                is_bind,
+            } => {
                 self.compile_expr(expr);
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
-                    self.code.emit(OpCode::AssignExprLocal(slot));
+                    if *is_bind {
+                        self.code.emit(OpCode::AssignExprBindLocal(slot));
+                    } else {
+                        self.code.emit(OpCode::AssignExprLocal(slot));
+                    }
                 } else {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
@@ -1736,5 +1753,24 @@ impl Compiler {
         let idx = self.code.add_constant(v.clone());
         self.code.emit(OpCode::LoadConst(idx));
         self.code.patch_smart_match_rhs_end(sm_idx);
+    }
+
+    /// Check if an index expression is a containerized scalar
+    /// (e.g., `my $ = ^2` or a `$scalar` variable reference).
+    /// Such indices should be numified to avoid treating Range as a slice.
+    fn is_scalar_index_expr(expr: &Expr) -> bool {
+        match expr {
+            // my $ = expr (anonymous scalar declaration)
+            Expr::DoStmt(stmt) => {
+                if let Stmt::VarDecl { name, .. } = stmt.as_ref() {
+                    !name.starts_with('@') && !name.starts_with('%')
+                } else {
+                    false
+                }
+            }
+            // $scalar variable reference
+            Expr::Var(name) => !name.starts_with('@') && !name.starts_with('%'),
+            _ => false,
+        }
     }
 }

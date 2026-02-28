@@ -516,8 +516,13 @@ impl VM {
                     failure_attrs.insert("exception".to_string(), ex);
                     Value::make_instance("Failure".to_string(), failure_attrs)
                 } else {
-                    let default =
-                        self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                    let arr_val = Value::Array(items.clone(), is_arr);
+                    if (i as usize) >= items.len()
+                        && crate::runtime::utils::is_shaped_array(&arr_val)
+                    {
+                        return Err(RuntimeError::new("Index out of bounds"));
+                    }
+                    let default = self.typed_container_default(&arr_val);
                     Self::resolve_array_entry(&items, is_arr, i as usize, default)
                 }
             }
@@ -528,9 +533,18 @@ impl VM {
                     let Value::Array(items, is_arr) = &target else {
                         unreachable!()
                     };
+                    let arr_len = items.len() as i64;
                     let mut out = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
-                        if let Some(i) = Self::index_to_usize(idx) {
+                        // Evaluate WhateverCode (Sub) by calling with array length
+                        let resolved_idx = if matches!(idx, Value::Sub(_)) {
+                            self.interpreter
+                                .call_sub_value(idx.clone(), vec![Value::Int(arr_len)], true)
+                                .unwrap_or(Value::Nil)
+                        } else {
+                            idx.clone()
+                        };
+                        if let Some(i) = Self::index_to_usize(&resolved_idx) {
                             out.push(Self::resolve_array_entry(
                                 items,
                                 *is_arr,
@@ -543,7 +557,8 @@ impl VM {
                     }
                     Value::array(out)
                 } else {
-                    let strict_oob = indices.len() > 1;
+                    let strict_oob = indices.len() > 1
+                        || crate::runtime::utils::is_shaped_array(&target);
                     let indexed =
                         Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?;
                     if matches!(indexed, Value::Nil) {
@@ -934,6 +949,10 @@ impl VM {
                     .insert("*HOME".to_string(), Value::Nil);
             }
         }
+        // Check native array delete before taking mutable borrow
+        if let Some(container) = self.interpreter.env().get(&var_name) {
+            Self::check_native_array_delete(container, &self.interpreter)?;
+        }
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             Self::delete_from_container(container, idx)?
         } else {
@@ -946,6 +965,7 @@ impl VM {
     pub(super) fn exec_delete_index_expr_op(&mut self) -> Result<(), RuntimeError> {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let mut target = self.stack.pop().unwrap_or(Value::Nil);
+        Self::check_native_array_delete(&target, &self.interpreter)?;
         let result = Self::delete_from_container(&mut target, idx)?;
         self.stack.push(result);
         Ok(())
@@ -1163,6 +1183,24 @@ impl VM {
         }
     }
 
+    fn check_native_array_delete(
+        container: &Value,
+        interpreter: &crate::runtime::Interpreter,
+    ) -> Result<(), RuntimeError> {
+        if let Value::Array(..) = container {
+            if crate::runtime::utils::is_shaped_array(container) {
+                if let Some(ct) = interpreter.container_type_metadata(container) {
+                    if ct.value_type != "Mu" && ct.value_type != "Any" {
+                        return Err(RuntimeError::new(
+                            "Cannot delete from a natively typed array",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn delete_from_container(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
         Ok(match container {
             Value::Hash(hash) => match idx {
@@ -1184,12 +1222,14 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
-            Value::Array(..) => match idx {
-                Value::Array(indices, ..) => {
-                    Self::delete_array_multidim(container, indices.as_ref())?
+            Value::Array(..) => {
+                match idx {
+                    Value::Array(indices, ..) => {
+                        Self::delete_array_multidim(container, indices.as_ref())?
+                    }
+                    _ => Self::delete_array_multidim(container, std::slice::from_ref(&idx))?,
                 }
-                _ => Self::delete_array_multidim(container, std::slice::from_ref(&idx))?,
-            },
+            }
             _ => match idx {
                 Value::Array(keys, ..) => Value::array(vec![Value::Nil; keys.len()]),
                 _ => Value::Nil,
@@ -1239,8 +1279,36 @@ impl VM {
             && let Some(ref source_var) = self.topic_source_var
         {
             let sv = source_var.clone();
-            self.set_env_with_main_alias(&sv, new_val.clone());
-            self.update_local_if_exists(code, &sv, &new_val);
+            let idx = self.topic_source_index;
+            if let Some(i) = idx {
+                // Write back to the specific element in the source array,
+                // preserving shaped array identity across Arc mutations.
+                let old_shape = self.interpreter.env().get(&sv)
+                    .and_then(crate::runtime::utils::shaped_array_shape);
+                let old_ct = self.interpreter.env().get(&sv)
+                    .and_then(|v| self.interpreter.container_type_metadata(v));
+                if let Some(Value::Array(items, _)) =
+                    self.interpreter.env_mut().get_mut(&sv)
+                {
+                    let items_mut = std::sync::Arc::make_mut(items);
+                    if i < items_mut.len() {
+                        items_mut[i] = new_val.clone();
+                    }
+                    // Re-register shape if it was a shaped array
+                    if let Some(ref shape) = old_shape {
+                        crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+                    }
+                }
+                // Re-register container type metadata after Arc::make_mut
+                if let Some(ct_info) = old_ct {
+                    if let Some(container) = self.interpreter.env().get(&sv).cloned() {
+                        self.interpreter.register_container_type_metadata(&container, ct_info);
+                    }
+                }
+            } else {
+                self.set_env_with_main_alias(&sv, new_val.clone());
+                self.update_local_if_exists(code, &sv, &new_val);
+            }
         }
         self.stack.push(val);
         Ok(())
@@ -1353,6 +1421,16 @@ impl VM {
             Value::Pair(name, value) if name == "__mutsu_bind_index_value" => (*value, true),
             other => (other, false),
         };
+        // Cannot bind to native/shaped array elements
+        if bind_mode {
+            if let Some(container) = self.interpreter.env().get(&var_name) {
+                if crate::runtime::utils::is_shaped_array(container) {
+                    return Err(RuntimeError::new(
+                        "Cannot bind to a native int array",
+                    ));
+                }
+            }
+        }
         // When assigning Nil to a typed container element, use the type object
         let val = if matches!(val, Value::Nil) {
             if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
@@ -1377,20 +1455,28 @@ impl VM {
         {
             self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
         }
+        // Save container type metadata before mutable borrow
+        let saved_ct_info = self.interpreter.env().get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
         match &idx {
             Value::Array(keys, ..) => {
+                let mut needs_multidim_ct_reregister = false;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
                     let is_shaped = crate::runtime::utils::is_shaped_array(container);
-                    if is_shaped {
+                    let depth = Self::array_depth(container);
+                    if is_shaped && depth > 1 {
                         if bind_mode && is_bound_index {
                             return Err(RuntimeError::new("X::Assignment::RO"));
                         }
                         // Multidimensional indexing: @arr[0;0] = 'x'
                         Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                        needs_multidim_ct_reregister = true;
                     } else {
                         // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
+                        // Save shape before mutation (Arc::make_mut may break registration)
+                        let old_shape = crate::runtime::utils::shaped_array_shape(container);
                         // Auto-extend the array to accommodate all indices
                         let max_idx = keys
                             .iter()
@@ -1399,8 +1485,12 @@ impl VM {
                             .unwrap_or(0);
                         if let Value::Array(items, ..) = container {
                             let arr = Arc::make_mut(items);
-                            if max_idx >= arr.len() {
+                            if max_idx >= arr.len() && !is_shaped {
                                 arr.resize(max_idx + 1, Value::Package("Any".to_string()));
+                            }
+                            // Re-register shape after Arc::make_mut
+                            if let Some(ref shape) = old_shape {
+                                crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
                             }
                         }
                         // Assign each value to the corresponding index
@@ -1415,6 +1505,13 @@ impl VM {
                     }
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
+                    }
+                    // Re-register container type metadata after Arc::make_mut
+                    if let Some(info) = saved_ct_info.clone() {
+                        if let Some(v) = self.interpreter.env().get(&var_name).cloned() {
+                            self.interpreter
+                                .register_container_type_metadata(&v, info);
+                        }
                     }
                     self.stack.push(val);
                     return Ok(());
@@ -1456,6 +1553,7 @@ impl VM {
                         runtime::utils::value_type_name(&val)
                     )));
                 }
+                let mut needs_ct_reregister = false;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -1478,6 +1576,7 @@ impl VM {
                                     std::slice::from_ref(&idx),
                                     val.clone(),
                                 )?;
+                                needs_ct_reregister = true;
                             } else if let Some(i) = Self::index_to_usize(&idx) {
                                 if let Value::Array(items, ..) = container {
                                     let is_self_array_ref = matches!(
@@ -1513,6 +1612,15 @@ impl VM {
                     self.interpreter
                         .env_mut()
                         .insert(var_name.clone(), Value::hash(hash));
+                }
+                // Re-register container type metadata after Arc::make_mut on shaped arrays
+                if needs_ct_reregister {
+                    if let Some(info) = saved_ct_info {
+                        if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
+                            self.interpreter
+                                .register_container_type_metadata(&container, info);
+                        }
+                    }
                 }
                 // Sync $*HOME when %*ENV<HOME> changes
                 if var_name == "%*ENV" && key == "HOME" {
@@ -1646,6 +1754,147 @@ impl VM {
         } else {
             val
         };
+        // STORE semantics for shaped arrays: fill elements in-place
+        if name.starts_with('@') {
+            let existing = self.locals[idx].clone();
+            if let Some(result_val) =
+                self.try_shaped_array_store(name, &val, Some(&existing))?
+            {
+                self.locals[idx] = result_val.clone();
+                self.set_env_with_main_alias(name, result_val);
+                return Ok(());
+            }
+        }
+        let mut val = if name.starts_with('%') {
+            runtime::coerce_to_hash(val)
+        } else if name.starts_with('@') {
+            let arr = runtime::coerce_to_array(val);
+            // Strip shaped-ness from arrays assigned to untyped @ variables.
+            // When a shaped array is assigned (=) to a regular variable,
+            // create a fresh copy so the shape doesn't transfer via shared Arc pointer.
+            if crate::runtime::utils::is_shaped_array(&arr) {
+                if let Value::Array(items, is_arr) = &arr {
+                    let stripped = Value::Array(std::sync::Arc::new(items.to_vec()), *is_arr);
+                    // Remove any stale entries at the new Arc's address
+                    // (can happen due to allocator address reuse from freed Arcs).
+                    crate::runtime::utils::unmark_shaped_array(&stripped);
+                    self.interpreter.unregister_container_type_metadata(&stripped);
+                    stripped
+                } else {
+                    arr
+                }
+            } else {
+                arr
+            }
+        } else {
+            val
+        };
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && !name.starts_with('%')
+            && !name.starts_with('@')
+        {
+            if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
+                return Err(RuntimeError::new(
+                    "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
+                ));
+            }
+            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                    name,
+                    constraint,
+                    runtime::utils::value_type_name(&val)
+                )));
+            }
+            if !matches!(val, Value::Nil) {
+                val = self
+                    .interpreter
+                    .try_coerce_value_for_constraint(&constraint, val)?;
+            }
+        }
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        if matches!(
+            self.interpreter.env().get(&readonly_key),
+            Some(Value::Bool(true))
+        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.interpreter.reset_atomic_var_key(name);
+        }
+        self.locals[idx] = val.clone();
+        self.set_env_with_main_alias(name, val.clone());
+        if let Some(symbol) = Self::term_symbol_from_name(name) {
+            self.interpreter
+                .env_mut()
+                .insert(symbol.to_string(), val.clone());
+            let pkg = self.interpreter.current_package().to_string();
+            if pkg != "GLOBAL" {
+                self.interpreter
+                    .env_mut()
+                    .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
+            }
+        }
+        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.clone())
+            } else {
+                None
+            }
+        }) {
+            self.update_local_if_exists(code, &alias_name, &val);
+            self.interpreter.env_mut().insert(alias_name, val.clone());
+        }
+        if let Some(attr) = name.strip_prefix('.') {
+            self.interpreter
+                .env_mut()
+                .insert(format!("!{}", attr), val.clone());
+        } else if let Some(attr) = name.strip_prefix('!') {
+            self.interpreter
+                .env_mut()
+                .insert(format!(".{}", attr), val.clone());
+        }
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(value_type) = self.interpreter.var_type_constraint(name)
+        {
+            let info = crate::runtime::ContainerTypeInfo {
+                value_type,
+                key_type: if name.starts_with('%') {
+                    self.interpreter.var_hash_key_constraint(name)
+                } else {
+                    None
+                },
+                declared_type: None,
+            };
+            self.interpreter
+                .register_container_type_metadata(&val, info);
+        }
+        Ok(())
+    }
+
+    /// Like exec_set_local_op but for `:=` bindings — does NOT strip shaped-ness.
+    pub(super) fn exec_set_local_bind_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let idx = idx as usize;
+        let name = &code.locals[idx];
+        let val = if name.starts_with('@') {
+            if let Value::LazyList(ref list) = val {
+                Value::array(self.interpreter.force_lazy_list_bridge(list)?)
+            } else {
+                val
+            }
+        } else {
+            val
+        };
+        // No STORE semantics for bindings — bindings replace the variable entirely.
+        // No stripping for bindings — preserve shaped array identity.
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
@@ -1764,6 +2013,18 @@ impl VM {
         let idx = idx as usize;
         let name = &code.locals[idx];
         self.interpreter.check_readonly_for_modify(name)?;
+        // STORE semantics for shaped arrays
+        if name.starts_with('@') {
+            let existing = self.locals[idx].clone();
+            if let Some(result_val) =
+                self.try_shaped_array_store(name, &raw_val, Some(&existing))?
+            {
+                self.locals[idx] = result_val.clone();
+                self.set_env_with_main_alias(name, result_val.clone());
+                self.stack.push(result_val);
+                return Ok(());
+            }
+        }
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
@@ -1842,6 +2103,110 @@ impl VM {
         }
         self.stack.push(val);
         Ok(())
+    }
+
+    /// Like exec_assign_expr_local_op but for `:=` bindings — skips STORE semantics.
+    pub(super) fn exec_assign_expr_bind_local_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        let idx = idx as usize;
+        let name = &code.locals[idx];
+        self.interpreter.check_readonly_for_modify(name)?;
+        // No STORE for bindings — just replace the variable.
+        let val = if name.starts_with('%') {
+            runtime::coerce_to_hash(raw_val)
+        } else if name.starts_with('@') {
+            runtime::coerce_to_array(raw_val)
+        } else {
+            raw_val
+        };
+        self.locals[idx] = val.clone();
+        self.set_env_with_main_alias(name, val.clone());
+        self.stack.push(val);
+        Ok(())
+    }
+
+    /// STORE semantics for shaped arrays: fill elements in-place.
+    /// Returns Some(result_val) if the variable holds a shaped array, None otherwise.
+    /// If `existing_local` is provided, it is used as the current value of the variable
+    /// (for local variables that may not be in the current env scope, e.g. closures).
+    pub(super) fn try_shaped_array_store(
+        &mut self,
+        name: &str,
+        new_val: &Value,
+        existing_local: Option<&Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let existing = existing_local
+            .cloned()
+            .or_else(|| self.interpreter.env().get(name).cloned());
+        // Only apply STORE semantics when the existing variable is genuinely a typed
+        // shaped array. We verify with container_type_metadata (not just is_shaped_array)
+        // because the pointer-based SHAPED_ARRAYS registry can have stale entries due to
+        // Arc address reuse, causing false positives on is_shaped_array.
+        if let Some(ref ex) = existing {
+            let ct_info = self.interpreter.container_type_metadata(ex);
+            if crate::runtime::utils::is_shaped_array(ex) && ct_info.is_some() {
+                let shape = crate::runtime::utils::shaped_array_shape(ex);
+                if let Some(ref shape_dims) = shape {
+                    let total_size: usize = shape_dims.iter().product();
+                    let new_items = crate::runtime::utils::value_to_list(new_val);
+                    let vt = ct_info.as_ref().map(|i| i.value_type.as_str());
+                    let default_val = match vt {
+                        Some(
+                            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
+                            | "uint16" | "uint32" | "uint64",
+                        ) => Value::Int(0),
+                        Some("num" | "num32" | "num64") => Value::Num(0.0),
+                        Some("str") => Value::Str(String::new()),
+                        _ => Value::Nil,
+                    };
+                    // Type-check new values for native arrays
+                    if let Some(ref info) = ct_info {
+                        let is_native_int = matches!(
+                            info.value_type.as_str(),
+                            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
+                                | "uint16" | "uint32" | "uint64"
+                        );
+                        if is_native_int {
+                            for item in &new_items {
+                                if matches!(item, Value::Str(_)) {
+                                    return Err(RuntimeError::new(format!(
+                                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got Str",
+                                        name, info.value_type
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    let mut filled = Vec::with_capacity(total_size);
+                    for i in 0..total_size {
+                        if i < new_items.len() {
+                            filled.push(new_items[i].clone());
+                        } else {
+                            filled.push(default_val.clone());
+                        }
+                    }
+                    // Clean up old shaped array registries before creating new one.
+                    // This prevents stale entries when the allocator reuses the old Arc's address.
+                    crate::runtime::utils::unmark_shaped_array(ex);
+                    self.interpreter.unregister_container_type_metadata(ex);
+
+                    let result_val = Value::Array(std::sync::Arc::new(filled), true);
+                    if let Value::Array(ref items, _) = result_val {
+                        crate::runtime::utils::mark_shaped_array_items(items, Some(shape_dims));
+                    }
+                    if let Some(info) = ct_info {
+                        self.interpreter
+                            .register_container_type_metadata(&result_val, info);
+                    }
+                    return Ok(Some(result_val));
+                }
+            }
+        }
+        Ok(None)
     }
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {

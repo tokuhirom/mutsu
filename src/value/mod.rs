@@ -584,10 +584,20 @@ impl PartialEq for Value {
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak == bk && av == bv,
             (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
-                matches!(bk.as_ref(), Value::Str(s) if s == ak) && av == bv
+                let key_match = match bk.as_ref() {
+                    Value::Str(s) => s == ak,
+                    Value::Int(n) => n.to_string() == *ak,
+                    _ => false,
+                };
+                key_match && av == bv
             }
             (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
-                matches!(ak.as_ref(), Value::Str(s) if s == bk) && av == bv
+                let key_match = match ak.as_ref() {
+                    Value::Str(s) => s == bk,
+                    Value::Int(n) => n.to_string() == *bk,
+                    _ => false,
+                };
+                key_match && av == bv
             }
             (
                 Value::Enum {

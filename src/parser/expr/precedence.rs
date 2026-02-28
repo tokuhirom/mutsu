@@ -142,6 +142,7 @@ fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     Expr::AssignExpr {
                         name: name.clone(),
                         expr: Box::new(rhs),
+                        is_bind: false,
                     },
                 ));
             }
@@ -868,6 +869,7 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(source),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
@@ -875,14 +877,17 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: "__mutsu_feed_array_assign".to_string(),
                 args: vec![source],
             }),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(source),
+            is_bind: false,
         },
         Expr::CodeVar(name) => Expr::AssignExpr {
             name: format!("&{}", name),
             expr: Box::new(source),
+            is_bind: false,
         },
         Expr::Index { target, index } => Expr::IndexAssign {
             target,
@@ -920,6 +925,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: "__mutsu_feed_append".to_string(),
                 args: vec![Expr::Var(name), source],
             }),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
@@ -927,6 +933,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: "__mutsu_feed_append".to_string(),
                 args: vec![Expr::ArrayVar(name), source],
             }),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name.clone()),
@@ -934,6 +941,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: "__mutsu_feed_append".to_string(),
                 args: vec![Expr::HashVar(name), source],
             }),
+            is_bind: false,
         },
         Expr::Index { target, index } => {
             let current = Expr::Index {

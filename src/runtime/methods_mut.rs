@@ -553,6 +553,10 @@ impl Interpreter {
         {
             let type_name = self
                 .var_type_constraint(target_var)
+                .or_else(|| {
+                    self.container_type_metadata(&target)
+                        .map(|info| info.value_type)
+                })
                 .unwrap_or_else(|| "Mu".to_string());
             return Ok(Value::Package(type_name));
         }

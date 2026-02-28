@@ -578,6 +578,7 @@ impl Interpreter {
                 is_dynamic,
                 is_export,
                 export_tags,
+                is_bind,
             } => Stmt::VarDecl {
                 name: name.clone(),
                 expr: Self::rewrite_proto_dispatch_expr(expr),
@@ -587,6 +588,7 @@ impl Interpreter {
                 is_dynamic: *is_dynamic,
                 is_export: *is_export,
                 export_tags: export_tags.clone(),
+                is_bind: *is_bind,
             },
             Stmt::Assign { name, expr, op } => Stmt::Assign {
                 name: name.clone(),
@@ -734,9 +736,14 @@ impl Interpreter {
                 index: Box::new(Self::rewrite_proto_dispatch_expr(index)),
                 value: Box::new(Self::rewrite_proto_dispatch_expr(value)),
             },
-            Expr::AssignExpr { name, expr } => Expr::AssignExpr {
+            Expr::AssignExpr {
+                name,
+                expr,
+                is_bind,
+            } => Expr::AssignExpr {
                 name: name.clone(),
                 expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
+                is_bind: *is_bind,
             },
             Expr::Block(stmts) => Expr::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
             Expr::DoBlock { body, label } => Expr::DoBlock {

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::value::{JunctionKind, RuntimeError, Value};
 use num_traits::{Signed, ToPrimitive, Zero};
@@ -7,8 +7,10 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
-fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
-    static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, Vec<usize>>>> = OnceLock::new();
+/// Each entry stores a Weak reference to detect stale entries from Arc address reuse.
+fn shaped_array_ids() -> &'static Mutex<HashMap<usize, (Weak<Vec<Value>>, Vec<usize>)>> {
+    static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, (Weak<Vec<Value>>, Vec<usize>)>>> =
+        OnceLock::new();
     SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -50,18 +52,31 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         return None;
     }
 
+    /// Helper to get a valid (non-stale) shape from the registry.
+    fn get_valid_shape(
+        ids: &HashMap<usize, (Weak<Vec<Value>>, Vec<usize>)>,
+        key: usize,
+    ) -> Option<Vec<usize>> {
+        let (weak, shape) = ids.get(&key)?;
+        if weak.upgrade().is_some() {
+            Some(shape.clone())
+        } else {
+            None // Stale entry
+        }
+    }
+
     fn infer_shape_from_array(
         items: &[Value],
-        ids: &HashMap<usize, Vec<usize>>,
+        ids: &HashMap<usize, (Weak<Vec<Value>>, Vec<usize>)>,
     ) -> Option<Vec<usize>> {
         let first = items.first()?;
         let Value::Array(first_items, ..) = first else {
             return None;
         };
-        let first_shape = ids.get(&shaped_array_key(first_items))?;
+        let first_shape = get_valid_shape(ids, shaped_array_key(first_items))?;
         if !items.iter().all(|child| {
             if let Value::Array(child_items, ..) = child {
-                ids.get(&shaped_array_key(child_items)) == Some(first_shape)
+                get_valid_shape(ids, shaped_array_key(child_items)).as_ref() == Some(&first_shape)
             } else {
                 false
             }
@@ -70,16 +85,16 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         }
         let mut shape = Vec::with_capacity(1 + first_shape.len());
         shape.push(items.len());
-        shape.extend_from_slice(first_shape);
+        shape.extend_from_slice(&first_shape);
         Some(shape)
     }
 
     let ids = shaped_array_ids().lock().ok()?;
-    let cached_shape = ids.get(&key).cloned();
-    if let Some(cached_shape) = cached_shape
-        && shape_matches_structure(value, &cached_shape)
-    {
-        return Some(cached_shape);
+    // Validate cached shape with Weak reference check
+    if let Some((weak, cached_shape)) = ids.get(&key) {
+        if weak.upgrade().is_some() && shape_matches_structure(value, cached_shape) {
+            return Some(cached_shape.clone());
+        }
     }
     let inferred_shape = infer_shape_from_array(items.as_ref(), &ids)?;
     if !shape_matches_structure(value, &inferred_shape) {
@@ -87,7 +102,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     }
     drop(ids);
     if let Ok(mut ids) = shaped_array_ids().lock() {
-        ids.insert(key, inferred_shape.clone());
+        ids.insert(key, (Arc::downgrade(items), inferred_shape.clone()));
     }
     Some(inferred_shape)
 }
@@ -105,12 +120,29 @@ pub(crate) fn mark_shaped_array_items(items: &Arc<Vec<Value>>, shape: Option<&[u
     }
     let key = shaped_array_key(items);
     if let Ok(mut ids) = shaped_array_ids().lock() {
-        if let Some(current_shape) = ids.get(&key)
+        if let Some((weak, current_shape)) = ids.get(&key)
+            && weak.upgrade().is_some()
             && shape.is_some_and(|s| current_shape.as_slice() == s)
         {
             return;
         }
-        ids.insert(key, shape.unwrap_or(&[]).to_vec());
+        ids.insert(
+            key,
+            (Arc::downgrade(items), shape.unwrap_or(&[]).to_vec()),
+        );
+    }
+}
+
+/// Remove a shaped array entry from the registry.
+/// Used when stripping shaped-ness from a copied array to prevent
+/// stale entries from causing false positives via address reuse.
+pub(crate) fn unmark_shaped_array(value: &Value) {
+    let Value::Array(items, ..) = value else {
+        return;
+    };
+    let key = shaped_array_key(items);
+    if let Ok(mut ids) = shaped_array_ids().lock() {
+        ids.remove(&key);
     }
 }
 

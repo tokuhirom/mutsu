@@ -793,7 +793,7 @@ mod tests {
                 assert_eq!(stmts.len(), 2);
                 assert!(matches!(
                     &stmts[0],
-                    Stmt::Expr(Expr::AssignExpr { name, expr })
+                    Stmt::Expr(Expr::AssignExpr { name, expr, .. })
                         if name == "x" && matches!(expr.as_ref(), Expr::Var(n) if n == "y")
                 ));
                 assert!(matches!(

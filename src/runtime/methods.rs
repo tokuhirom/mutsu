@@ -537,16 +537,29 @@ impl Interpreter {
     }
 
     fn make_shaped_array(dims: &[usize]) -> Value {
+        Self::make_shaped_array_typed(dims, None)
+    }
+
+    fn make_shaped_array_typed(dims: &[usize], type_constraint: Option<&str>) -> Value {
         if dims.is_empty() {
             return Value::Nil;
         }
+        let default_val = match type_constraint {
+            Some(
+                "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                | "uint32" | "uint64",
+            ) => Value::Int(0),
+            Some("num" | "num32" | "num64") => Value::Num(0.0),
+            Some("str") => Value::Str(String::new()),
+            _ => Value::Nil,
+        };
         let len = dims[0];
         if dims.len() == 1 {
-            let value = Value::real_array(vec![Value::Nil; len]);
+            let value = Value::real_array(vec![default_val; len]);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return value;
         }
-        let child = Self::make_shaped_array(&dims[1..]);
+        let child = Self::make_shaped_array_typed(&dims[1..], type_constraint);
         crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
         let value = Value::real_array((0..len).map(|_| child.clone()).collect());
         crate::runtime::utils::mark_shaped_array(&value, Some(dims));
@@ -1310,6 +1323,15 @@ impl Interpreter {
                     return Ok(Value::Package("Any".to_string()));
                 }
             }
+            "of" if args.is_empty() => {
+                if matches!(target, Value::Array(..) | Value::Hash(..)) {
+                    let type_name = self
+                        .container_type_metadata(&target)
+                        .map(|info| info.value_type)
+                        .unwrap_or_else(|| "Mu".to_string());
+                    return Ok(Value::Package(type_name));
+                }
+            }
             "note" if args.is_empty() => {
                 let content = format!("{}\n", self.render_gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;
@@ -2047,6 +2069,9 @@ impl Interpreter {
             }
             "unique" => {
                 return self.dispatch_unique(target, &args);
+            }
+            "repeated" => {
+                return self.dispatch_repeated(target, &args);
             }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
@@ -3042,7 +3067,16 @@ impl Interpreter {
                     )))
                 }
             }
-            "raku" | "perl" if args.is_empty() => match target {
+            "raku" | "perl" if args.is_empty() => match &target {
+                Value::Array(items, _) if crate::runtime::utils::is_shaped_array(&target) => {
+                    let shape = crate::runtime::utils::shaped_array_shape(&target)
+                        .unwrap_or_default();
+                    let ct = self.container_type_metadata(&target);
+                    let type_name = ct.map(|i| i.value_type.clone()).unwrap_or_else(|| "int".to_string());
+                    let shape_str = shape.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(", ");
+                    let inner = items.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(", ");
+                    Ok(Value::Str(format!("array[{}].new(:shape({},), [{}])", type_name, shape_str, inner)))
+                }
                 Value::Package(name) => Ok(Value::Str(name.clone())),
                 other => Ok(Value::Str(other.to_string_value())),
             },
@@ -5264,6 +5298,66 @@ impl Interpreter {
         Ok(Value::array(unique_items))
     }
 
+    fn dispatch_repeated(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut as_func: Option<Value> = None;
+        let mut with_func: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "as" && value.truthy() {
+                    as_func = Some(value.as_ref().clone());
+                    continue;
+                }
+                if key == "with" && value.truthy() {
+                    with_func = Some(value.as_ref().clone());
+                    continue;
+                }
+            }
+        }
+
+        let items: Vec<Value> = match target {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+            v @ (Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. }) => Self::value_to_list(&v),
+            other => vec![other],
+        };
+
+        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut repeated_items: Vec<Value> = Vec::new();
+        for item in items {
+            let key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            } else {
+                item.clone()
+            };
+
+            let mut duplicate = false;
+            for seen in &seen_keys {
+                let is_same = if let Some(func) = with_func.clone() {
+                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
+                        .truthy()
+                } else {
+                    values_identical(seen, &key)
+                };
+                if is_same {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if duplicate {
+                repeated_items.push(item);
+            } else {
+                seen_keys.push(key);
+            }
+        }
+
+        Ok(Value::array(repeated_items))
+    }
+
     fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
         fn case_profile(s: &str) -> Vec<u8> {
             s.chars()
@@ -5373,6 +5467,42 @@ impl Interpreter {
             ));
         }
 
+        // .new on an array value: create a new empty array preserving type metadata
+        if let Value::Array(..) = &target {
+            let type_info = self.container_type_metadata(&target);
+            let result = if args.is_empty() {
+                Value::Array(std::sync::Arc::new(Vec::new()), true)
+            } else {
+                let items: Vec<Value> = args
+                    .into_iter()
+                    .flat_map(|a| match a {
+                        Value::Slip(vs) => vs.as_ref().clone(),
+                        other => vec![other],
+                    })
+                    .collect();
+                Value::Array(std::sync::Arc::new(items), true)
+            };
+            if let Some(info) = type_info {
+                self.register_container_type_metadata(&result, info);
+            }
+            return Ok(result);
+        }
+
+        // Pair.new(key, value) constructor
+        if let Value::Package(class_name) = &target
+            && class_name == "Pair"
+        {
+            if args.len() >= 2 {
+                return Ok(Value::Pair(
+                    crate::runtime::utils::coerce_to_str(&args[0]),
+                    Box::new(args[1].clone()),
+                ));
+            }
+            return Err(RuntimeError::new(
+                "Pair.new requires at least 2 positional arguments",
+            ));
+        }
+
         if let Value::Package(class_name) = &target {
             let parametric = Self::parse_parametric_type_name(class_name);
             let (base_class_name, type_args) = if let Some((base, args)) = &parametric {
@@ -5390,27 +5520,56 @@ impl Interpreter {
                             }
                             _ => None,
                         });
-                        let shaped = Self::make_shaped_array(&dims);
-                        if let Some(data_val) = data {
-                            // Populate the shaped array with data
-                            let data_items = match data_val {
+                        // Collect positional (non-pair) arguments as initial data
+                        let positional_data: Vec<Value> = args
+                            .iter()
+                            .filter(|arg| !matches!(arg, Value::Pair(..)))
+                            .flat_map(|arg| crate::runtime::utils::value_to_list(arg))
+                            .collect();
+                        let type_constraint_str = type_args.as_ref().and_then(|ta| ta.first().map(|s| s.as_str()));
+                        let shaped = Self::make_shaped_array_typed(&dims, type_constraint_str);
+                        let register_type = |interp: &mut Self, val: &Value| {
+                            if let Some(ref ta) = type_args {
+                                if let Some(constraint) = ta.first() {
+                                    let info = crate::runtime::ContainerTypeInfo {
+                                        value_type: constraint.clone(),
+                                        key_type: None,
+                                        declared_type: Some(class_name.clone()),
+                                    };
+                                    interp.register_container_type_metadata(val, info);
+                                }
+                            }
+                        };
+                        let data_items = if let Some(data_val) = data {
+                            match data_val {
                                 Value::Array(items, ..)
                                 | Value::Seq(items)
                                 | Value::Slip(items) => items.to_vec(),
                                 other => vec![other],
-                            };
-                            if let Value::Array(ref items, is_arr) = shaped {
-                                let mut new_items = items.as_ref().clone();
-                                for (i, val) in data_items.into_iter().enumerate() {
-                                    if i < new_items.len() {
-                                        new_items[i] = val;
-                                    }
-                                }
-                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
-                                crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
-                                return Ok(result);
                             }
+                        } else if !positional_data.is_empty() {
+                            positional_data
+                        } else {
+                            register_type(self, &shaped);
+                            return Ok(shaped);
+                        };
+                        if let Value::Array(ref items, is_arr) = shaped {
+                            let mut new_items = items.as_ref().clone();
+                            for (i, val) in data_items.into_iter().enumerate() {
+                                if i < new_items.len() {
+                                    new_items[i] = val;
+                                }
+                            }
+                            // Unmark the intermediate shaped array before creating the result.
+                            // This prevents stale SHAPED_ARRAYS/metadata entries when the
+                            // allocator reuses the freed intermediate Arc's address.
+                            crate::runtime::utils::unmark_shaped_array(&shaped);
+                            let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                            crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
+                            register_type(self, &result);
+                            return Ok(result);
                         }
+                        register_type(self, &shaped);
                         return Ok(shaped);
                     }
                     let mut items = Vec::new();
@@ -5918,14 +6077,27 @@ impl Interpreter {
                             }
                             _ => None,
                         });
-                        let shaped = Self::make_shaped_array(&dims);
-                        let result = if let Some(data_val) = data {
-                            let data_items = match data_val {
+                        // Collect positional (non-pair) arguments as initial data
+                        let positional_data: Vec<Value> = args
+                            .iter()
+                            .filter(|arg| !matches!(arg, Value::Pair(..)))
+                            .flat_map(|arg| crate::runtime::utils::value_to_list(arg))
+                            .collect();
+                        let type_constraint_str2 = type_args.first().map(|s| s.as_str());
+                        let shaped = Self::make_shaped_array_typed(&dims, type_constraint_str2);
+                        let data_items_opt = if let Some(data_val) = data {
+                            Some(match data_val {
                                 Value::Array(items, ..)
                                 | Value::Seq(items)
                                 | Value::Slip(items) => items.to_vec(),
                                 other => vec![other],
-                            };
+                            })
+                        } else if !positional_data.is_empty() {
+                            Some(positional_data)
+                        } else {
+                            None
+                        };
+                        let result = if let Some(data_items) = data_items_opt {
                             if let Value::Array(ref items, is_arr) = shaped {
                                 let mut new_items = items.as_ref().clone();
                                 for (i, val) in data_items.into_iter().enumerate() {
@@ -5933,6 +6105,8 @@ impl Interpreter {
                                         new_items[i] = val;
                                     }
                                 }
+                                // Unmark intermediate before creating result
+                                crate::runtime::utils::unmark_shaped_array(&shaped);
                                 let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
                                 crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                                 result
@@ -6198,10 +6372,30 @@ impl Interpreter {
     }
 
     fn dispatch_grep(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
-        match target {
-            Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
-                "Cannot call .grep on a Supply type object",
-            )),
+        // Parse adverbs from args
+        let mut positional = Vec::new();
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
+        // :v is default behavior
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "k" => has_k = value.truthy(),
+                Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
+                Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
+                Value::Pair(key, _) if key == "v" => {} // :v is default
+                _ => positional.push(arg.clone()),
+            }
+        }
+        let needs_index = has_k || has_kv || has_p;
+
+        // Get items to grep over
+        let items: Vec<Value> = match &target {
+            Value::Package(class_name) if class_name == "Supply" => {
+                return Err(RuntimeError::new(
+                    "Cannot call .grep on a Supply type object",
+                ));
+            }
             Value::Instance {
                 class_name,
                 attributes,
@@ -6230,45 +6424,67 @@ impl Interpreter {
                         })
                         .unwrap_or_default()
                 };
-                let filtered = self.eval_grep_over_items(args.first().cloned(), source_values)?;
-                let filtered_values = Self::value_to_list(&filtered);
-                let mut attrs = HashMap::new();
-                attrs.insert("values".to_string(), Value::array(filtered_values));
-                attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert(
-                    "live".to_string(),
-                    attributes
-                        .get("live")
-                        .cloned()
-                        .unwrap_or(Value::Bool(false)),
-                );
-                Ok(Value::make_instance("Supply".to_string(), attrs))
+                if !needs_index {
+                    let filtered = self.eval_grep_over_items(positional.first().cloned(), source_values)?;
+                    let filtered_values = Self::value_to_list(&filtered);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(filtered_values));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert(
+                        "live".to_string(),
+                        attributes
+                            .get("live")
+                            .cloned()
+                            .unwrap_or(Value::Bool(false)),
+                    );
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+                source_values
             }
-            Value::Array(items, ..) => {
-                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
-            }
-            Value::Range(a, b) => {
-                let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::RangeExcl(a, b) => {
-                let items: Vec<Value> = (a..b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::RangeExclStart(a, b) => {
-                let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::RangeExclBoth(a, b) => {
-                let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            Value::GenericRange { .. } => {
-                let items = crate::runtime::utils::value_to_list(&target);
-                self.eval_grep_over_items(args.first().cloned(), items)
-            }
-            other => Ok(other),
+            Value::Array(items, ..) => items.to_vec(),
+            Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
+            Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
+            Value::RangeExclStart(a, b) => (*a + 1..=*b).map(Value::Int).collect(),
+            Value::RangeExclBoth(a, b) => (*a + 1..*b).map(Value::Int).collect(),
+            Value::GenericRange { .. } => crate::runtime::utils::value_to_list(&target),
+            other => return Ok(other.clone()),
+        };
+
+        if !needs_index {
+            return self.eval_grep_over_items(positional.first().cloned(), items);
         }
+
+        // With adverbs: we need index tracking
+        let matcher = positional.first().cloned();
+        let mut result = Vec::new();
+        for (idx, item) in items.iter().enumerate() {
+            let matched = if let Some(ref pattern) = matcher {
+                if matches!(pattern, Value::Sub(_)) {
+                    self.call_sub_value(pattern.clone(), vec![item.clone()], true)?
+                        .truthy()
+                } else {
+                    self.smart_match(item, pattern)
+                }
+            } else {
+                true
+            };
+            if matched {
+                if has_k {
+                    result.push(Value::Int(idx as i64));
+                } else if has_kv {
+                    result.push(Value::Int(idx as i64));
+                    result.push(item.clone());
+                } else if has_p {
+                    result.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
+                } else {
+                    result.push(item.clone());
+                }
+            }
+        }
+        Ok(Value::array(result))
     }
 
     fn dispatch_first(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {

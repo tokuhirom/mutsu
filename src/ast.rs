@@ -186,6 +186,7 @@ pub(crate) enum Expr {
     AssignExpr {
         name: String,
         expr: Box<Expr>,
+        is_bind: bool,
     },
     Unary {
         op: TokenKind,
@@ -316,6 +317,8 @@ pub(crate) enum Stmt {
         is_dynamic: bool,
         is_export: bool,
         export_tags: Vec<String>,
+        /// True when the variable was declared with `:=` (binding) rather than `=`.
+        is_bind: bool,
     },
     Assign {
         name: String,

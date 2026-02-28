@@ -713,6 +713,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::AssignExpr {
                 name: param.clone(),
                 expr: Box::new(cond),
+                is_bind: false,
             }
         } else {
             cond
@@ -733,6 +734,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    is_bind: false,
                 },
                 while_stmt,
             ]),
@@ -763,6 +765,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
         Expr::AssignExpr {
             name: param.clone(),
             expr: Box::new(cond),
+            is_bind: false,
         }
     } else {
         cond
@@ -788,6 +791,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    is_bind: false,
                 },
                 while_stmt,
             ]),
@@ -929,11 +933,13 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
             name,
             expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+            is_bind: false,
         });
         return Ok((
             r,
@@ -967,11 +973,13 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                is_bind: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
             name,
             expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+            is_bind: false,
         });
         return Ok((
             r,
@@ -1113,6 +1121,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            is_bind: false,
         });
     }
     with_body.extend(body);

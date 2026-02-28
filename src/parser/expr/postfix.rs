@@ -1179,6 +1179,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r_after;
                 continue;
             }
+            if r_adv2.starts_with(":!delete")
+                && !is_ident_char(r_adv2.as_bytes().get(8).copied())
+            {
+                // :!delete — just return the value (no-op, keep expr as-is)
+                rest = &r_adv2[8..];
+                continue;
+            }
             if r_adv2.starts_with(":delete") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {
                 rest = &r_adv2[7..];
                 expr = Expr::MethodCall {

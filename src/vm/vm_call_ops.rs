@@ -533,6 +533,8 @@ impl VM {
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
+        // Track the method target variable for write-back (e.g., mutating map)
+        self.interpreter.method_target_var = Some(target_name.clone());
         let call_result = if !skip_native {
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
@@ -544,6 +546,7 @@ impl VM {
             self.interpreter
                 .call_method_mut_with_values(&target_name, target, &method, args)
         };
+        self.interpreter.method_target_var = None;
         match modifier.as_deref() {
             Some("?") => {
                 self.stack.push(call_result.unwrap_or(Value::Nil));

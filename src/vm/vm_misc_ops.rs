@@ -656,6 +656,14 @@ impl VM {
             if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
             }
+            // Register container type metadata for typed array declarations
+            let info = crate::runtime::ContainerTypeInfo {
+                value_type: base_constraint.to_string(),
+                key_type: None,
+                declared_type: Some(format!("array[{}]", base_constraint)),
+            };
+            self.interpreter
+                .register_container_type_metadata(&value, info);
             return Ok(());
         }
         if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
@@ -692,7 +700,19 @@ impl VM {
                 "X::TypeCheck::Assignment: Type check failed in assignment",
             ));
         }
-        if !matches!(value, Value::Nil) {
+        if matches!(value, Value::Nil) {
+            // Native types get default values instead of Nil
+            let default = match base_constraint {
+                "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                | "uint32" | "uint64" => Some(Value::Int(0)),
+                "num" | "num32" | "num64" => Some(Value::Num(0.0)),
+                "str" => Some(Value::Str(String::new())),
+                _ => None,
+            };
+            if let Some(val) = default {
+                *self.stack.last_mut().unwrap() = val;
+            }
+        } else {
             let coerced = self
                 .interpreter
                 .try_coerce_value_for_constraint(constraint, value.clone())?;

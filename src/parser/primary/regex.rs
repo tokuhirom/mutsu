@@ -232,7 +232,42 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
     fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
         crate::parser::primary::misc::reduction_call_style_expr(input)
             .or_else(|_| try_parse_assign_expr(input))
+            .or_else(|_| try_parse_whatever_compound_assign(input))
             .or_else(|_| expression(input))
+    }
+
+    /// Parse `* op= expr` (e.g. `* *= 2`) as a WhateverCode compound assignment.
+    /// Converts to `{ $_ op= expr }` represented as an anonymous sub.
+    fn try_parse_whatever_compound_assign(input: &str) -> PResult<'_, Expr> {
+        use crate::parser::stmt::assign::parse_compound_assign_op;
+        // Check for `*` followed by whitespace and compound assign op
+        if !input.starts_with('*') {
+            return Err(PError::expected("whatever compound assign"));
+        }
+        let after_star = &input[1..];
+        let (after_ws, _) = ws(after_star)?;
+        let Some((after_op, op)) = parse_compound_assign_op(after_ws) else {
+            return Err(PError::expected("compound assignment operator"));
+        };
+        let (rest, _) = ws(after_op)?;
+        let (rest, rhs) = expression(rest)?;
+        // Build: { $_ op= expr } as AssignExpr { name: "_", expr: Binary { op, left: Var("_"), right: rhs } }
+        let assign_expr = Expr::AssignExpr {
+            name: "_".to_string(),
+            expr: Box::new(Expr::Binary {
+                left: Box::new(Expr::Var("_".to_string())),
+                op: op.token_kind(),
+                right: Box::new(rhs),
+            }),
+            is_bind: false,
+        };
+        Ok((
+            rest,
+            Expr::AnonSub {
+                body: vec![crate::ast::Stmt::Expr(assign_expr)],
+                is_rw: true,
+            },
+        ))
     }
 
     if input.starts_with(')') {

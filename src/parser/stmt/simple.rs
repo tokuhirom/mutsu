@@ -1464,6 +1464,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             is_dynamic: false,
                             is_export: false,
                             export_tags: Vec::new(),
+                            is_bind: false,
                         },
                         Stmt::Expr(Expr::IndexAssign {
                             target,
@@ -1728,6 +1729,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: Vec::new(),
+                        is_bind: false,
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),

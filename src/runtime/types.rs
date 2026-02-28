@@ -665,13 +665,16 @@ impl Interpreter {
             return true;
         }
         // Native type aliases: num → Num, int → Int, str → Str
-        if constraint == "num" && value_type == "Num" {
+        if matches!(constraint, "num" | "num32" | "num64") && value_type == "Num" {
             return true;
         }
-        if constraint == "int" && value_type == "Int" {
-            return true;
-        }
-        if constraint == "atomicint" && value_type == "Int" {
+        if matches!(
+            constraint,
+            "int" | "int8" | "int16" | "int32" | "int64"
+                | "uint" | "uint8" | "uint16" | "uint32" | "uint64"
+                | "atomicint"
+        ) && value_type == "Int"
+        {
             return true;
         }
         if constraint == "str" && value_type == "Str" {

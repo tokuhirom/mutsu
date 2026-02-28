@@ -132,9 +132,11 @@ impl VM {
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let saved_topic_source = self.topic_source_var.take();
+        let saved_topic_source_index = self.topic_source_index.take();
         let container_binding = self.container_ref_var.take();
-        'for_loop: for item in chunked_items {
+        'for_loop: for (loop_idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = container_binding.clone();
+            self.topic_source_index = Some(loop_idx);
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
@@ -207,6 +209,7 @@ impl VM {
             }
         }
         self.topic_source_var = saved_topic_source;
+        self.topic_source_index = saved_topic_source_index;
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }

@@ -79,6 +79,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             let items = crate::runtime::utils::value_to_list(target);
             Some(crate::runtime::utils::build_hash_from_items(items))
         }
+        "eager" => {
+            // .eager on an already-eager array/list returns identity
+            Some(Ok(target.clone()))
+        }
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
