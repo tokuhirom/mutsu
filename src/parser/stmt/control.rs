@@ -605,9 +605,9 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
     // Optional type constraint before the variable
-    let rest = input;
+    let mut rest = input;
     let mut type_constraint = None;
-    let rest = if let Ok((r, tc)) = ident(rest) {
+    rest = if let Ok((r, tc)) = ident(rest) {
         let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
             &r[2..]
         } else {
@@ -623,6 +623,25 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     } else {
         rest
     };
+
+    // Slurpy marker for pointy params: *@a, *%h, *$x, *&cb, and double-slurpy variants.
+    let mut slurpy = false;
+    let mut double_slurpy = false;
+    if rest.starts_with("**")
+        && rest.len() > 2
+        && matches!(rest.as_bytes()[2], b'@' | b'%' | b'$' | b'&')
+    {
+        slurpy = true;
+        double_slurpy = true;
+        rest = &rest[2..];
+    } else if rest.starts_with('*')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'@' | b'%' | b'$' | b'&')
+    {
+        slurpy = true;
+        rest = &rest[1..];
+    }
+
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (rest, name) = var_name(rest)?;
 
@@ -696,8 +715,8 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             multi_invocant: true,
             required: false,
             named: false,
-            slurpy: false,
-            double_slurpy: false,
+            slurpy,
+            double_slurpy,
             sigilless: false,
             type_constraint,
             literal_value: None,
@@ -755,6 +774,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
                 },
                 while_stmt,
             ]),
@@ -810,6 +830,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
                 },
                 while_stmt,
             ]),
@@ -951,6 +972,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -989,6 +1011,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -1135,6 +1158,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            custom_traits: Vec::new(),
         });
     }
     with_body.extend(body);

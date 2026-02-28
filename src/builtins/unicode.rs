@@ -107,6 +107,11 @@ pub(crate) fn unicode_numeric_int_value(c: char) -> Option<i64> {
         '⁷' => Some(7),
         '⁸' => Some(8),
         '⁹' => Some(9),
+        '⅟' => Some(1),
+        '𑁓' => Some(2),
+        '౸' => Some(0),
+        '㆒' => Some(1),
+        '𐌣' => Some(50),
         _ => None,
     }
 }

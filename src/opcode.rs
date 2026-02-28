@@ -447,6 +447,12 @@ pub(crate) enum OpCode {
     HyperMethodCall {
         name_idx: u32,
         arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+    },
+    HyperMethodCallDynamic {
+        arity: u32,
+        modifier_idx: Option<u32>,
     },
 
     // -- HyperOp (>>op<<) --
@@ -555,6 +561,13 @@ pub(crate) enum OpCode {
     RegisterVarExport {
         name_idx: u32,
         tags_idx: Option<u32>,
+    },
+    /// Apply a custom variable trait via trait_mod:<is>.
+    /// When `has_arg` is true, pops trait argument value from stack.
+    ApplyVarTrait {
+        name_idx: u32,
+        trait_name_idx: u32,
+        has_arg: bool,
     },
 
     /// Get a variable from the caller's scope ($CALLER::varname).

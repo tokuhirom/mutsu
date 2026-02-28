@@ -1,8 +1,10 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
+use super::super::parse_result::{
+    PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
+};
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -27,6 +29,27 @@ fn strip_type_smiley_suffix(type_name: &str) -> &str {
 fn typed_default_expr(type_name: &str) -> Expr {
     if strip_type_smiley_suffix(type_name) == "Mu" {
         Expr::BareWord("Mu".to_string())
+    } else {
+        Expr::Literal(Value::Nil)
+    }
+}
+
+fn default_decl_expr(
+    is_array: bool,
+    is_hash: bool,
+    shape_dims: Option<&[Expr]>,
+    type_constraint: Option<&str>,
+) -> Expr {
+    if is_array {
+        if let Some(dims) = shape_dims {
+            shaped_array_new_expr(dims.to_vec())
+        } else {
+            Expr::Literal(Value::real_array(Vec::new()))
+        }
+    } else if is_hash {
+        Expr::Hash(Vec::new())
+    } else if let Some(tc) = type_constraint {
+        typed_default_expr(tc)
     } else {
         Expr::Literal(Value::Nil)
     }
@@ -460,6 +483,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -479,6 +503,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -496,6 +521,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -538,6 +564,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -557,6 +584,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -576,6 +604,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -637,23 +666,24 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         (rest, None)
     };
 
-    // Parse variable traits. Only a small set is currently supported on
-    // lexical/package variable declarations; unknown traits are compile-time errors.
+    // Parse variable traits. Builtins are handled directly; unknown/custom
+    // traits are recorded for trait_mod:<is> dispatch at runtime.
     let mut has_dynamic_trait = false;
     let mut has_export_trait = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
             // Parse trait name
             let (r2, trait_name) = ident(r2)?;
-            if !is_supported_variable_trait(&trait_name) {
-                return Err(PError::fatal(format!(
-                    "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
-                    trait_name
-                )));
+            if trait_name == "readonly" {
+                return Err(PError::fatal(
+                    "X::Comp::Trait::Unknown: Unknown variable trait 'is readonly'".to_string(),
+                ));
             }
+            let is_builtin = is_supported_variable_trait(&trait_name);
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
             }
@@ -684,25 +714,18 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
-                let mut depth = 1;
-                let mut end = 0;
-                for (i, c) in r3.char_indices() {
-                    match c {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = i;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                let r3 = &r3[end + 1..];
+                let (r3, trait_arg) = expression(r3)?;
                 let (r3, _) = ws(r3)?;
+                let (r3, _) = parse_char(r3, ')')?;
+                let (r3, _) = ws(r3)?;
+                if !is_builtin {
+                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                }
                 r = r3;
             } else {
+                if !is_builtin {
+                    custom_traits.push((trait_name.clone(), None));
+                }
                 r = r2;
             }
         }
@@ -752,7 +775,87 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
+
+    // Assignment
+    if let Some((stripped, op)) = super::assign::parse_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let decl_stmt = Stmt::VarDecl {
+            name: name.clone(),
+            expr: default_decl_expr(
+                is_array,
+                is_hash,
+                shape_dims.as_deref(),
+                type_constraint.as_deref(),
+            ),
+            type_constraint: type_constraint.clone(),
+            is_state,
+            is_our,
+            is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
+        };
+        let assign_stmt = Stmt::Assign {
+            name: name.clone(),
+            expr: super::assign::compound_assigned_value_expr(Expr::Var(name.clone()), op, rhs),
+            op: AssignOp::Assign,
+        };
+        let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
+    if let Some((stripped, op_name)) = super::assign::parse_custom_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let decl_stmt = Stmt::VarDecl {
+            name: name.clone(),
+            expr: default_decl_expr(
+                is_array,
+                is_hash,
+                shape_dims.as_deref(),
+                type_constraint.as_deref(),
+            ),
+            type_constraint: type_constraint.clone(),
+            is_state,
+            is_our,
+            is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
+        };
+        let assign_stmt = Stmt::Assign {
+            name: name.clone(),
+            expr: Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(Expr::Var(name.clone())),
+                right: vec![rhs],
+                modifier: None,
+            },
+            op: AssignOp::Assign,
+        };
+        let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
@@ -805,6 +908,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -847,6 +951,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -879,6 +984,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
+            custom_traits: custom_traits.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -887,19 +993,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     }
 
     let (rest, _) = opt_char(rest, ';');
-    let expr = if is_array {
-        if let Some(dims) = shape_dims {
-            shaped_array_new_expr(dims)
-        } else {
-            Expr::Literal(Value::real_array(Vec::new()))
-        }
-    } else if is_hash {
-        Expr::Hash(Vec::new())
-    } else if let Some(tc) = type_constraint.as_deref() {
-        typed_default_expr(tc)
-    } else {
-        Expr::Literal(Value::Nil)
-    };
+    let expr = default_decl_expr(
+        is_array,
+        is_hash,
+        shape_dims.as_deref(),
+        type_constraint.as_deref(),
+    );
     Ok((
         rest,
         Stmt::VarDecl {
@@ -911,6 +1010,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_dynamic: has_dynamic_trait,
             is_export: has_export_trait,
             export_tags,
+            custom_traits,
         },
     ))
 }
@@ -973,6 +1073,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            custom_traits: Vec::new(),
         }];
         for (i, var_name) in names.iter().enumerate() {
             stmts.push(Stmt::VarDecl {
@@ -987,6 +1088,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             });
         }
         return Ok((rest, Stmt::SyntheticBlock(stmts)));
@@ -1005,6 +1107,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            custom_traits: Vec::new(),
         });
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
@@ -1123,6 +1226,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             default,
             handles,
             is_rw,
+            type_constraint,
         },
     ))
 }
@@ -1360,6 +1464,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -1375,6 +1480,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export,
             export_tags,
+            custom_traits: Vec::new(),
         },
     ))
 }

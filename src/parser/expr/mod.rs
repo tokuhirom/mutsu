@@ -71,7 +71,17 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         // Smartmatch handles RHS WhateverCode in precedence parsing, and LHS should
         // remain a normal expression (e.g. `(*) ~~ HyperWhatever:D`).
         if should_wrap_whatevercode(&expr) {
-            expr = wrap_whatevercode(&expr);
+            expr = match expr {
+                Expr::CallOn { target, args }
+                    if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+                {
+                    Expr::CallOn {
+                        target: Box::new(wrap_whatevercode(&target)),
+                        args,
+                    }
+                }
+                other => wrap_whatevercode(&other),
+            };
         }
         Ok((rest, expr))
     })();
@@ -110,7 +120,19 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     expr = wrap_composition_operands(expr);
     // Keep bare `*` as Whatever (Inf). Only wrap true WhateverCode expressions.
     if should_wrap_whatevercode(&expr) {
-        expr = wrap_whatevercode(&expr);
+        expr = match expr {
+            // Preserve call-on semantics for forms like *²(3):
+            // wrap the callable target as WhateverCode, then invoke it.
+            Expr::CallOn { target, args }
+                if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+            {
+                Expr::CallOn {
+                    target: Box::new(wrap_whatevercode(&target)),
+                    args,
+                }
+            }
+            other => wrap_whatevercode(&other),
+        };
     }
     Ok((rest, expr))
 }
@@ -479,6 +501,16 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
 
 /// Build a WhateverCode lambda from an expression containing Whatever placeholders.
 fn wrap_whatevercode(expr: &Expr) -> Expr {
+    if let Expr::CallOn { target, args } = expr
+        && should_wrap_whatevercode(target)
+        && !args.iter().any(contains_whatever)
+    {
+        return Expr::CallOn {
+            target: Box::new(wrap_whatevercode(target)),
+            args: args.clone(),
+        };
+    }
+
     let wc_count = count_whatever(expr);
 
     if wc_count <= 1 {
@@ -1107,6 +1139,32 @@ mod tests {
                 op: TokenKind::Pipe,
                 expr
             } if matches!(*expr, Expr::MethodCall { .. })
+        ));
+    }
+
+    #[test]
+    fn parse_hyper_prefix_slip_left_on_angle_list() {
+        let (rest, expr) = expression("|<< <a x y z>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_hyper_prefix_slip_right_on_angle_list() {
+        let (rest, expr) = expression("|>> <a x y z>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
         ));
     }
 

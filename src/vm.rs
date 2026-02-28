@@ -1,5 +1,5 @@
 #![allow(clippy::result_large_err)]
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
 use crate::interpreter::Interpreter;
@@ -21,17 +21,7 @@ mod vm_string_regex_ops;
 mod vm_var_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
-    match (left, right) {
-        (Value::Int(a), Value::Int(b)) => a.cmp(b),
-        (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Int(a), Value::Num(b)) => (*a as f64)
-            .partial_cmp(b)
-            .unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Num(a), Value::Int(b)) => a
-            .partial_cmp(&(*b as f64))
-            .unwrap_or(std::cmp::Ordering::Equal),
-        _ => left.to_string_value().cmp(&right.to_string_value()),
-    }
+    crate::runtime::compare_values(left, right).cmp(&0)
 }
 
 pub(crate) struct VM {
@@ -48,6 +38,22 @@ pub(crate) struct VM {
 }
 
 impl VM {
+    fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
+        let mut seen: HashSet<String> = HashSet::new();
+        for op in &code.ops {
+            if let OpCode::Label(name_idx) = op {
+                let label_name = Self::const_str(code, *name_idx);
+                if !seen.insert(label_name.to_string()) {
+                    return Err(RuntimeError::new(format!(
+                        "X::Redeclaration: Label '{}' already declared",
+                        label_name
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn runtime_error_from_exception_value(
         value: Value,
         default_message: &str,
@@ -99,6 +105,9 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
+        if let Err(e) = Self::validate_labels(code) {
+            return (self.interpreter, Err(e));
+        }
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -145,6 +154,7 @@ impl VM {
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        Self::validate_labels(code)?;
         self.stack.clear();
         // Initialize local variable slots
         self.locals.resize(code.locals.len(), Value::Nil);
@@ -911,7 +921,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Pop => {
-                self.stack.pop();
+                if let Some(Value::LazyList(list)) = self.stack.pop() {
+                    // Sink context must realize lazy gathers for side effects.
+                    self.interpreter.force_lazy_list_bridge(&list)?;
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
 
@@ -1396,8 +1410,20 @@ impl VM {
             }
 
             // -- HyperMethodCall --
-            OpCode::HyperMethodCall { name_idx, arity } => {
-                self.exec_hyper_method_call_op(code, *name_idx, *arity)?;
+            OpCode::HyperMethodCall {
+                name_idx,
+                arity,
+                modifier_idx,
+                quoted,
+            } => {
+                self.exec_hyper_method_call_op(code, *name_idx, *arity, *modifier_idx, *quoted)?;
+                *ip += 1;
+            }
+            OpCode::HyperMethodCallDynamic {
+                arity,
+                modifier_idx,
+            } => {
+                self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx)?;
                 *ip += 1;
             }
 
@@ -1599,6 +1625,14 @@ impl VM {
             }
             OpCode::RegisterVarExport { name_idx, tags_idx } => {
                 self.exec_register_var_export_op(code, *name_idx, *tags_idx)?;
+                *ip += 1;
+            }
+            OpCode::ApplyVarTrait {
+                name_idx,
+                trait_name_idx,
+                has_arg,
+            } => {
+                self.exec_apply_var_trait_op(code, *name_idx, *trait_name_idx, *has_arg)?;
                 *ip += 1;
             }
             OpCode::GetCallerVar { name_idx, depth } => {

@@ -578,6 +578,7 @@ impl Interpreter {
                 is_dynamic,
                 is_export,
                 export_tags,
+                custom_traits,
             } => Stmt::VarDecl {
                 name: name.clone(),
                 expr: Self::rewrite_proto_dispatch_expr(expr),
@@ -587,6 +588,7 @@ impl Interpreter {
                 is_dynamic: *is_dynamic,
                 is_export: *is_export,
                 export_tags: export_tags.clone(),
+                custom_traits: custom_traits.clone(),
             },
             Stmt::Assign { name, expr, op } => Stmt::Assign {
                 name: name.clone(),

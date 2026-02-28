@@ -422,6 +422,7 @@ impl Interpreter {
             mode,
             path: path.clone(),
             line_separators: self.default_line_separators(),
+            line_chomp: true,
             encoding: "utf-8".to_string(),
             file: None,
             socket: None,

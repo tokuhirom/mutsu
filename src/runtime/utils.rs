@@ -428,6 +428,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
 }
 
 pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
+    if super::native_types::is_native_int_type(constraint) {
+        return true;
+    }
     matches!(
         constraint,
         "Int"
@@ -849,6 +852,7 @@ pub(crate) fn compare_rat_parts(a: (i64, i64), b: (i64, i64)) -> std::cmp::Order
 
 pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val {
+        Value::Mixin(inner, _) => to_float_value(inner),
         Value::Num(f) => Some(*f),
         Value::Int(i) => Some(*i as f64),
         Value::BigInt(n) => n.to_f64(),
@@ -876,7 +880,28 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         }
         Value::BigRat(n, d) => {
             if !d.is_zero() {
-                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                if let (Some(nn), Some(dd)) = (n.to_f64(), d.to_f64())
+                    && nn.is_finite()
+                    && dd.is_finite()
+                {
+                    Some(nn / dd)
+                } else {
+                    let scale_pow = 30u32;
+                    let scale = num_bigint::BigInt::from(10u8).pow(scale_pow);
+                    let scaled = (n * &scale) / d;
+                    if let Some(scaled_f) = scaled
+                        .to_f64()
+                        .or_else(|| scaled.to_string().parse::<f64>().ok())
+                    {
+                        Some(scaled_f / 10f64.powi(scale_pow as i32))
+                    } else if n.is_zero() {
+                        Some(0.0)
+                    } else if n.is_positive() {
+                        Some(f64::INFINITY)
+                    } else {
+                        Some(f64::NEG_INFINITY)
+                    }
+                }
             } else if n.is_positive() {
                 Some(f64::INFINITY)
             } else if n.is_negative() {
@@ -936,6 +961,17 @@ pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
 }
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
+    fn compare_infinite_num_against_nonnumeric_str(num: f64, s: &str) -> Option<i32> {
+        if !num.is_infinite() || s.trim().parse::<f64>().is_ok() {
+            return None;
+        }
+        Some(if num.is_sign_positive() {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        } as i32)
+    }
+
     match (a, b) {
         (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
             version_cmp_parts(ap, bp) as i32
@@ -971,6 +1007,20 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         (Value::Num(a), Value::Int(b)) => a
             .partial_cmp(&(*b as f64))
             .unwrap_or(std::cmp::Ordering::Equal) as i32,
+        (Value::Num(n), Value::Str(s)) => {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
+                ord
+            } else {
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
+        (Value::Str(s), Value::Num(n)) => {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
+                -ord
+            } else {
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
                 return compare_rat_parts((an, ad), (bn, bd)) as i32;
@@ -982,6 +1032,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
 
 pub(crate) fn to_int(v: &Value) -> i64 {
     match v {
+        Value::Mixin(inner, _) => to_int(inner),
         Value::Int(i) => *i,
         Value::BigInt(n) => {
             use num_traits::ToPrimitive;
