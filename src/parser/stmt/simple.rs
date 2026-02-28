@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use regex::Regex;
 
+use super::super::add_parse_warning;
 use super::super::expr::expression;
 use super::super::helpers::{is_loop_label_name, ws, ws1};
 use super::super::parse_result::{
@@ -11,6 +12,7 @@ use super::super::parse_result::{
 };
 
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.
@@ -56,6 +58,33 @@ thread_local! {
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn flatten_xor_chain_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+    if let Expr::Binary { left, op, right } = expr
+        && *op == TokenKind::XorXor
+    {
+        flatten_xor_chain_terms(left, out);
+        flatten_xor_chain_terms(right, out);
+        return;
+    }
+    out.push(expr);
+}
+
+fn add_xor_sink_warnings(expr: &Expr) {
+    let mut terms = Vec::new();
+    flatten_xor_chain_terms(expr, &mut terms);
+    if terms.len() < 2 {
+        return;
+    }
+    for term in terms.iter().skip(1) {
+        if let Expr::Literal(Value::Str(s)) = term {
+            add_parse_warning(format!(
+                "Useless use of constant string \"{}\" in sink context (line 1)",
+                s
+            ));
+        }
+    }
+}
 
 fn parse_hyper_assign_op(input: &str) -> Option<&str> {
     const HYPER_ASSIGN_OPS: &[&str] = &[
@@ -2087,6 +2116,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 Expr::ArrayLiteral(exprs)
             };
+            add_xor_sink_warnings(&expr);
             return Ok((r, Stmt::Expr(expr)));
         }
 
@@ -2106,6 +2136,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((r, Stmt::Block(stmts)));
     }
 
+    add_xor_sink_warnings(&expr);
     let stmt = Stmt::Expr(expr);
     parse_statement_modifier(rest, stmt)
 }

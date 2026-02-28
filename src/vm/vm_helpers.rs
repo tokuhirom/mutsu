@@ -486,6 +486,8 @@ impl VM {
                 | "CallFrame"
                 | "Backtrace"
                 | "array"
+                | "UInt"
+                | "NativeInt"
                 | "int8"
                 | "int16"
                 | "int32"
