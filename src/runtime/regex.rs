@@ -1231,6 +1231,23 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        if let RegexAtom::Group(pattern) = atom {
+            let mut out = Vec::new();
+            for (end, mut inner_caps) in
+                self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
+            {
+                let mut new_caps = current_caps.clone();
+                for (k, v) in inner_caps.named.drain() {
+                    new_caps.named.entry(k).or_default().extend(v);
+                }
+                for v in inner_caps.positional.drain(..) {
+                    new_caps.positional.push(v);
+                }
+                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                out.push((end, new_caps));
+            }
+            return out;
+        }
         if let RegexAtom::CaptureGroup(pattern) = atom {
             let mut out = Vec::new();
             for (end, inner_caps) in

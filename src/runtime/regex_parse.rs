@@ -410,6 +410,11 @@ impl Interpreter {
         } else {
             source.trim()
         };
+        // For multiline :s patterns, trailing indentation before the closing
+        // delimiter is layout whitespace, not a semantic sigspace token.
+        if sigspace && source.contains('\n') {
+            source = source.trim_end();
+        }
         // Quote-word delimiters in regex patterns (e.g., «word») represent
         // literal text content, not literal guillemet characters.
         if let Some(inner) = source.strip_prefix('«').and_then(|s| s.strip_suffix('»')) {
@@ -1006,7 +1011,7 @@ impl Interpreter {
                                 if sigspace {
                                     scoped.push_str(":s ");
                                 }
-                                scoped.push_str(&alt);
+                                scoped.push_str(alt.trim_end());
                                 self.parse_regex(&scoped)
                             } else {
                                 self.parse_regex(&alt)
@@ -1037,7 +1042,7 @@ impl Interpreter {
                             if sigspace {
                                 scoped.push_str(":s ");
                             }
-                            scoped.push_str(&group_pattern);
+                            scoped.push_str(group_pattern.trim_end());
                             self.parse_regex(&scoped)
                         } else {
                             self.parse_regex(&group_pattern)
@@ -1081,7 +1086,7 @@ impl Interpreter {
                                 if sigspace {
                                     scoped.push_str(":s ");
                                 }
-                                scoped.push_str(&alt);
+                                scoped.push_str(alt.trim_end());
                                 self.parse_regex(&scoped)
                             } else {
                                 self.parse_regex(&alt)
@@ -1100,7 +1105,7 @@ impl Interpreter {
                             if sigspace {
                                 scoped.push_str(":s ");
                             }
-                            scoped.push_str(&group_pattern);
+                            scoped.push_str(group_pattern.trim_end());
                             self.parse_regex(&scoped)
                         } else {
                             self.parse_regex(&group_pattern)
