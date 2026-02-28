@@ -82,9 +82,23 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "Complex" => match target {
+            Value::Instance { .. } if target.does_check("Real") || target.does_check("Numeric") => {
+                None
+            }
             Value::Complex(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(Value::Complex(*i as f64, 0.0))),
             Value::Num(f) => Some(Ok(Value::Complex(*f, 0.0))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Complex(*n as f64 / *d as f64, 0.0))),
+            Value::FatRat(n, d) if *d != 0 => Some(Ok(Value::Complex(*n as f64 / *d as f64, 0.0))),
+            Value::BigInt(n) => Some(Ok(Value::Complex(
+                num_traits::ToPrimitive::to_f64(n).unwrap_or(f64::INFINITY),
+                0.0,
+            ))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Complex(
+                num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
+                    / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0),
+                0.0,
+            ))),
             _ => Some(Ok(Value::Complex(0.0, 0.0))),
         },
         "key" => match target {
@@ -265,7 +279,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 };
                 Some(Ok(Value::array(bytes)))
             }
-            Value::Array(..) => Some(Ok(target.clone())),
+            Value::Array(items, is_array) => {
+                if method == "Array" && !*is_array {
+                    Some(Ok(Value::real_array(items.to_vec())))
+                } else {
+                    Some(Ok(target.clone()))
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => Some(Ok(Value::array(items.to_vec()))),
             Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },

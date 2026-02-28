@@ -181,33 +181,22 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             }
             'f' | 'F' => {
                 let f = float_val();
-                if let Some(p) = prec_num {
-                    if plus_sign && f >= 0.0 {
-                        format!("+{:.*}", p, f)
-                    } else {
-                        format!("{:.*}", p, f)
-                    }
-                } else if plus_sign && f >= 0.0 {
-                    format!("+{}", f)
+                let p = prec_num.unwrap_or(6);
+                if plus_sign && f >= 0.0 {
+                    format!("+{:.*}", p, f)
                 } else {
-                    format!("{}", f)
+                    format!("{:.*}", p, f)
                 }
             }
             'e' => {
                 let f = float_val();
-                if let Some(p) = prec_num {
-                    format!("{:.*e}", p, f)
-                } else {
-                    format!("{:e}", f)
-                }
+                let p = prec_num.unwrap_or(6);
+                normalize_sci_exponent(&format!("{:.*e}", p, f))
             }
             'E' => {
                 let f = float_val();
-                if let Some(p) = prec_num {
-                    format!("{:.*E}", p, f)
-                } else {
-                    format!("{:E}", f)
-                }
+                let p = prec_num.unwrap_or(6);
+                normalize_sci_exponent(&format!("{:.*E}", p, f))
             }
             'g' | 'G' => {
                 let f = float_val();
@@ -243,4 +232,31 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         }
     }
     out
+}
+
+/// Normalize Rust scientific notation (e.g. `1.5e1`) to C-style (`1.5e+01`).
+/// Ensures the exponent has an explicit sign and at least two digits.
+fn normalize_sci_exponent(s: &str) -> String {
+    let e_marker = if s.contains('E') { 'E' } else { 'e' };
+    if let Some(pos) = s.rfind(e_marker) {
+        let (mantissa, exp_part) = s.split_at(pos);
+        let exp_str = &exp_part[1..]; // skip 'e'/'E'
+        let (sign, digits) = if let Some(d) = exp_str.strip_prefix('-') {
+            ("-", d)
+        } else if let Some(d) = exp_str.strip_prefix('+') {
+            ("+", d)
+        } else {
+            ("+", exp_str)
+        };
+        let exp_num: i32 = digits.parse().unwrap_or(0);
+        format!(
+            "{}{}{}{:02}",
+            mantissa,
+            e_marker,
+            sign,
+            exp_num.unsigned_abs()
+        )
+    } else {
+        s.to_string()
+    }
 }

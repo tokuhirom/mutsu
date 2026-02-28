@@ -1,5 +1,7 @@
 use super::*;
 
+type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
+
 /// Parse role type arguments from a string like "Str:D(Numeric), Bool(Any)".
 fn parse_role_type_args(input: &str) -> Vec<String> {
     let mut args = Vec::new();
@@ -23,6 +25,26 @@ fn parse_role_type_args(input: &str) -> Vec<String> {
     args
 }
 
+fn looks_like_type_arg_expr(input: &str) -> bool {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    trimmed.chars().all(|ch| {
+        ch.is_ascii_alphanumeric()
+            || matches!(
+                ch,
+                ':' | '?' | '_' | '[' | ']' | '(' | ')' | ',' | ' ' | '\t'
+            )
+    })
+}
+
+fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
+    let trimmed = input.trim();
+    looks_like_type_arg_expr(trimmed)
+        && (trimmed.contains(':') || trimmed.contains('(') || trimmed.contains("::"))
+}
+
 /// Substitute type parameters in a method definition.
 /// E.g., if type_subs = [("T", "Str:D(Numeric)")], then any param with
 /// type_constraint "T" becomes "Str:D(Numeric)".
@@ -30,21 +52,50 @@ fn substitute_type_params_in_method(
     method: &MethodDef,
     type_subs: &[(String, String)],
 ) -> MethodDef {
+    fn replace_type_name(type_name: &str, type_subs: &[(String, String)]) -> String {
+        for (param_name, replacement) in type_subs {
+            if type_name == param_name {
+                return replacement.clone();
+            }
+        }
+        type_name.to_string()
+    }
+
+    fn substitute_param_def(pd: &ParamDef, type_subs: &[(String, String)]) -> ParamDef {
+        let mut new_pd = pd.clone();
+        if let Some(tc) = &new_pd.type_constraint {
+            new_pd.type_constraint = Some(replace_type_name(tc, type_subs));
+        }
+        if let Some(sub) = &new_pd.sub_signature {
+            new_pd.sub_signature = Some(
+                sub.iter()
+                    .map(|p| substitute_param_def(p, type_subs))
+                    .collect(),
+            );
+        }
+        if let Some(outer) = &new_pd.outer_sub_signature {
+            new_pd.outer_sub_signature = Some(
+                outer
+                    .iter()
+                    .map(|p| substitute_param_def(p, type_subs))
+                    .collect(),
+            );
+        }
+        if let Some((sig_params, sig_ret)) = &new_pd.code_signature {
+            let next_params = sig_params
+                .iter()
+                .map(|p| substitute_param_def(p, type_subs))
+                .collect();
+            let next_ret = sig_ret.as_ref().map(|r| replace_type_name(r, type_subs));
+            new_pd.code_signature = Some((next_params, next_ret));
+        }
+        new_pd
+    }
+
     let new_param_defs = method
         .param_defs
         .iter()
-        .map(|pd| {
-            if let Some(tc) = &pd.type_constraint {
-                for (param_name, replacement) in type_subs {
-                    if tc == param_name {
-                        let mut new_pd = pd.clone();
-                        new_pd.type_constraint = Some(replacement.clone());
-                        return new_pd;
-                    }
-                }
-            }
-            pd.clone()
-        })
+        .map(|pd| substitute_param_def(pd, type_subs))
         .collect();
     MethodDef {
         params: method.params.clone(),
@@ -57,6 +108,24 @@ fn substitute_type_params_in_method(
 }
 
 impl Interpreter {
+    fn validate_callable_param_return_redeclaration(
+        param_defs: &[ParamDef],
+    ) -> Result<(), RuntimeError> {
+        for pd in param_defs {
+            if pd.type_constraint.is_some()
+                && pd
+                    .code_signature
+                    .as_ref()
+                    .is_some_and(|(_, ret)| ret.is_some())
+            {
+                return Err(RuntimeError::new(
+                    "X::Redeclaration: only one way of specifying sub-signature return type allowed",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
         param_defs
             .iter()
@@ -379,6 +448,18 @@ impl Interpreter {
                     self.validate_private_access_in_expr(caller_class, arg)?;
                 }
             }
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                ..
+            } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                self.validate_private_access_in_expr(caller_class, name_expr)?;
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
             Expr::Call { args, .. }
             | Expr::ArrayLiteral(args)
             | Expr::BracketArray(args)
@@ -562,6 +643,9 @@ impl Interpreter {
         supersede: bool,
         custom_traits: &[String],
     ) -> Result<(), RuntimeError> {
+        let is_method_value_decl = custom_traits.iter().any(|t| t == "__mutsu_method_decl");
+        let allow_redeclare = supersede || is_method_value_decl;
+        Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
@@ -639,10 +723,14 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
+        let allow_lexical_shadow = self.block_scope_depth > 0;
         let code_var_key = format!("&{}", name);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration
-            if !matches!(existing, Value::Mixin(..)) {
+            if !matches!(existing, Value::Mixin(..))
+                && !allow_lexical_shadow
+                && !is_method_value_decl
+            {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as code variable",
                     name
@@ -683,22 +771,23 @@ impl Interpreter {
             .get(&single_key)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
-            if has_single && !has_proto && !supersede {
+            if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as non-multi",
                     name
                 )));
             }
-        } else if !supersede && ((has_multi && !has_proto) || (has_single && !existing_is_stub)) {
+        } else if !allow_redeclare
+            && !allow_lexical_shadow
+            && ((has_multi && !has_proto) || (has_single && !existing_is_stub))
+        {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
             )));
         }
         let def = new_def;
-        if let Some(assoc) = associativity
-            && name.starts_with("infix:<")
-        {
+        if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("{}::{}", self.current_package, name), assoc.clone());
@@ -722,10 +811,31 @@ impl Interpreter {
                     arity,
                     type_sig.join(",")
                 );
-                self.functions.insert(typed_fq, def.clone());
+                if name == "trait_mod:<is>" {
+                    match self.functions.entry(typed_fq.clone()) {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(def.clone());
+                        }
+                        std::collections::hash_map::Entry::Occupied(_) => {
+                            let mut idx = 1usize;
+                            loop {
+                                let key = format!("{}__m{}", typed_fq, idx);
+                                if let std::collections::hash_map::Entry::Vacant(entry) =
+                                    self.functions.entry(key)
+                                {
+                                    entry.insert(def.clone());
+                                    break;
+                                }
+                                idx += 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.functions.insert(typed_fq, def.clone());
+                }
             }
             let fq = format!("{}::{}/{}", self.current_package, name, arity);
-            if !has_types {
+            if !has_types || name == "trait_mod:<is>" {
                 match self.functions.entry(fq.clone()) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);
@@ -756,6 +866,20 @@ impl Interpreter {
             callable_key,
             Value::Int(crate::value::next_instance_id() as i64),
         );
+        if is_method_value_decl {
+            let sub_val = Value::make_sub(
+                self.current_package.clone(),
+                name.to_string(),
+                params.to_vec(),
+                param_defs.to_vec(),
+                body.to_vec(),
+                is_rw,
+                self.env.clone(),
+            );
+            self.env.insert(format!("&{}", name), sub_val);
+            self.env
+                .insert(format!("__mutsu_method_value::{}", name), Value::Bool(true));
+        }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if trait_mod:<is> is defined)
         if !custom_traits.is_empty()
             && (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
@@ -861,6 +985,7 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
@@ -937,9 +1062,7 @@ impl Interpreter {
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
-        if let Some(assoc) = associativity
-            && name.starts_with("infix:<")
-        {
+        if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("GLOBAL::{}", name), assoc.clone());
@@ -1135,6 +1258,152 @@ impl Interpreter {
         }
     }
 
+    fn eval_role_arg_values(&mut self, arg_exprs: &[String]) -> Result<Vec<Value>, RuntimeError> {
+        let mut values = Vec::with_capacity(arg_exprs.len());
+        for expr in arg_exprs {
+            if should_treat_role_arg_as_type_expr(expr) {
+                values.push(Value::Package(expr.trim().to_string()));
+                continue;
+            }
+            match crate::parse_dispatch::parse_source(expr)
+                .and_then(|(stmts, _)| self.eval_block_value(&stmts))
+            {
+                Ok(value) => values.push(value),
+                Err(_) if looks_like_type_arg_expr(expr) => {
+                    values.push(Value::Package(expr.trim().to_string()));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(values)
+    }
+
+    fn role_constraint_specificity(&self, constraint: Option<&str>) -> i32 {
+        let Some(constraint) = constraint else {
+            return 0;
+        };
+        if constraint.starts_with("::") {
+            return 1;
+        }
+        if constraint == "Any" || constraint == "Mu" {
+            return 2;
+        }
+        if let Some(def) = self.classes.get(constraint) {
+            return 10 + def.parents.len() as i32;
+        }
+        if self.roles.contains_key(constraint) {
+            return 9;
+        }
+        8
+    }
+
+    fn role_candidate_specificity_score(&self, param_defs: &[ParamDef]) -> i32 {
+        let mut score = 0i32;
+        for pd in param_defs.iter().filter(|pd| !pd.named) {
+            score += self.role_constraint_specificity(pd.type_constraint.as_deref());
+            if pd.where_constraint.is_some() {
+                score += 20;
+            }
+            if pd.literal_value.is_some() {
+                score += 30;
+            }
+        }
+        score
+    }
+
+    fn role_candidate_arity_ok(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        if param_defs.is_empty() {
+            return args.is_empty();
+        }
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
+        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|pd| !pd.named).collect();
+        let has_positional_slurpy = positional_params
+            .iter()
+            .any(|pd| pd.slurpy && !pd.name.starts_with('%'));
+        let required = positional_params
+            .iter()
+            .filter(|pd| !pd.slurpy && pd.default.is_none() && !pd.optional_marker)
+            .count();
+        if positional_arg_count < required {
+            return false;
+        }
+        if !has_positional_slurpy && positional_arg_count > positional_params.len() {
+            return false;
+        }
+        true
+    }
+
+    fn resolve_role_candidate(
+        &mut self,
+        parent: &str,
+    ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
+        let base_role_name = if let Some(bracket) = parent.find('[') {
+            &parent[..bracket]
+        } else {
+            parent
+        };
+        let Some(candidates) = self.role_candidates.get(base_role_name).cloned() else {
+            if let Some(role) = self.roles.get(base_role_name).cloned() {
+                return Ok(Some((role, Vec::new(), Vec::new())));
+            }
+            return Ok(None);
+        };
+
+        let arg_exprs = if let Some(bracket_start) = parent.find('[') {
+            let args_str = &parent[bracket_start + 1..parent.len() - 1];
+            parse_role_type_args(args_str)
+        } else {
+            Vec::new()
+        };
+        let arg_values = self.eval_role_arg_values(&arg_exprs)?;
+
+        let mut matches: Vec<(RoleCandidateDef, i32, usize)> = candidates
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, candidate)| {
+                let candidate_param_names = candidate
+                    .type_param_defs
+                    .iter()
+                    .map(|pd| pd.name.clone())
+                    .collect::<Vec<_>>();
+                let ok = if self.role_candidate_arity_ok(&arg_values, &candidate.type_param_defs) {
+                    let saved_env = self.env.clone();
+                    let ok = self
+                        .bind_function_args_values(
+                            &candidate.type_param_defs,
+                            &candidate_param_names,
+                            &arg_values,
+                        )
+                        .is_ok();
+                    self.env = saved_env;
+                    ok
+                } else {
+                    false
+                };
+                if ok {
+                    Some((
+                        candidate.clone(),
+                        self.role_candidate_specificity_score(&candidate.type_param_defs),
+                        idx,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if matches.is_empty() {
+            return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+        }
+
+        matches.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+        let selected = matches.remove(0).0;
+        Ok(Some((selected.role_def, selected.type_params, arg_values)))
+    }
+
     pub(crate) fn register_class_decl(
         &mut self,
         name: &str,
@@ -1144,6 +1413,41 @@ impl Interpreter {
         does_parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        let prev_class = self.classes.get(name).cloned();
+        let prev_hidden = self.hidden_classes.contains(name);
+        let prev_hidden_defer = self.hidden_defer_parents.get(name).cloned();
+        let prev_composed_roles = self.class_composed_roles.get(name).cloned();
+        let prev_role_param_bindings = self.class_role_param_bindings.get(name).cloned();
+
+        let restore_previous_state = |this: &mut Self| {
+            if let Some(class_def) = prev_class.clone() {
+                this.classes.insert(name.to_string(), class_def);
+            } else {
+                this.classes.remove(name);
+            }
+            if prev_hidden {
+                this.hidden_classes.insert(name.to_string());
+            } else {
+                this.hidden_classes.remove(name);
+            }
+            if let Some(hidden) = prev_hidden_defer.clone() {
+                this.hidden_defer_parents.insert(name.to_string(), hidden);
+            } else {
+                this.hidden_defer_parents.remove(name);
+            }
+            if let Some(composed) = prev_composed_roles.clone() {
+                this.class_composed_roles.insert(name.to_string(), composed);
+            } else {
+                this.class_composed_roles.remove(name);
+            }
+            if let Some(bindings) = prev_role_param_bindings.clone() {
+                this.class_role_param_bindings
+                    .insert(name.to_string(), bindings);
+            } else {
+                this.class_role_param_bindings.remove(name);
+            }
+        };
+
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap
         const BUILTIN_TYPES: &[&str] = &[
@@ -1228,6 +1532,7 @@ impl Interpreter {
         let mut class_def = ClassDef {
             parents: parents.to_vec(),
             attributes: Vec::new(),
+            attribute_types: HashMap::new(),
             methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: Vec::new(),
@@ -1247,14 +1552,16 @@ impl Interpreter {
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let mut composed_roles_list = Vec::new();
         let mut punned_roles = Vec::new();
+        let mut hidden_punned_role_bases: HashSet<String> = HashSet::new();
+        let mut class_role_param_bindings: HashMap<String, Value> = HashMap::new();
         for parent in parents {
-            // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
-            let base_role_name = if let Some(bracket) = parent.find('[') {
-                &parent[..bracket]
-            } else {
-                parent.as_str()
-            };
-            if let Some(role) = self.roles.get(base_role_name).cloned() {
+            let base_role_name = parent
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(parent.as_str());
+            if let Some((role, role_param_names, role_arg_values)) =
+                self.resolve_role_candidate(parent)?
+            {
                 if role.is_stub_role {
                     return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                 }
@@ -1262,25 +1569,30 @@ impl Interpreter {
                 let is_punned = !does_parents.contains(parent);
                 if is_punned {
                     punned_roles.push(parent.clone());
+                    if role.is_hidden {
+                        hidden_punned_role_bases.insert(base_role_name.to_string());
+                    }
                 }
                 composed_roles_list.push(parent.clone());
-                // Collect type parameter substitutions if this is a parametric role
-                let type_subs: Vec<(String, String)> =
-                    if let Some(role_type_params) = self.role_type_params.get(base_role_name) {
-                        if let Some(bracket_start) = parent.find('[') {
-                            let args_str = &parent[bracket_start + 1..parent.len() - 1];
-                            let type_args = parse_role_type_args(args_str);
-                            role_type_params
-                                .iter()
-                                .zip(type_args.iter())
-                                .map(|(p, a)| (p.clone(), a.clone()))
-                                .collect()
-                        } else {
-                            Vec::new()
-                        }
-                    } else {
-                        Vec::new()
-                    };
+                // Collect type parameter substitutions for method type constraints.
+                let type_subs: Vec<(String, String)> = role_param_names
+                    .iter()
+                    .zip(role_arg_values.iter())
+                    .map(|(p, v)| {
+                        let value_name = match v {
+                            Value::Package(name) => name.clone(),
+                            other => other
+                                .to_string_value()
+                                .trim_start_matches('(')
+                                .trim_end_matches(')')
+                                .to_string(),
+                        };
+                        (p.clone(), value_name)
+                    })
+                    .collect();
+                for (p, v) in role_param_names.iter().zip(role_arg_values.iter()) {
+                    class_role_param_bindings.insert(p.clone(), v.clone());
+                }
                 for attr in &role.attributes {
                     if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                         class_def.attributes.push(attr.clone());
@@ -1301,7 +1613,105 @@ impl Interpreter {
                         .or_default()
                         .extend(composed);
                 }
+                let role_param_values: HashMap<String, Value> = role_param_names
+                    .iter()
+                    .cloned()
+                    .zip(role_arg_values.iter().cloned())
+                    .collect();
+                if let Some(parent_specs) = self.role_parents.get(base_role_name).cloned() {
+                    for parent_spec in parent_specs {
+                        let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
+                            match v {
+                                Value::Package(name) => name.clone(),
+                                other => other
+                                    .to_string_value()
+                                    .trim_start_matches('(')
+                                    .trim_end_matches(')')
+                                    .to_string(),
+                            }
+                        } else if let Some((pbase, _)) = parent_spec.split_once('[') {
+                            let p_args_str = &parent_spec[pbase.len() + 1..parent_spec.len() - 1];
+                            let p_args = parse_role_type_args(p_args_str)
+                                .into_iter()
+                                .map(|arg| {
+                                    role_param_values
+                                        .get(&arg)
+                                        .map(|v| match v {
+                                            Value::Package(name) => name.clone(),
+                                            other => other
+                                                .to_string_value()
+                                                .trim_start_matches('(')
+                                                .trim_end_matches(')')
+                                                .to_string(),
+                                        })
+                                        .unwrap_or(arg)
+                                })
+                                .collect::<Vec<_>>();
+                            format!("{pbase}[{}]", p_args.join(","))
+                        } else {
+                            parent_spec.clone()
+                        };
+                        let parent_base = resolved_parent
+                            .split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(resolved_parent.as_str());
+                        if let Some(parent_role) = self.roles.get(parent_base).cloned() {
+                            if !composed_roles_list.contains(&resolved_parent) {
+                                composed_roles_list.push(resolved_parent.clone());
+                            }
+                            let parent_type_subs: Vec<(String, String)> =
+                                if let Some(parent_tps) = self.role_type_params.get(parent_base) {
+                                    if let Some(bracket_start) = resolved_parent.find('[') {
+                                        let args_str = &resolved_parent
+                                            [bracket_start + 1..resolved_parent.len() - 1];
+                                        let args = parse_role_type_args(args_str);
+                                        parent_tps
+                                            .iter()
+                                            .zip(args.iter())
+                                            .map(|(p, a)| (p.clone(), a.clone()))
+                                            .collect()
+                                    } else {
+                                        Vec::new()
+                                    }
+                                } else {
+                                    Vec::new()
+                                };
+                            for attr in &parent_role.attributes {
+                                if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
+                                    class_def.attributes.push(attr.clone());
+                                }
+                            }
+                            for (mname, overloads) in &parent_role.methods {
+                                let composed: Vec<MethodDef> = if parent_type_subs.is_empty() {
+                                    overloads.clone()
+                                } else {
+                                    overloads
+                                        .iter()
+                                        .map(|md| {
+                                            substitute_type_params_in_method(md, &parent_type_subs)
+                                        })
+                                        .collect()
+                                };
+                                class_def
+                                    .methods
+                                    .entry(mname.clone())
+                                    .or_default()
+                                    .extend(composed);
+                            }
+                        } else if self.classes.contains_key(parent_base)
+                            && !class_def.parents.iter().any(|p| p == &resolved_parent)
+                        {
+                            class_def.parents.push(resolved_parent.clone());
+                        }
+                    }
+                }
             }
+        }
+        if class_role_param_bindings.is_empty() {
+            self.class_role_param_bindings.remove(name);
+        } else {
+            self.class_role_param_bindings
+                .insert(name.to_string(), class_role_param_bindings);
         }
         // Handle role punning: `is Role` creates a punned class from the role
         for punned_role in &punned_roles {
@@ -1343,6 +1753,7 @@ impl Interpreter {
                 let punned_class = ClassDef {
                     parents: punned_class_parents,
                     attributes: Vec::new(),
+                    attribute_types: HashMap::new(),
                     methods: HashMap::new(),
                     native_methods: HashSet::new(),
                     mro: Vec::new(),
@@ -1359,11 +1770,17 @@ impl Interpreter {
                 {
                     self.hidden_classes.insert(base_role.to_string());
                 }
+                if hidden_punned_role_bases.contains(base_role) {
+                    self.hidden_classes.insert(base_role.to_string());
+                }
                 // Recompute MRO for the punned class
                 let mro = self.class_mro(base_role);
                 if let Some(cd) = self.classes.get_mut(base_role) {
                     cd.mro = mro;
                 }
+            }
+            if hidden_punned_role_bases.contains(base_role) {
+                self.hidden_classes.insert(base_role.to_string());
             }
         }
         // Clear stale composed roles from previous registration
@@ -1465,6 +1882,7 @@ impl Interpreter {
             return Ok(());
         }
         let saved_package = self.current_package.clone();
+        let saved_env = self.env.clone();
         self.current_package = name.to_string();
         for stmt in body {
             match stmt {
@@ -1474,6 +1892,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    type_constraint,
                 } => {
                     class_def.attributes.push((
                         attr_name.clone(),
@@ -1481,6 +1900,11 @@ impl Interpreter {
                         default.clone(),
                         *is_rw,
                     ));
+                    if let Some(tc) = type_constraint {
+                        class_def
+                            .attribute_types
+                            .insert(attr_name.clone(), tc.clone());
+                    }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {
@@ -1559,42 +1983,59 @@ impl Interpreter {
                     // `our method` also registers as a package-scoped sub
                     if *is_our {
                         let qualified_name = format!("{}::{}", name, resolved_method_name);
-                        // Prepend "self" as first param so the first argument
-                        // gets bound as `self` when calling this as a function.
-                        let mut our_params = vec!["self".to_string()];
-                        our_params.extend(
-                            effective_params
-                                .iter()
-                                .filter(|p| p.as_str() != "self")
-                                .cloned(),
-                        );
-                        let self_param = crate::ast::ParamDef {
-                            name: "self".to_string(),
-                            default: None,
-                            multi_invocant: true,
-                            required: false,
-                            named: false,
-                            slurpy: false,
-                            double_slurpy: false,
-                            sigilless: false,
-                            type_constraint: None,
-                            literal_value: None,
-                            sub_signature: None,
-                            where_constraint: None,
-                            traits: Vec::new(),
-                            optional_marker: false,
-                            outer_sub_signature: None,
-                            code_signature: None,
-                            is_invocant: false,
-                            shape_constraints: None,
+                        let has_explicit_invocant = effective_param_defs
+                            .iter()
+                            .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
+                        let (our_params, our_param_defs) = if has_explicit_invocant {
+                            (
+                                effective_params.clone(),
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| p.name.as_str() != "self")
+                                    .cloned()
+                                    .collect(),
+                            )
+                        } else {
+                            // Prepend "self" as first param so the first argument
+                            // gets bound as `self` when calling this as a function.
+                            let mut our_params = vec!["self".to_string()];
+                            our_params.extend(
+                                effective_params
+                                    .iter()
+                                    .filter(|p| p.as_str() != "self")
+                                    .cloned(),
+                            );
+                            let self_param = crate::ast::ParamDef {
+                                name: "self".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            };
+                            let mut our_param_defs = vec![self_param];
+                            our_param_defs.extend(
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| {
+                                        !(p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                                    })
+                                    .cloned(),
+                            );
+                            (our_params, our_param_defs)
                         };
-                        let mut our_param_defs = vec![self_param];
-                        our_param_defs.extend(
-                            effective_param_defs
-                                .iter()
-                                .filter(|p| !p.is_invocant)
-                                .cloned(),
-                        );
                         let func_def = crate::ast::FunctionDef {
                             package: name.to_string(),
                             name: resolved_method_name.clone(),
@@ -1611,6 +2052,18 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
+                        if !class_def.parents.iter().any(|p| p == role_name) {
+                            class_def.parents.insert(0, role_name.clone());
+                            class_def.mro.clear();
+                        }
+                        continue;
+                    }
                     let role =
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
@@ -1657,6 +2110,12 @@ impl Interpreter {
                     // Also execute the statement so the code variable is set
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    for outer_name in saved_env.keys() {
+                        let class_scoped_name = format!("{}::{}", name, outer_name);
+                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                            self.env.insert(outer_name.clone(), updated);
+                        }
+                    }
                     if let Some(updated) = self.classes.get(name).cloned() {
                         class_def = updated;
                     }
@@ -1664,6 +2123,12 @@ impl Interpreter {
                 _ => {
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    for outer_name in saved_env.keys() {
+                        let class_scoped_name = format!("{}::{}", name, outer_name);
+                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                            self.env.insert(outer_name.clone(), updated);
+                        }
+                    }
                     if let Some(updated) = self.classes.get(name).cloned() {
                         class_def = updated;
                     }
@@ -1672,10 +2137,16 @@ impl Interpreter {
             self.classes.insert(name.to_string(), class_def.clone());
         }
         self.current_package = saved_package;
-        self.resolve_class_stub_requirements(name, &mut class_def)?;
+        if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
+            restore_previous_state(self);
+            return Err(err);
+        }
         self.classes.insert(name.to_string(), class_def);
         let mut stack = Vec::new();
-        let _ = self.compute_class_mro(name, &mut stack)?;
+        if let Err(err) = self.compute_class_mro(name, &mut stack) {
+            restore_previous_state(self);
+            return Err(err);
+        }
         Ok(())
     }
 
@@ -1683,16 +2154,13 @@ impl Interpreter {
         &mut self,
         name: &str,
         type_params: &[String],
+        type_param_defs: &[ParamDef],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        // Clean up stale punned class entry from previous registration
-        // (e.g., role R was previously used as `is R` creating a punned class)
-        if self.roles.contains_key(name) {
-            self.classes.remove(name);
-            self.hidden_classes.remove(name);
-            self.class_composed_roles.remove(name);
-        }
-        // Clear stale role parents and hides
+        // Clean up stale punned class entry for this role name.
+        self.classes.remove(name);
+        self.hidden_classes.remove(name);
+        self.class_composed_roles.remove(name);
         self.role_parents.remove(name);
         self.role_hides.remove(name);
         let mut role_def = RoleDef {
@@ -1709,6 +2177,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    type_constraint: _,
                 } => {
                     role_def.attributes.push((
                         attr_name.clone(),
@@ -1762,8 +2231,22 @@ impl Interpreter {
                             .push(role_name.clone());
                         continue;
                     }
+                    let base_role_name = role_name
+                        .split_once('[')
+                        .map(|(b, _)| b)
+                        .unwrap_or(role_name.as_str());
+                    if type_params.iter().any(|tp| tp == base_role_name)
+                        || (!self.roles.contains_key(base_role_name)
+                            && matches!(base_role_name, "Real" | "Numeric" | "Cool" | "Any" | "Mu"))
+                    {
+                        self.role_parents
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(role_name.clone());
+                        continue;
+                    }
                     let role =
-                        self.roles.get(role_name).cloned().ok_or_else(|| {
+                        self.roles.get(base_role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
                         })?;
                     if role.is_stub_role {
@@ -1773,13 +2256,38 @@ impl Interpreter {
                         .entry(name.to_string())
                         .or_default()
                         .push(role_name.clone());
+                    let type_subs: Vec<(String, String)> = if let Some(parent_type_params) =
+                        self.role_type_params.get(base_role_name)
+                    {
+                        if let Some(bracket_start) = role_name.find('[') {
+                            let args_str = &role_name[bracket_start + 1..role_name.len() - 1];
+                            let type_args = parse_role_type_args(args_str);
+                            parent_type_params
+                                .iter()
+                                .zip(type_args.iter())
+                                .map(|(p, a)| (p.clone(), a.clone()))
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
                     for attr in &role.attributes {
                         if !role_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                             role_def.attributes.push(attr.clone());
                         }
                     }
                     for (mname, overloads) in role.methods {
-                        role_def.methods.entry(mname).or_default().extend(overloads);
+                        let composed: Vec<MethodDef> = if type_subs.is_empty() {
+                            overloads
+                        } else {
+                            overloads
+                                .iter()
+                                .map(|md| substitute_type_params_in_method(md, &type_subs))
+                                .collect()
+                        };
+                        role_def.methods.entry(mname).or_default().extend(composed);
                     }
                 }
                 Stmt::MethodDecl {
@@ -1794,6 +2302,17 @@ impl Interpreter {
                     is_our: _,
                     return_type,
                 } => {
+                    if *multi
+                        && (param_defs.iter().any(|pd| {
+                            pd.type_constraint
+                                .as_deref()
+                                .is_some_and(|tc| tc.contains("?CLASS"))
+                        }) || return_type
+                            .as_deref()
+                            .is_some_and(|rt| rt.contains("?CLASS")))
+                    {
+                        return Err(RuntimeError::new("X::Role::Unimplemented::Multi"));
+                    }
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
@@ -1828,8 +2347,22 @@ impl Interpreter {
                 }
             }
         }
-        self.roles.insert(name.to_string(), role_def);
-        if !type_params.is_empty() {
+        self.role_candidates
+            .entry(name.to_string())
+            .or_default()
+            .push(RoleCandidateDef {
+                type_params: type_params.to_vec(),
+                type_param_defs: type_param_defs.to_vec(),
+                role_def: role_def.clone(),
+            });
+        if self
+            .roles
+            .get(name)
+            .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
+        {
+            self.roles.insert(name.to_string(), role_def);
+        }
+        if !type_params.is_empty() && !self.role_type_params.contains_key(name) {
             self.role_type_params
                 .insert(name.to_string(), type_params.to_vec());
         }
@@ -1851,5 +2384,134 @@ impl Interpreter {
         );
         self.env
             .insert(name.to_string(), Value::Package(name.to_string()));
+    }
+
+    pub(crate) fn register_cunion_class(&mut self, name: &str) {
+        self.cunion_classes.insert(name.to_string());
+    }
+
+    /// Construct a CUnion instance: all native-int fields share the same
+    /// underlying bytes (little-endian), so setting one field also sets the
+    /// lower bits of the others.
+    pub(crate) fn construct_cunion_instance(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        use crate::runtime::native_types::native_int_bounds;
+
+        // Collect class attributes with their types
+        let class_attrs = self.collect_class_attributes(class_name);
+
+        // Parse named args
+        let mut named_args: HashMap<String, Value> = HashMap::new();
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                named_args.insert(key.clone(), *value.clone());
+            }
+        }
+
+        // Find the widest provided value and convert to bytes
+        let mut max_bytes = 0u32;
+        let mut raw_value: u64 = 0;
+
+        for (attr_name, _is_public, _default, _is_rw) in &class_attrs {
+            if let Some(val) = named_args.get(attr_name) {
+                let int_val = match val {
+                    Value::Int(i) => *i as u64,
+                    Value::BigInt(n) => {
+                        use num_traits::ToPrimitive;
+                        n.to_u64().unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                raw_value = int_val;
+                // Find the type of this attribute to determine byte width
+                if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name)
+                {
+                    let byte_width = Self::native_type_byte_width(&type_constraint);
+                    if byte_width > max_bytes {
+                        max_bytes = byte_width;
+                    }
+                }
+            }
+        }
+
+        // Build attributes from shared bytes
+        let bytes = raw_value.to_le_bytes();
+        let mut attrs = HashMap::new();
+        for (attr_name, _is_public, default, _is_rw) in &class_attrs {
+            if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name) {
+                let byte_width = Self::native_type_byte_width(&type_constraint);
+                let val = match byte_width {
+                    1 => Value::Int(bytes[0] as i64),
+                    2 => Value::Int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
+                    4 => Value::Int(
+                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64
+                    ),
+                    8 => {
+                        let v = u64::from_le_bytes(bytes);
+                        if let Some((_min, _max)) = native_int_bounds(&type_constraint) {
+                            if type_constraint.starts_with('u') || type_constraint == "byte" {
+                                // Unsigned: store as BigInt if needed
+                                if v > i64::MAX as u64 {
+                                    Value::BigInt(num_bigint::BigInt::from(v as u128))
+                                } else {
+                                    Value::Int(v as i64)
+                                }
+                            } else {
+                                // Signed: reinterpret as i64
+                                Value::Int(v as i64)
+                            }
+                        } else {
+                            Value::Int(v as i64)
+                        }
+                    }
+                    _ => {
+                        if let Some(v) = named_args.get(attr_name) {
+                            v.clone()
+                        } else if let Some(expr) = default {
+                            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                        } else {
+                            Value::Int(0)
+                        }
+                    }
+                };
+                attrs.insert(attr_name.clone(), val);
+            } else if let Some(v) = named_args.get(attr_name) {
+                attrs.insert(attr_name.clone(), v.clone());
+            } else if let Some(expr) = default {
+                attrs.insert(
+                    attr_name.clone(),
+                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?,
+                );
+            } else {
+                attrs.insert(attr_name.clone(), Value::Int(0));
+            }
+        }
+
+        Ok(Value::make_instance(class_name.to_string(), attrs))
+    }
+
+    /// Get the type constraint for a class attribute, searching MRO.
+    fn get_attr_type_constraint(&self, class_name: &str, attr_name: &str) -> Option<String> {
+        if let Some(class_def) = self.classes.get(class_name) {
+            for (name, _is_public, _default, _is_rw) in &class_def.attributes {
+                if name == attr_name {
+                    return class_def.attribute_types.get(attr_name).cloned();
+                }
+            }
+        }
+        None
+    }
+
+    fn native_type_byte_width(type_name: &str) -> u32 {
+        match type_name {
+            "uint8" | "int8" | "byte" => 1,
+            "uint16" | "int16" => 2,
+            "uint32" | "int32" => 4,
+            "uint64" | "int64" | "uint" | "int" => 8,
+            _ => 0,
+        }
     }
 }

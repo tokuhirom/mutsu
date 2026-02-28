@@ -17,23 +17,9 @@ pub(crate) struct ReactSubscription {
 impl Interpreter {
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
         let parent_test_state = self.test_state.take();
-        let force_todo_inner = parent_test_state
-            .as_ref()
-            .map(|state| {
-                let next = state.ran + 1;
-                state
-                    .force_todo
-                    .iter()
-                    .any(|(start, end)| next >= *start && next <= *end)
-            })
-            .unwrap_or(false);
         let parent_output = std::mem::take(&mut self.output);
         let parent_halted = self.halted;
-        let mut subtest_state = TestState::new();
-        if force_todo_inner {
-            subtest_state.force_todo.push((1, usize::MAX));
-        }
-        self.test_state = Some(subtest_state);
+        self.test_state = Some(TestState::new());
         self.halted = false;
         self.subtest_depth += 1;
         SubtestContext {
@@ -49,22 +35,82 @@ impl Interpreter {
         label: &str,
         run_result: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let subtest_output = std::mem::take(&mut self.output);
+        let mut subtest_output = std::mem::take(&mut self.output);
         let subtest_state = self.test_state.take();
         let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
+        let subtest_ran = subtest_state.as_ref().map(|s| s.ran).unwrap_or(0);
+        let has_plan = subtest_state.as_ref().and_then(|s| s.planned).is_some();
 
         self.test_state = ctx.parent_test_state;
         self.output = ctx.parent_output;
         self.halted = ctx.parent_halted;
         self.subtest_depth = self.subtest_depth.saturating_sub(1);
+        let parent_forced_todo_reason = self.test_state.as_ref().and_then(|state| {
+            let next = state.ran + 1;
+            state
+                .force_todo
+                .iter()
+                .find(|range| next >= range.start && next <= range.end)
+                .map(|range| range.reason.clone())
+        });
 
-        for line in subtest_output.lines() {
+        self.emit_output(&format!("# Subtest: {}\n", label));
+        if !has_plan {
+            subtest_output.push_str(&format!("1..{}\n", subtest_ran));
+        }
+
+        let mut rendered_lines = Vec::new();
+        for raw_line in subtest_output.lines() {
+            let mut line = raw_line.to_string();
+            if let Some(reason) = parent_forced_todo_reason.as_deref()
+                && raw_line.trim_start().starts_with("not ok ")
+                && !raw_line.contains("# TODO")
+            {
+                if reason.is_empty() {
+                    line.push_str(" # TODO");
+                } else {
+                    line.push_str(" # TODO ");
+                    line.push_str(reason);
+                }
+            }
+            rendered_lines.push(line);
+        }
+        let subtest_had_not_ok = rendered_lines
+            .iter()
+            .any(|line| line.trim_start().starts_with("not ok "));
+        let parent_historical_todo_reason = self.test_state.as_ref().and_then(|state| {
+            state
+                .force_todo
+                .iter()
+                .rev()
+                .find(|range| !range.reason.is_empty())
+                .map(|range| range.reason.clone())
+        });
+        let uses_parent_historical_reason = parent_historical_todo_reason
+            .as_deref()
+            .map(|reason| {
+                let marker = format!("# TODO {}", reason);
+                rendered_lines.iter().any(|line| line.contains(&marker))
+            })
+            .unwrap_or(false);
+
+        for line in rendered_lines {
             let indented = format!("    {}\n", line);
             self.emit_output(&indented);
         }
 
-        let ok = run_result.is_ok() && subtest_failed == 0;
-        self.test_ok(ok, label, false)?;
+        let inherited_parent_todo = parent_forced_todo_reason.is_none()
+            && subtest_failed == 0
+            && subtest_had_not_ok
+            && uses_parent_historical_reason;
+        let ok = if parent_forced_todo_reason.is_some() {
+            run_result.is_ok() && !subtest_had_not_ok
+        } else if inherited_parent_todo {
+            false
+        } else {
+            run_result.is_ok() && subtest_failed == 0
+        };
+        self.test_ok(ok, label, inherited_parent_todo)?;
         Ok(())
     }
 
@@ -167,7 +213,7 @@ impl Interpreter {
 
         // Event loop: poll all subscriptions
         let timeout = Duration::from_millis(10);
-        loop {
+        'react_loop: loop {
             let mut all_done = true;
             for sub in react_subs.iter_mut() {
                 if sub.done {
@@ -183,24 +229,39 @@ impl Interpreter {
                             while let Some(pos) = sub.line_buffer.find('\n') {
                                 let line = sub.line_buffer[..pos].to_string();
                                 sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
-                                self.call_sub_value(
+                                match self.call_sub_value(
                                     sub.callback.clone(),
                                     vec![Value::Str(line)],
                                     true,
-                                )?;
+                                ) {
+                                    Err(e) if e.is_react_done => break 'react_loop,
+                                    other => {
+                                        other?;
+                                    }
+                                }
                             }
                         } else {
-                            self.call_sub_value(sub.callback.clone(), vec![value], true)?;
+                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => {
+                                    other?;
+                                }
+                            }
                         }
                     }
                     Ok(SupplyEvent::Done) => {
                         if sub.is_lines && !sub.line_buffer.is_empty() {
                             let remaining = std::mem::take(&mut sub.line_buffer);
-                            self.call_sub_value(
+                            match self.call_sub_value(
                                 sub.callback.clone(),
                                 vec![Value::Str(remaining)],
                                 true,
-                            )?;
+                            ) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => {
+                                    other?;
+                                }
+                            }
                         }
                         sub.done = true;
                     }

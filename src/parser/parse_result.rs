@@ -8,6 +8,8 @@ pub(super) struct PError {
     /// Display joins them as "expected A or B or C".
     pub messages: Vec<String>,
     pub remaining_len: Option<usize>,
+    /// Optional structured exception (e.g., X::Attribute::Regex) to propagate through parsing.
+    pub exception: Option<Box<crate::value::Value>>,
 }
 
 /// Sentinel prefix for fatal (non-recoverable) parse errors.
@@ -27,6 +29,7 @@ impl PError {
         PError {
             messages: vec![what.to_string()],
             remaining_len: None,
+            exception: None,
         }
     }
 
@@ -34,6 +37,7 @@ impl PError {
         PError {
             messages: vec![what.to_string()],
             remaining_len: Some(input.len()),
+            exception: None,
         }
     }
 
@@ -42,6 +46,7 @@ impl PError {
         PError {
             messages: vec![message],
             remaining_len,
+            exception: None,
         }
     }
 
@@ -51,6 +56,16 @@ impl PError {
         PError {
             messages: vec![format!("{}{}", FATAL_PREFIX, message)],
             remaining_len: None,
+            exception: None,
+        }
+    }
+
+    /// Build a fatal parse error with a structured exception.
+    pub fn fatal_with_exception(message: String, exception: Box<crate::value::Value>) -> Self {
+        PError {
+            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            remaining_len: None,
+            exception: Some(exception),
         }
     }
 

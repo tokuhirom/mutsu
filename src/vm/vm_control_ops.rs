@@ -7,6 +7,7 @@ pub(super) struct ForLoopSpec {
     pub(super) label: Option<String>,
     pub(super) arity: u32,
     pub(super) collect: bool,
+    pub(super) threaded: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -14,6 +15,7 @@ pub(super) struct WhileLoopSpec {
     pub(super) body_end: u32,
     pub(super) label: Option<String>,
     pub(super) collect: bool,
+    pub(super) isolate_topic: bool,
 }
 
 pub(super) struct CStyleLoopSpec {
@@ -30,6 +32,38 @@ impl VM {
             Value::Slip(items) => coll.extend(items.iter().cloned()),
             other => coll.push(other),
         }
+    }
+
+    fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
+        let class_name = if signal.is_last {
+            Some("CX::Last")
+        } else if signal.is_next {
+            Some("CX::Next")
+        } else if signal.is_redo {
+            Some("CX::Redo")
+        } else if signal.is_proceed {
+            Some("CX::Proceed")
+        } else if signal.is_succeed {
+            Some("CX::Succeed")
+        } else if signal.is_warn {
+            Some("CX::Warn")
+        } else {
+            None
+        }?;
+
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(if signal.message.is_empty() {
+                class_name.to_string()
+            } else {
+                signal.message.clone()
+            }),
+        );
+        if let Some(label) = signal.label.as_ref() {
+            attrs.insert("label".to_string(), Value::Str(label.clone()));
+        }
+        Some(Value::make_instance(class_name.to_string(), attrs))
     }
 
     pub(super) fn exec_while_loop_op(
@@ -55,9 +89,21 @@ impl VM {
             if !cond_val.truthy() {
                 break;
             }
+            let topic_before_body = if spec.isolate_topic {
+                Some(self.interpreter.env().get("_").cloned())
+            } else {
+                None
+            };
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
@@ -68,15 +114,51 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         continue 'body_redo;
+                    }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                        }
+                        break 'while_loop;
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'while_loop;
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                        if let Some(saved_topic) = &topic_before_body {
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
                         break 'body_redo;
                     }
                     Err(e) => return Err(e),
@@ -109,6 +191,35 @@ impl VM {
         self.sync_locals_from_env(code);
         let body_start = *ip + 1;
         let loop_end = spec.body_end as usize;
+
+        if spec.threaded {
+            // race for / hyper for: run the loop body in a spawned thread
+            // so that $*THREAD.id returns a different value.
+            let result = std::thread::scope(|s| {
+                s.spawn(|| {
+                    self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns)
+                })
+                .join()
+                .unwrap_or_else(|_| Err(RuntimeError::new("thread panicked in race/hyper for")))
+            });
+            *ip = loop_end;
+            return result;
+        }
+
+        self.exec_for_loop_body(code, spec, &items, body_start, loop_end, compiled_fns)?;
+        *ip = loop_end;
+        Ok(())
+    }
+
+    fn exec_for_loop_body(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        items: &[Value],
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx
             .map(|idx| match &code.constants[idx as usize] {
@@ -123,7 +234,7 @@ impl VM {
                 .map(|chunk| Value::array(chunk.to_vec()))
                 .collect()
         } else {
-            items
+            items.to_vec()
         };
         let stack_base = if spec.collect {
             Some(self.stack.len())
@@ -193,6 +304,21 @@ impl VM {
                         }
                         continue 'body_redo;
                     }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                        }
+                        break 'for_loop;
+                    }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'for_loop;
                     }
@@ -210,7 +336,6 @@ impl VM {
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
-        *ip = loop_end;
         Ok(())
     }
 
@@ -255,6 +380,21 @@ impl VM {
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         continue 'body_redo;
+                    }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                        }
+                        break 'c_loop;
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         break 'c_loop;
@@ -493,6 +633,17 @@ impl VM {
                     Err(e) if e.is_redo && Self::label_matches(&e.label, label) => {
                         continue 'body_redo;
                     }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            self.interpreter.env_mut().insert("_".to_string(), v);
+                        }
+                        break 'repeat_loop;
+                    }
                     Err(e) if e.is_last && Self::label_matches(&e.label, label) => {
                         break 'repeat_loop;
                     }
@@ -553,11 +704,10 @@ impl VM {
                 self.interpreter.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
                 let saved_topic = self.interpreter.env().get("_").cloned();
-                if e.is_warn {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::Str(e.message.clone()));
-                    let warn_obj = Value::make_instance("CX::Warn".to_string(), attrs);
-                    self.interpreter.env_mut().insert("_".to_string(), warn_obj);
+                if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
+                    self.interpreter
+                        .env_mut()
+                        .insert("_".to_string(), signal_topic);
                 }
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
@@ -567,12 +717,10 @@ impl VM {
                     Err(e) => return Err(e),
                 }
                 self.interpreter.set_when_matched(saved_when);
-                if e.is_warn {
-                    if let Some(v) = saved_topic {
-                        self.interpreter.env_mut().insert("_".to_string(), v);
-                    } else {
-                        self.interpreter.env_mut().remove("_");
-                    }
+                if let Some(v) = saved_topic {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                } else {
+                    self.interpreter.env_mut().remove("_");
                 }
                 *ip = end;
                 Ok(())

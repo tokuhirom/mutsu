@@ -52,6 +52,44 @@ fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &Big
 }
 
 impl Interpreter {
+    fn normalize_incdec_source_for_mut(value: Value) -> Value {
+        match value {
+            Value::Nil | Value::Package(_) => Value::Int(0),
+            other => other,
+        }
+    }
+
+    fn increment_mut_target_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => i
+                .checked_add(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n + 1),
+            Value::Bool(_) => Value::Bool(true),
+            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
+            Value::Str(s) => Value::Str(Self::string_succ(s)),
+            _ => Value::Int(1),
+        }
+    }
+
+    fn decrement_mut_target_value(value: &Value) -> Value {
+        match value {
+            Value::Int(i) => i
+                .checked_sub(1)
+                .map(Value::Int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n - 1),
+            Value::Bool(_) => Value::Bool(false),
+            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
+            Value::Str(s) => match Self::string_pred(s) {
+                Ok(prev) => Value::Str(prev),
+                Err(_) => Value::Str(s.clone()),
+            },
+            _ => Value::Int(-1),
+        }
+    }
+
     fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
         match value {
             Value::Int(i) => Some(*i),
@@ -508,7 +546,51 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+        let has_sigilless_meta =
+            self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+        let scalar_like_target = target_var.starts_with('$')
+            || (!target_var.starts_with('@')
+                && !target_var.starts_with('%')
+                && !target_var.starts_with('&')
+                && !has_sigilless_meta);
+        if scalar_like_target
+            && let Value::Array(_, is_array) = &target
+            && !*is_array
+            && matches!(
+                method,
+                "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
+            )
+        {
+            return Err(RuntimeError::new(
+                "X::Immutable: Cannot modify an immutable List",
+            ));
+        }
+        if scalar_like_target
+            && args.is_empty()
+            && matches!(method, "postfix:<++>" | "postfix:<-->")
+        {
+            self.check_readonly_for_increment(target_var)?;
+            let current = self.env.get(target_var).cloned().unwrap_or(target);
+            let current = Self::normalize_incdec_source_for_mut(current);
+            let updated = if method == "postfix:<++>" {
+                Self::increment_mut_target_value(&current)
+            } else {
+                Self::decrement_mut_target_value(&current)
+            };
+            self.env.insert(target_var.to_string(), updated);
+            return Ok(current);
+        }
         if method == "VAR" && args.is_empty() {
+            if let Value::Instance { attributes, .. } = &target
+                && matches!(attributes.get("__mutsu_var_target"), Some(Value::Str(_)))
+            {
+                return Ok(target);
+            }
+            if let Some(existing) = self.var_meta_value(target_var) {
+                return Ok(existing);
+            }
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
             let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
             let has_sigilless_meta =
@@ -541,10 +623,16 @@ impl Interpreter {
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::Str(display_name));
             attributes.insert(
+                "__mutsu_var_target".to_string(),
+                Value::Str(target_var.to_string()),
+            );
+            attributes.insert(
                 "dynamic".to_string(),
                 Value::Bool(self.is_var_dynamic(target_var)),
             );
-            return Ok(Value::make_instance(class_name.to_string(), attributes));
+            let meta = Value::make_instance(class_name.to_string(), attributes);
+            self.set_var_meta_value(target_var, meta.clone());
+            return Ok(meta);
         }
         // .of returns the element type constraint of a container
         if method == "of"
@@ -768,24 +856,16 @@ impl Interpreter {
                     return Ok(Value::array(removed));
                 }
                 "squish" => {
-                    let items = match self.env.get(&key) {
-                        Some(Value::Array(existing, ..)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v, ..) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
+                    let current = self.env.get(&key).cloned().unwrap_or(target.clone());
+                    let squished = self.dispatch_squish(current, &args)?;
+                    let squished_items = match squished {
+                        Value::Array(items, ..) | Value::Seq(items) => items.to_vec(),
+                        other => vec![other],
                     };
-                    let mut squished = Vec::new();
-                    let mut last: Option<String> = None;
-                    for item in items {
-                        let s = item.to_string_value();
-                        if last.as_ref() != Some(&s) {
-                            last = Some(s);
-                            squished.push(item);
-                        }
+                    if self.in_lvalue_assignment {
+                        self.env.insert(key, Value::array(squished_items.clone()));
                     }
-                    self.env.insert(key, Value::array(squished.clone()));
-                    return Ok(Value::array(squished));
+                    return Ok(Value::array(squished_items));
                 }
                 _ => {}
             }
@@ -825,6 +905,13 @@ impl Interpreter {
         // Handle push/append/pop/shift/unshift on sigilless array bindings
         if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
             let key = target_var.to_string();
+            let array_flag = match self.env.get(&key) {
+                Some(Value::Array(_, is_array)) => *is_array,
+                _ => match &target {
+                    Value::Array(_, is_array) => *is_array,
+                    _ => false,
+                },
+            };
             match method {
                 "push" | "append" => {
                     let mut items = match &target {
@@ -843,8 +930,9 @@ impl Interpreter {
                     } else {
                         items.extend(args);
                     }
-                    let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(result);
                 }
                 "pop" => {
@@ -853,7 +941,8 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
-                    self.env.insert(key, Value::array(items));
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 "unshift" | "prepend" => {
@@ -864,8 +953,9 @@ impl Interpreter {
                     for (i, arg) in args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(result);
                 }
                 "shift" => {
@@ -878,7 +968,8 @@ impl Interpreter {
                     } else {
                         items.remove(0)
                     };
-                    self.env.insert(key, Value::array(items));
+                    self.env
+                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 _ => {}
@@ -951,6 +1042,211 @@ impl Interpreter {
 
             if class_name == "Iterator" {
                 let mut updated = (*attributes).clone();
+                if let Some(Value::Array(source, ..)) = updated.get("squish_source").cloned() {
+                    let mut scan_index = match updated.get("squish_scan_index") {
+                        Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                        _ => 0,
+                    };
+                    let mut prev_key = updated
+                        .get("squish_prev_key")
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    let mut initialized =
+                        matches!(updated.get("squish_initialized"), Some(Value::Bool(true)));
+                    let as_func = updated
+                        .get("squish_as")
+                        .cloned()
+                        .filter(|v| !matches!(v, Value::Nil));
+                    let with_func = updated
+                        .get("squish_with")
+                        .cloned()
+                        .filter(|v| !matches!(v, Value::Nil));
+
+                    let mut pull_one_squish = |this: &mut Self| -> Result<Value, RuntimeError> {
+                        if !initialized {
+                            let Some(first) = source.first().cloned() else {
+                                return Ok(Value::Str("IterationEnd".to_string()));
+                            };
+                            prev_key = if let Some(func) = as_func.clone() {
+                                this.call_sub_value(func, vec![first.clone()], true)?
+                            } else {
+                                first.clone()
+                            };
+                            initialized = true;
+                            scan_index = 1;
+                            return Ok(first);
+                        }
+
+                        while scan_index < source.len() {
+                            let item = source[scan_index].clone();
+                            let key = if let Some(func) = as_func.clone() {
+                                this.call_sub_value(func, vec![item.clone()], true)?
+                            } else {
+                                item.clone()
+                            };
+
+                            let duplicate = if let Some(func) = with_func.clone() {
+                                this.call_sub_value(
+                                    func,
+                                    vec![prev_key.clone(), key.clone()],
+                                    true,
+                                )?
+                                .truthy()
+                            } else {
+                                crate::runtime::values_identical(&prev_key, &key)
+                            };
+                            prev_key = key;
+                            scan_index += 1;
+                            if !duplicate {
+                                return Ok(item);
+                            }
+                        }
+                        Ok(Value::Str("IterationEnd".to_string()))
+                    };
+
+                    let ret = match method {
+                        "pull-one" => pull_one_squish(self)?,
+                        "push-all" | "push-until-lazy" => {
+                            let mut collected = Vec::new();
+                            loop {
+                                let next = pull_one_squish(self)?;
+                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                    break;
+                                }
+                                collected.push(next);
+                            }
+                            if !collected.is_empty()
+                                && let Some(Value::Array(existing, is_array)) = args.first()
+                            {
+                                let mut next = existing.to_vec();
+                                next.extend(collected);
+                                let updated_array =
+                                    Value::Array(std::sync::Arc::new(next), *is_array);
+                                self.overwrite_array_bindings_by_identity(existing, updated_array);
+                            }
+                            Value::Str("IterationEnd".to_string())
+                        }
+                        "skip-one" => {
+                            let next = pull_one_squish(self)?;
+                            Value::Bool(!matches!(next, Value::Str(ref s) if s == "IterationEnd"))
+                        }
+                        "skip-at-least" => {
+                            let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
+                            let mut ok = true;
+                            for _ in 0..want {
+                                let next = pull_one_squish(self)?;
+                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                            Value::Bool(ok)
+                        }
+                        "skip-at-least-pull-one" => {
+                            let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
+                            for _ in 0..want {
+                                let next = pull_one_squish(self)?;
+                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                    updated.insert(
+                                        "squish_scan_index".to_string(),
+                                        Value::Int(scan_index as i64),
+                                    );
+                                    updated.insert("squish_prev_key".to_string(), prev_key.clone());
+                                    updated.insert(
+                                        "squish_initialized".to_string(),
+                                        Value::Bool(initialized),
+                                    );
+                                    self.overwrite_instance_bindings_by_identity(
+                                        &class_name,
+                                        target_id,
+                                        updated.clone(),
+                                    );
+                                    return Ok(Value::Str("IterationEnd".to_string()));
+                                }
+                            }
+                            pull_one_squish(self)?
+                        }
+                        "push-exactly" | "push-at-least" => {
+                            let want = args.get(1).map(super::to_int).unwrap_or(1).max(0) as usize;
+                            let mut collected = Vec::new();
+                            for _ in 0..want {
+                                let next = pull_one_squish(self)?;
+                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                    break;
+                                }
+                                collected.push(next);
+                            }
+                            if !collected.is_empty()
+                                && let Some(Value::Array(existing, is_array)) = args.first()
+                            {
+                                let mut next = existing.to_vec();
+                                next.extend(collected.clone());
+                                let updated_array =
+                                    Value::Array(std::sync::Arc::new(next), *is_array);
+                                self.overwrite_array_bindings_by_identity(existing, updated_array);
+                            }
+                            if collected.len() >= want {
+                                Value::Nil
+                            } else {
+                                Value::Str("IterationEnd".to_string())
+                            }
+                        }
+                        "sink-all" => {
+                            loop {
+                                let next = pull_one_squish(self)?;
+                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                    break;
+                                }
+                            }
+                            Value::Str("IterationEnd".to_string())
+                        }
+                        "can" => {
+                            let method_name = args
+                                .first()
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let supported = matches!(
+                                method_name.as_str(),
+                                "pull-one"
+                                    | "push-exactly"
+                                    | "push-at-least"
+                                    | "push-all"
+                                    | "push-until-lazy"
+                                    | "sink-all"
+                                    | "skip-one"
+                                    | "skip-at-least"
+                                    | "skip-at-least-pull-one"
+                            );
+                            if supported {
+                                Value::array(vec![Value::Str(method_name)])
+                            } else {
+                                Value::array(Vec::new())
+                            }
+                        }
+                        _ => self.call_method_with_values(target, method, args)?,
+                    };
+
+                    updated.insert(
+                        "squish_scan_index".to_string(),
+                        Value::Int(scan_index as i64),
+                    );
+                    updated.insert("squish_prev_key".to_string(), prev_key);
+                    updated.insert("squish_initialized".to_string(), Value::Bool(initialized));
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name,
+                        target_id,
+                        updated.clone(),
+                    );
+                    let updated_instance = Value::Instance {
+                        class_name: class_name.clone(),
+                        attributes: std::sync::Arc::new(updated),
+                        id: target_id,
+                    };
+                    self.env
+                        .insert(target_var.to_string(), updated_instance.clone());
+                    return Ok(ret);
+                }
+
                 let items = match updated.get("items") {
                     Some(Value::Array(values, ..)) => values.to_vec(),
                     _ => Vec::new(),

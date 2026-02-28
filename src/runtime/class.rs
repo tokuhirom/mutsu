@@ -215,12 +215,59 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
+        let role_context = if self.roles.contains_key(owner_class) {
+            Some(owner_class.to_string())
+        } else if let Some(composed) = self.class_composed_roles.get(receiver_class_name) {
+            let target_fp = crate::ast::function_body_fingerprint(
+                &method_def.params,
+                &method_def.param_defs,
+                &method_def.body,
+            );
+            composed.iter().find_map(|role_name| {
+                let base_role = role_name
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(role_name.as_str());
+                self.roles.get(base_role).and_then(|role_def| {
+                    role_def
+                        .methods
+                        .values()
+                        .flatten()
+                        .any(|candidate| {
+                            crate::ast::function_body_fingerprint(
+                                &candidate.params,
+                                &candidate.param_defs,
+                                &candidate.body,
+                            ) == target_fp
+                        })
+                        .then(|| base_role.to_string())
+                })
+            })
+        } else {
+            None
+        };
         // Set ::?CLASS / ::?ROLE compile-time variable for the method body
         self.env.insert(
             "?CLASS".to_string(),
             Value::Package(owner_class.to_string()),
         );
+        if let Some(role_name) = role_context {
+            self.env
+                .insert("?ROLE".to_string(), Value::Package(role_name));
+        } else {
+            self.env.remove("?ROLE");
+        }
         self.env.insert("self".to_string(), base.clone());
+        if let Some(role_bindings) = self.class_role_param_bindings.get(owner_class) {
+            for (name, value) in role_bindings {
+                self.env.insert(name.clone(), value.clone());
+            }
+        } else if let Some(role_bindings) = self.class_role_param_bindings.get(receiver_class_name)
+        {
+            for (name, value) in role_bindings {
+                self.env.insert(name.clone(), value.clone());
+            }
+        }
 
         let mut bind_params = Vec::new();
         let mut bind_param_defs = Vec::new();
@@ -228,9 +275,27 @@ impl Interpreter {
             let is_invocant = method_def
                 .param_defs
                 .get(idx)
-                .map(|pd| pd.traits.iter().any(|t| t == "invocant"))
+                .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                 .unwrap_or(false);
             if is_invocant {
+                if let Some(pd) = method_def.param_defs.get(idx)
+                    && let Some(constraint) = &pd.type_constraint
+                {
+                    if let Some(captured_name) = constraint.strip_prefix("::") {
+                        self.env
+                            .insert(captured_name.to_string(), Self::captured_type_object(&base));
+                    } else if !self.type_matches_value(constraint, &base) {
+                        self.method_class_stack.pop();
+                        self.env = saved_env;
+                        self.restore_readonly_vars(saved_readonly);
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                            param_name,
+                            constraint,
+                            super::value_type_name(&base)
+                        )));
+                    }
+                }
                 self.env.insert(param_name.clone(), base.clone());
                 continue;
             }
@@ -264,12 +329,25 @@ impl Interpreter {
             Err(e) => Err(e),
         };
         for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
             let env_key = format!("!{}", attr_name);
+            let public_env_key = format!(".{}", attr_name);
+            let env_private = self.env.get(&env_key).cloned();
+            let env_public = self.env.get(&public_env_key).cloned();
+            if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
+                // `$.attr` aliases (public) should still write back when only the
+                // public mirror changed (e.g. `$.count++`).
+                if *private_val == original && *public_val != original {
+                    attributes.insert(attr_name, public_val.clone());
+                } else {
+                    attributes.insert(attr_name, private_val.clone());
+                }
+                continue;
+            }
             if let Some(val) = self.env.get(&env_key) {
                 attributes.insert(attr_name, val.clone());
                 continue;
             }
-            let public_env_key = format!(".{}", attr_name);
             if let Some(val) = self.env.get(&public_env_key) {
                 attributes.insert(attr_name, val.clone());
             }
@@ -277,6 +355,11 @@ impl Interpreter {
         let mut merged_env = saved_env.clone();
         for (k, v) in self.env.iter() {
             if saved_env.contains_key(k) {
+                merged_env.insert(k.clone(), v.clone());
+            }
+            if (k.starts_with('&') && !k.starts_with("&?"))
+                || k.starts_with("__mutsu_method_value::")
+            {
                 merged_env.insert(k.clone(), v.clone());
             }
         }

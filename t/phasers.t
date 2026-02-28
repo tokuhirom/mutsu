@@ -20,4 +20,4 @@ for 1..3 -> $i {
     $seq ~= "X";
     LAST { $seq ~= "L"; }
 }
-is $seq, "FXNXNXL", 'FIRST/NEXT/LAST in loop';
+is $seq, "FXNXNXNL", 'FIRST/NEXT/LAST in loop';

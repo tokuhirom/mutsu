@@ -285,12 +285,34 @@ impl VM {
                         results.push(Value::Pair(key, Box::new(right_list[i].clone())));
                     }
                 } else {
+                    let nested_left = if left_list.len() == 2 {
+                        match &left_list[1] {
+                            Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+                                Some(runtime::value_to_list(&left_list[1]))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
                     for i in 0..len {
-                        results.push(self.eval_reduction_operator_values(
-                            &op,
-                            &left_list[i],
-                            &right_list[i],
-                        )?);
+                        if let Some(extra) = &nested_left {
+                            let mut v = self.eval_reduction_operator_values(
+                                &op,
+                                &left_list[0],
+                                &right_list[i],
+                            )?;
+                            if let Some(extra_i) = extra.get(i) {
+                                v = self.eval_reduction_operator_values(&op, &v, extra_i)?;
+                            }
+                            results.push(v);
+                        } else {
+                            results.push(self.eval_reduction_operator_values(
+                                &op,
+                                &left_list[i],
+                                &right_list[i],
+                            )?);
+                        }
                     }
                 }
                 Value::array(results)
@@ -570,6 +592,22 @@ impl VM {
         infix_name: Option<&str>,
         call_args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if call_args.len() >= 2 {
+            let mut acc = call_args[0].clone();
+            let mut reduced = true;
+            for rhs in &call_args[1..] {
+                match crate::runtime::Interpreter::apply_reduction_op(name, &acc, rhs) {
+                    Ok(value) => acc = value,
+                    Err(_) => {
+                        reduced = false;
+                        break;
+                    }
+                }
+            }
+            if reduced {
+                return Ok(acc);
+            }
+        }
         if let Some(op_name) = infix_name
             && let Ok(v) = self
                 .interpreter
@@ -600,6 +638,27 @@ impl VM {
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
                         return self.interpreter.eval_call_on_value(code_val, Vec::new());
                     }
+                    let method_name = name
+                        .strip_prefix("infix:<")
+                        .and_then(|s| s.strip_suffix('>'))
+                        .unwrap_or(name);
+                    if !method_name.is_empty()
+                        && !call_args.is_empty()
+                        && call_args[0].to_string_value() == "method"
+                    {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("name".to_string(), Value::Str(method_name.to_string()));
+                        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+                        let mut sig_attrs = std::collections::HashMap::new();
+                        sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
+                        attrs.insert(
+                            "signature".to_string(),
+                            Value::make_instance("Signature".to_string(), sig_attrs),
+                        );
+                        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+                        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+                        return Ok(Value::make_instance("Method".to_string(), attrs));
+                    }
                     Err(RuntimeError::new(format!(
                         "Unknown infix function: {}",
                         name
@@ -615,6 +674,27 @@ impl VM {
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
                         self.interpreter.eval_call_on_value(code_val, call_args)
                     } else {
+                        let method_name = name
+                            .strip_prefix("infix:<")
+                            .and_then(|s| s.strip_suffix('>'))
+                            .unwrap_or(name);
+                        if !method_name.is_empty()
+                            && !call_args.is_empty()
+                            && call_args[0].to_string_value() == "method"
+                        {
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert("name".to_string(), Value::Str(method_name.to_string()));
+                            attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+                            let mut sig_attrs = std::collections::HashMap::new();
+                            sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
+                            attrs.insert(
+                                "signature".to_string(),
+                                Value::make_instance("Signature".to_string(), sig_attrs),
+                            );
+                            attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+                            attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+                            return Ok(Value::make_instance("Method".to_string(), attrs));
+                        }
                         Err(RuntimeError::new(format!(
                             "Unknown infix function: {}",
                             name

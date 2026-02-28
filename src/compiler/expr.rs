@@ -240,6 +240,25 @@ impl Compiler {
                     self.code.emit(OpCode::MakeArray(count as u32));
                     return;
                 }
+                if matches!(op, TokenKind::Ident(name) if name == "xx") {
+                    // Raku's list repeat reevaluates call-like lhs expressions on each
+                    // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
+                    if Self::xx_lhs_needs_reeval(left) {
+                        let thunk = Expr::AnonSubParams {
+                            params: Vec::new(),
+                            param_defs: Vec::new(),
+                            return_type: None,
+                            body: vec![Stmt::Expr((**left).clone())],
+                            is_rw: false,
+                        };
+                        self.compile_expr(&thunk);
+                    } else {
+                        self.compile_expr(left);
+                    }
+                    self.compile_expr(right);
+                    self.code.emit(OpCode::ListRepeat);
+                    return;
+                }
                 // Detect `funcname |capture` pattern (listop call with capture slip)
                 if *op == TokenKind::Pipe
                     && matches!(right.as_ref(), Expr::BareWord(_))
@@ -395,6 +414,17 @@ impl Compiler {
                     self.compile_expr(left);
                     self.compile_expr(right);
                     self.code.emit(opcode);
+                } else if let TokenKind::Ident(name) = op
+                    && matches!(name.as_str(), "~&" | "~|" | "~^")
+                {
+                    self.compile_expr(left);
+                    self.compile_expr(right);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::InfixFunc {
+                        name_idx,
+                        right_arity: 1,
+                        modifier_idx: None,
+                    });
                 } else {
                     // Fallback: delegate to interpreter for unsupported operators
                     let expr = Expr::Binary {
@@ -598,6 +628,7 @@ impl Compiler {
                                     is_dynamic: false,
                                     is_export: false,
                                     export_tags: Vec::new(),
+                                    custom_traits: Vec::new(),
                                 },
                                 Stmt::If {
                                     cond: Expr::Binary {
@@ -820,6 +851,11 @@ impl Compiler {
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        if Self::index_assign_target_requires_eval(delete_target) {
+                            // Preserve side effects for targets like DoStmt(VarDecl).
+                            self.compile_expr(delete_target);
+                            self.code.emit(OpCode::Pop);
+                        }
                         self.compile_expr(delete_index);
                         let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::DeleteIndexNamed(name_idx));
@@ -860,14 +896,46 @@ impl Compiler {
                 self.code.emit(OpCode::CallMethodDynamic { arity });
             }
             // Hyper method call: target».method(args)
-            Expr::HyperMethodCall { target, name, args } => {
+            Expr::HyperMethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } => {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::HyperMethodCall { name_idx, arity });
+                let modifier_idx =
+                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                self.code.emit(OpCode::HyperMethodCall {
+                    name_idx,
+                    arity,
+                    modifier_idx,
+                    quoted: *quoted,
+                });
+            }
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                modifier,
+            } => {
+                self.compile_expr(target);
+                self.compile_expr(name_expr);
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_method_arg(arg);
+                }
+                let modifier_idx =
+                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                self.code.emit(OpCode::HyperMethodCallDynamic {
+                    arity,
+                    modifier_idx,
+                });
             }
             // Indexing
             Expr::Index { target, index } => {
@@ -1198,6 +1266,65 @@ impl Compiler {
                 left,
                 right,
             } => {
+                if meta == "R" {
+                    // R-meta can stack (RRop, RRRop, ...). Normalize to base operator and parity.
+                    let mut base = op.as_str();
+                    let mut reverse_count = 1usize;
+                    while let Some(rest) = base.strip_prefix('R') {
+                        reverse_count += 1;
+                        base = rest;
+                    }
+                    let reversed = reverse_count % 2 == 1;
+                    let (eval_left, eval_right) = if reversed {
+                        (right.as_ref(), left.as_ref())
+                    } else {
+                        (left.as_ref(), right.as_ref())
+                    };
+
+                    if base == "andthen" && reversed {
+                        let thunked = Expr::AnonSub {
+                            body: vec![Stmt::Expr(eval_right.clone())],
+                            is_rw: false,
+                        };
+                        let rewritten = Expr::Call {
+                            name: "__mutsu_reverse_andthen".to_string(),
+                            args: vec![eval_left.clone(), thunked],
+                        };
+                        self.compile_expr(&rewritten);
+                        return;
+                    }
+
+                    let logical_token = match base {
+                        "and" | "&&" => Some(TokenKind::AndAnd),
+                        "or" | "||" => Some(TokenKind::OrOr),
+                        "//" | "orelse" => Some(TokenKind::OrElse),
+                        "andthen" => Some(TokenKind::AndThen),
+                        "notandthen" => Some(TokenKind::NotAndThen),
+                        _ => None,
+                    };
+                    if let Some(op_tok) = logical_token {
+                        let rewritten = Expr::Binary {
+                            left: Box::new(eval_left.clone()),
+                            op: op_tok,
+                            right: Box::new(eval_right.clone()),
+                        };
+                        self.compile_expr(&rewritten);
+                        return;
+                    }
+
+                    if base == "xx" {
+                        let thunked = Expr::AnonSub {
+                            body: vec![Stmt::Expr(eval_left.clone())],
+                            is_rw: false,
+                        };
+                        let rewritten = Expr::Call {
+                            name: "__mutsu_reverse_xx".to_string(),
+                            args: vec![eval_right.clone(), thunked],
+                        };
+                        self.compile_expr(&rewritten);
+                        return;
+                    }
+                }
                 self.compile_expr(left);
                 self.compile_expr(right);
                 let meta_idx = self.code.add_constant(Value::Str(meta.clone()));
@@ -1363,6 +1490,7 @@ impl Compiler {
                     params,
                     body,
                     label,
+                    ..
                 } => {
                     self.compile_do_for_expr(
                         iterable,
@@ -1715,6 +1843,34 @@ impl Compiler {
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
+    }
+
+    fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll"
+        ) || matches!(
+            expr,
+            Expr::MethodCall { name, target, .. }
+                if name == "rand"
+                    || name == "pick"
+                    || name == "roll"
+                    || name == "take"
+                    || Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::DynamicMethodCall { target, .. }
+                | Expr::HyperMethodCall { target, .. }
+                | Expr::HyperMethodCallDynamic { target, .. }
+                | Expr::CallOn { target, .. } if Self::xx_lhs_needs_reeval(target)
+        ) || matches!(
+            expr,
+            Expr::Block(_)
+                | Expr::DoBlock { .. }
+                | Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+        )
     }
 
     /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_

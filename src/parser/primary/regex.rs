@@ -7,16 +7,23 @@ use crate::value::Value;
 
 /// Validate a regex pattern at parse time, converting any RuntimeError to PError.
 fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
-    validate_regex_syntax(pattern).map_err(|e| PError::fatal(e.message))
+    validate_regex_syntax(pattern).map_err(|e| {
+        if let Some(ex) = e.exception {
+            PError::fatal_with_exception(e.message, ex)
+        } else {
+            PError::fatal(e.message)
+        }
+    })
 }
 
 use super::super::expr::expression;
-use super::super::helpers::{consume_unspace, skip_balanced_parens, ws};
+use super::super::helpers::{consume_unspace, skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::assign::try_parse_assign_expr;
 
 #[derive(Default)]
 struct MatchAdverbs {
     exhaustive: bool,
+    overlap: bool,
     repeat: Option<usize>,
     ignore_case: bool,
     ignore_mark: bool,
@@ -88,14 +95,11 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
-        if name == "ex"
-            || name == "exhaustive"
-            || name == "ov"
-            || name == "overlap"
-            || name == "g"
-            || name == "global"
-        {
+        if name == "ex" || name == "exhaustive" || name == "g" || name == "global" {
             adverbs.exhaustive = true;
+        } else if name == "ov" || name == "overlap" {
+            adverbs.exhaustive = true;
+            adverbs.overlap = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
         } else if name == "m" || name == "ignoremark" {
@@ -235,6 +239,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             .or_else(|_| expression(input))
     }
 
+    let (input, _) = ws(input)?;
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
@@ -470,6 +475,31 @@ fn scan_to_delim_inner(
                     chars.next(); // skip the delimiter char (it's part of $/)
                 }
             }
+        } else if !p5_mode && (c == '@' || c == '$') && !is_paired {
+            // @(...) or $(...) parenthesized expressions inside regex.
+            // Track parenthesis depth so that delimiters (like /) inside
+            // the expression don't prematurely close the regex.
+            let after = &input[i + c.len_utf8()..];
+            if after.starts_with('(') {
+                chars.next(); // skip '('
+                let mut paren_depth = 1u32;
+                loop {
+                    match chars.next() {
+                        Some((_, '(')) => paren_depth += 1,
+                        Some((_, ')')) => {
+                            paren_depth -= 1;
+                            if paren_depth == 0 {
+                                break;
+                            }
+                        }
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some(_) => {}
+                        None => return None,
+                    }
+                }
+            }
         } else if c == '\\' {
             // skip next char
             chars.next();
@@ -518,7 +548,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     Expr::Literal(Value::RegexWithAdverbs {
                         pattern,
                         exhaustive: adverbs.exhaustive,
-                        repeat: adverbs.repeat,
+                        repeat: if adverbs.overlap && adverbs.repeat.is_none() {
+                            Some(0)
+                        } else {
+                            adverbs.repeat
+                        },
                         perl5: adverbs.perl5,
                         pos: adverbs.pos,
                     }),
@@ -807,6 +841,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
+        let (spec, _) = ws(spec)?;
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             if is_delim {
@@ -838,7 +873,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         Value::RegexWithAdverbs {
                             pattern,
                             exhaustive: adverbs.exhaustive,
-                            repeat: adverbs.repeat,
+                            repeat: if adverbs.overlap && adverbs.repeat.is_none() {
+                                Some(0)
+                            } else {
+                                adverbs.repeat
+                            },
                             perl5: adverbs.perl5,
                             pos: adverbs.pos,
                         }
@@ -934,7 +973,67 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // .&foo(...) — call a code object/sub with topic as first arg
+    // .<key> topical hash/associative lookup: equivalent to $_<key>
+    if r.starts_with('<') && !r.starts_with("<=") && !r.starts_with("<<") && !r.starts_with("<=>") {
+        let r2 = &r[1..];
+        if let Some(end) = r2.find('>') {
+            let content = &r2[..end];
+            let keys = split_angle_words(content);
+            if !keys.is_empty()
+                && keys.iter().all(|key| {
+                    !key.is_empty()
+                        && key.chars().all(|c| {
+                            c.is_alphanumeric()
+                                || c == '_'
+                                || c == '-'
+                                || c == '!'
+                                || c == '.'
+                                || c == ':'
+                                || c == '?'
+                                || c == '+'
+                                || c == '/'
+                                || c == '$'
+                                || c == '@'
+                                || c == '%'
+                                || c == '&'
+                        })
+                })
+            {
+                let rest = &r2[end + 1..];
+                let index_expr = if keys.len() == 1 {
+                    Expr::Literal(Value::Str(keys[0].to_string()))
+                } else {
+                    Expr::ArrayLiteral(
+                        keys.into_iter()
+                            .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                            .collect(),
+                    )
+                };
+                return Ok((
+                    rest,
+                    Expr::Index {
+                        target: Box::new(Expr::Var("_".to_string())),
+                        index: Box::new(index_expr),
+                    },
+                ));
+            }
+        }
+    }
+    // .[index] — topicalized index access on $_
+    if let Some(r) = r.strip_prefix('[') {
+        let (r, _) = ws(r)?;
+        let (r, index) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::Var("_".to_string())),
+                index: Box::new(index),
+            },
+        ));
+    }
+    // .&foo(...) / .&foo: ... — call a code object/sub with topic as first arg
     if let Some(r) = r.strip_prefix('&') {
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let mut args = vec![Expr::Var("_".to_string())];
@@ -946,6 +1045,28 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             let (rest, _) = ws(rest)?;
             let (rest, _) = parse_char(rest, ')')?;
             rest
+        } else if let Ok((r2, _)) = ws(rest) {
+            if r2.starts_with(':') && !r2.starts_with("::") {
+                let r3 = &r2[1..];
+                let (r3, _) = ws(r3)?;
+                let (r3, first_arg) = expression(r3)?;
+                args.push(first_arg);
+                let mut r_inner = r3;
+                loop {
+                    let (r4, _) = ws(r_inner)?;
+                    if !r4.starts_with(',') {
+                        break;
+                    }
+                    let r4 = &r4[1..];
+                    let (r4, _) = ws(r4)?;
+                    let (r4, next) = expression(r4)?;
+                    args.push(next);
+                    r_inner = r4;
+                }
+                r_inner
+            } else {
+                rest
+            }
         } else {
             rest
         };

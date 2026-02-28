@@ -2,6 +2,23 @@ use super::*;
 use crate::ast::Stmt;
 
 impl Interpreter {
+    fn raku_single_quoted_literal(value: &str) -> String {
+        let mut escaped = String::with_capacity(value.len() + 2);
+        escaped.push('\'');
+        for ch in value.chars() {
+            match ch {
+                '\'' => escaped.push_str("\\'"),
+                '\\' => escaped.push_str("\\\\"),
+                '\n' => escaped.push_str("\\n"),
+                '\r' => escaped.push_str("\\r"),
+                '\t' => escaped.push_str("\\t"),
+                _ => escaped.push(ch),
+            }
+        }
+        escaped.push('\'');
+        escaped
+    }
+
     /// Register top-level, non-empty sub bodies before execution so calls that appear
     /// earlier in source can resolve to later definitions.
     fn preregister_top_level_subs(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
@@ -94,6 +111,7 @@ impl Interpreter {
                 is_hidden,
                 hidden_parents,
                 does_parents,
+                repr,
                 body: _,
             } = &stmts[idx]
             {
@@ -105,6 +123,7 @@ impl Interpreter {
                     is_hidden: *is_hidden,
                     hidden_parents: hidden_parents.clone(),
                     does_parents: does_parents.clone(),
+                    repr: repr.clone(),
                     body,
                 });
             }
@@ -130,6 +149,8 @@ impl Interpreter {
             "is ",
             "ok ",
             "ok(",
+            "tap-ok ",
+            "tap-ok(",
             "nok ",
             "nok(",
             "isnt ",
@@ -161,7 +182,10 @@ impl Interpreter {
             if skip_lines_remaining > 0 {
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
                     skip_lines_remaining -= 1;
-                    output.push_str(&format!("skip '{}', 1;\n", skip_reason));
+                    output.push_str(&format!(
+                        "skip {}, 1;\n",
+                        Self::raku_single_quoted_literal(&skip_reason)
+                    ));
                     continue;
                 }
                 output.push_str(line);
@@ -191,7 +215,10 @@ impl Interpreter {
                     skip_block_declared_emitted = false;
                     if let Some(count) = skip_block_declared_tests.take() {
                         for _ in 0..count {
-                            output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
+                            output.push_str(&format!(
+                                "skip {}, 1;\n",
+                                Self::raku_single_quoted_literal(&skip_block_reason)
+                            ));
                         }
                         skip_block_declared_emitted = true;
                     }
@@ -203,7 +230,10 @@ impl Interpreter {
                 } else {
                     // Not a block — treat as single-line skip for test assertions.
                     if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
-                        output.push_str(&format!("skip '{}', 1;\n", reason));
+                        output.push_str(&format!(
+                            "skip {}, 1;\n",
+                            Self::raku_single_quoted_literal(reason)
+                        ));
                         skip_block_pending = None;
                         continue;
                     }
@@ -234,7 +264,10 @@ impl Interpreter {
                 }
                 // Emit skip for lines that look like test assertions
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
-                    output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
+                    output.push_str(&format!(
+                        "skip {}, 1;\n",
+                        Self::raku_single_quoted_literal(&skip_block_reason)
+                    ));
                 } else {
                     output.push('\n');
                 }
@@ -309,7 +342,10 @@ impl Interpreter {
                 && !trimmed.is_empty()
                 && !trimmed.starts_with('#')
             {
-                output.push_str(&format!("todo '{}';\n", reason));
+                output.push_str(&format!(
+                    "todo {};\n",
+                    Self::raku_single_quoted_literal(reason)
+                ));
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;
@@ -618,6 +654,27 @@ mod tests {
         assert!(out.contains("skip 'reason', 1;"));
         assert!(!out.contains("is EVAL('$bar'), Any, 'x'"));
         assert!(out.contains("say 42;"));
+    }
+
+    #[test]
+    fn preprocess_block_skip_counts_tap_ok_as_test_assertion() {
+        let src = "#?rakudo skip 'reason'\n{\n    tap-ok $s, [1], 'tap';\n    ok True, 'ok';\n}\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert_eq!(out.matches("skip 'reason', 1;").count(), 2);
+        assert!(!out.contains("tap-ok $s, [1], 'tap';"));
+        assert!(!out.contains("ok True, 'ok';"));
+    }
+
+    #[test]
+    fn eval_q_bracket_statement_list_runs_declaration_then_assertion() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run(
+            "use Test; plan 1; EVAL q[[my $sub = sub () { 42 }; is [$sub()], [42], 'q-bracket eval';]];",
+        );
+        assert!(result.is_ok());
+        assert!(interp.output.contains("1..1"));
+        assert!(interp.output.contains("ok 1 - q-bracket eval"));
     }
 
     // END phasers must run even after die() or exit().
