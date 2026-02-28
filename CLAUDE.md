@@ -305,10 +305,14 @@ tmux new-window -n 'supervisor' -d 'cd /path/to/mutsu && dotenvx run -- ./script
 ### Stopping
 
 ```bash
+# Stop all agents
 touch tmp/.stop
+
+# Stop a specific agent by PID
+touch tmp/.stop.<PID>
 ```
 
-All scripts check for `tmp/.stop` and exit gracefully when it appears.
+All scripts check for `tmp/.stop` (all agents) and `tmp/.stop.<PID>` (specific agent) and exit gracefully. PID-specific stop files are automatically cleaned up on exit.
 
 ## Test::Util function workout
 
