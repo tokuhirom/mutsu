@@ -522,6 +522,11 @@ impl Interpreter {
         {
             return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
         }
+        if name == "unpolar"
+            && let Some((target, rest)) = args.split_first()
+        {
+            return self.call_method_with_values(target.clone(), "unpolar", rest.to_vec());
+        }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
         if Self::is_builtin_function(name)
             && args.iter().any(|a| matches!(a, Value::Instance { .. }))
@@ -803,17 +808,55 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            if let Ok(value) = Self::apply_reduction_op(op, &acc, rhs) {
+            let mut lhs = acc.clone();
+            let mut rhs = rhs.clone();
+            if self.infix_uses_numeric_bridge(op) {
+                lhs = self.coerce_infix_operand_numeric(lhs)?;
+                rhs = self.coerce_infix_operand_numeric(rhs)?;
+            }
+            if let Ok(value) = Self::apply_reduction_op(op, &lhs, &rhs) {
                 acc = value;
             } else {
-                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(
-                    op,
-                    acc,
-                    rhs.clone(),
-                ))])?;
+                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, lhs, rhs))])?;
             }
         }
         Ok(acc)
+    }
+
+    fn infix_uses_numeric_bridge(&self, op: &str) -> bool {
+        matches!(
+            op,
+            "+" | "-"
+                | "*"
+                | "/"
+                | "%"
+                | "**"
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "<=>"
+                | "cmp"
+                | "before"
+                | "after"
+                | "min"
+                | "max"
+        )
+    }
+
+    fn coerce_infix_operand_numeric(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if !matches!(value, Value::Instance { .. }) {
+            return Ok(value);
+        }
+        if !(self.type_matches_value("Real", &value) || self.type_matches_value("Numeric", &value))
+        {
+            return Ok(value);
+        }
+        self.call_method_with_values(value.clone(), "Numeric", vec![])
+            .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+            .or(Ok(value))
     }
 
     fn build_infix_expr(op: &str, left: Value, right: Value) -> Expr {
@@ -1854,6 +1897,7 @@ impl Interpreter {
                 | "round"
                 | "exp"
                 | "log"
+                | "cis"
                 | "sin"
                 | "cos"
                 | "tan"

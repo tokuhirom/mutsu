@@ -981,11 +981,10 @@ impl Interpreter {
         role_name: &str,
         role_args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let role = self
-            .roles
-            .get(role_name)
-            .cloned()
-            .ok_or_else(|| RuntimeError::new(format!("Unknown role: {}", role_name)))?;
+        let role = self.roles.get(role_name).cloned();
+        if role.is_none() && !matches!(role_name, "Real" | "Numeric" | "Cool" | "Any" | "Mu") {
+            return Err(RuntimeError::new(format!("Unknown role: {}", role_name)));
+        }
 
         let (inner, mut mixins) = match left {
             Value::Mixin(inner, mixins) => (inner, mixins),
@@ -993,17 +992,19 @@ impl Interpreter {
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
-        for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
-            role.attributes.iter().enumerate()
-        {
-            let value = if let Some(arg) = role_args.get(idx) {
-                arg.clone()
-            } else if let Some(default_expr) = default_expr {
-                self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?
-            } else {
-                Value::Nil
-            };
-            mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+        if let Some(role) = role {
+            for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                role.attributes.iter().enumerate()
+            {
+                let value = if let Some(arg) = role_args.get(idx) {
+                    arg.clone()
+                } else if let Some(default_expr) = default_expr {
+                    self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?
+                } else {
+                    Value::Nil
+                };
+                mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+            }
         }
 
         Ok(Value::Mixin(inner, mixins))

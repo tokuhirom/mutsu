@@ -783,6 +783,21 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let mut args = args;
+        if matches!(method, "log" | "exp" | "atan2") {
+            for arg in &mut args {
+                if !matches!(arg, Value::Instance { .. }) {
+                    continue;
+                }
+                let original = arg.clone();
+                if let Ok(coerced) = self
+                    .call_method_with_values(original.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(original.clone(), "Bridge", vec![]))
+                {
+                    *arg = coerced;
+                }
+            }
+        }
         if matches!(method, "arity" | "count")
             && args.is_empty()
             && let Some(sig_info) = extract_sig_info(&target)
@@ -1118,6 +1133,9 @@ impl Interpreter {
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || (matches!(&target, Value::Instance { .. })
+                && (target.does_check("Real") || target.does_check("Numeric")))
+            || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, "Bridge"))
             || (!is_pseudo_method
                 && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
@@ -3536,6 +3554,63 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
+            if method == "Bool"
+                && args.is_empty()
+                && ((target.does_check("Real") || target.does_check("Numeric"))
+                    || self.has_user_method(class_name, "Bridge"))
+                && let Ok(coerced) = self
+                    .call_method_with_values(target.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
+            {
+                return Ok(Value::Bool(coerced.truthy()));
+            }
+            if method == "Bridge"
+                && args.is_empty()
+                && target.does_check("Real")
+                && !self.has_user_method(class_name, "Bridge")
+            {
+                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+                    && coerced != target
+                {
+                    return Ok(coerced);
+                }
+                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
+                    && coerced != target
+                {
+                    return Ok(coerced);
+                }
+            }
+            if method == "Bridge"
+                && args.is_empty()
+                && self.has_user_method(class_name, "Num")
+                && !self.has_user_method(class_name, "Bridge")
+                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
+                && coerced != target
+            {
+                return Ok(coerced);
+            }
+            if method == "log"
+                && args.len() == 1
+                && self.has_user_method(class_name, "Bridge")
+                && let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![])
+            {
+                let base = if let Some(arg) = args.first() {
+                    if matches!(arg, Value::Instance { class_name, .. }
+                        if self.has_user_method(class_name, "Bridge"))
+                    {
+                        self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                            .or_else(|_| {
+                                self.call_method_with_values(arg.clone(), "Bridge", vec![])
+                            })
+                            .unwrap_or_else(|_| arg.clone())
+                    } else {
+                        arg.clone()
+                    }
+                } else {
+                    Value::Nil
+                };
+                return self.call_method_with_values(bridged, "log", vec![base]);
+            }
             // User-defined methods take priority over auto-generated accessors
             if self.has_user_method(class_name, method) {
                 let (result, updated) = self.run_instance_method(
@@ -3573,8 +3648,90 @@ impl Interpreter {
             }
         }
 
+        // For user-defined numeric/real-like objects, delegate unknown methods through
+        // their coercion bridge so default Real behavior is available.
+        if matches!(target, Value::Instance { ref class_name, .. }
+            if (target.does_check("Real") || target.does_check("Numeric"))
+                || self.has_user_method(class_name, "Bridge"))
+        {
+            if matches!(method, "Bridge" | "Real")
+                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+                && coerced != target
+            {
+                return Ok(coerced);
+            }
+            if !matches!(method, "Numeric" | "Real" | "Bridge")
+                && let Ok(coerced) = self
+                    .call_method_with_values(target.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
+                && coerced != target
+                && let Ok(result) = {
+                    let mut delegated_args = Vec::with_capacity(args.len());
+                    for arg in &args {
+                        let coerced_arg = if matches!(arg, Value::Instance { class_name, .. }
+                            if self.has_user_method(class_name, "Bridge")
+                                || arg.does_check("Real")
+                                || arg.does_check("Numeric"))
+                        {
+                            self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                                .or_else(|_| {
+                                    self.call_method_with_values(arg.clone(), "Bridge", vec![])
+                                })
+                                .unwrap_or_else(|_| arg.clone())
+                        } else {
+                            arg.clone()
+                        };
+                        delegated_args.push(coerced_arg);
+                    }
+                    if delegated_args.is_empty()
+                        && let Some(result) = crate::builtins::native_method_0arg(&coerced, method)
+                    {
+                        result
+                    } else if delegated_args.len() == 1
+                        && let Some(result) = crate::builtins::native_method_1arg(
+                            &coerced,
+                            method,
+                            &delegated_args[0],
+                        )
+                    {
+                        result
+                    } else if delegated_args.len() == 2
+                        && let Some(result) = crate::builtins::native_method_2arg(
+                            &coerced,
+                            method,
+                            &delegated_args[0],
+                            &delegated_args[1],
+                        )
+                    {
+                        result
+                    } else {
+                        self.call_method_with_values(coerced, method, delegated_args)
+                    }
+                }
+            {
+                return Ok(result);
+            }
+        }
+
         // Package (type object) dispatch — private method call
         if let Value::Package(ref name) = target {
+            let normalized_method: String = method
+                .chars()
+                .map(|ch| {
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        ch
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            if name == "Instant" && normalized_method == "from_posix" {
+                let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
+                let mut attrs = HashMap::new();
+                // Match Rakudo's Instant.from-posix behavior (TAI includes leap-second offset).
+                attrs.insert("value".to_string(), Value::Num(secs + 10.0));
+                return Ok(Value::make_instance("Instant".to_string(), attrs));
+            }
             if name == "Supply" && method == "interval" {
                 let seconds = args.first().map_or(1.0, |value| match value {
                     Value::Int(i) => *i as f64,

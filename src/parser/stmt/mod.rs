@@ -970,6 +970,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_my_class_expr_in_parens() {
+        let (rest, stmts) =
+            program("(my class :: does Real { method Num { 42e0 } }.new.Bridge);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Expr(_)));
+    }
+
+    #[test]
     fn parse_gather_for_expression() {
         let (rest, stmts) = program("my $x = (gather for ^5 { take 1 });").unwrap();
         assert_eq!(rest, "");
