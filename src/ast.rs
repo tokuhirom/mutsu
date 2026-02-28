@@ -336,6 +336,8 @@ pub(crate) enum Stmt {
         /// Custom variable `is` traits as `(trait_name, optional_arg_expr)`.
         custom_traits: Vec<(String, Option<Expr>)>,
     },
+    /// Mark a variable as readonly (used for `:=` binding desugaring).
+    MarkReadonly(String),
     Assign {
         name: String,
         expr: Expr,
