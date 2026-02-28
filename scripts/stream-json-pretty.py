@@ -16,6 +16,11 @@ GREEN = "\033[32m"
 RED = "\033[31m"
 BOLD = "\033[1m"
 
+# All output goes to stderr so it is visible even when stdout is redirected.
+# text_delta (the assistant's prose) also goes to stderr for consistency;
+# only the final "result" text goes to stdout so callers can capture it.
+out = sys.stderr
+
 current_tool = None
 tool_input_buf = ""
 
@@ -33,12 +38,12 @@ def flush_tool_input():
                     sv = sv[:120] + "..."
                 parts.append(f"  {DIM}{k}: {sv}{RESET}")
             if parts:
-                print("\n".join(parts), file=sys.stderr)
+                print("\n".join(parts), file=out, flush=True)
         except json.JSONDecodeError:
             if len(tool_input_buf) > 200:
-                print(f"  {DIM}{tool_input_buf[:200]}...{RESET}", file=sys.stderr)
+                print(f"  {DIM}{tool_input_buf[:200]}...{RESET}", file=out, flush=True)
             else:
-                print(f"  {DIM}{tool_input_buf}{RESET}", file=sys.stderr)
+                print(f"  {DIM}{tool_input_buf}{RESET}", file=out, flush=True)
         tool_input_buf = ""
 
 
@@ -52,7 +57,7 @@ def handle_event(event):
         if block.get("type") == "tool_use":
             flush_tool_input()
             current_tool = block.get("name", "?")
-            print(f"\n{CYAN}{BOLD}[{current_tool}]{RESET}", file=sys.stderr)
+            print(f"\n{CYAN}{BOLD}[{current_tool}]{RESET}", file=out, flush=True)
             tool_input_buf = ""
         elif block.get("type") == "text":
             pass  # text block starting
@@ -63,7 +68,7 @@ def handle_event(event):
         if dtype == "text_delta":
             flush_tool_input()
             text = delta.get("text", "")
-            print(text, end="", flush=True)
+            print(text, end="", file=out, flush=True)
         elif dtype == "input_json_delta":
             tool_input_buf += delta.get("partial_json", "")
 
@@ -74,7 +79,7 @@ def handle_event(event):
         msg = event.get("message", {})
         role = msg.get("role", "")
         if role == "assistant":
-            print(f"\n{GREEN}--- assistant ---{RESET}", file=sys.stderr)
+            print(f"\n{GREEN}--- assistant ---{RESET}", file=out, flush=True)
 
     elif etype == "message_delta":
         delta = event.get("delta", {})
@@ -86,7 +91,7 @@ def handle_event(event):
                 out_tokens = usage.get("output_tokens")
                 if out_tokens:
                     parts.append(f"tokens={out_tokens}")
-            print(f"\n{DIM}[{', '.join(parts)}]{RESET}", file=sys.stderr)
+            print(f"\n{DIM}[{', '.join(parts)}]{RESET}", file=out, flush=True)
 
     elif etype == "message_stop":
         pass
@@ -94,8 +99,6 @@ def handle_event(event):
 
 def handle_result(data):
     """Handle the final result JSON (non-stream_event)."""
-    rtype = data.get("type")
-    subtype = data.get("subtype", "")
     is_error = data.get("is_error", False)
     result_text = data.get("result", "")
     duration = data.get("duration_ms", 0)
@@ -103,12 +106,12 @@ def handle_result(data):
 
     color = RED if is_error else GREEN
     label = "ERROR" if is_error else "DONE"
-    print(f"\n{color}{BOLD}=== {label} ==={RESET}", file=sys.stderr)
+    print(f"\n{color}{BOLD}=== {label} ==={RESET}", file=out, flush=True)
     if duration:
         secs = duration / 1000
-        print(f"{DIM}  duration: {secs:.1f}s, turns: {num_turns}{RESET}", file=sys.stderr)
+        print(f"{DIM}  duration: {secs:.1f}s, turns: {num_turns}{RESET}", file=out, flush=True)
     if is_error and result_text:
-        print(f"{RED}  {result_text}{RESET}", file=sys.stderr)
+        print(f"{RED}  {result_text}{RESET}", file=out, flush=True)
     elif result_text:
         # Print final result text (truncated if huge)
         if len(result_text) > 500:
@@ -125,7 +128,7 @@ def main():
         try:
             data = json.loads(line)
         except json.JSONDecodeError:
-            print(f"{DIM}{line}{RESET}", file=sys.stderr)
+            print(f"{DIM}{line}{RESET}", file=out, flush=True)
             continue
 
         dtype = data.get("type")
