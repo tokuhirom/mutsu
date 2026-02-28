@@ -90,6 +90,8 @@ pub(super) enum AdditiveOp {
     Sub,
     BitOr,
     BitXor,
+    StrBitOr,
+    StrBitXor,
 }
 
 impl AdditiveOp {
@@ -99,6 +101,8 @@ impl AdditiveOp {
             AdditiveOp::Sub => TokenKind::Minus,
             AdditiveOp::BitOr => TokenKind::BitOr,
             AdditiveOp::BitXor => TokenKind::BitXor,
+            AdditiveOp::StrBitOr => TokenKind::Ident("~|".to_string()),
+            AdditiveOp::StrBitXor => TokenKind::Ident("~^".to_string()),
         }
     }
 }
@@ -114,6 +118,7 @@ pub(super) enum MultiplicativeOp {
     Gcd,
     Lcm,
     BitAnd,
+    StrBitAnd,
     BitShiftLeft,
     BitShiftRight,
 }
@@ -130,6 +135,7 @@ impl MultiplicativeOp {
             MultiplicativeOp::Gcd => TokenKind::Ident("gcd".to_string()),
             MultiplicativeOp::Lcm => TokenKind::Ident("lcm".to_string()),
             MultiplicativeOp::BitAnd => TokenKind::BitAnd,
+            MultiplicativeOp::StrBitAnd => TokenKind::Ident("~&".to_string()),
             MultiplicativeOp::BitShiftLeft => TokenKind::BitShiftLeft,
             MultiplicativeOp::BitShiftRight => TokenKind::BitShiftRight,
         }
@@ -137,7 +143,13 @@ impl MultiplicativeOp {
 }
 
 pub(super) fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
-    if r.starts_with('~') && !r.starts_with("~~") && !r.starts_with("~=") {
+    if r.starts_with('~')
+        && !r.starts_with("~~")
+        && !r.starts_with("~=")
+        && !r.starts_with("~&")
+        && !r.starts_with("~|")
+        && !r.starts_with("~^")
+    {
         Some((ConcatOp::Concat, 1))
     } else if r.starts_with("xx") && !is_ident_char(r.as_bytes().get(2).copied()) {
         Some((ConcatOp::ListRepeat, 2))
@@ -162,6 +174,10 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
         Some((AdditiveOp::BitOr, 2))
     } else if r.starts_with("+^") {
         Some((AdditiveOp::BitXor, 2))
+    } else if r.starts_with("~|") {
+        Some((AdditiveOp::StrBitOr, 2))
+    } else if r.starts_with("~^") {
+        Some((AdditiveOp::StrBitXor, 2))
     } else if r.starts_with('+')
         && !r.starts_with("++")
         && !r.starts_with("+=")
@@ -192,6 +208,8 @@ pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usiz
     }
     if r.starts_with("+&") {
         Some((MultiplicativeOp::BitAnd, 2))
+    } else if r.starts_with("~&") {
+        Some((MultiplicativeOp::StrBitAnd, 2))
     } else if r.starts_with("+<") {
         Some((MultiplicativeOp::BitShiftLeft, 2))
     } else if r.starts_with("+>") {
@@ -256,6 +274,8 @@ impl PrefixUnaryOp {
                 | PrefixUnaryOp::Negate
                 | PrefixUnaryOp::Positive
                 | PrefixUnaryOp::Stringify
+                | PrefixUnaryOp::IntBitNeg
+                | PrefixUnaryOp::BoolBitNeg
         )
     }
 
@@ -361,11 +381,13 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '('
             || c == '['
             || c == '{'
+            || c == '<'
             || c == '"'
             || c == '\''
             || c == '*'
             || c.is_ascii_digit()
-            || c.is_ascii_alphabetic()
+            || crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
+            || c.is_alphabetic()
             || crate::builtins::unicode::unicode_rat_value(c).is_some()
             || crate::builtins::unicode::unicode_numeric_int_value(c).is_some()
     };

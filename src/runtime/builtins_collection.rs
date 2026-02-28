@@ -164,6 +164,7 @@ impl Interpreter {
         for arg in args {
             match arg {
                 Value::Array(items, ..) => elems.extend(items.iter().cloned()),
+                Value::Seq(items) | Value::Slip(items) => elems.extend(items.iter().cloned()),
                 other => elems.push(other),
             }
         }
@@ -209,11 +210,93 @@ impl Interpreter {
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Int(i)) => Value::Int(i.abs()),
+            Some(Value::BigInt(n)) => Value::BigInt(n.abs()),
             Some(Value::Num(f)) => Value::Num(f.abs()),
-            _ => Value::Int(0),
+            Some(Value::Rat(n, d)) => Value::Rat(n.abs(), d),
+            Some(Value::Complex(r, i)) => Value::Num((r * r + i * i).sqrt()),
+            Some(v) => Value::Num(v.to_f64().abs()),
+            None => Value::Int(0),
         })
     }
+}
 
+/// Raku `val()` builtin: convert a string into an allomorphic type.
+pub(super) fn builtin_val(args: &[Value]) -> Value {
+    let word = match args.first() {
+        Some(v) => v.to_string_value(),
+        None => return Value::Nil,
+    };
+    let word = word.trim();
+
+    fn make_allomorphic(val: Value, word: &str) -> Value {
+        let mut mixins = StdHashMap::new();
+        mixins.insert("Str".to_string(), Value::Str(word.to_string()));
+        Value::Mixin(Box::new(val), mixins)
+    }
+
+    // Try complex (must end with 'i')
+    if let Some(complex) = try_parse_complex(word) {
+        return make_allomorphic(complex, word);
+    }
+
+    // Try integer
+    if let Ok(i) = word.parse::<i64>() {
+        return make_allomorphic(Value::Int(i), word);
+    }
+
+    // Try Num (scientific notation with e/E)
+    if (word.contains('e') || word.contains('E')) && !word.ends_with('i') {
+        // Normalize U+2212 MINUS SIGN to ASCII minus
+        let normalized = word.replace('\u{2212}', "-");
+        if let Ok(f) = normalized.parse::<f64>() {
+            return make_allomorphic(Value::Num(f), word);
+        }
+    }
+
+    // Try Rat (decimal without exponent)
+    if word.contains('.') && !word.contains('e') && !word.contains('E') {
+        let normalized = word.replace('\u{2212}', "-");
+        if let Ok(f) = normalized.parse::<f64>() {
+            // Approximate as Rat: use fixed denominator approach
+            let scale = 10i64.pow(
+                normalized
+                    .find('.')
+                    .map(|p| normalized.len() - p - 1)
+                    .unwrap_or(0) as u32,
+            );
+            let numer = (f * scale as f64).round() as i64;
+            return make_allomorphic(crate::value::make_rat(numer, scale), word);
+        }
+    }
+
+    // Plain string
+    Value::Str(word.to_string())
+}
+
+fn try_parse_complex(word: &str) -> Option<Value> {
+    if !word.ends_with('i') {
+        return None;
+    }
+    let without_i = &word[..word.len() - 1];
+    // Pure imaginary
+    if let Ok(imag) = without_i.parse::<f64>() {
+        return Some(Value::Complex(0.0, imag));
+    }
+    // real+imag i
+    let bytes = without_i.as_bytes();
+    let mut split_pos = None;
+    for i in 1..bytes.len() {
+        if (bytes[i] == b'+' || bytes[i] == b'-') && bytes[i - 1] != b'e' && bytes[i - 1] != b'E' {
+            split_pos = Some(i);
+        }
+    }
+    let split_pos = split_pos?;
+    let real: f64 = without_i[..split_pos].parse().ok()?;
+    let imag: f64 = without_i[split_pos..].parse().ok()?;
+    Some(Value::Complex(real, imag))
+}
+
+impl Interpreter {
     fn failure_exception_from_value(value: &Value) -> Option<Value> {
         match value {
             Value::Instance {
@@ -642,6 +725,34 @@ impl Interpreter {
             Value::array(positional)
         };
         self.call_method_with_values(target, "unique", method_args)
+    }
+
+    pub(super) fn builtin_squish(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+
+        let mut positional = Vec::new();
+        let mut method_args = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Pair(key, _) if key == "as" || key == "with" => {
+                    method_args.push(arg.clone());
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+
+        if positional.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+
+        let target = if positional.len() == 1 {
+            positional[0].clone()
+        } else {
+            Value::array(positional)
+        };
+        self.call_method_with_values(target, "squish", method_args)
     }
 
     pub(super) fn builtin_map(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

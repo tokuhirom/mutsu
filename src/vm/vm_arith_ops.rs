@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 
 impl VM {
     fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
@@ -34,6 +33,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 Ok(result)
             } else {
@@ -48,6 +48,7 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 Ok(result)
             } else {
@@ -77,7 +78,8 @@ impl VM {
     pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
         self.stack.push(result);
@@ -87,8 +89,10 @@ impl VM {
     pub(super) fn exec_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_div(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            crate::builtins::arith_div(l, r)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -96,8 +100,10 @@ impl VM {
     pub(super) fn exec_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_mod(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            crate::builtins::arith_mod(l, r)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -105,7 +111,8 @@ impl VM {
     pub(super) fn exec_pow_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_pow(l, r))
         })?;
         self.stack.push(result);
@@ -114,19 +121,18 @@ impl VM {
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        let val = self.coerce_numeric_bridge_value(val)?;
         self.stack.push(crate::builtins::arith_negate(val)?);
         Ok(())
     }
 
     pub(super) fn exec_int_bit_neg_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        match &val {
+        match val {
             Value::Int(n) => self.stack.push(Value::Int(!n)),
-            _ => {
-                use num_traits::ToPrimitive;
-                let n = val.to_bigint();
-                let i = n.to_i64().unwrap_or(0);
-                self.stack.push(Value::Int(!i));
+            other => {
+                let n = other.to_bigint();
+                self.stack.push(Value::from_bigint(!n));
             }
         }
     }
@@ -333,15 +339,14 @@ impl VM {
         self.stack.push(if ord.is_ge() { left } else { right });
     }
 
-    pub(super) fn exec_string_repeat_op(&mut self) {
+    pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let s = left.to_string_value();
-        let n = match right {
-            Value::Int(n) => n.max(0) as usize,
-            _ => 0,
-        };
-        self.stack.push(Value::Str(s.repeat(n)));
+        let result = self
+            .interpreter
+            .call_function("infix:<x>", vec![left, right])?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {

@@ -414,6 +414,17 @@ impl Compiler {
                     self.compile_expr(left);
                     self.compile_expr(right);
                     self.code.emit(opcode);
+                } else if let TokenKind::Ident(name) = op
+                    && matches!(name.as_str(), "~&" | "~|" | "~^")
+                {
+                    self.compile_expr(left);
+                    self.compile_expr(right);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::InfixFunc {
+                        name_idx,
+                        right_arity: 1,
+                        modifier_idx: None,
+                    });
                 } else {
                     // Fallback: delegate to interpreter for unsupported operators
                     let expr = Expr::Binary {

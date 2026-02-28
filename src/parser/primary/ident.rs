@@ -473,6 +473,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "dir"
             | "first"
             | "make"
+            | "take"
             | "set"
             | "bag"
             | "mix"
@@ -732,7 +733,58 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     // This keeps listop precedence behavior (e.g. `shift @a + 1` parses as
     // `(shift @a) + 1`) while still allowing argument postfix chains like
     // `chmod $file.IO.mode, $other`.
-    super::super::expr::term_expr(input)
+    //
+    // Exception: range operators are part of a single argument in listop calls,
+    // e.g. `squish 1..Inf` should parse as `squish(1..Inf)`.
+    let (rest, left) = super::super::expr::term_expr(input)?;
+    let (r, _) = ws(rest)?;
+
+    if let Some(rhs) = r.strip_prefix("^..^") {
+        let (r2, right) = super::super::expr::term_expr(rhs)?;
+        return Ok((
+            r2,
+            Expr::Binary {
+                left: Box::new(left),
+                op: crate::token_kind::TokenKind::CaretDotDotCaret,
+                right: Box::new(right),
+            },
+        ));
+    }
+    if let Some(rhs) = r.strip_prefix("^..") {
+        let (r2, right) = super::super::expr::term_expr(rhs)?;
+        return Ok((
+            r2,
+            Expr::Binary {
+                left: Box::new(left),
+                op: crate::token_kind::TokenKind::CaretDotDot,
+                right: Box::new(right),
+            },
+        ));
+    }
+    if let Some(rhs) = r.strip_prefix("..^") {
+        let (r2, right) = super::super::expr::term_expr(rhs)?;
+        return Ok((
+            r2,
+            Expr::Binary {
+                left: Box::new(left),
+                op: crate::token_kind::TokenKind::DotDotCaret,
+                right: Box::new(right),
+            },
+        ));
+    }
+    if r.starts_with("..") && !r.starts_with("...") {
+        let (r2, right) = super::super::expr::term_expr(&r[2..])?;
+        return Ok((
+            r2,
+            Expr::Binary {
+                left: Box::new(left),
+                op: crate::token_kind::TokenKind::DotDot,
+                right: Box::new(right),
+            },
+        ));
+    }
+
+    Ok((rest, left))
 }
 
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
@@ -1361,7 +1413,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Check for listop: bareword followed by space and argument (but not statement modifier)
     // e.g., shift @a, push @a, 42, etc.
-    // Skip when followed by '.' — `func.method` is `(func()).method`, not `func(.method)`.
+    // Skip when directly followed by '.' — `func.method` is `(func()).method`,
+    // but `func .method` is a listop call with topic-method-call argument.
     if is_listop(&name)
         && !r.is_empty()
         && !r.starts_with(';')
@@ -1369,7 +1422,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
-        && !r.starts_with('.')
+        && !rest.starts_with('.')
     {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
@@ -1426,7 +1479,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
-        && !r.starts_with('.')
+        && !rest.starts_with('.')
         && !is_stmt_modifier_ahead(r)
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);

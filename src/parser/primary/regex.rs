@@ -972,6 +972,20 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // .[index] — topicalized index access on $_
+    if let Some(r) = r.strip_prefix('[') {
+        let (r, _) = ws(r)?;
+        let (r, index) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::Var("_".to_string())),
+                index: Box::new(index),
+            },
+        ));
+    }
     // .&foo(...) — call a code object/sub with topic as first arg
     if let Some(r) = r.strip_prefix('&') {
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;

@@ -219,47 +219,63 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             _ => Value::Num(f64::NAN),
         })),
-        "floor" => Some(Ok(match arg {
-            Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-            Value::Num(f) => Value::Int(f.floor() as i64),
-            Value::Int(i) => Value::Int(*i),
-            Value::Rat(n, d) if *d != 0 => {
-                let q = *n / *d;
-                let r = *n % *d;
-                if r != 0 && (*n < 0) != (*d < 0) {
-                    Value::Int(q - 1)
-                } else {
-                    Value::Int(q)
+        "floor" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
+                Value::Num(f) => Value::Int(f.floor() as i64),
+                Value::Int(i) => Value::Int(*i),
+                Value::Rat(n, d) if *d != 0 => {
+                    let q = *n / *d;
+                    let r = *n % *d;
+                    if r != 0 && (*n < 0) != (*d < 0) {
+                        Value::Int(q - 1)
+                    } else {
+                        Value::Int(q)
+                    }
                 }
+                _ => Value::Int(0),
+            }))
+        }
+        "ceiling" | "ceil" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
             }
-            _ => Value::Int(0),
-        })),
-        "ceiling" | "ceil" => Some(Ok(match arg {
-            Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-            Value::Num(f) => Value::Int(f.ceil() as i64),
-            Value::Int(i) => Value::Int(*i),
-            Value::Rat(n, d) if *d != 0 => {
-                let q = *n / *d;
-                let r = *n % *d;
-                if r != 0 && (*n < 0) == (*d < 0) {
-                    Value::Int(q + 1)
-                } else {
-                    Value::Int(q)
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
+                Value::Num(f) => Value::Int(f.ceil() as i64),
+                Value::Int(i) => Value::Int(*i),
+                Value::Rat(n, d) if *d != 0 => {
+                    let q = *n / *d;
+                    let r = *n % *d;
+                    if r != 0 && (*n < 0) == (*d < 0) {
+                        Value::Int(q + 1)
+                    } else {
+                        Value::Int(q)
+                    }
                 }
+                _ => Value::Int(0),
+            }))
+        }
+        "round" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
             }
-            _ => Value::Int(0),
-        })),
-        "round" => Some(Ok(match arg {
-            Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-            Value::Num(f) => Value::Int(f.round() as i64),
-            Value::Int(i) => Value::Int(*i),
-            Value::Rat(n, d) if *d != 0 => {
-                let f = *n as f64 / *d as f64;
-                Value::Int(f.round() as i64)
-            }
-            _ => Value::Int(0),
-        })),
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
+                Value::Num(f) => Value::Int(f.round() as i64),
+                Value::Int(i) => Value::Int(*i),
+                Value::Rat(n, d) if *d != 0 => {
+                    let f = *n as f64 / *d as f64;
+                    Value::Int(f.round() as i64)
+                }
+                _ => Value::Int(0),
+            }))
+        }
         "exp" => Some(Ok(match arg {
+            Value::Instance { .. } => return None,
             Value::Int(i) => Value::Num((*i as f64).exp()),
             Value::Num(f) => Value::Num(f.exp()),
             Value::Rat(n, d) if *d != 0 => Value::Num((*n as f64 / *d as f64).exp()),
@@ -270,6 +286,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => Value::Num(f64::NAN),
         })),
         "log" => match arg {
+            Value::Instance { .. } => None,
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let phase = i.atan2(*r);
@@ -281,6 +298,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         },
         "log2" => match arg {
+            Value::Instance { .. } => None,
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let phase = i.atan2(*r);
@@ -293,6 +311,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         },
         "log10" => match arg {
+            Value::Instance { .. } => None,
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let phase = i.atan2(*r);
@@ -355,10 +374,16 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Some(Ok(Value::Num(y.atan2(1.0))))
         }
         "cis" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
             let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
             Some(Ok(Value::Complex(x.cos(), x.sin())))
         }
         "truncate" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
             if let Some(num) = runtime::to_float_value(arg) {
                 if num.is_nan() || num.is_infinite() {
                     Some(Ok(Value::Num(num)))
@@ -719,6 +744,9 @@ fn native_function_2arg(
             ))))
         }
         "log" => {
+            if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {
+                return None;
+            }
             let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
             let base_val = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
             if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {

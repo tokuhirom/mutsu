@@ -2124,8 +2124,8 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Test/Test::Util functions are NOT listed here — they are registered dynamically
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
-    "dd", "exit", "proceed", "succeed", "push", "pop", "shift", "unshift", "append", "prepend",
-    "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
+    "dd", "exit", "proceed", "succeed", "done", "push", "pop", "shift", "unshift", "append",
+    "prepend", "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.
@@ -2171,6 +2171,10 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     if name == "succeed" {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Succeed));
+    }
+    if name == "done" {
+        let (rest, _) = opt_char(rest, ';');
+        return Ok((rest, Stmt::ReactDone));
     }
 
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.

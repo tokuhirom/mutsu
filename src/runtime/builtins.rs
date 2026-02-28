@@ -1,5 +1,6 @@
 use super::*;
 use crate::token_kind::TokenKind;
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -11,6 +12,16 @@ enum OpAssoc {
 }
 
 impl Interpreter {
+    fn declared_var_names_in_stmts(body: &[Stmt]) -> std::collections::HashSet<String> {
+        let mut names = std::collections::HashSet::new();
+        for stmt in body {
+            if let Stmt::VarDecl { name, .. } = stmt {
+                names.insert(name.clone());
+            }
+        }
+        names
+    }
+
     fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
         let bytes = code.as_bytes();
         let mut i = 0usize;
@@ -272,6 +283,7 @@ impl Interpreter {
             "kv" => self.builtin_kv(&args),
             "pairs" => self.builtin_pairs(&args),
             "abs" => self.builtin_abs(&args),
+            "val" => Ok(super::builtins_collection::builtin_val(&args)),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
             "minmax" => self.builtin_minmax(&args),
@@ -285,9 +297,15 @@ impl Interpreter {
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
+            "take" => {
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                self.take_value(value);
+                Ok(Value::Nil)
+            }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
+            "squish" => self.builtin_squish(&args),
             "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
@@ -454,7 +472,8 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            return self.call_infix_routine(op, args);
+            let normalized = if op == "−" { "-" } else { op };
+            return self.call_infix_routine(normalized, args);
         }
         if let Some(op) = name
             .strip_prefix("prefix:<")
@@ -470,17 +489,18 @@ impl Interpreter {
                 return Ok(Value::Nil);
             }
             let arg = &args[0];
+            let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
-                "-" => crate::builtins::arith_negate(arg.clone()),
+                "-" | "−" => crate::builtins::arith_negate(arg.clone()),
                 "~" => Ok(Value::Str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
                 _ => Err(RuntimeError::new(format!(
                     "Unknown prefix operator: {}",
-                    op
+                    normalized
                 ))),
             };
         }
@@ -517,6 +537,11 @@ impl Interpreter {
             && let Some((target, rest)) = args.split_first()
         {
             return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
+        }
+        if name == "unpolar"
+            && let Some((target, rest)) = args.split_first()
+        {
+            return self.call_method_with_values(target.clone(), "unpolar", rest.to_vec());
         }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
         if Self::is_builtin_function(name)
@@ -620,13 +645,17 @@ impl Interpreter {
             self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
+            let declared_locals = Self::declared_var_names_in_stmts(&def.body);
             for (k, v) in self.env.iter() {
                 if k != "_"
                     && k != "@_"
-                    && ((restored_env.contains_key(k)
-                        && matches!(v, Value::Array(..) | Value::Hash(..)))
-                        || k.starts_with("__mutsu_var_meta::"))
+                    && restored_env.contains_key(k)
+                    && !def.params.iter().any(|p| p == k)
+                    && !declared_locals.contains(k)
                 {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+                if k.starts_with("__mutsu_var_meta::") {
                     restored_env.insert(k.clone(), v.clone());
                 }
             }
@@ -714,6 +743,26 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
+        if op == "x" || op == "xx" {
+            return self.call_repeat_infix(op, &args);
+        }
+        // Parser normalization fallback: `method foo { ... }` can appear as
+        // InfixFunc(name="foo", left=BareWord("method"), right=[ArrayLiteral(...)]).
+        // Treat this as a Method object value.
+        if !args.is_empty() && args[0].to_string_value() == "method" {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::Str(op.to_string()));
+            attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+            let mut sig_attrs = std::collections::HashMap::new();
+            sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
+            attrs.insert(
+                "signature".to_string(),
+                Value::make_instance("Signature".to_string(), sig_attrs),
+            );
+            attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+            attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+            return Ok(Value::make_instance("Method".to_string(), attrs));
+        }
         if args.is_empty() {
             return Ok(reduction_identity(op));
         }
@@ -799,10 +848,294 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            acc =
-                self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, acc, rhs.clone()))])?;
+            let mut lhs = acc.clone();
+            let mut rhs = rhs.clone();
+            if self.infix_uses_numeric_bridge(op) {
+                lhs = self.coerce_infix_operand_numeric(lhs)?;
+                rhs = self.coerce_infix_operand_numeric(rhs)?;
+            }
+            if let Ok(value) = Self::apply_reduction_op(op, &lhs, &rhs) {
+                acc = value;
+            } else {
+                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, lhs, rhs))])?;
+            }
         }
         Ok(acc)
+    }
+
+    fn repeat_error(class_name: &str, message: String) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(message.clone()));
+        let ex = Value::make_instance(class_name.to_string(), attrs);
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
+        let mut current = value;
+        while let Value::Mixin(inner, _) = current {
+            current = inner;
+        }
+        match current {
+            Value::Whatever => Ok(None),
+            Value::Int(i) => Ok(Some(*i)),
+            Value::BigInt(n) => {
+                use num_traits::ToPrimitive;
+                Ok(Some(n.to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Num(f) => {
+                if f.is_nan() {
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert NaN to Int".to_string(),
+                    ));
+                }
+                if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        return Ok(None);
+                    }
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert -Inf to Int".to_string(),
+                    ));
+                }
+                Ok(Some(f.trunc() as i64))
+            }
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    if *n > 0 {
+                        return Ok(None);
+                    }
+                    let msg = if *n < 0 {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                Ok(Some(n / d))
+            }
+            Value::FatRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    let msg = if n.is_negative() {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    let msg = if n.is_negative() {
+                        "Cannot convert -Inf to Int"
+                    } else {
+                        "Cannot convert NaN to Int"
+                    };
+                    return Err(Self::repeat_error(
+                        "X::Numeric::CannotConvert",
+                        msg.to_string(),
+                    ));
+                }
+                use num_traits::ToPrimitive;
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Str(s) => {
+                let parsed = s.trim().parse::<f64>().map_err(|_| {
+                    Self::repeat_error(
+                        "X::Str::Numeric",
+                        format!("Cannot convert string '{}' to a number", s),
+                    )
+                })?;
+                Self::parse_repeat_count(&Value::Num(parsed))
+            }
+            Value::Array(items, ..) => Ok(Some(items.len() as i64)),
+            Value::Seq(items) => Ok(Some(items.len() as i64)),
+            Value::LazyList(ll) => Ok(Some(
+                ll.cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map_or(0usize, |v| v.len()) as i64,
+            )),
+            Value::Package(_) => Ok(Some(0)),
+            _ => Ok(Some(0)),
+        }
+    }
+
+    fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
+        Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+            body: Vec::new(),
+            env: std::collections::HashMap::new(),
+            cache: std::sync::Mutex::new(Some(items)),
+        }))
+    }
+
+    fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
+        match left {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                self.eval_call_on_value(left.clone(), Vec::new())
+            }
+            _ => Ok(left.clone()),
+        }
+    }
+
+    fn make_x_whatevercode(&self, left: Value) -> Value {
+        let mut env = std::collections::HashMap::new();
+        env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::Str("WhateverCode".to_string()),
+        );
+        let param = "__wc_0".to_string();
+        let body = vec![Stmt::Expr(Expr::Binary {
+            left: Box::new(Expr::Literal(left)),
+            op: TokenKind::Ident("x".to_string()),
+            right: Box::new(Expr::Var(param.clone())),
+        })];
+        Value::make_sub(
+            self.current_package.clone(),
+            "<whatevercode-x>".to_string(),
+            vec![param],
+            Vec::new(),
+            body,
+            false,
+            env,
+        )
+    }
+
+    fn call_repeat_infix(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            if op == "xx" {
+                return Err(Self::repeat_error(
+                    "Exception",
+                    "xx with no args throws".to_string(),
+                ));
+            }
+            return Ok(reduction_identity(op));
+        }
+        if args.len() == 1 {
+            return Ok(args[0].clone());
+        }
+
+        let mut acc = args[0].clone();
+        for rhs in &args[1..] {
+            match op {
+                "x" => {
+                    if let Value::Package(name) = rhs
+                        && name == "Int"
+                        && !self.warning_suppressed()
+                    {
+                        self.write_warn_to_stderr(&format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        ));
+                    }
+                    if matches!(rhs, Value::Whatever) {
+                        acc = self.make_x_whatevercode(acc);
+                        continue;
+                    }
+                    let Some(n_raw) = Self::parse_repeat_count(rhs)? else {
+                        return Err(Self::repeat_error(
+                            "X::Numeric::CannotConvert",
+                            "Cannot convert Inf to Int".to_string(),
+                        ));
+                    };
+                    let n = n_raw.max(0) as usize;
+                    acc = Value::Str(crate::runtime::utils::coerce_to_str(&acc).repeat(n));
+                }
+                "xx" => {
+                    const EAGER_LIMIT: usize = 10_000;
+                    const LAZY_CACHE: usize = 4_096;
+                    if let Value::Package(name) = rhs
+                        && name == "Int"
+                        && !self.warning_suppressed()
+                    {
+                        self.write_warn_to_stderr(&format!(
+                            "Use of uninitialized value of type {} in numeric context",
+                            name
+                        ));
+                    }
+                    let count = Self::parse_repeat_count(rhs)?;
+                    let (repeat, lazy) = match count {
+                        Some(n) if n <= 0 => (0usize, false),
+                        Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
+                        Some(n) => ((n as usize).min(LAZY_CACHE), true),
+                        None => (LAZY_CACHE, true),
+                    };
+                    let mut items = Vec::with_capacity(repeat);
+                    if let Value::Slip(slip_items) = &acc {
+                        if slip_items.is_empty() {
+                            items.extend(std::iter::repeat_n(Value::Nil, repeat));
+                        } else {
+                            for _ in 0..repeat {
+                                items.extend(slip_items.iter().cloned());
+                            }
+                        }
+                    } else {
+                        for _ in 0..repeat {
+                            items.push(self.repeat_lhs_once(&acc)?);
+                        }
+                    }
+                    acc = if lazy {
+                        Self::make_repeat_lazy_cache(items)
+                    } else {
+                        Value::Seq(std::sync::Arc::new(items))
+                    };
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(acc)
+    }
+
+    fn infix_uses_numeric_bridge(&self, op: &str) -> bool {
+        matches!(
+            op,
+            "+" | "-"
+                | "*"
+                | "/"
+                | "%"
+                | "**"
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "<=>"
+                | "cmp"
+                | "before"
+                | "after"
+                | "min"
+                | "max"
+        )
+    }
+
+    fn coerce_infix_operand_numeric(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if !matches!(value, Value::Instance { .. }) {
+            return Ok(value);
+        }
+        if !(self.type_matches_value("Real", &value) || self.type_matches_value("Numeric", &value))
+        {
+            return Ok(value);
+        }
+        self.call_method_with_values(value.clone(), "Numeric", vec![])
+            .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+            .or(Ok(value))
     }
 
     fn build_infix_expr(op: &str, left: Value, right: Value) -> Expr {
@@ -1835,6 +2168,7 @@ impl Interpreter {
                 | "quietly"
                 | "exit"
                 | "abs"
+                | "val"
                 | "sqrt"
                 | "floor"
                 | "ceiling"
@@ -1842,6 +2176,7 @@ impl Interpreter {
                 | "round"
                 | "exp"
                 | "log"
+                | "cis"
                 | "sin"
                 | "cos"
                 | "tan"

@@ -431,6 +431,36 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, build_custom_compound_assign_expr(lhs, op_name, rhs)?));
     }
+    if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        let expr = match lhs {
+            Expr::Var(name) => Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            },
+            Expr::ArrayVar(name) => Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(rhs),
+            },
+            Expr::HashVar(name) => Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(rhs),
+            },
+            Expr::Index { target, index } => Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(rhs),
+            },
+            _ => return Err(PError::expected("assignment expression")),
+        };
+        return Ok((rest, expr));
+    }
     if (!rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>"))
         && !rest.starts_with("⚛=")
     {
@@ -542,6 +572,11 @@ fn looks_like_parenthesized_assignment(input: &str) -> bool {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     break;
+                }
+            }
+            ':' if depth == 1 => {
+                if input[idx + ch.len_utf8()..].starts_with('=') {
+                    return true;
                 }
             }
             '=' if depth == 1 => {
@@ -717,6 +752,21 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     right: vec![rhs],
                     modifier: None,
                 }),
+            },
+        ));
+    }
+    if let Some(stripped) = r2.strip_prefix("::=").or_else(|| r2.strip_prefix(":=")) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
             },
         ));
     }

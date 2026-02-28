@@ -673,7 +673,7 @@ impl VM {
 
             // -- Repetition --
             OpCode::StringRepeat => {
-                self.exec_string_repeat_op();
+                self.exec_string_repeat_op()?;
                 *ip += 1;
             }
             OpCode::ListRepeat => {
@@ -1134,6 +1134,9 @@ impl VM {
             OpCode::Succeed => {
                 return Err(RuntimeError::succeed_signal());
             }
+            OpCode::ReactDone => {
+                return Err(RuntimeError::react_done_signal());
+            }
             OpCode::TagContainerRef(name_idx) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.container_ref_var = Some(name);
@@ -1220,12 +1223,14 @@ impl VM {
                 body_end,
                 label,
                 collect,
+                isolate_topic,
             } => {
                 let spec = vm_control_ops::WhileLoopSpec {
                     cond_end: *cond_end,
                     body_end: *body_end,
                     label: label.clone(),
                     collect: *collect,
+                    isolate_topic: *isolate_topic,
                 };
                 self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
