@@ -958,6 +958,17 @@ pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
 }
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
+    fn compare_infinite_num_against_nonnumeric_str(num: f64, s: &str) -> Option<i32> {
+        if !num.is_infinite() || s.trim().parse::<f64>().is_ok() {
+            return None;
+        }
+        Some(if num.is_sign_positive() {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        } as i32)
+    }
+
     match (a, b) {
         (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
             version_cmp_parts(ap, bp) as i32
@@ -993,6 +1004,20 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         (Value::Num(a), Value::Int(b)) => a
             .partial_cmp(&(*b as f64))
             .unwrap_or(std::cmp::Ordering::Equal) as i32,
+        (Value::Num(n), Value::Str(s)) => {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
+                ord
+            } else {
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
+        (Value::Str(s), Value::Num(n)) => {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
+                -ord
+            } else {
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
                 return compare_rat_parts((an, ad), (bn, bd)) as i32;

@@ -95,6 +95,7 @@ roast/S03-operators/increment.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
+roast/S03-operators/minmax.t
 roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
