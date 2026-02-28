@@ -391,6 +391,39 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return proto_decl(rest);
     }
 
+    // Typed routine declarations, e.g. `my Bool sub f(...) { ... }`.
+    if let Some((after_type, routine_type)) = parse_type_constraint_expr(rest)
+        && routine_type
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase())
+    {
+        let (after_type, _) = ws(after_type)?;
+        if let Some(r) = keyword("multi", after_type) {
+            let (r, _) = ws1(r)?;
+            let r = keyword("sub", r)
+                .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
+                .unwrap_or(r);
+            let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
+            if let Stmt::SubDecl { return_type, .. } = &mut stmt
+                && return_type.is_none()
+            {
+                *return_type = Some(routine_type.clone());
+            }
+            return Ok((r, stmt));
+        }
+        if let Some(r) = keyword("sub", after_type) {
+            let (r, _) = ws1(r)?;
+            let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
+            if let Stmt::SubDecl { return_type, .. } = &mut stmt
+                && return_type.is_none()
+            {
+                *return_type = Some(routine_type.clone());
+            }
+            return Ok((r, stmt));
+        }
+    }
+
     // my multi [sub] name(...) { ... }
     if let Some(r) = keyword("multi", rest) {
         let (r, _) = ws1(r)?;

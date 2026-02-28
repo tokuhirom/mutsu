@@ -30,21 +30,50 @@ fn substitute_type_params_in_method(
     method: &MethodDef,
     type_subs: &[(String, String)],
 ) -> MethodDef {
+    fn replace_type_name(type_name: &str, type_subs: &[(String, String)]) -> String {
+        for (param_name, replacement) in type_subs {
+            if type_name == param_name {
+                return replacement.clone();
+            }
+        }
+        type_name.to_string()
+    }
+
+    fn substitute_param_def(pd: &ParamDef, type_subs: &[(String, String)]) -> ParamDef {
+        let mut new_pd = pd.clone();
+        if let Some(tc) = &new_pd.type_constraint {
+            new_pd.type_constraint = Some(replace_type_name(tc, type_subs));
+        }
+        if let Some(sub) = &new_pd.sub_signature {
+            new_pd.sub_signature = Some(
+                sub.iter()
+                    .map(|p| substitute_param_def(p, type_subs))
+                    .collect(),
+            );
+        }
+        if let Some(outer) = &new_pd.outer_sub_signature {
+            new_pd.outer_sub_signature = Some(
+                outer
+                    .iter()
+                    .map(|p| substitute_param_def(p, type_subs))
+                    .collect(),
+            );
+        }
+        if let Some((sig_params, sig_ret)) = &new_pd.code_signature {
+            let next_params = sig_params
+                .iter()
+                .map(|p| substitute_param_def(p, type_subs))
+                .collect();
+            let next_ret = sig_ret.as_ref().map(|r| replace_type_name(r, type_subs));
+            new_pd.code_signature = Some((next_params, next_ret));
+        }
+        new_pd
+    }
+
     let new_param_defs = method
         .param_defs
         .iter()
-        .map(|pd| {
-            if let Some(tc) = &pd.type_constraint {
-                for (param_name, replacement) in type_subs {
-                    if tc == param_name {
-                        let mut new_pd = pd.clone();
-                        new_pd.type_constraint = Some(replacement.clone());
-                        return new_pd;
-                    }
-                }
-            }
-            pd.clone()
-        })
+        .map(|pd| substitute_param_def(pd, type_subs))
         .collect();
     MethodDef {
         params: method.params.clone(),
@@ -57,6 +86,24 @@ fn substitute_type_params_in_method(
 }
 
 impl Interpreter {
+    fn validate_callable_param_return_redeclaration(
+        param_defs: &[ParamDef],
+    ) -> Result<(), RuntimeError> {
+        for pd in param_defs {
+            if pd.type_constraint.is_some()
+                && pd
+                    .code_signature
+                    .as_ref()
+                    .is_some_and(|(_, ret)| ret.is_some())
+            {
+                return Err(RuntimeError::new(
+                    "X::Redeclaration: only one way of specifying sub-signature return type allowed",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
         param_defs
             .iter()
@@ -574,6 +621,7 @@ impl Interpreter {
         supersede: bool,
         custom_traits: &[String],
     ) -> Result<(), RuntimeError> {
+        Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
@@ -892,6 +940,7 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)

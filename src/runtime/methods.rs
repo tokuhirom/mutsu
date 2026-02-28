@@ -973,6 +973,18 @@ impl Interpreter {
                     continue;
                 };
                 role_has_method = true;
+                let role_param_bindings: Vec<(String, Value)> = mixins
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        key.strip_prefix("__mutsu_role_param__")
+                            .map(|name| (name.to_string(), value.clone()))
+                    })
+                    .collect();
+                let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
+                for (name, value) in &role_param_bindings {
+                    saved_role_params.push((name.clone(), self.env.get(name).cloned()));
+                    self.env.insert(name.clone(), value.clone());
+                }
                 for def in overloads {
                     if def.is_private || !self.method_args_match(&args, &def.param_defs) {
                         continue;
@@ -984,18 +996,6 @@ impl Interpreter {
                                 .map(|attr| (attr.to_string(), value.clone()))
                         })
                         .collect();
-                    let role_param_bindings: Vec<(String, Value)> = mixins
-                        .iter()
-                        .filter_map(|(key, value)| {
-                            key.strip_prefix("__mutsu_role_param__")
-                                .map(|name| (name.to_string(), value.clone()))
-                        })
-                        .collect();
-                    let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
-                    for (name, value) in &role_param_bindings {
-                        saved_role_params.push((name.clone(), self.env.get(name).cloned()));
-                        self.env.insert(name.clone(), value.clone());
-                    }
                     let method_result = self.run_instance_method_resolved(
                         &role_name,
                         &role_name,
@@ -1004,15 +1004,22 @@ impl Interpreter {
                         args,
                         Some(target.clone()),
                     );
-                    for (name, previous) in saved_role_params {
+                    for (name, previous) in &saved_role_params {
                         if let Some(prev) = previous {
-                            self.env.insert(name, prev);
+                            self.env.insert(name.clone(), prev.clone());
                         } else {
-                            self.env.remove(&name);
+                            self.env.remove(name);
                         }
                     }
                     let (result, _updated) = method_result?;
                     return Ok(result);
+                }
+                for (name, previous) in saved_role_params {
+                    if let Some(prev) = previous {
+                        self.env.insert(name, prev);
+                    } else {
+                        self.env.remove(&name);
+                    }
                 }
             }
             if role_has_method {
