@@ -1398,6 +1398,99 @@ mod tests {
     }
 
     #[test]
+    fn assign_expr_parses_reverse_bracket_metaop_assign() {
+        let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "y");
+                match *expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "R");
+                        assert_eq!(op, "/");
+                        assert!(matches!(*left, Expr::Var(ref n) if n == "y"));
+                        assert!(matches!(*right, Expr::Literal(Value::Int(1))));
+                    }
+                    other => panic!("expected meta-op assignment expr, got {other:?}"),
+                }
+            }
+            other => panic!("expected AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_expr_bracket_metaop_leaves_following_call_args() {
+        let (rest, _) = assign::try_parse_assign_expr("$y [R/]= 1, 1/5, 'desc'").unwrap();
+        assert_eq!(rest, ", 1/5, 'desc'");
+    }
+
+    #[test]
+    fn assign_stmt_parses_nested_bracket_metaop_assign() {
+        let (rest, stmt) = assign::assign_stmt("$x [R[+]]= 1;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { expr, .. } => match expr {
+                Expr::MetaOp { meta, op, .. } => {
+                    assert_eq!(meta, "R");
+                    assert_eq!(op, "+");
+                }
+                other => panic!("expected meta-op assignment stmt, got {other:?}"),
+            },
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn known_call_stmt_accepts_bracket_metaop_assign_argument() {
+        simple::register_module_exports("Test");
+        let parsed = simple::known_call_stmt("is $y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";");
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn statement_accepts_known_call_with_bracket_metaop_assign_argument() {
+        simple::register_module_exports("Test");
+        let parsed = statement("is $y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";");
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn expr_stmt_parses_reverse_assignment_into_var_decl() {
+        let (rest, stmt) = simple::expr_stmt("1 R= my $x").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::VarDecl { name, expr, .. } => {
+                assert_eq!(name, "x");
+                assert!(matches!(expr, Expr::Literal(Value::Int(1))));
+            }
+            other => panic!("expected VarDecl, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn expr_stmt_rejects_reverse_bind_assignment() {
+        let err = simple::expr_stmt("5 R:= $x").unwrap_err();
+        assert!(err.message().contains("Cannot reverse the args of :="));
+    }
+
+    #[test]
+    fn expr_stmt_non_lvalue_assignment_is_not_silently_ignored() {
+        let (rest, stmt) = simple::expr_stmt("(\"a\" R~ \"b\") = 1").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Expr(Expr::Call { name, .. }) => {
+                assert_eq!(name, "__mutsu_assign_callable_lvalue");
+            }
+            other => panic!("expected assignment call expression, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn known_call_stmt_reports_argument_parse_context() {
         simple::register_module_exports("Test");
         let err = simple::known_call_stmt("ok ,").unwrap_err();

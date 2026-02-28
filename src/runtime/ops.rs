@@ -251,6 +251,13 @@ impl Interpreter {
                 }
             }
             "/" => crate::builtins::arith_div(left.clone(), right.clone()),
+            "div" => {
+                let divisor = to_int(right);
+                if divisor == 0 {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                Ok(Value::Int(to_int(left).div_euclid(divisor)))
+            }
             "%" => {
                 if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) % to_num(right)))
@@ -589,10 +596,19 @@ impl Interpreter {
             }
             "," => {
                 let mut items = match left {
-                    Value::Array(values, ..) => values.to_vec(),
+                    Value::Array(values, is_itemized) if !*is_itemized => values.to_vec(),
+                    Value::Seq(values) | Value::Slip(values) => values.to_vec(),
                     other => vec![other.clone()],
                 };
-                items.push(right.clone());
+                match right {
+                    Value::Array(values, is_itemized) if !*is_itemized => {
+                        items.extend(values.iter().cloned());
+                    }
+                    Value::Seq(values) | Value::Slip(values) => {
+                        items.extend(values.iter().cloned());
+                    }
+                    other => items.push(other.clone()),
+                }
                 Ok(Value::array(items))
             }
             _ => Err(RuntimeError::new(format!(

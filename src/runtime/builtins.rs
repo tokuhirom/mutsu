@@ -12,16 +12,6 @@ enum OpAssoc {
 }
 
 impl Interpreter {
-    fn declared_var_names_in_stmts(body: &[Stmt]) -> std::collections::HashSet<String> {
-        let mut names = std::collections::HashSet::new();
-        for stmt in body {
-            if let Stmt::VarDecl { name, .. } = stmt {
-                names.insert(name.clone());
-            }
-        }
-        names
-    }
-
     fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
         let bytes = code.as_bytes();
         let mut i = 0usize;
@@ -166,6 +156,8 @@ impl Interpreter {
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
+            "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
+            "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(args.first().cloned().unwrap_or(Value::Nil)),
@@ -299,8 +291,8 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
-                self.take_value(value);
-                Ok(Value::Nil)
+                self.take_value(value.clone());
+                Ok(value)
             }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
@@ -645,13 +637,25 @@ impl Interpreter {
             self.pop_caller_env();
             let mut restored_env = saved_env;
             self.pop_caller_env_with_writeback(&mut restored_env);
-            let declared_locals = Self::declared_var_names_in_stmts(&def.body);
+            let excluded_names = Self::routine_writeback_excluded_names(&def);
             for (k, v) in self.env.iter() {
+                let scalar_writeback = restored_env.contains_key(k)
+                    && !excluded_names.contains(k)
+                    && !matches!(
+                        v,
+                        Value::Array(..)
+                            | Value::Hash(..)
+                            | Value::Sub(..)
+                            | Value::WeakSub(..)
+                            | Value::Routine { .. }
+                    );
                 if k != "_"
                     && k != "@_"
-                    && restored_env.contains_key(k)
-                    && !def.params.iter().any(|p| p == k)
-                    && !declared_locals.contains(k)
+                    && k != "%_"
+                    && ((restored_env.contains_key(k)
+                        && matches!(v, Value::Array(..) | Value::Hash(..)))
+                        || scalar_writeback
+                        || k.starts_with("__mutsu_var_meta::"))
                 {
                     restored_env.insert(k.clone(), v.clone());
                 }
@@ -848,6 +852,32 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
+            let pair_args = vec![acc.clone(), rhs.clone()];
+            let infix_name = format!("infix:<{}>", op);
+            if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args) {
+                crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
+                acc = self.call_function_def(&def, &pair_args)?;
+                continue;
+            }
+            if let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
+                && matches!(
+                    callable,
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Instance { .. } | Value::Mixin(..)
+                )
+            {
+                crate::trace::trace_log!(
+                    "call",
+                    "call_infix_routine dispatch callable env: {}",
+                    infix_name
+                );
+                acc = self.eval_call_on_value(callable, pair_args)?;
+                continue;
+            }
+            crate::trace::trace_log!(
+                "call",
+                "call_infix_routine fallback reduce/eval: {}",
+                infix_name
+            );
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             if self.infix_uses_numeric_bridge(op) {
@@ -857,7 +887,45 @@ impl Interpreter {
             if let Ok(value) = Self::apply_reduction_op(op, &lhs, &rhs) {
                 acc = value;
             } else {
-                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, lhs, rhs))])?;
+                let (expr_op, expr_left, expr_right) =
+                    if let Some(inner) = op.strip_prefix('R').filter(|inner| !inner.is_empty()) {
+                        // Runtime autogen for callable reverse meta-ops (&infix:<Rop>):
+                        // evaluate the inner operator with swapped operands.
+                        (inner, rhs.clone(), acc)
+                    } else {
+                        (op, acc, rhs.clone())
+                    };
+                let expr_args = vec![expr_left.clone(), expr_right.clone()];
+                let expr_infix_name = format!("infix:<{}>", expr_op);
+                if let Some(def) = self.resolve_function_with_types(&expr_infix_name, &expr_args) {
+                    crate::trace::trace_log!(
+                        "call",
+                        "call_infix_routine fallback dispatch def: {}",
+                        expr_infix_name
+                    );
+                    acc = self.call_function_def(&def, &expr_args)?;
+                    continue;
+                }
+                if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()
+                    && matches!(
+                        callable,
+                        Value::Sub(_)
+                            | Value::WeakSub(_)
+                            | Value::Instance { .. }
+                            | Value::Mixin(..)
+                    )
+                {
+                    crate::trace::trace_log!(
+                        "call",
+                        "call_infix_routine fallback dispatch callable env: {}",
+                        expr_infix_name
+                    );
+                    acc = self.eval_call_on_value(callable, expr_args)?;
+                    continue;
+                }
+                acc = self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(
+                    expr_op, expr_left, expr_right,
+                ))])?;
             }
         }
         Ok(acc)
@@ -1467,6 +1535,48 @@ impl Interpreter {
             ));
         }
         Ok(crate::runtime::coerce_to_array(value))
+    }
+
+    fn builtin_reverse_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_reverse_xx expects count and thunk",
+            ));
+        }
+        let count = crate::runtime::to_int(&args[0]);
+        if count <= 0 {
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+        }
+        let thunk = args[1].clone();
+        let mut values = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            values.push(self.eval_call_on_value(thunk.clone(), Vec::new())?);
+        }
+        Ok(Value::Seq(std::sync::Arc::new(values)))
+    }
+
+    fn builtin_reverse_andthen(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_reverse_andthen expects condition and thunk",
+            ));
+        }
+        let cond = args[0].clone();
+        if !crate::runtime::types::value_is_defined(&cond) {
+            return Ok(cond);
+        }
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), cond);
+        let result = self.eval_call_on_value(args[1].clone(), Vec::new());
+        match saved_topic {
+            Some(value) => {
+                self.env.insert("_".to_string(), value);
+            }
+            None => {
+                self.env.remove("_");
+            }
+        }
+        result
     }
 
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
