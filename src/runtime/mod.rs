@@ -2170,7 +2170,14 @@ struct TestState {
     planned: Option<usize>,
     ran: usize,
     failed: usize,
-    force_todo: Vec<(usize, usize)>,
+    force_todo: Vec<TodoRange>,
+}
+
+#[derive(Debug, Clone)]
+struct TodoRange {
+    start: usize,
+    end: usize,
+    reason: String,
 }
 
 impl TestState {

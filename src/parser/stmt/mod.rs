@@ -920,6 +920,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_block_valued_colonpair_with_topic_amp_call_colon_args() {
+        let (rest, stmts) =
+            program("my $x = :out{ .&output-has: :0noks, :0fails, :0todos };").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
     fn parse_my_regex_decl() {
         let (rest, stmts) = program("my regex rx { abc };").unwrap();
         assert_eq!(rest, "");

@@ -399,6 +399,7 @@ roast/S19-command-line/repl.t
 roast/S22-package-format/local.t
 roast/S24-testing/0-compile.t
 roast/S24-testing/11-plan-skip-all.t
+roast/S24-testing/12-subtest-todo.t
 roast/S24-testing/13-cmp-ok.t
 roast/S24-testing/14-like-unlike.t
 roast/S24-testing/2-force_todo.t

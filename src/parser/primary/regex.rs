@@ -934,7 +934,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // .&foo(...) — call a code object/sub with topic as first arg
+    // .&foo(...) / .&foo: ... — call a code object/sub with topic as first arg
     if let Some(r) = r.strip_prefix('&') {
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let mut args = vec![Expr::Var("_".to_string())];
@@ -946,6 +946,28 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             let (rest, _) = ws(rest)?;
             let (rest, _) = parse_char(rest, ')')?;
             rest
+        } else if let Ok((r2, _)) = ws(rest) {
+            if r2.starts_with(':') && !r2.starts_with("::") {
+                let r3 = &r2[1..];
+                let (r3, _) = ws(r3)?;
+                let (r3, first_arg) = expression(r3)?;
+                args.push(first_arg);
+                let mut r_inner = r3;
+                loop {
+                    let (r4, _) = ws(r_inner)?;
+                    if !r4.starts_with(',') {
+                        break;
+                    }
+                    let r4 = &r4[1..];
+                    let (r4, _) = ws(r4)?;
+                    let (r4, next) = expression(r4)?;
+                    args.push(next);
+                    r_inner = r4;
+                }
+                r_inner
+            } else {
+                rest
+            }
         } else {
             rest
         };
