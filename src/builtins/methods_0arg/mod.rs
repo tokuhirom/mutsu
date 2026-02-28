@@ -822,7 +822,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "ords" => {
             let s = target.to_string_value();
-            let ords: Vec<Value> = s.chars().map(|c| Value::Int(c as u32 as i64)).collect();
+            let normalized: String = s.nfc().collect();
+            let ords: Vec<Value> = normalized
+                .chars()
+                .map(|c| Value::Int(c as u32 as i64))
+                .collect();
             Some(Ok(Value::array(ords)))
         }
         "chr" => {

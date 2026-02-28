@@ -2065,6 +2065,7 @@ impl Interpreter {
                     Value::Routine { .. } => "Sub",
                     Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                         Some(Value::Str(kind)) if kind == "Method" => "Method",
+                        Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
                         _ => "Sub",
                     },
                     Value::WeakSub(_) => "Sub",
@@ -2444,6 +2445,7 @@ impl Interpreter {
                 return Ok(match target {
                     Value::Seq(_) => target,
                     Value::Array(items, ..) => Value::Seq(items),
+                    Value::Slip(items) => Value::Seq(items),
                     Value::Instance {
                         class_name,
                         attributes,

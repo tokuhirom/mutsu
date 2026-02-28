@@ -673,11 +673,11 @@ impl VM {
 
             // -- Repetition --
             OpCode::StringRepeat => {
-                self.exec_string_repeat_op();
+                self.exec_string_repeat_op()?;
                 *ip += 1;
             }
             OpCode::ListRepeat => {
-                self.exec_list_repeat_op();
+                self.exec_list_repeat_op()?;
                 *ip += 1;
             }
             OpCode::FunctionCompose => {

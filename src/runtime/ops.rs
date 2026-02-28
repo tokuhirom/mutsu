@@ -1,6 +1,114 @@
 use super::*;
+use num_traits::{Signed, ToPrimitive, Zero};
 
 impl Interpreter {
+    fn reduction_repeat_error(class_name: &str, message: &str) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(message.to_string()));
+        let ex = Value::make_instance(class_name.to_string(), attrs);
+        let mut err = RuntimeError::new(message.to_string());
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    fn reduction_parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
+        let mut current = value;
+        while let Value::Mixin(inner, _) = current {
+            current = inner;
+        }
+        match current {
+            Value::Whatever => Ok(None),
+            Value::Int(i) => Ok(Some(*i)),
+            Value::BigInt(n) => Ok(Some(n.to_i64().unwrap_or(i64::MAX))),
+            Value::Num(f) => {
+                if f.is_nan() {
+                    return Err(Self::reduction_repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert NaN to Int",
+                    ));
+                }
+                if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        return Ok(None);
+                    }
+                    return Err(Self::reduction_repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert -Inf to Int",
+                    ));
+                }
+                Ok(Some(f.trunc() as i64))
+            }
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    if *n > 0 {
+                        return Ok(None);
+                    }
+                    return Err(Self::reduction_repeat_error(
+                        "X::Numeric::CannotConvert",
+                        if *n < 0 {
+                            "Cannot convert -Inf to Int"
+                        } else {
+                            "Cannot convert NaN to Int"
+                        },
+                    ));
+                }
+                Ok(Some(n / d))
+            }
+            Value::FatRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    return Err(Self::reduction_repeat_error(
+                        "X::Numeric::CannotConvert",
+                        if n.is_negative() {
+                            "Cannot convert -Inf to Int"
+                        } else {
+                            "Cannot convert NaN to Int"
+                        },
+                    ));
+                }
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_positive() {
+                        return Ok(None);
+                    }
+                    return Err(Self::reduction_repeat_error(
+                        "X::Numeric::CannotConvert",
+                        if n.is_negative() {
+                            "Cannot convert -Inf to Int"
+                        } else {
+                            "Cannot convert NaN to Int"
+                        },
+                    ));
+                }
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
+            }
+            Value::Str(s) => {
+                let parsed = s.trim().parse::<f64>().map_err(|_| {
+                    Self::reduction_repeat_error(
+                        "X::Str::Numeric",
+                        &format!("Cannot convert string '{}' to a number", s),
+                    )
+                })?;
+                Self::reduction_parse_repeat_count(&Value::Num(parsed))
+            }
+            Value::Array(items, ..) => Ok(Some(items.len() as i64)),
+            Value::Seq(items) => Ok(Some(items.len() as i64)),
+            Value::LazyList(ll) => Ok(Some(
+                ll.cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map_or(0usize, |v| v.len()) as i64,
+            )),
+            Value::Package(_) => Ok(Some(0)),
+            _ => Ok(Some(0)),
+        }
+    }
+
     fn shift_left_i64(a: i64, b: i64) -> Value {
         if b < 0 {
             let shift = b.unsigned_abs();
@@ -408,9 +516,38 @@ impl Interpreter {
             "+<" => Ok(Self::shift_left_i64(to_int(left), to_int(right))),
             "+>" => Ok(Self::shift_right_i64(to_int(left), to_int(right))),
             "x" => {
-                let s = crate::runtime::utils::coerce_to_str(left);
-                let n = to_int(right).max(0) as usize;
-                Ok(Value::Str(s.repeat(n)))
+                if matches!(right, Value::Whatever) {
+                    let mut env = std::collections::HashMap::new();
+                    env.insert(
+                        "__mutsu_callable_type".to_string(),
+                        Value::Str("WhateverCode".to_string()),
+                    );
+                    let param = "__wc_0".to_string();
+                    let body = vec![Stmt::Expr(Expr::Binary {
+                        left: Box::new(Expr::Literal(left.clone())),
+                        op: crate::token_kind::TokenKind::Ident("x".to_string()),
+                        right: Box::new(Expr::Var(param.clone())),
+                    })];
+                    return Ok(Value::make_sub(
+                        "GLOBAL".to_string(),
+                        "<whatevercode-x>".to_string(),
+                        vec![param],
+                        Vec::new(),
+                        body,
+                        false,
+                        env,
+                    ));
+                }
+                let Some(n_raw) = Self::reduction_parse_repeat_count(right)? else {
+                    return Err(Self::reduction_repeat_error(
+                        "X::Numeric::CannotConvert",
+                        "Cannot convert Inf to Int",
+                    ));
+                };
+                let n = n_raw.max(0) as usize;
+                Ok(Value::Str(
+                    crate::runtime::utils::coerce_to_str(left).repeat(n),
+                ))
             }
             "X" => {
                 let left_list = Self::value_to_list(left);
@@ -429,9 +566,26 @@ impl Interpreter {
                 Ok(Value::array(results))
             }
             "xx" => {
-                let n = to_int(right).max(0) as usize;
-                let items: Vec<Value> = std::iter::repeat_n(left.clone(), n).collect();
-                Ok(Value::Seq(std::sync::Arc::new(items)))
+                const EAGER_LIMIT: usize = 10_000;
+                const LAZY_CACHE: usize = 4_096;
+                let (repeat, lazy) = match Self::reduction_parse_repeat_count(right)? {
+                    Some(n) if n <= 0 => (0usize, false),
+                    Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
+                    Some(n) => ((n as usize).min(LAZY_CACHE), true),
+                    None => (LAZY_CACHE, true),
+                };
+                let items: Vec<Value> = std::iter::repeat_n(left.clone(), repeat).collect();
+                if lazy {
+                    Ok(Value::LazyList(std::sync::Arc::new(
+                        crate::value::LazyList {
+                            body: Vec::new(),
+                            env: std::collections::HashMap::new(),
+                            cache: std::sync::Mutex::new(Some(items)),
+                        },
+                    )))
+                } else {
+                    Ok(Value::Seq(std::sync::Arc::new(items)))
+                }
             }
             "," => {
                 let mut items = match left {

@@ -286,6 +286,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(target.clone()))
                 }
             }
+            Value::Seq(items) | Value::Slip(items) => Some(Ok(Value::array(items.to_vec()))),
             Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
