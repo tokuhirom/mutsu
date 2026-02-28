@@ -55,6 +55,22 @@ if [[ $# -ne 1 ]]; then
 fi
 
 FILE="$1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+STOP_FILE="${REPO_ROOT}/tmp/.stop"
+STOP_FILE_PID="${STOP_FILE}.$$"
+
+check_stop_file() {
+    if [[ -f "$STOP_FILE_PID" ]]; then
+        echo "PID stop file detected ($STOP_FILE_PID). Exiting gracefully."
+        rm -f "$STOP_FILE_PID"
+        exit 0
+    fi
+    if [[ -f "$STOP_FILE" ]]; then
+        echo "Stop file detected ($STOP_FILE). Exiting gracefully."
+        exit 0
+    fi
+}
 
 if [[ "$AGENT" != "codex" && "$AGENT" != "claude" ]]; then
     echo "Error: --agent must be codex or claude" >&2
@@ -67,41 +83,74 @@ if [[ ! -f "$FILE" ]]; then
     exit 1
 fi
 
+SANDBOX_BASE="${REPO_ROOT}/.git/sandbox"
+CLONE_DIR="${SANDBOX_BASE}/${FILE}"
+
+# サンドボックスが既にあり dirty なら、途中からの続行プロンプトを追加
+RESUME_HINT=""
+if [[ -d "$CLONE_DIR" ]]; then
+    GIT_STATUS="$(git -C "$CLONE_DIR" status --short 2>/dev/null || true)"
+    GIT_LOG="$(git -C "$CLONE_DIR" log --oneline -5 2>/dev/null || true)"
+    if [[ -n "$GIT_STATUS" ]]; then
+        RESUME_HINT=$(cat <<EOF_RESUME
+
+IMPORTANT: A previous session was interrupted and left work in progress.
+The sandbox already contains uncommitted changes. Review them with
+git status and git diff, understand what was done so far, and CONTINUE
+from where it left off. Do NOT start over from scratch.
+
+Current git status:
+$GIT_STATUS
+
+Recent commits:
+$GIT_LOG
+EOF_RESUME
+)
+    fi
+fi
+
 PROMPT=$(cat <<EOF_PROMPT
 $FILE should pass. Follow the roast workflow in CLAUDE.md.
+${RESUME_HINT}
 
 Required investigation steps:
 1. Run with raku to confirm expected behavior: raku $FILE
+   - If raku itself fails or errors on this test, STOP immediately and report
+     "raku cannot pass this test" — do not attempt to implement it.
 2. Check raku AST for a minimal relevant snippet: raku --target=ast -e '...'
-3. Check mutsu AST: timeout 30 target/debug/mutsu --dump-ast $FILE
-4. Run with mutsu: timeout 30 target/debug/mutsu $FILE
+3. Check mutsu AST: timeout 30 target/release/mutsu --dump-ast $FILE
+4. Run with mutsu: timeout 30 target/release/mutsu $FILE
 5. Identify the behavioral gap and implement the missing feature as a general solution
 
 Constraints:
 - Do not modify anything under roast/
 - No test-specific hacks or hardcoded outputs
+- If raku cannot pass the test, do not waste time trying to make mutsu pass it
 
 After implementing:
-- Verify with cargo build && timeout 30 target/debug/mutsu $FILE
+- Verify with cargo build --release && timeout 30 target/release/mutsu $FILE
 - Add regression tests under t/ if needed
 - Run cargo clippy -- -D warnings and fix any warnings
 - Run cargo fmt to format the code
-- Run make test and make roast to check regressions
-- If it passes, append to roast-whitelist.txt while keeping sort order
+- Run make test and make roast to check regressions (these use release build)
+- ONLY proceed to next steps if both make test and make roast pass (exit 0)
+- If ALL subtests pass, append to roast-whitelist.txt while keeping sort order
+- Even if not all subtests pass, if you made meaningful progress (more subtests
+  passing than before) and make test/roast both pass, still open a PR with the
+  improvements. Do NOT add to whitelist in this case.
 - before opening a PR, merge the latest remote main with: git fetch origin && git merge origin/main
 - resolve merge conflicts if any, rerun relevant checks, then commit and push
 - open a PR with gh pr create
 - enable auto merge
 EOF_PROMPT
 )
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MAX_RETRIES=3
 RETRY_DELAY=30
 
 if [[ "$AGENT" == "codex" ]]; then
-    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" codex exec "$PROMPT")
+    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" codex --dangerously-bypass-approvals-and-sandbox exec "$PROMPT")
 else
-    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" claude -p --verbose --output-format stream-json "$PROMPT")
+    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$PROMPT")
 fi
 
 echo "Selected file: $FILE"
@@ -120,6 +169,7 @@ run_cmd() {
 }
 
 for attempt in $(seq 1 "$MAX_RETRIES"); do
+    check_stop_file
     if run_cmd; then
         exit 0
     fi

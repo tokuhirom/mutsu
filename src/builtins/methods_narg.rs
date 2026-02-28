@@ -416,7 +416,22 @@ pub(crate) fn native_method_1arg(
         }
         "fmt" => {
             let fmt = arg.to_string_value();
-            let rendered = runtime::format_sprintf(&fmt, Some(target));
+            if fmt_joinable_target(target) {
+                let rendered = runtime::value_to_list(target)
+                    .into_iter()
+                    .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                Some(Ok(Value::Str(rendered)))
+            } else {
+                let rendered = runtime::format_sprintf(&fmt, Some(target));
+                Some(Ok(Value::Str(rendered)))
+            }
+        }
+        "sprintf" => {
+            // Method form: '%f'.sprintf(value) — target is the format string
+            let fmt = target.to_string_value();
+            let rendered = runtime::format_sprintf(&fmt, Some(arg));
             Some(Ok(Value::Str(rendered)))
         }
         "parse-base" => {
@@ -574,40 +589,178 @@ pub(crate) fn native_method_1arg(
             }))
         }
         "roll" => {
+            if matches!(target, Value::Package(_)) {
+                return None;
+            }
             let count = match arg {
-                Value::Int(i) if *i > 0 => *i as usize,
-                Value::Int(_) => 0,
+                Value::Int(i) if *i > 0 => Some(*i as usize),
+                Value::Int(_) => Some(0),
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Whatever => None,
+                Value::Str(s) => {
+                    let parsed = s.trim().parse::<i64>().ok()?;
+                    Some(parsed.max(0) as usize)
+                }
                 _ => return None,
             };
-            let items = runtime::value_to_list(target);
-            if items.is_empty() || count == 0 {
+            let sample_from_range = |range: &Value| -> Option<Value> {
+                let random_i64 = |lo: i64, hi: i64| -> Value {
+                    if hi <= lo {
+                        return Value::Int(lo);
+                    }
+                    let span = (hi as i128 - lo as i128 + 1) as f64;
+                    let mut offset = (crate::builtins::rng::builtin_rand() * span) as i128;
+                    let max_offset = hi as i128 - lo as i128;
+                    if offset > max_offset {
+                        offset = max_offset;
+                    }
+                    Value::Int((lo as i128 + offset) as i64)
+                };
+                match range {
+                    Value::Range(start, end) => Some(random_i64(*start, *end)),
+                    Value::RangeExcl(start, end) => {
+                        if *start >= *end {
+                            Some(Value::Nil)
+                        } else {
+                            Some(random_i64(*start, end.saturating_sub(1)))
+                        }
+                    }
+                    Value::RangeExclStart(start, end) => {
+                        if *start >= *end {
+                            Some(Value::Nil)
+                        } else {
+                            Some(random_i64(start.saturating_add(1), *end))
+                        }
+                    }
+                    Value::RangeExclBoth(start, end) => {
+                        if start.saturating_add(1) >= *end {
+                            Some(Value::Nil)
+                        } else {
+                            Some(random_i64(start.saturating_add(1), end.saturating_sub(1)))
+                        }
+                    }
+                    Value::GenericRange {
+                        start,
+                        end,
+                        excl_start,
+                        excl_end,
+                    } => {
+                        if let (Some(s), Some(e)) =
+                            (runtime::to_float_value(start), runtime::to_float_value(end))
+                            && s.is_finite()
+                            && e.is_finite()
+                        {
+                            let mut vals = Vec::new();
+                            let mut cur = if *excl_start { s + 1.0 } else { s };
+                            let limit = 10_000usize;
+                            while vals.len() < limit {
+                                if (*excl_end && cur >= e) || (!*excl_end && cur > e) {
+                                    break;
+                                }
+                                vals.push(Value::Num(cur));
+                                cur += 1.0;
+                            }
+                            if !vals.is_empty() {
+                                let idx = (crate::builtins::rng::builtin_rand() * vals.len() as f64)
+                                    as usize
+                                    % vals.len();
+                                return Some(vals[idx].clone());
+                            }
+                        }
+                        Some(start.as_ref().clone())
+                    }
+                    _ => None,
+                }
+            };
+
+            let items = if target.is_range() {
+                Vec::new()
+            } else {
+                runtime::value_to_list(target)
+            };
+            if count.is_none() {
+                if !target.is_range() && items.is_empty() {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let generated = 1024usize;
+                let mut out = Vec::with_capacity(generated);
+                for _ in 0..generated {
+                    if target.is_range() {
+                        if let Some(v) = sample_from_range(target) {
+                            out.push(v);
+                        }
+                    } else {
+                        let mut idx =
+                            (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                        if idx >= items.len() {
+                            idx = items.len() - 1;
+                        }
+                        out.push(items[idx].clone());
+                    }
+                }
+                return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
+                    body: vec![],
+                    env: std::collections::HashMap::new(),
+                    cache: std::sync::Mutex::new(Some(out)),
+                }))));
+            }
+            let count = count.unwrap_or(0);
+            if count == 0 || (!target.is_range() && items.is_empty()) {
                 return Some(Ok(Value::array(Vec::new())));
             }
             let mut result = Vec::with_capacity(count);
             for _ in 0..count {
-                let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                if idx >= items.len() {
-                    idx = items.len() - 1;
+                if target.is_range() {
+                    if let Some(v) = sample_from_range(target) {
+                        result.push(v);
+                    }
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    result.push(items[idx].clone());
                 }
-                result.push(items[idx].clone());
             }
             Some(Ok(Value::array(result)))
         }
         "log" => {
-            let base_val = match arg {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                _ => return None,
+            let base_complex = match arg {
+                Value::Int(i) => Some((*i as f64, 0.0)),
+                Value::Num(f) => Some((*f, 0.0)),
+                Value::Rat(n, d) if *d != 0 => Some((*n as f64 / *d as f64, 0.0)),
+                Value::Complex(r, i) => Some((*r, *i)),
+                _ => None,
             };
-            let x = match target {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                _ => return None,
+            let target_complex = match target {
+                Value::Int(i) => Some((*i as f64, 0.0)),
+                Value::Num(f) => Some((*f, 0.0)),
+                Value::Rat(n, d) if *d != 0 => Some((*n as f64 / *d as f64, 0.0)),
+                Value::Complex(r, i) => Some((*r, *i)),
+                _ => None,
             };
-            if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {
-                Some(Ok(Value::Num(x.ln() / base_val.ln())))
-            } else {
-                Some(Ok(Value::Num(f64::NAN)))
+            match (target_complex, base_complex) {
+                (Some((xr, xi)), Some((br, bi))) => {
+                    if bi == 0.0 && xi == 0.0 {
+                        if br.is_finite() && br > 0.0 && br != 1.0 && xr > 0.0 {
+                            return Some(Ok(Value::Num(xr.ln() / br.ln())));
+                        }
+                        return Some(Ok(Value::Num(f64::NAN)));
+                    }
+                    let ln_x_mag = (xr * xr + xi * xi).sqrt().ln();
+                    let ln_x_arg = xi.atan2(xr);
+                    let ln_b_mag = (br * br + bi * bi).sqrt().ln();
+                    let ln_b_arg = bi.atan2(br);
+                    let denom = ln_b_mag * ln_b_mag + ln_b_arg * ln_b_arg;
+                    if denom == 0.0 {
+                        return Some(Ok(Value::Num(f64::NAN)));
+                    }
+                    let re = (ln_x_mag * ln_b_mag + ln_x_arg * ln_b_arg) / denom;
+                    let im = (ln_x_arg * ln_b_mag - ln_x_mag * ln_b_arg) / denom;
+                    Some(Ok(Value::Complex(re, im)))
+                }
+                _ => None,
             }
         }
         "exp" => {
@@ -660,6 +813,28 @@ pub(crate) fn native_method_1arg(
                 _ => return None,
             };
             Some(Ok(Value::Complex(mag * angle.cos(), mag * angle.sin())))
+        }
+        "roots" => {
+            let n = match arg {
+                Value::Int(i) if *i > 0 => *i as usize,
+                _ => return None,
+            };
+            let (re, im) = runtime::to_complex_parts(target)?;
+            let r = (re * re + im * im).sqrt();
+            let theta = im.atan2(re);
+            let mag = r.powf(1.0 / n as f64);
+            let mut roots = Vec::with_capacity(n);
+            for k in 0..n {
+                let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
+                let rr = mag * angle.cos();
+                let ii = mag * angle.sin();
+                if ii.abs() < 1e-12 {
+                    roots.push(Value::Num(rr));
+                } else {
+                    roots.push(Value::Complex(rr, ii));
+                }
+            }
+            Some(Ok(Value::array(roots)))
         }
         "atan2" => {
             // User-defined types need runtime coercion via .Numeric/.Bridge

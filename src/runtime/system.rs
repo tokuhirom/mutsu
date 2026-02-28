@@ -1,6 +1,23 @@
 use super::*;
 
 impl Interpreter {
+    fn parse_and_eval_with_operators(
+        &mut self,
+        src: &str,
+        op_names: &[String],
+        op_assoc: &HashMap<String, String>,
+        imported_names: &[String],
+    ) -> Result<Value, RuntimeError> {
+        crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names)
+            .and_then(|(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            })
+    }
+
     fn eval_result_is_unresolved_bareword(&self, stmts: &[Stmt], result: &Value) -> bool {
         let [Stmt::Expr(Expr::BareWord(name))] = stmts else {
             return false;
@@ -54,23 +71,78 @@ impl Interpreter {
         assoc
     }
 
+    fn collect_eval_imported_function_names(&self) -> Vec<String> {
+        const TEST_EXPORTS: &[&str] = &[
+            "ok",
+            "nok",
+            "is",
+            "isnt",
+            "is-deeply",
+            "is-approx",
+            "cmp-ok",
+            "like",
+            "unlike",
+            "isa-ok",
+            "does-ok",
+            "can-ok",
+            "lives-ok",
+            "dies-ok",
+            "eval-lives-ok",
+            "eval-dies-ok",
+            "throws-like",
+            "fails-like",
+            "pass",
+            "flunk",
+            "skip",
+            "skip-rest",
+            "todo",
+            "diag",
+            "plan",
+            "done-testing",
+            "bail-out",
+            "subtest",
+            "use-ok",
+            "force_todo",
+            "force-todo",
+            "tap-ok",
+        ];
+        TEST_EXPORTS
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect()
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
+        if trimmed == "<>" || trimmed == "<STDIN>" {
+            return Err(RuntimeError::new(
+                "X::Obsolete: The degenerate case <> and old angle forms like <STDIN> are disallowed.",
+            ));
+        }
         let previous_pod = self.env.get("=pod").cloned();
         self.collect_pod_blocks(trimmed);
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();
+        let imported_names = self.collect_eval_imported_function_names();
+        let bracketed_stmt_inner = unwrap_bracketed_statements(trimmed)
+            .filter(|inner| looks_like_bracketed_statement_list(inner));
         // General case: parse and evaluate as Raku code
-        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names, &op_assoc)
-            .and_then(|(stmts, _)| {
-                let value = self.eval_block_value(&stmts)?;
-                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
-                }
-                Ok(value)
-            });
+        let mut result = if let Some(inner) = bracketed_stmt_inner {
+            // EVAL q[[ ... ]] can yield one wrapper [] around statement lists.
+            self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names)
+                .or_else(|_| {
+                    self.parse_and_eval_with_operators(
+                        trimmed,
+                        &op_names,
+                        &op_assoc,
+                        &imported_names,
+                    )
+                })
+        } else {
+            self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc, &imported_names)
+        };
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
         }
@@ -79,25 +151,27 @@ impl Interpreter {
         if result.is_err()
             && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
         {
-            result = parse_dispatch::parse_source(&rewritten).and_then(|(stmts, _)| {
-                let value = self.eval_block_value(&stmts)?;
-                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
-                }
-                Ok(value)
-            });
+            result = self.parse_and_eval_with_operators(
+                &rewritten,
+                &op_names,
+                &op_assoc,
+                &imported_names,
+            );
         }
         // Accept parenthesized statement lists like `(6;)` in EVAL.
         if result.is_err()
             && let Some(inner) = unwrap_parenthesized_statements(trimmed)
         {
-            result = parse_dispatch::parse_source(inner).and_then(|(stmts, _)| {
-                let value = self.eval_block_value(&stmts)?;
-                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
-                }
-                Ok(value)
-            });
+            result =
+                self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names);
+        }
+        // EVAL q[[ ... ]] sometimes carries one outer statement-list bracket pair.
+        if result.is_err()
+            && bracketed_stmt_inner.is_none()
+            && let Some(inner) = unwrap_bracketed_statements(trimmed)
+        {
+            result =
+                self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names);
         }
         // EVAL should accept routine declarations in snippet context.
         // If unit-scope parsing rejects a declaration, retry inside an implicit block.
@@ -107,13 +181,8 @@ impl Interpreter {
             && err.message.contains("X::UnitScope::Invalid")
         {
             let wrapped = format!("{{ {}; }}", trimmed);
-            result = parse_dispatch::parse_source(&wrapped).and_then(|(stmts, _)| {
-                let value = self.eval_block_value(&stmts)?;
-                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
-                }
-                Ok(value)
-            });
+            result =
+                self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc, &imported_names);
         }
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
@@ -356,5 +425,59 @@ fn unwrap_parenthesized_statements(code: &str) -> Option<&str> {
     if depth != 0 {
         return None;
     }
+    let inner = &code[1..code.len() - 1];
+    // Restrict this fallback to statement-list snippets like `(6;)`.
+    // Plain parenthesized expressions should keep normal parse behavior.
+    if !inner.contains(';') {
+        return None;
+    }
+    Some(inner)
+}
+
+fn unwrap_bracketed_statements(code: &str) -> Option<&str> {
+    if !code.starts_with('[') || !code.ends_with(']') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (i, ch) in code.char_indices() {
+        if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            if depth == 0 && i + ch.len_utf8() != code.len() {
+                return None;
+            }
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
     Some(&code[1..code.len() - 1])
+}
+
+fn looks_like_bracketed_statement_list(inner: &str) -> bool {
+    let trimmed = inner.trim_start();
+    if !inner.contains(';') {
+        return false;
+    }
+    matches!(
+        trimmed.split_whitespace().next(),
+        Some(
+            "my" | "our"
+                | "state"
+                | "sub"
+                | "multi"
+                | "proto"
+                | "class"
+                | "role"
+                | "grammar"
+                | "module"
+                | "unit"
+                | "use"
+                | "need"
+        )
+    )
 }

@@ -41,6 +41,27 @@ fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
     Ok((rest, traits))
 }
 
+fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> {
+    if !input.starts_with('[') {
+        return Ok((input, String::new()));
+    }
+    let mut depth = 0u32;
+    let mut end = None;
+    for (i, ch) in input.char_indices() {
+        if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                end = Some(i + 1);
+                break;
+            }
+        }
+    }
+    let end = end.ok_or_else(|| PError::expected("closing ']'"))?;
+    Ok((&input[end..], input[..end].to_string()))
+}
+
 fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
     Stmt::Expr(Expr::Call {
         name: "__MUTSU_SET_META__".to_string(),
@@ -281,10 +302,22 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // Parse parent classes
     let mut parents = Vec::new();
+    let mut anon_repr: Option<String> = None;
     let mut r = rest;
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent) = qualified_ident(r2)?;
+        if parent == "repr" {
+            if let Some(inner) = r2.strip_prefix('(') {
+                let end = inner.find(')').unwrap_or(inner.len());
+                let repr_val = inner[..end].trim().trim_matches('\'').trim_matches('"');
+                anon_repr = Some(repr_val.to_string());
+            }
+            let r2 = skip_balanced_parens(r2);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+            continue;
+        }
         parents.push(parent);
         let (r2, _) = ws(r2)?;
         r = r2;
@@ -296,6 +329,8 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         parents,
         is_hidden: false,
         hidden_parents: Vec::new(),
+        does_parents: Vec::new(),
+        repr: anon_repr,
         body,
     };
     // Emit the class registration followed by unregistering the name from the scope
@@ -318,70 +353,93 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
 
-    // Parent classes: is Parent
+    // Parent clauses in any order: `is Parent`, `does Role[...]`, `hides Parent`.
     let mut is_hidden = false;
     let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
+    let mut does_parents = Vec::new();
+    let mut is_repr: Option<String> = None;
     let mut r = rest;
-    while let Some(r2) = keyword("is", r) {
-        let (r2, _) = ws1(r2)?;
-        let (r2, parent) = qualified_ident(r2)?;
-        if parent == "hidden" {
-            is_hidden = true;
-        } else {
-            parents.push(parent);
-        }
-        let (r2, _) = ws(r2)?;
-        r = r2;
-    }
-    // does Role or does Role[TypeArgs]
-    while let Some(r2) = keyword("does", r) {
-        let (r2, _) = ws1(r2)?;
-        let (r2, role_name) = qualified_ident(r2)?;
-        let (r2, _) = ws(r2)?;
-        // Check for type arguments [...]
-        if r2.starts_with('[') {
-            // Capture the full bracket content
-            let mut depth = 0u32;
-            let mut end = 0;
-            for (i, ch) in r2.char_indices() {
-                if ch == '[' {
-                    depth += 1;
-                } else if ch == ']' {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = i + 1;
-                        break;
-                    }
+    loop {
+        if let Some(r2) = keyword("is", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, parent) = qualified_ident(r2)?;
+            if parent == "hidden" {
+                is_hidden = true;
+            } else if parent == "repr" {
+                // Extract repr value from `is repr('CUnion')` etc.
+                if let Some(inner) = r2.strip_prefix('(') {
+                    // Find the content between parens, stripping quotes
+                    let end = inner.find(')').unwrap_or(inner.len());
+                    let repr_val = inner[..end].trim().trim_matches('\'').trim_matches('"');
+                    is_repr = Some(repr_val.to_string());
                 }
+                let r2 = skip_balanced_parens(r2);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            } else {
+                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                parents.push(format!("{}{}", parent, bracket_suffix));
+                r = r2;
+                let (r2, _) = ws(r)?;
+                r = r2;
+                continue;
             }
-            let bracket_content = &r2[..end];
-            parents.push(format!("{}{}", role_name, bracket_content));
-            let (r2, _) = ws(&r2[end..])?;
+            let (r2, _) = ws(r2)?;
             r = r2;
-        } else {
-            parents.push(role_name);
-            r = r2;
+            continue;
         }
-    }
-    // hides Parent — like inheritance for method lookup, but the hidden parent
-    // is skipped by deferal (`nextsame`/`callsame`) candidate selection.
-    while let Some(r2) = keyword("hides", r) {
-        let (r2, _) = ws1(r2)?;
-        let (r2, parent) = qualified_ident(r2)?;
-        parents.push(parent.clone());
-        hidden_parents.push(parent);
-        let (r2, _) = ws(r2)?;
-        r = r2;
+        if let Some(r2) = keyword("does", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, role_name) = qualified_ident(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+            let full_name = format!("{}{}", role_name, bracket_suffix);
+            parents.push(full_name.clone());
+            does_parents.push(full_name);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+            continue;
+        }
+        if let Some(r2) = keyword("hides", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, parent) = qualified_ident(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+            let hidden_parent = format!("{}{}", parent, bracket_suffix);
+            parents.push(hidden_parent.clone());
+            hidden_parents.push(hidden_parent);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+            continue;
+        }
+        break;
     }
 
     let (rest, body) = block(r)?;
+    // Extract repr from `is repr(...)` or from declarator traits
+    let repr = is_repr.or_else(|| {
+        traits.iter().find_map(|(k, v)| {
+            if k == "repr" {
+                if let Value::Str(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    });
     let class_stmt = Stmt::ClassDecl {
         name: name.clone(),
         name_expr,
         parents,
         is_hidden,
         hidden_parents,
+        does_parents,
+        repr,
         body,
     };
     let mut stmts = Vec::new();
@@ -489,35 +547,65 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = qualified_ident(rest)?;
     let (mut rest, type_params) = parse_optional_role_type_params(rest)?;
     let mut parent_roles: Vec<String> = Vec::new();
+    let mut is_hidden_role = false;
 
-    // Optional `does Role[...]` clauses.
-    while let Some(r) = keyword("does", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, role_name) = qualified_ident(r)?;
-        if role_name == name {
-            return Err(PError::fatal(format!(
-                "X::InvalidType: role '{}' cannot compose itself",
-                name
-            )));
+    // Optional parent/trait clauses in any order.
+    loop {
+        if let Some(r) = keyword("does", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, role_name) = qualified_ident(r)?;
+            if role_name == name {
+                return Err(PError::fatal(format!(
+                    "X::InvalidType: role '{}' cannot compose itself",
+                    name
+                )));
+            }
+            let (r, _) = skip_optional_role_args(r)?;
+            parent_roles.push(role_name);
+            rest = r;
+            continue;
         }
-        parent_roles.push(role_name);
-        let (r, _) = skip_optional_role_args(r)?;
-        rest = r;
-    }
-
-    // Optional `is trait` clauses (ignore trait args for parse compatibility).
-    while let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, _trait_name) = ident(r)?;
-        let r = skip_balanced_parens(r);
-        let (r, _) = ws(r)?;
-        rest = r;
+        if let Some(r) = keyword("is", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, trait_name) = ident(r)?;
+            let r = skip_balanced_parens(r);
+            let (r, _) = ws(r)?;
+            if trait_name == "hidden" {
+                is_hidden_role = true;
+            } else if trait_name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                // Uppercase names are class/role parents (e.g. `is Cool`);
+                // lowercase names are traits (e.g. `is rw`, `is ok`) — skip them.
+                parent_roles.push(trait_name);
+            }
+            rest = r;
+            continue;
+        }
+        if let Some(r) = keyword("hides", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, hidden_name) = qualified_ident(r)?;
+            let (r, _) = ws(r)?;
+            // Track as a parent relationship
+            parent_roles.push(hidden_name.clone());
+            // Also mark the hidden relationship with a special marker
+            parent_roles.push(format!("__mutsu_role_hides__{}", hidden_name));
+            rest = r;
+            continue;
+        }
+        break;
     }
 
     let (rest, mut body) = match block(rest) {
         Ok(ok) => ok,
         Err(_) => consume_raw_braced_body(rest)?,
     };
+    if is_hidden_role {
+        body.insert(
+            0,
+            Stmt::DoesDecl {
+                name: "__mutsu_role_hidden__".to_string(),
+            },
+        );
+    }
     for role_name in parent_roles.into_iter().rev() {
         body.insert(0, Stmt::DoesDecl { name: role_name });
     }
@@ -686,6 +774,8 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 parents: Vec::new(),
                 is_hidden: false,
                 hidden_parents: Vec::new(),
+                does_parents: Vec::new(),
+                repr: None,
                 body: Vec::new(),
             },
         ));
@@ -764,6 +854,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                 param_defs,
                 body,
                 is_export: traits.is_export,
+                custom_traits: traits.custom_traits.clone(),
             },
         ));
     }
@@ -776,6 +867,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
             param_defs,
             body,
             is_export: traits.is_export,
+            custom_traits: traits.custom_traits,
         },
     ))
 }

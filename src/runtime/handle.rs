@@ -133,6 +133,7 @@ impl Interpreter {
     fn read_record_with_separators<R: Read>(
         reader: &mut R,
         separators: &[Vec<u8>],
+        chomp: bool,
     ) -> Result<Option<String>, RuntimeError> {
         let mut buffer = Vec::new();
         let mut byte = [0u8];
@@ -150,7 +151,9 @@ impl Interpreter {
                 .iter()
                 .find_map(|sep| buffer.ends_with(sep).then_some(sep.len()))
             {
-                buffer.truncate(buffer.len().saturating_sub(matched_len));
+                if chomp {
+                    buffer.truncate(buffer.len().saturating_sub(matched_len));
+                }
                 break;
             }
         }
@@ -174,22 +177,23 @@ impl Interpreter {
             }
             IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
                 let seps = state.line_separators.clone();
+                let chomp = state.line_chomp;
                 let mut stdin = std::io::stdin().lock();
-                Self::read_record_with_separators(&mut stdin, &seps)
+                Self::read_record_with_separators(&mut stdin, &seps, chomp)
             }
             IoHandleTarget::File => {
                 let file = state
                     .file
                     .as_mut()
                     .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                Self::read_record_with_separators(file, &state.line_separators)
+                Self::read_record_with_separators(file, &state.line_separators, state.line_chomp)
             }
             IoHandleTarget::Socket => {
                 let sock = state
                     .socket
                     .as_mut()
                     .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
-                Self::read_record_with_separators(sock, &state.line_separators)
+                Self::read_record_with_separators(sock, &state.line_separators, state.line_chomp)
             }
         }
     }
@@ -331,11 +335,12 @@ impl Interpreter {
     pub(super) fn parse_io_flags_values(
         &self,
         args: &[Value],
-    ) -> (bool, bool, bool, bool, Vec<Vec<u8>>) {
+    ) -> (bool, bool, bool, bool, bool, Vec<Vec<u8>>) {
         let mut read = false;
         let mut write = false;
         let mut append = false;
         let mut bin = false;
+        let mut chomp = true;
         let mut nl_in: Option<Vec<Vec<u8>>> = None;
         for arg in args {
             if let Value::Pair(name, value) = arg {
@@ -345,6 +350,7 @@ impl Interpreter {
                     "w" => write = truthy,
                     "a" => append = truthy,
                     "bin" => bin = truthy,
+                    "chomp" => chomp = truthy,
                     "nl-in" => nl_in = Some(Self::parse_nl_in_value(value)),
                     _ => {}
                 }
@@ -358,12 +364,14 @@ impl Interpreter {
             write,
             append,
             bin,
+            chomp,
             Self::normalize_line_separators(
                 nl_in.unwrap_or_else(|| self.default_line_separators()),
             ),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn open_file_handle(
         &mut self,
         path: &Path,
@@ -371,6 +379,7 @@ impl Interpreter {
         write: bool,
         append: bool,
         bin: bool,
+        line_chomp: bool,
         line_separators: Vec<Vec<u8>>,
     ) -> Result<Value, RuntimeError> {
         let mut options = fs::OpenOptions::new();
@@ -400,6 +409,7 @@ impl Interpreter {
             mode,
             path: Some(Self::stringify_path(path)),
             line_separators: Self::normalize_line_separators(line_separators),
+            line_chomp,
             encoding: "utf-8".to_string(),
             file: Some(file),
             socket: None,

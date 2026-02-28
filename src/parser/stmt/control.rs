@@ -9,10 +9,36 @@ use super::decl::parse_array_shape_suffix;
 use super::sub;
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
 
+fn condition_has_assignment_tail(rest: &str) -> bool {
+    if rest.starts_with(":=") || rest.starts_with("::=") || rest.starts_with("⚛=") {
+        return true;
+    }
+    if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
+        return true;
+    }
+    super::assign::parse_compound_assign_op(rest).is_some()
+        || super::assign::parse_custom_compound_assign_op(rest).is_some()
+}
+
+fn condition_expr(input: &str) -> PResult<'_, Expr> {
+    match expression(input) {
+        Ok((rest, cond)) => {
+            let (tail, _) = ws(rest)?;
+            if condition_has_assignment_tail(tail)
+                && let Ok((assign_rest, assign_cond)) = super::assign::try_parse_assign_expr(input)
+            {
+                return Ok((assign_rest, assign_cond));
+            }
+            Ok((rest, cond))
+        }
+        Err(_) => super::assign::try_parse_assign_expr(input),
+    }
+}
+
 pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("if", input).ok_or_else(|| PError::expected("if statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     // Optional binding: `if EXPR -> $var { }`
     let (rest, binding_var) = parse_binding_var(rest)?;
@@ -49,7 +75,7 @@ fn parse_binding_var(input: &str) -> PResult<'_, Option<String>> {
 pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
     if let Some(r) = keyword("elsif", input) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, then_branch) = block(r)?;
         let (r, _) = ws(r)?;
@@ -76,7 +102,7 @@ pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
 pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unless", input).ok_or_else(|| PError::expected("unless statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     // unless cannot have else/elsif/orwith — check but consume the trailing clause
@@ -155,12 +181,13 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 params,
                 body,
                 label: Some(label),
+                mode: crate::ast::ForMode::Normal,
             },
         ));
     }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -174,7 +201,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -222,6 +249,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 params: Vec::new(),
                 body,
                 label: Some(label),
+                mode: crate::ast::ForMode::Normal,
             },
         ));
     }
@@ -239,6 +267,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 params: Vec::new(),
                 body,
                 label: Some(label),
+                mode: crate::ast::ForMode::Normal,
             },
         ));
     }
@@ -276,8 +305,10 @@ pub(super) fn parse_for_params(
         if r.starts_with('{') {
             return Ok((r, (None, None, Vec::new())));
         }
-        // Named/mixed destructuring pointy param: -> (:key($k), :value($v)) { ... }
-        if r.starts_with('(') && r.len() > 1 && r[1..].trim_start().starts_with(':') {
+        // Parenthesized destructuring pointy param:
+        //   -> ($a, $b) { ... }
+        //   -> (:key($k), :value($v)) { ... }
+        if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
             let (r, sub_params) = super::parse_param_list_pub(r)?;
@@ -554,6 +585,24 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 }
 
 pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
+    for_stmt_with_mode(input, crate::ast::ForMode::Normal)
+}
+
+/// Parse `race for ...` statement prefix.
+pub(super) fn race_for_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("race", input).ok_or_else(|| PError::expected("race for statement"))?;
+    let (rest, _) = ws1(rest)?;
+    for_stmt_with_mode(rest, crate::ast::ForMode::Race)
+}
+
+/// Parse `hyper for ...` statement prefix.
+pub(super) fn hyper_for_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("hyper", input).ok_or_else(|| PError::expected("hyper for statement"))?;
+    let (rest, _) = ws1(rest)?;
+    for_stmt_with_mode(rest, crate::ast::ForMode::Hyper)
+}
+
+fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stmt> {
     let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, iterable) = parse_comma_or_expr(rest)?;
@@ -584,6 +633,7 @@ pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
             params,
             body,
             label: None,
+            mode,
         },
     ))
 }
@@ -617,16 +667,17 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
     // Optional type constraint before the variable
-    let rest = input;
+    let mut rest = input;
     let mut type_constraint = None;
-    let rest = if let Ok((r, tc)) = ident(rest) {
+    rest = if let Ok((r, tc)) = ident(rest) {
         let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
             &r[2..]
         } else {
             r
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
+        {
             type_constraint = Some(tc);
             r2
         } else {
@@ -635,6 +686,123 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     } else {
         rest
     };
+
+    // Slurpy marker for pointy params: *@a, *%h, *$x, *&cb, and double-slurpy variants.
+    let mut slurpy = false;
+    let mut double_slurpy = false;
+    if rest.starts_with("**")
+        && rest.len() > 2
+        && matches!(rest.as_bytes()[2], b'@' | b'%' | b'$' | b'&')
+    {
+        slurpy = true;
+        double_slurpy = true;
+        rest = &rest[2..];
+    } else if rest.starts_with('*')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'@' | b'%' | b'$' | b'&')
+    {
+        slurpy = true;
+        rest = &rest[1..];
+    }
+
+    // Anonymous callable pointy parameter with code signature: -> &:(Str) { ... }
+    if rest.starts_with("&:(") {
+        let r = &rest[1..]; // skip '&'
+        let (r, _) = parse_char(r, ':')?;
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, (sig_params, sig_ret)) = super::sub::parse_param_list_with_return(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+
+        let mut optional_marker = false;
+        let mut required_marker = false;
+        let mut rest = if let Some(after) = r.strip_prefix('?') {
+            optional_marker = true;
+            after
+        } else if let Some(after) = r.strip_prefix('!') {
+            required_marker = true;
+            after
+        } else {
+            r
+        };
+
+        let mut traits = Vec::new();
+        loop {
+            let (r, _) = ws(rest)?;
+            let Some(after_is) = keyword("is", r) else {
+                rest = r;
+                break;
+            };
+            let (after_is, _) = ws1(after_is)?;
+            let (after_is, trait_name) = ident(after_is)?;
+            sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            traits.push(trait_name);
+            rest = after_is;
+        }
+        return Ok((
+            rest,
+            ParamDef {
+                name: "&".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: required_marker,
+                named: false,
+                slurpy,
+                double_slurpy,
+                sigilless: false,
+                type_constraint,
+                literal_value: None,
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: Some((sig_params, sig_ret)),
+                where_constraint: None,
+                traits,
+                optional_marker,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
+    }
+
+    // Literal value parameter in pointy signatures, e.g. `-> 42 { ... }`
+    if rest.starts_with(|c: char| c.is_ascii_digit()) {
+        let mut end = 0usize;
+        for (idx, ch) in rest.char_indices() {
+            if ch.is_ascii_digit() || ch == '_' {
+                end = idx + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let token = &rest[..end];
+        let parsed = token.replace('_', "").parse::<i64>().unwrap_or(0);
+        let rest = &rest[end..];
+        return Ok((
+            rest,
+            ParamDef {
+                name: "__literal__".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy,
+                double_slurpy,
+                sigilless: false,
+                type_constraint,
+                literal_value: Some(crate::value::Value::Int(parsed)),
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
+    }
+
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (rest, name) = var_name(rest)?;
 
@@ -649,8 +817,14 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     };
 
     // Optional marker on pointy params: $x? / $x!
-    let mut rest = if rest.starts_with('?') || rest.starts_with('!') {
-        &rest[1..]
+    let mut optional_marker = false;
+    let mut required_marker = false;
+    let mut rest = if let Some(after) = rest.strip_prefix('?') {
+        optional_marker = true;
+        after
+    } else if let Some(after) = rest.strip_prefix('!') {
+        required_marker = true;
+        after
     } else {
         rest
     };
@@ -706,10 +880,10 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             name: param_name,
             default,
             multi_invocant: true,
-            required: false,
+            required: required_marker,
             named: false,
-            slurpy: false,
-            double_slurpy: false,
+            slurpy,
+            double_slurpy,
             sigilless: false,
             type_constraint,
             literal_value: None,
@@ -718,7 +892,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             code_signature: None,
             where_constraint: None,
             traits,
-            optional_marker: false,
+            optional_marker,
             is_invocant: false,
             shape_constraints,
         },
@@ -729,7 +903,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("while", input).ok_or_else(|| PError::expected("while statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
         let (rest, (param, _param_def, params)) = parse_for_params(rest)?;
@@ -767,6 +941,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
                 },
                 while_stmt,
             ]),
@@ -780,7 +955,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("until", input).ok_or_else(|| PError::expected("until statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
         let (rest, (param, _param_def, params)) = parse_for_params(rest)?;
@@ -822,6 +997,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
                 },
                 while_stmt,
             ]),
@@ -945,7 +1121,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     // repeat while/until COND { BODY }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, (param, _param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
@@ -963,6 +1139,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -983,7 +1160,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, (param, _param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
@@ -1001,6 +1178,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -1028,7 +1206,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1045,7 +1223,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1081,7 +1259,7 @@ pub(super) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("when", input).ok_or_else(|| PError::expected("when statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::When { cond, body }))
@@ -1110,7 +1288,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         .or_else(|| keyword("without", input))
         .ok_or_else(|| PError::expected("with/without statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond_expr) = expression(rest)?;
+    let (rest, cond_expr) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
 
     // Check for optional pointy block: -> $param { ... }
@@ -1147,6 +1325,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
+            custom_traits: Vec::new(),
         });
     }
     with_body.extend(body);
@@ -1172,7 +1351,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, else_branch) = if keyword("orwith", rest).is_some() {
         let r = keyword("orwith", rest).unwrap();
         let (r, _) = ws1(r)?;
-        let (r, orwith_cond_expr) = expression(r)?;
+        let (r, orwith_cond_expr) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, orwith_body) = block(r)?;
 

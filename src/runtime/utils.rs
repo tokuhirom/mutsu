@@ -6,14 +6,46 @@ use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
+type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, bool);
+type GrepViewMap = HashMap<usize, GrepViewBinding>;
 
 fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
     static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, Vec<usize>>>> = OnceLock::new();
     SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
+    static GREP_VIEW_BINDINGS: OnceLock<Mutex<GrepViewMap>> = OnceLock::new();
+    GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn shaped_array_key(items: &Arc<Vec<Value>>) -> usize {
     Arc::as_ptr(items) as usize
+}
+
+fn grep_view_key(items: &Arc<Vec<Value>>) -> usize {
+    Arc::as_ptr(items) as usize
+}
+
+pub(crate) fn register_grep_view_binding(
+    filtered: &Arc<Vec<Value>>,
+    source: &Arc<Vec<Value>>,
+    source_indices: Vec<usize>,
+    source_is_array: bool,
+) {
+    if let Ok(mut bindings) = grep_view_bindings().lock() {
+        bindings.insert(
+            grep_view_key(filtered),
+            (source.clone(), source_indices, source_is_array),
+        );
+    }
+}
+
+pub(crate) fn get_grep_view_binding(
+    filtered: &Arc<Vec<Value>>,
+) -> Option<(Arc<Vec<Value>>, Vec<usize>, bool)> {
+    let bindings = grep_view_bindings().lock().ok()?;
+    bindings.get(&grep_view_key(filtered)).cloned()
 }
 
 /// Check if an array is a shaped (multidimensional) array.
@@ -163,8 +195,19 @@ fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(
 
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left, right) {
+        (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
+        (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
+            a_inner.eqv(b_inner) && a_mix == b_mix
+        }
+        (Value::Mixin(_, _), _) | (_, Value::Mixin(_, _)) => false,
         (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
-        _ => left == right,
+        _ => left.eqv(right),
     }
 }
 
@@ -373,11 +416,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
 }
 
 pub(crate) fn coerce_to_str(value: &Value) -> String {
-    match value {
-        // Type objects stringify as empty string in Str context.
-        Value::Package(_) => String::new(),
-        _ => value.to_string_value(),
-    }
+    value.to_str_context()
 }
 
 pub(crate) fn gist_value(value: &Value) -> String {
@@ -428,6 +467,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
 }
 
 pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
+    if super::native_types::is_native_int_type(constraint) {
+        return true;
+    }
     matches!(
         constraint,
         "Int"
@@ -587,6 +629,8 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
             kind: crate::value::JunctionKind::One,
             values: std::sync::Arc::new(Vec::new()),
         },
+        // Set operators: empty set
+        "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         // Comma/zip: empty list
         "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), false),
         _ => Value::Nil,
@@ -712,6 +756,12 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
             .collect(),
         Value::Slip(items) => items.to_vec(),
+        Value::Instance { attributes, .. } => {
+            if let Some(Value::Array(items, ..)) = attributes.get("__array_items") {
+                return items.to_vec();
+            }
+            vec![val.clone()]
+        }
         Value::Nil => vec![],
         other => vec![other.clone()],
     }
@@ -768,7 +818,38 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
-        Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
+        Value::Hash(h) => {
+            let mut s = HashSet::new();
+            for (k, v) in h.iter() {
+                if v.truthy() {
+                    s.insert(k.clone());
+                }
+            }
+            s
+        }
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            let mut s = HashSet::new();
+            for item in items.iter() {
+                match item {
+                    Value::Pair(k, v) => {
+                        if v.truthy() {
+                            s.insert(k.clone());
+                        }
+                    }
+                    other => {
+                        s.insert(other.to_string_value());
+                    }
+                }
+            }
+            s
+        }
+        Value::Pair(k, v) => {
+            let mut s = HashSet::new();
+            if v.truthy() {
+                s.insert(k.clone());
+            }
+            s
+        }
         _ => {
             let mut s = HashSet::new();
             let sv = val.to_string_value();
@@ -776,6 +857,227 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
                 s.insert(sv);
             }
             s
+        }
+    }
+}
+
+/// Coerce a value to a QuantHash (Set/Bag/Mix) for use as a single operand to set operators.
+/// - Set/Bag/Mix pass through as-is
+/// - Hash: include keys with truthy values as Set elements
+/// - List/Array: convert items to Set (excluding Pairs with falsy value)
+/// - Pair with falsy value → empty Set
+/// - Other scalars → Set with one element
+pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
+    match val {
+        Value::Set(_) | Value::Bag(_) | Value::Mix(_) => val.clone(),
+        Value::Hash(h) => {
+            let mut set = HashSet::new();
+            for (k, v) in h.iter() {
+                if v.truthy() {
+                    set.insert(k.clone());
+                }
+            }
+            Value::set(set)
+        }
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            let mut set = HashSet::new();
+            for item in items.iter() {
+                match item {
+                    Value::Pair(k, v) => {
+                        if v.truthy() {
+                            set.insert(k.clone());
+                        }
+                    }
+                    other => {
+                        set.insert(other.to_string_value());
+                    }
+                }
+            }
+            Value::set(set)
+        }
+        Value::Pair(k, v) => {
+            let mut set = HashSet::new();
+            if v.truthy() {
+                set.insert(k.clone());
+            }
+            Value::set(set)
+        }
+        _ => {
+            let mut set = HashSet::new();
+            let sv = val.to_string_value();
+            if !sv.is_empty() {
+                set.insert(sv);
+            }
+            Value::set(set)
+        }
+    }
+}
+
+/// Determine the promotion level for set operations: 0=Set, 1=Bag, 2=Mix
+fn set_type_level(v: &Value) -> u8 {
+    match v {
+        Value::Mix(_) => 2,
+        Value::Bag(_) => 1,
+        _ => 0,
+    }
+}
+
+/// Convert a value to a Mix-level HashMap (key → f64 count)
+fn to_mix_map(v: &Value) -> HashMap<String, f64> {
+    match v {
+        Value::Mix(m) => (**m).clone(),
+        Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+        Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        Value::Hash(h) => {
+            let mut result = HashMap::new();
+            for (k, v) in h.iter() {
+                let w = match v {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(n) => *n,
+                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                    Value::Bool(b) => {
+                        if *b {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
+                    _ => {
+                        if v.truthy() {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
+                };
+                if w != 0.0 {
+                    result.insert(k.clone(), w);
+                }
+            }
+            result
+        }
+        _ => {
+            let s = coerce_to_set(v);
+            s.into_iter().map(|k| (k, 1.0)).collect()
+        }
+    }
+}
+
+/// Convert a value to a Bag-level HashMap (key → i64 count)
+fn to_bag_map(v: &Value) -> HashMap<String, i64> {
+    match v {
+        Value::Bag(b) => (**b).clone(),
+        Value::Set(s) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
+        Value::Hash(h) => {
+            let mut result = HashMap::new();
+            for (k, v) in h.iter() {
+                let count = match v {
+                    Value::Int(i) => *i,
+                    Value::Num(n) => *n as i64,
+                    Value::Bool(b) => i64::from(*b),
+                    _ => i64::from(v.truthy()),
+                };
+                if count > 0 {
+                    result.insert(k.clone(), count);
+                }
+            }
+            result
+        }
+        _ => {
+            let s = coerce_to_set(v);
+            s.into_iter().map(|k| (k, 1i64)).collect()
+        }
+    }
+}
+
+/// Standalone set difference: left (-) right
+/// Implements Raku type promotion: Mix > Bag > Set
+pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
+    let level = set_type_level(left).max(set_type_level(right));
+    match level {
+        2 => {
+            // Mix-level difference: include all keys, keep non-zero results
+            let a = to_mix_map(left);
+            let b = to_mix_map(right);
+            let mut result = HashMap::new();
+            for (k, v) in &a {
+                let bv = b.get(k).copied().unwrap_or(0.0);
+                let diff = v - bv;
+                if diff != 0.0 {
+                    result.insert(k.clone(), diff);
+                }
+            }
+            for (k, v) in &b {
+                if !a.contains_key(k) && *v != 0.0 {
+                    result.insert(k.clone(), -*v);
+                }
+            }
+            Value::mix(result)
+        }
+        1 => {
+            // Bag-level difference: only positive results
+            let a = to_bag_map(left);
+            let b = to_bag_map(right);
+            let mut result = HashMap::new();
+            for (k, v) in &a {
+                let bv = b.get(k).copied().unwrap_or(0);
+                if *v > bv {
+                    result.insert(k.clone(), *v - bv);
+                }
+            }
+            Value::bag(result)
+        }
+        _ => {
+            // Set-level difference
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            Value::set(a.difference(&b).cloned().collect())
+        }
+    }
+}
+
+/// Standalone set union: left (|) right
+pub(crate) fn set_union_values(left: &Value, right: &Value) -> Value {
+    match (left, right) {
+        (Value::Set(a), Value::Set(b)) => {
+            let mut result = (**a).clone();
+            for elem in b.iter() {
+                result.insert(elem.clone());
+            }
+            Value::set(result)
+        }
+        _ => {
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            let mut result = a;
+            for elem in b {
+                result.insert(elem);
+            }
+            Value::set(result)
+        }
+    }
+}
+
+/// Standalone set intersection: left (&) right
+pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
+    match (left, right) {
+        (Value::Set(a), Value::Set(b)) => Value::set(a.intersection(b).cloned().collect()),
+        _ => {
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            Value::set(a.intersection(&b).cloned().collect())
+        }
+    }
+}
+
+/// Standalone set symmetric difference: left (^) right
+pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
+    match (left, right) {
+        (Value::Set(a), Value::Set(b)) => Value::set(a.symmetric_difference(b).cloned().collect()),
+        _ => {
+            let a = coerce_to_set(left);
+            let b = coerce_to_set(right);
+            Value::set(a.symmetric_difference(&b).cloned().collect())
         }
     }
 }
@@ -849,6 +1151,7 @@ pub(crate) fn compare_rat_parts(a: (i64, i64), b: (i64, i64)) -> std::cmp::Order
 
 pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val {
+        Value::Mixin(inner, _) => to_float_value(inner),
         Value::Num(f) => Some(*f),
         Value::Int(i) => Some(*i as f64),
         Value::BigInt(n) => n.to_f64(),
@@ -876,7 +1179,28 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         }
         Value::BigRat(n, d) => {
             if !d.is_zero() {
-                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                if let (Some(nn), Some(dd)) = (n.to_f64(), d.to_f64())
+                    && nn.is_finite()
+                    && dd.is_finite()
+                {
+                    Some(nn / dd)
+                } else {
+                    let scale_pow = 30u32;
+                    let scale = num_bigint::BigInt::from(10u8).pow(scale_pow);
+                    let scaled = (n * &scale) / d;
+                    if let Some(scaled_f) = scaled
+                        .to_f64()
+                        .or_else(|| scaled.to_string().parse::<f64>().ok())
+                    {
+                        Some(scaled_f / 10f64.powi(scale_pow as i32))
+                    } else if n.is_zero() {
+                        Some(0.0)
+                    } else if n.is_positive() {
+                        Some(f64::INFINITY)
+                    } else {
+                        Some(f64::NEG_INFINITY)
+                    }
+                }
             } else if n.is_positive() {
                 Some(f64::INFINITY)
             } else if n.is_negative() {
@@ -936,6 +1260,17 @@ pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
 }
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
+    fn compare_infinite_num_against_nonnumeric_str(num: f64, s: &str) -> Option<i32> {
+        if !num.is_infinite() || s.trim().parse::<f64>().is_ok() {
+            return None;
+        }
+        Some(if num.is_sign_positive() {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        } as i32)
+    }
+
     match (a, b) {
         (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
             version_cmp_parts(ap, bp) as i32
@@ -971,6 +1306,20 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         (Value::Num(a), Value::Int(b)) => a
             .partial_cmp(&(*b as f64))
             .unwrap_or(std::cmp::Ordering::Equal) as i32,
+        (Value::Num(n), Value::Str(s)) => {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
+                ord
+            } else {
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
+        (Value::Str(s), Value::Num(n)) => {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
+                -ord
+            } else {
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
                 return compare_rat_parts((an, ad), (bn, bd)) as i32;
@@ -982,6 +1331,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
 
 pub(crate) fn to_int(v: &Value) -> i64 {
     match v {
+        Value::Mixin(inner, _) => to_int(inner),
         Value::Int(i) => *i,
         Value::BigInt(n) => {
             use num_traits::ToPrimitive;

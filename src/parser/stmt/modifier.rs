@@ -1,6 +1,6 @@
 use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::{ws, ws1};
-use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char};
+use super::super::parse_result::{PError, PResult, merge_expected_messages};
 
 use crate::ast::{CallArg, Expr, Stmt};
 use crate::token_kind::TokenKind;
@@ -28,6 +28,7 @@ fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
+                custom_traits: Vec::new(),
             });
         }
         rewritten.extend(body.clone());
@@ -48,19 +49,38 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
 }
 
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
+/// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
+    let mut current_stmt = stmt;
+    let mut rest = rest;
 
-    // If there's a semicolon, the statement is terminated — no modifiers
-    if let Some(stripped) = rest.strip_prefix(';') {
-        return Ok((stripped, stmt));
+    loop {
+        // If there's a semicolon, the statement is terminated — no more modifiers
+        if let Some(stripped) = rest.strip_prefix(';') {
+            return Ok((stripped, current_stmt));
+        }
+
+        // If at end of input or block, return as-is
+        if rest.is_empty() || rest.starts_with('}') {
+            return Ok((rest, current_stmt));
+        }
+
+        match parse_single_modifier(rest, current_stmt.clone())? {
+            Some((r, modified)) => {
+                current_stmt = modified;
+                let (r, _) = ws(r)?;
+                rest = r;
+            }
+            None => {
+                return Ok((rest, current_stmt));
+            }
+        }
     }
+}
 
-    // If at end of input or block, return as-is
-    if rest.is_empty() || rest.starts_with('}') {
-        return Ok((rest, stmt));
-    }
-
+/// Try to parse a single statement modifier. Returns None if no modifier matched.
+fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>, PError> {
     // Try statement modifiers
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
@@ -70,11 +90,10 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
-        return Ok((
+        return Ok(Some((
             r,
             Stmt::If {
                 cond,
@@ -82,7 +101,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 else_branch: Vec::new(),
                 binding_var: None,
             },
-        ));
+        )));
     }
     if let Some(r) = keyword("unless", rest) {
         let (r, _) = ws1(r)?;
@@ -92,11 +111,10 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
-        return Ok((
+        return Ok(Some((
             r,
             Stmt::If {
                 cond: Expr::Unary {
@@ -107,7 +125,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 else_branch: Vec::new(),
                 binding_var: None,
             },
-        ));
+        )));
     }
     // Check for do { } with loop modifiers (X::Obsolete in Raku)
     let is_do_block = matches!(
@@ -134,6 +152,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         // Parse comma-separated list for `for` modifier: `expr for 1, 2, 3`
         let (r, iterable) = {
@@ -167,10 +186,9 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         //   for @values -> $v { ... }
         // as two statements, rather than block + postfix modifier + lambda.
         if r.starts_with("->") || r.starts_with('{') {
-            return Ok((rest, stmt));
+            return Ok(None);
         }
-        let (r, _) = opt_char(r, ';');
-        return Ok((
+        return Ok(Some((
             r,
             Stmt::For {
                 iterable,
@@ -179,8 +197,9 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 params: Vec::new(),
                 body: vec![stmt],
                 label: None,
+                mode: crate::ast::ForMode::Normal,
             },
-        ));
+        )));
     }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
@@ -190,17 +209,16 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
-        return Ok((
+        return Ok(Some((
             r,
             Stmt::While {
                 cond,
                 body: vec![stmt],
                 label: None,
             },
-        ));
+        )));
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
@@ -210,10 +228,9 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
-        return Ok((
+        return Ok(Some((
             r,
             Stmt::While {
                 cond: Expr::Unary {
@@ -223,7 +240,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 body: vec![stmt],
                 label: None,
             },
-        ));
+        )));
     }
     if let Some(r) = keyword("given", rest) {
         let (r, _) = ws1(r)?;
@@ -233,17 +250,16 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
         let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
-        return Ok((
+        return Ok(Some((
             r,
             Stmt::Given {
                 topic,
                 body: vec![given_stmt],
             },
-        ));
+        )));
     }
 
     if let Some(r) = keyword("with", rest) {
@@ -270,8 +286,6 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 args: call_args,
             };
         }
-        let (r_tail, _) = ws(r_tail)?;
-        let (r_tail, _) = opt_char(r_tail, ';');
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
         // When the modified statement is an expression statement, preserve
         // expression semantics via do-given.
@@ -292,7 +306,10 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
             };
-            return Ok((r_tail, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
+            return Ok(Some((
+                r_tail,
+                Stmt::Expr(Expr::DoStmt(Box::new(given_stmt))),
+            )));
         }
         let given_stmt = Stmt::Given {
             topic: cond,
@@ -309,7 +326,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 binding_var: None,
             }],
         };
-        return Ok((r_tail, given_stmt));
+        return Ok(Some((r_tail, given_stmt)));
     }
     if let Some(r) = keyword("without", rest) {
         let (r, _) = ws1(r)?;
@@ -335,8 +352,6 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 args: call_args,
             };
         }
-        let (r_tail, _) = ws(r_tail)?;
-        let (r_tail, _) = opt_char(r_tail, ';');
         // `stmt without expr` is like `given expr { unless .defined { stmt } }`.
         // Sets $_ to the condition value, then runs stmt if $_ is not defined.
         let not_defined = Expr::Unary {
@@ -361,7 +376,10 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
             };
-            return Ok((r_tail, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
+            return Ok(Some((
+                r_tail,
+                Stmt::Expr(Expr::DoStmt(Box::new(given_stmt))),
+            )));
         }
         let given_stmt = Stmt::Given {
             topic: cond,
@@ -372,8 +390,8 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 binding_var: None,
             }],
         };
-        return Ok((r_tail, given_stmt));
+        return Ok(Some((r_tail, given_stmt)));
     }
 
-    Ok((rest, stmt))
+    Ok(None)
 }

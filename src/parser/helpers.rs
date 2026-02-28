@@ -50,7 +50,9 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     }
 
     // Read the directive keyword
-    let (rest, keyword) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '-')?;
+    let (rest, keyword) = take_while1(rest, |c: char| {
+        c.is_ascii_alphanumeric() || c == '-' || c == '_'
+    })?;
     if let Some(ch) = rest.chars().next() {
         if !ch.is_whitespace() {
             return Err(PError::expected("pod directive"));
@@ -130,7 +132,7 @@ fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
 
     let mut end = 0usize;
     for (idx, ch) in rest.char_indices() {
-        if ch.is_alphanumeric() || ch == '-' {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
             end = idx + ch.len_utf8();
         } else {
             break;
@@ -255,9 +257,22 @@ pub(super) fn is_ident_char(b: Option<u8>) -> bool {
     }
 }
 
+/// Loop/control-flow labels use all-caps identifier style and may include digits.
+/// Examples: `OUTER`, `L1`, `_RETRY`.
+pub(super) fn is_loop_label_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_uppercase() && first != '_' {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
 /// Raku identifier start: underscore or Unicode alphabetic character.
 pub(super) fn is_raku_identifier_start(c: char) -> bool {
-    c == '_' || c.is_alphabetic()
+    c == '_' || (c.is_alphabetic() && !c.is_numeric())
 }
 
 /// Raku identifier continuation: start chars, decimal digits, and combining marks.

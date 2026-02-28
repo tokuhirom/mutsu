@@ -5,7 +5,7 @@ use crate::value::Value;
 use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
 use super::super::expr::expression;
-use super::super::helpers::{skip_balanced_parens, split_angle_words, ws};
+use super::super::helpers::{skip_balanced_parens, split_angle_words, ws, ws1};
 use super::super::stmt::keyword;
 use super::parse_call_arg_list;
 use super::string::{double_quoted_string, single_quoted_string};
@@ -102,6 +102,32 @@ fn is_valid_reduction_op(op: &str) -> bool {
     let s = s.strip_prefix('\\').unwrap_or(s);
     let s = if s == "∘" { "o" } else { s };
     if REDUCTION_OPS.contains(&s) {
+        return true;
+    }
+    // Set operators in parenthesized and unicode form
+    if matches!(
+        s,
+        "(-)"
+            | "(|)"
+            | "(&)"
+            | "(^)"
+            | "(elem)"
+            | "(cont)"
+            | "∪"
+            | "∩"
+            | "∖"
+            | "⊖"
+            | "∈"
+            | "∋"
+            | "(<=)"
+            | "(>=)"
+            | "(<)"
+            | "(>)"
+            | "⊆"
+            | "⊇"
+            | "⊂"
+            | "⊃"
+    ) {
         return true;
     }
     if let Some(stripped) = s.strip_prefix('!')
@@ -322,6 +348,16 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
+    // :36<...> is a generic radix literal, not a colonpair.
+    let digit_end = r
+        .char_indices()
+        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0);
+    if digit_end > 0 && r[digit_end..].starts_with('<') {
+        return Err(PError::expected("generic radix literal"));
+    }
     // :{ ... }: typed hash literal (Hash[Mu,Any]).
     // For now we treat it like a regular hash literal.
     if r.starts_with('{') {
@@ -917,7 +953,17 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
-        let simple_single = first.traits.is_empty() && first.shape_constraints.is_none();
+        let simple_single = first.traits.is_empty()
+            && first.shape_constraints.is_none()
+            && !first.named
+            && !first.slurpy
+            && !first.double_slurpy
+            && first.default.is_none()
+            && !first.optional_marker
+            && first.type_constraint.is_none()
+            && first.sub_signature.is_none()
+            && first.outer_sub_signature.is_none()
+            && first.code_signature.is_none();
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first
@@ -1043,6 +1089,17 @@ fn is_hash_literal_start(input: &str) -> bool {
     // Colon pair: :name(expr) or :name or :!name or :Nname — indicates a hash literal
     if input.starts_with(':') && !input.starts_with("::") {
         let r = &input[1..];
+        let digit_end = r
+            .char_indices()
+            .take_while(|(_, c)| {
+                crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some()
+            })
+            .last()
+            .map(|(idx, c)| idx + c.len_utf8())
+            .unwrap_or(0);
+        if digit_end > 0 && r[digit_end..].starts_with('<') {
+            return false;
+        }
         // :!name
         if r.starts_with('!') && super::super::stmt::ident_pub(&r[1..]).is_ok() {
             return true;
@@ -1089,9 +1146,28 @@ fn is_hash_literal_start(input: &str) -> bool {
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String> {
+    let (mut rest, first) = parse_ident_with_hyphens(input)?;
+    let mut full = first.to_string();
+    while let Some(after) = rest.strip_prefix("::") {
+        let (r2, part) = parse_ident_with_hyphens(after)?;
+        full.push_str("::");
+        full.push_str(part);
+        rest = r2;
+    }
+    Ok((rest, full))
+}
+
 /// Parse a class expression: `class { ... }`, `class Foo { ... }`, or `class :: is Parent { ... }`
 /// Named classes in expression context register the class AND return the type object.
 pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
+    // Accept optional declarator prefixes used in expression context (e.g. `my class ...`).
+    let input = if let Some(r) = keyword("my", input).or_else(|| keyword("our", input)) {
+        let (r, _) = ws1(r)?;
+        r
+    } else {
+        input
+    };
     let rest = keyword("class", input).ok_or_else(|| PError::expected("anonymous class"))?;
     let (rest, _) = ws(rest)?;
 
@@ -1107,14 +1183,14 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         loop {
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, parent) = parse_ident_with_hyphens(r2)?;
-                parents.push(parent.to_string());
+                let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
+                parents.push(parent);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else if let Some(r2) = keyword("does", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, role) = parse_ident_with_hyphens(r2)?;
-                does_roles.push(role.to_string());
+                let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+                does_roles.push(role);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else {
@@ -1137,14 +1213,14 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         loop {
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, parent) = parse_ident_with_hyphens(r2)?;
-                parents.push(parent.to_string());
+                let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
+                parents.push(parent);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else if let Some(r2) = keyword("does", r) {
                 let (r2, _) = super::super::helpers::ws1(r2)?;
-                let (r2, role) = parse_ident_with_hyphens(r2)?;
-                does_roles.push(role.to_string());
+                let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+                does_roles.push(role);
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else {
@@ -1173,6 +1249,8 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             parents,
             is_hidden: false,
             hidden_parents: Vec::new(),
+            does_parents: Vec::new(),
+            repr: None,
             body,
         })),
     ))
@@ -1191,10 +1269,17 @@ pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::DoStmt(Box::new(Stmt::Package { name, body }))))
 }
 
-/// Parse an anonymous role expression: `role { ... }`
+/// Parse an anonymous role expression: `role { ... }` or `role :: { ... }`
 pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("anonymous role"))?;
     let (rest, _) = ws(rest)?;
+    // Accept optional `::` (null name) before the block
+    let rest = if let Some(r) = rest.strip_prefix("::") {
+        let (r, _) = ws(r)?;
+        r
+    } else {
+        rest
+    };
     // Must be followed by '{' (no name) to be an anonymous role
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous role"));
@@ -1325,9 +1410,9 @@ fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
 
 fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {
     match expr {
-        Expr::Literal(Value::Str(s)) => Ok(s),
-        Expr::Literal(Value::Int(n)) => Ok(n.to_string()),
-        Expr::Literal(Value::BigInt(n)) => Ok(n.to_string()),
+        // Hash storage currently uses string keys; accept literal keys broadly and
+        // normalize using Raku stringification semantics.
+        Expr::Literal(v) => Ok(v.to_string_value()),
         Expr::BareWord(name) => Ok(name),
         _ => Err(PError::expected("hash key")),
     }
@@ -1353,6 +1438,15 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let r = input
         .strip_prefix(':')
         .ok_or_else(|| PError::expected("':'"))?;
+    let digit_end = r
+        .char_indices()
+        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0);
+    if digit_end > 0 && r[digit_end..].starts_with('<') {
+        return Err(PError::expected("generic radix literal"));
+    }
 
     // :!name
     if let Some(r) = r.strip_prefix('!') {

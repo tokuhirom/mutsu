@@ -49,10 +49,18 @@ mod handle;
 mod io;
 mod metamodel;
 mod methods;
+mod methods_classhow;
+mod methods_collection;
+mod methods_collection_ops;
+mod methods_grammar;
 mod methods_mut;
+mod methods_object;
+mod methods_promise;
+mod methods_string;
 mod methods_trans;
 mod native_io;
 mod native_methods;
+pub(crate) mod native_types;
 mod ops;
 mod regex;
 mod regex_parse;
@@ -74,13 +82,16 @@ pub(crate) use utils::*;
 
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct ClassDef {
     parents: Vec<String>,
     attributes: Vec<(String, bool, Option<Expr>, bool)>, // (name, is_public, default, is_rw)
+    attribute_types: HashMap<String, String>,            // attr_name -> type constraint
     methods: HashMap<String, Vec<MethodDef>>,            // name -> overloads
     native_methods: HashSet<String>,
     mro: Vec<String>,
+    /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
+    wildcard_handles: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +99,7 @@ struct RoleDef {
     attributes: Vec<(String, bool, Option<Expr>, bool)>,
     methods: HashMap<String, Vec<MethodDef>>,
     is_stub_role: bool,
+    is_hidden: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +126,15 @@ struct MethodDispatchFrame {
     remaining: Vec<(String, MethodDef)>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SquishIteratorMeta {
+    pub(crate) source_items: Vec<Value>,
+    pub(crate) as_func: Option<Value>,
+    pub(crate) with_func: Option<Value>,
+    pub(crate) revert_values: HashMap<String, Value>,
+    pub(crate) revert_remove: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IoHandleTarget {
     Stdout,
@@ -138,6 +159,7 @@ struct IoHandleState {
     mode: IoHandleMode,
     path: Option<String>,
     line_separators: Vec<Vec<u8>>,
+    line_chomp: bool,
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
@@ -301,13 +323,17 @@ pub struct Interpreter {
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
+    block_scope_depth: usize,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    cunion_classes: HashSet<String>,
     hidden_classes: HashSet<String>,
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
+    class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
     roles: HashMap<String, RoleDef>,
     role_parents: HashMap<String, Vec<String>>,
+    role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
@@ -373,11 +399,17 @@ pub struct Interpreter {
     pub(crate) pending_local_updates: Vec<(String, Value)>,
     /// Set of variable names that are readonly (default parameter binding).
     readonly_vars: HashSet<String>,
+    /// Metadata for Seq values produced by `squish` with callbacks, used to
+    /// provide callback-aware iterator behavior.
+    pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,
     /// Metadata for custom types created by Metamodel::Primitives.create_type.
     pub(crate) custom_type_data: HashMap<u64, CustomTypeData>,
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// Pending error from regex security validation, to be propagated by the caller.
+    #[allow(dead_code)]
+    pending_regex_error: Option<RuntimeError>,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -442,6 +474,12 @@ impl Default for Interpreter {
 }
 
 impl Interpreter {
+    /// Take any pending regex security error from the thread-local store.
+    pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
+        // Delegate to the regex_parse module's thread-local error store
+        regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take())
+    }
+
     pub fn new() -> Self {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(current_process_id()));
@@ -460,6 +498,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Mu".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -470,6 +510,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Any".to_string(), "Mu".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -483,6 +525,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Promise".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -496,6 +540,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Channel".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -513,7 +559,9 @@ impl Interpreter {
                     "do",
                     "reverse",
                     "split",
+                    "interval",
                     "tail",
+                    "delayed",
                     "min",
                     "collate",
                     "lines",
@@ -526,6 +574,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Supply".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -536,6 +586,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["utf8".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -546,6 +598,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["utf16".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -559,6 +613,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Supplier".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -584,6 +640,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Proc::Async".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -599,6 +657,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Proc".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -609,6 +669,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Tap".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -619,6 +681,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Scheduler".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -629,6 +693,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["ThreadPoolScheduler".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -639,6 +705,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["CurrentThreadScheduler".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -649,6 +717,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Cancellation".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -662,6 +732,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Lock".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -672,6 +744,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Lock::Async".to_string(), "Lock".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -685,6 +759,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Lock::ConditionVariable".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -744,6 +820,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Path".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -760,6 +838,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Handle".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -770,6 +850,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Backtrace".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -783,6 +865,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["IO::Pipe".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -796,6 +880,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -822,6 +908,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Distro".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -850,6 +938,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Perl".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -876,6 +966,8 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Compiler".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -889,6 +981,8 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Encoding::Builtin".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -899,6 +993,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Encoding::Encoder".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -909,6 +1005,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["decode-chars"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Encoding::Decoder".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -919,6 +1017,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: ["find", "register"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Encoding::Registry".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -929,6 +1029,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -939,6 +1041,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Comment".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -949,6 +1053,32 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Para".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Pod::Block::Named".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block::Named".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Pod::Heading".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Heading".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -959,6 +1089,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Block::Table".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -969,6 +1101,8 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["Pod::Item".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -979,16 +1113,36 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::AdHoc".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
-            "X::TypeCheck::Binding".to_string(),
+            "X::TypeCheck".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::TypeCheck::Binding".to_string(), "Exception".to_string()],
+                mro: vec!["X::TypeCheck".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "X::TypeCheck::Binding".to_string(),
+            ClassDef {
+                parents: vec!["X::TypeCheck".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "X::TypeCheck::Binding".to_string(),
+                    "X::TypeCheck".to_string(),
+                    "Exception".to_string(),
+                ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -1001,34 +1155,43 @@ impl Interpreter {
                 mro: vec![
                     "X::TypeCheck::Binding::Parameter".to_string(),
                     "X::TypeCheck::Binding".to_string(),
+                    "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
             "X::TypeCheck::Argument".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec![
                     "X::TypeCheck::Argument".to_string(),
+                    "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
             "X::TypeCheck::Assignment".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec![
                     "X::TypeCheck::Assignment".to_string(),
+                    "X::TypeCheck".to_string(),
                     "Exception".to_string(),
                 ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         classes.insert(
@@ -1039,6 +1202,32 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["X::Numeric::Real".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "X::TypeCheck::Return".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::TypeCheck::Return".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "X::Coerce::Impossible".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::Coerce::Impossible".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
             },
         );
         let mut interpreter = Self {
@@ -1074,11 +1263,14 @@ impl Interpreter {
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: 0,
             enum_types: HashMap::new(),
             classes,
+            cunion_classes: HashSet::new(),
             hidden_classes: HashSet::new(),
             hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
+            class_composed_roles: HashMap::new(),
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -1087,6 +1279,7 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
+                        is_hidden: false,
                     },
                 );
                 roles.insert(
@@ -1095,6 +1288,7 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
+                        is_hidden: false,
                     },
                 );
                 roles.insert(
@@ -1103,11 +1297,13 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
+                        is_hidden: false,
                     },
                 );
                 roles
             },
             role_parents: HashMap::new(),
+            role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
@@ -1144,8 +1340,10 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            pending_regex_error: None,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1601,9 +1799,21 @@ impl Interpreter {
         name.trim_start_matches(['$', '@', '%', '&'])
     }
 
+    fn var_meta_value_key(name: &str) -> String {
+        format!("__mutsu_var_meta::{}", name)
+    }
+
     pub(crate) fn set_var_dynamic(&mut self, name: &str, dynamic: bool) {
         let key = Self::normalize_var_meta_name(name).to_string();
         self.var_dynamic_flags.insert(key, dynamic);
+    }
+
+    pub(crate) fn set_var_meta_value(&mut self, name: &str, value: Value) {
+        self.env.insert(Self::var_meta_value_key(name), value);
+    }
+
+    pub(crate) fn var_meta_value(&self, name: &str) -> Option<Value> {
+        self.env.get(&Self::var_meta_value_key(name)).cloned()
     }
 
     pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
@@ -1981,13 +2191,17 @@ impl Interpreter {
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),
+            block_scope_depth: self.block_scope_depth,
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
+            cunion_classes: self.cunion_classes.clone(),
             hidden_classes: self.hidden_classes.clone(),
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
+            class_composed_roles: self.class_composed_roles.clone(),
             roles: self.roles.clone(),
             role_parents: self.role_parents.clone(),
+            role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
@@ -2024,8 +2238,10 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            pending_regex_error: None,
         };
         cloned.init_io_environment();
         cloned
@@ -2105,7 +2321,14 @@ struct TestState {
     planned: Option<usize>,
     ran: usize,
     failed: usize,
-    force_todo: Vec<(usize, usize)>,
+    force_todo: Vec<TodoRange>,
+}
+
+#[derive(Debug, Clone)]
+struct TodoRange {
+    start: usize,
+    end: usize,
+    reason: String,
 }
 
 impl TestState {

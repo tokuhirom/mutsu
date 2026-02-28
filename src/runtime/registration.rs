@@ -30,21 +30,50 @@ fn substitute_type_params_in_method(
     method: &MethodDef,
     type_subs: &[(String, String)],
 ) -> MethodDef {
+    fn replace_type_name(type_name: &str, type_subs: &[(String, String)]) -> String {
+        for (param_name, replacement) in type_subs {
+            if type_name == param_name {
+                return replacement.clone();
+            }
+        }
+        type_name.to_string()
+    }
+
+    fn substitute_param_def(pd: &ParamDef, type_subs: &[(String, String)]) -> ParamDef {
+        let mut new_pd = pd.clone();
+        if let Some(tc) = &new_pd.type_constraint {
+            new_pd.type_constraint = Some(replace_type_name(tc, type_subs));
+        }
+        if let Some(sub) = &new_pd.sub_signature {
+            new_pd.sub_signature = Some(
+                sub.iter()
+                    .map(|p| substitute_param_def(p, type_subs))
+                    .collect(),
+            );
+        }
+        if let Some(outer) = &new_pd.outer_sub_signature {
+            new_pd.outer_sub_signature = Some(
+                outer
+                    .iter()
+                    .map(|p| substitute_param_def(p, type_subs))
+                    .collect(),
+            );
+        }
+        if let Some((sig_params, sig_ret)) = &new_pd.code_signature {
+            let next_params = sig_params
+                .iter()
+                .map(|p| substitute_param_def(p, type_subs))
+                .collect();
+            let next_ret = sig_ret.as_ref().map(|r| replace_type_name(r, type_subs));
+            new_pd.code_signature = Some((next_params, next_ret));
+        }
+        new_pd
+    }
+
     let new_param_defs = method
         .param_defs
         .iter()
-        .map(|pd| {
-            if let Some(tc) = &pd.type_constraint {
-                for (param_name, replacement) in type_subs {
-                    if tc == param_name {
-                        let mut new_pd = pd.clone();
-                        new_pd.type_constraint = Some(replacement.clone());
-                        return new_pd;
-                    }
-                }
-            }
-            pd.clone()
-        })
+        .map(|pd| substitute_param_def(pd, type_subs))
         .collect();
     MethodDef {
         params: method.params.clone(),
@@ -57,6 +86,24 @@ fn substitute_type_params_in_method(
 }
 
 impl Interpreter {
+    fn validate_callable_param_return_redeclaration(
+        param_defs: &[ParamDef],
+    ) -> Result<(), RuntimeError> {
+        for pd in param_defs {
+            if pd.type_constraint.is_some()
+                && pd
+                    .code_signature
+                    .as_ref()
+                    .is_some_and(|(_, ret)| ret.is_some())
+            {
+                return Err(RuntimeError::new(
+                    "X::Redeclaration: only one way of specifying sub-signature return type allowed",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
         param_defs
             .iter()
@@ -379,6 +426,18 @@ impl Interpreter {
                     self.validate_private_access_in_expr(caller_class, arg)?;
                 }
             }
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                ..
+            } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                self.validate_private_access_in_expr(caller_class, name_expr)?;
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
             Expr::Call { args, .. }
             | Expr::ArrayLiteral(args)
             | Expr::BracketArray(args)
@@ -560,7 +619,11 @@ impl Interpreter {
         is_rw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        custom_traits: &[String],
     ) -> Result<(), RuntimeError> {
+        let is_method_value_decl = custom_traits.iter().any(|t| t == "__mutsu_method_decl");
+        let allow_redeclare = supersede || is_method_value_decl;
+        Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
@@ -631,17 +694,26 @@ impl Interpreter {
             is_rw,
             is_method: false,
             empty_sig,
+            return_type: return_type.cloned(),
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
-        if self.env.contains_key(&format!("&{}", name)) {
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared as code variable",
-                name
-            )));
+        let allow_lexical_shadow = self.block_scope_depth > 0;
+        let code_var_key = format!("&{}", name);
+        if let Some(existing) = self.env.get(&code_var_key) {
+            // Mixin values in &name come from trait_mod and should not block registration
+            if !matches!(existing, Value::Mixin(..))
+                && !allow_lexical_shadow
+                && !is_method_value_decl
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared as code variable",
+                    name
+                )));
+            }
         }
         if let Some(existing) = self.functions.get(&single_key) {
             let same = existing.package == new_def.package
@@ -677,22 +749,23 @@ impl Interpreter {
             .get(&single_key)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
-            if has_single && !has_proto && !supersede {
+            if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as non-multi",
                     name
                 )));
             }
-        } else if !supersede && ((has_multi && !has_proto) || (has_single && !existing_is_stub)) {
+        } else if !allow_redeclare
+            && !allow_lexical_shadow
+            && ((has_multi && !has_proto) || (has_single && !existing_is_stub))
+        {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
             )));
         }
         let def = new_def;
-        if let Some(assoc) = associativity
-            && name.starts_with("infix:<")
-        {
+        if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("{}::{}", self.current_package, name), assoc.clone());
@@ -716,10 +789,31 @@ impl Interpreter {
                     arity,
                     type_sig.join(",")
                 );
-                self.functions.insert(typed_fq, def.clone());
+                if name == "trait_mod:<is>" {
+                    match self.functions.entry(typed_fq.clone()) {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(def.clone());
+                        }
+                        std::collections::hash_map::Entry::Occupied(_) => {
+                            let mut idx = 1usize;
+                            loop {
+                                let key = format!("{}__m{}", typed_fq, idx);
+                                if let std::collections::hash_map::Entry::Vacant(entry) =
+                                    self.functions.entry(key)
+                                {
+                                    entry.insert(def.clone());
+                                    break;
+                                }
+                                idx += 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.functions.insert(typed_fq, def.clone());
+                }
             }
             let fq = format!("{}::{}/{}", self.current_package, name, arity);
-            if !has_types {
+            if !has_types || name == "trait_mod:<is>" {
                 match self.functions.entry(fq.clone()) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);
@@ -750,6 +844,43 @@ impl Interpreter {
             callable_key,
             Value::Int(crate::value::next_instance_id() as i64),
         );
+        if is_method_value_decl {
+            let sub_val = Value::make_sub(
+                self.current_package.clone(),
+                name.to_string(),
+                params.to_vec(),
+                param_defs.to_vec(),
+                body.to_vec(),
+                is_rw,
+                self.env.clone(),
+            );
+            self.env.insert(format!("&{}", name), sub_val);
+            self.env
+                .insert(format!("__mutsu_method_value::{}", name), Value::Bool(true));
+        }
+        // Apply custom trait_mod:<is> for each non-builtin trait (only if trait_mod:<is> is defined)
+        if !custom_traits.is_empty()
+            && (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
+        {
+            for trait_name in custom_traits {
+                let sub_val = Value::make_sub(
+                    self.current_package.clone(),
+                    name.to_string(),
+                    params.to_vec(),
+                    param_defs.to_vec(),
+                    body.to_vec(),
+                    is_rw,
+                    self.env.clone(),
+                );
+                let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                let result = self.call_function("trait_mod:<is>", vec![sub_val, named_arg])?;
+                // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
+                // store it in the env so function dispatch can find it.
+                if matches!(result, Value::Mixin(..)) {
+                    self.env.insert(format!("&{}", name), result);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -771,6 +902,7 @@ impl Interpreter {
             is_rw: false,
             is_method: false,
             empty_sig: false,
+            return_type: None,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -809,6 +941,7 @@ impl Interpreter {
                 is_rw: false,
                 is_method: false,
                 empty_sig: false,
+                return_type: None,
             },
         );
         Ok(())
@@ -830,6 +963,7 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
             && Self::body_contains_non_nil_return(body)
@@ -899,15 +1033,14 @@ impl Interpreter {
             is_rw,
             is_method: false,
             empty_sig,
+            return_type: return_type.cloned(),
         };
         let single_key = format!("GLOBAL::{}", name);
         let multi_prefix = format!("GLOBAL::{}/", name);
         let has_single = self.functions.contains_key(&single_key);
         let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
-        if let Some(assoc) = associativity
-            && name.starts_with("infix:<")
-        {
+        if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("GLOBAL::{}", name), assoc.clone());
@@ -1039,6 +1172,7 @@ impl Interpreter {
                 is_rw: false,
                 is_method: false,
                 empty_sig: false,
+                return_type: None,
             },
         );
         Ok(())
@@ -1108,6 +1242,7 @@ impl Interpreter {
         parents: &[String],
         is_hidden: bool,
         hidden_parents: &[String],
+        does_parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         // Validate that all parent classes exist
@@ -1194,9 +1329,11 @@ impl Interpreter {
         let mut class_def = ClassDef {
             parents: parents.to_vec(),
             attributes: Vec::new(),
+            attribute_types: HashMap::new(),
             methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: Vec::new(),
+            wildcard_handles: Vec::new(),
         };
         if is_hidden {
             self.hidden_classes.insert(name.to_string());
@@ -1209,7 +1346,9 @@ impl Interpreter {
             self.hidden_defer_parents
                 .insert(name.to_string(), hidden_parents.iter().cloned().collect());
         }
-        // Compose roles listed in the parents (from "does Role" in class header)
+        // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
+        let mut composed_roles_list = Vec::new();
+        let mut punned_roles = Vec::new();
         for parent in parents {
             // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
             let base_role_name = if let Some(bracket) = parent.find('[') {
@@ -1221,6 +1360,12 @@ impl Interpreter {
                 if role.is_stub_role {
                     return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                 }
+                // Check if this role was specified via `is` (punning) vs `does` (composition)
+                let is_punned = !does_parents.contains(parent);
+                if is_punned {
+                    punned_roles.push(parent.clone());
+                }
+                composed_roles_list.push(parent.clone());
                 // Collect type parameter substitutions if this is a parametric role
                 let type_subs: Vec<(String, String)> =
                     if let Some(role_type_params) = self.role_type_params.get(base_role_name) {
@@ -1260,6 +1405,143 @@ impl Interpreter {
                 }
             }
         }
+        // Handle role punning: `is Role` creates a punned class from the role
+        for punned_role in &punned_roles {
+            let base_role = punned_role
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(punned_role.as_str());
+            // Create a punned class entry if one doesn't already exist
+            if !self.classes.contains_key(punned_role.as_str())
+                && !self.classes.contains_key(base_role)
+            {
+                // Collect class parents and composed roles recursively from role hierarchy
+                let mut punned_class_parents = Vec::new();
+                let mut punned_composed_roles = Vec::new();
+                let mut role_stack = vec![base_role.to_string()];
+                let mut seen_roles = HashSet::new();
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                // It's a role - add as composed role and recurse
+                                if !punned_composed_roles.contains(&rp) {
+                                    punned_composed_roles.push(rp.clone());
+                                }
+                                role_stack.push(rp_base.to_string());
+                            } else if self.classes.contains_key(rp_base)
+                                && !punned_class_parents.contains(&rp)
+                            {
+                                // It's a class - add as parent
+                                punned_class_parents.push(rp);
+                            }
+                        }
+                    }
+                }
+                let punned_class = ClassDef {
+                    parents: punned_class_parents,
+                    attributes: Vec::new(),
+                    attribute_types: HashMap::new(),
+                    methods: HashMap::new(),
+                    native_methods: HashSet::new(),
+                    mro: Vec::new(),
+                    wildcard_handles: Vec::new(),
+                };
+                self.classes.insert(base_role.to_string(), punned_class);
+                if !punned_composed_roles.is_empty() {
+                    self.class_composed_roles
+                        .insert(base_role.to_string(), punned_composed_roles);
+                }
+                // Propagate hidden status from role to punned class
+                if let Some(role_def) = self.roles.get(base_role)
+                    && role_def.is_hidden
+                {
+                    self.hidden_classes.insert(base_role.to_string());
+                }
+                // Recompute MRO for the punned class
+                let mro = self.class_mro(base_role);
+                if let Some(cd) = self.classes.get_mut(base_role) {
+                    cd.mro = mro;
+                }
+            }
+        }
+        // Clear stale composed roles from previous registration
+        self.class_composed_roles.remove(name);
+        if !composed_roles_list.is_empty() {
+            // Propagate role parent classes to the class (recursively through sub-roles)
+            // When a role `R is C1` is composed into a class, C1 becomes a parent
+            {
+                let mut role_stack: Vec<String> = composed_roles_list
+                    .iter()
+                    .map(|r| {
+                        r.split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(r.as_str())
+                            .to_string()
+                    })
+                    .collect();
+                let mut seen_roles = HashSet::new();
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                // It's a sub-role, recurse
+                                role_stack.push(rp_base.to_string());
+                            } else if self.classes.contains_key(rp_base)
+                                && !class_def.parents.contains(&rp)
+                            {
+                                class_def.parents.push(rp);
+                            }
+                        }
+                    }
+                }
+            }
+            self.class_composed_roles
+                .insert(name.to_string(), composed_roles_list.clone());
+            // Propagate `hides` from composed roles (and sub-roles) to the class
+            {
+                let mut role_stack: Vec<String> = composed_roles_list
+                    .iter()
+                    .map(|r| {
+                        r.split_once('[')
+                            .map(|(b, _)| b)
+                            .unwrap_or(r.as_str())
+                            .to_string()
+                    })
+                    .collect();
+                let mut seen_roles = HashSet::new();
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if let Some(hides_list) = self.role_hides.get(&role_name).cloned() {
+                        for hidden in hides_list {
+                            self.hidden_defer_parents
+                                .entry(name.to_string())
+                                .or_default()
+                                .insert(hidden);
+                        }
+                    }
+                    // Recurse into sub-roles
+                    if let Some(rparents) = self.role_parents.get(&role_name).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                role_stack.push(rp_base.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
         for stmt in body {
             if let Stmt::TrustsDecl {
                 name: trusted_class,
@@ -1286,6 +1568,7 @@ impl Interpreter {
             return Ok(());
         }
         let saved_package = self.current_package.clone();
+        let saved_env = self.env.clone();
         self.current_package = name.to_string();
         for stmt in body {
             match stmt {
@@ -1295,6 +1578,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    type_constraint,
                 } => {
                     class_def.attributes.push((
                         attr_name.clone(),
@@ -1302,30 +1586,40 @@ impl Interpreter {
                         default.clone(),
                         *is_rw,
                     ));
+                    if let Some(tc) = type_constraint {
+                        class_def
+                            .attribute_types
+                            .insert(attr_name.clone(), tc.clone());
+                    }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {
                         format!("!{}", attr_name)
                     };
                     for handle_name in handles {
-                        class_def
-                            .methods
-                            .entry(handle_name.clone())
-                            .or_default()
-                            .push(MethodDef {
-                                params: Vec::new(),
-                                param_defs: Vec::new(),
-                                body: vec![Stmt::Expr(Expr::MethodCall {
-                                    target: Box::new(Expr::Var(attr_var_name.clone())),
-                                    name: handle_name.clone(),
-                                    args: Vec::new(),
-                                    modifier: None,
-                                    quoted: false,
-                                })],
-                                is_rw: false,
-                                is_private: false,
-                                return_type: None,
-                            });
+                        if handle_name == "*" {
+                            // Wildcard delegation: forward unknown methods to this attribute
+                            class_def.wildcard_handles.push(attr_var_name.clone());
+                        } else {
+                            class_def
+                                .methods
+                                .entry(handle_name.clone())
+                                .or_default()
+                                .push(MethodDef {
+                                    params: Vec::new(),
+                                    param_defs: Vec::new(),
+                                    body: vec![Stmt::Expr(Expr::MethodCall {
+                                        target: Box::new(Expr::Var(attr_var_name.clone())),
+                                        name: handle_name.clone(),
+                                        args: Vec::new(),
+                                        modifier: None,
+                                        quoted: false,
+                                    })],
+                                    is_rw: false,
+                                    is_private: false,
+                                    return_type: None,
+                                });
+                        }
                     }
                 }
                 Stmt::MethodDecl {
@@ -1375,42 +1669,59 @@ impl Interpreter {
                     // `our method` also registers as a package-scoped sub
                     if *is_our {
                         let qualified_name = format!("{}::{}", name, resolved_method_name);
-                        // Prepend "self" as first param so the first argument
-                        // gets bound as `self` when calling this as a function.
-                        let mut our_params = vec!["self".to_string()];
-                        our_params.extend(
-                            effective_params
-                                .iter()
-                                .filter(|p| p.as_str() != "self")
-                                .cloned(),
-                        );
-                        let self_param = crate::ast::ParamDef {
-                            name: "self".to_string(),
-                            default: None,
-                            multi_invocant: true,
-                            required: false,
-                            named: false,
-                            slurpy: false,
-                            double_slurpy: false,
-                            sigilless: false,
-                            type_constraint: None,
-                            literal_value: None,
-                            sub_signature: None,
-                            where_constraint: None,
-                            traits: Vec::new(),
-                            optional_marker: false,
-                            outer_sub_signature: None,
-                            code_signature: None,
-                            is_invocant: false,
-                            shape_constraints: None,
+                        let has_explicit_invocant = effective_param_defs
+                            .iter()
+                            .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
+                        let (our_params, our_param_defs) = if has_explicit_invocant {
+                            (
+                                effective_params.clone(),
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| p.name.as_str() != "self")
+                                    .cloned()
+                                    .collect(),
+                            )
+                        } else {
+                            // Prepend "self" as first param so the first argument
+                            // gets bound as `self` when calling this as a function.
+                            let mut our_params = vec!["self".to_string()];
+                            our_params.extend(
+                                effective_params
+                                    .iter()
+                                    .filter(|p| p.as_str() != "self")
+                                    .cloned(),
+                            );
+                            let self_param = crate::ast::ParamDef {
+                                name: "self".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            };
+                            let mut our_param_defs = vec![self_param];
+                            our_param_defs.extend(
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| {
+                                        !(p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                                    })
+                                    .cloned(),
+                            );
+                            (our_params, our_param_defs)
                         };
-                        let mut our_param_defs = vec![self_param];
-                        our_param_defs.extend(
-                            effective_param_defs
-                                .iter()
-                                .filter(|p| !p.is_invocant)
-                                .cloned(),
-                        );
                         let func_def = crate::ast::FunctionDef {
                             package: name.to_string(),
                             name: resolved_method_name.clone(),
@@ -1421,11 +1732,24 @@ impl Interpreter {
                             is_rw: *is_rw,
                             is_method: true,
                             empty_sig: false,
+                            return_type: None,
                         };
                         self.functions.insert(qualified_name, func_def);
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
+                        if !class_def.parents.iter().any(|p| p == role_name) {
+                            class_def.parents.insert(0, role_name.clone());
+                            class_def.mro.clear();
+                        }
+                        continue;
+                    }
                     let role =
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
@@ -1444,6 +1768,11 @@ impl Interpreter {
                             .entry(mname)
                             .or_default()
                             .extend(overloads);
+                    }
+                    if !class_def.parents.iter().any(|p| p == role_name) {
+                        // Keep role composition visible in MRO introspection.
+                        class_def.parents.insert(0, role_name.clone());
+                        class_def.mro.clear();
                     }
                 }
                 Stmt::TrustsDecl {
@@ -1467,6 +1796,12 @@ impl Interpreter {
                     // Also execute the statement so the code variable is set
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    for outer_name in saved_env.keys() {
+                        let class_scoped_name = format!("{}::{}", name, outer_name);
+                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                            self.env.insert(outer_name.clone(), updated);
+                        }
+                    }
                     if let Some(updated) = self.classes.get(name).cloned() {
                         class_def = updated;
                     }
@@ -1474,6 +1809,12 @@ impl Interpreter {
                 _ => {
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    for outer_name in saved_env.keys() {
+                        let class_scoped_name = format!("{}::{}", name, outer_name);
+                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                            self.env.insert(outer_name.clone(), updated);
+                        }
+                    }
                     if let Some(updated) = self.classes.get(name).cloned() {
                         class_def = updated;
                     }
@@ -1495,10 +1836,21 @@ impl Interpreter {
         type_params: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // Clean up stale punned class entry from previous registration
+        // (e.g., role R was previously used as `is R` creating a punned class)
+        if self.roles.contains_key(name) {
+            self.classes.remove(name);
+            self.hidden_classes.remove(name);
+            self.class_composed_roles.remove(name);
+        }
+        // Clear stale role parents and hides
+        self.role_parents.remove(name);
+        self.role_hides.remove(name);
         let mut role_def = RoleDef {
             attributes: Vec::new(),
             methods: HashMap::new(),
             is_stub_role: false,
+            is_hidden: false,
         };
         for stmt in body {
             match stmt {
@@ -1508,6 +1860,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    type_constraint: _,
                 } => {
                     role_def.attributes.push((
                         attr_name.clone(),
@@ -1542,6 +1895,37 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
+                    if role_name == "__mutsu_role_hidden__" {
+                        role_def.is_hidden = true;
+                        continue;
+                    }
+                    if let Some(hidden_name) = role_name.strip_prefix("__mutsu_role_hides__") {
+                        // Track hidden class relationship for this role
+                        self.role_hides
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(hidden_name.to_string());
+                        continue;
+                    }
+                    if self.classes.contains_key(role_name) {
+                        self.role_parents
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(role_name.clone());
+                        continue;
+                    }
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
+                        self.role_parents
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(role_name.clone());
+                        continue;
+                    }
                     let role =
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
@@ -1631,5 +2015,134 @@ impl Interpreter {
         );
         self.env
             .insert(name.to_string(), Value::Package(name.to_string()));
+    }
+
+    pub(crate) fn register_cunion_class(&mut self, name: &str) {
+        self.cunion_classes.insert(name.to_string());
+    }
+
+    /// Construct a CUnion instance: all native-int fields share the same
+    /// underlying bytes (little-endian), so setting one field also sets the
+    /// lower bits of the others.
+    pub(crate) fn construct_cunion_instance(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        use crate::runtime::native_types::native_int_bounds;
+
+        // Collect class attributes with their types
+        let class_attrs = self.collect_class_attributes(class_name);
+
+        // Parse named args
+        let mut named_args: HashMap<String, Value> = HashMap::new();
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                named_args.insert(key.clone(), *value.clone());
+            }
+        }
+
+        // Find the widest provided value and convert to bytes
+        let mut max_bytes = 0u32;
+        let mut raw_value: u64 = 0;
+
+        for (attr_name, _is_public, _default, _is_rw) in &class_attrs {
+            if let Some(val) = named_args.get(attr_name) {
+                let int_val = match val {
+                    Value::Int(i) => *i as u64,
+                    Value::BigInt(n) => {
+                        use num_traits::ToPrimitive;
+                        n.to_u64().unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                raw_value = int_val;
+                // Find the type of this attribute to determine byte width
+                if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name)
+                {
+                    let byte_width = Self::native_type_byte_width(&type_constraint);
+                    if byte_width > max_bytes {
+                        max_bytes = byte_width;
+                    }
+                }
+            }
+        }
+
+        // Build attributes from shared bytes
+        let bytes = raw_value.to_le_bytes();
+        let mut attrs = HashMap::new();
+        for (attr_name, _is_public, default, _is_rw) in &class_attrs {
+            if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name) {
+                let byte_width = Self::native_type_byte_width(&type_constraint);
+                let val = match byte_width {
+                    1 => Value::Int(bytes[0] as i64),
+                    2 => Value::Int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
+                    4 => Value::Int(
+                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64
+                    ),
+                    8 => {
+                        let v = u64::from_le_bytes(bytes);
+                        if let Some((_min, _max)) = native_int_bounds(&type_constraint) {
+                            if type_constraint.starts_with('u') || type_constraint == "byte" {
+                                // Unsigned: store as BigInt if needed
+                                if v > i64::MAX as u64 {
+                                    Value::BigInt(num_bigint::BigInt::from(v as u128))
+                                } else {
+                                    Value::Int(v as i64)
+                                }
+                            } else {
+                                // Signed: reinterpret as i64
+                                Value::Int(v as i64)
+                            }
+                        } else {
+                            Value::Int(v as i64)
+                        }
+                    }
+                    _ => {
+                        if let Some(v) = named_args.get(attr_name) {
+                            v.clone()
+                        } else if let Some(expr) = default {
+                            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                        } else {
+                            Value::Int(0)
+                        }
+                    }
+                };
+                attrs.insert(attr_name.clone(), val);
+            } else if let Some(v) = named_args.get(attr_name) {
+                attrs.insert(attr_name.clone(), v.clone());
+            } else if let Some(expr) = default {
+                attrs.insert(
+                    attr_name.clone(),
+                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?,
+                );
+            } else {
+                attrs.insert(attr_name.clone(), Value::Int(0));
+            }
+        }
+
+        Ok(Value::make_instance(class_name.to_string(), attrs))
+    }
+
+    /// Get the type constraint for a class attribute, searching MRO.
+    fn get_attr_type_constraint(&self, class_name: &str, attr_name: &str) -> Option<String> {
+        if let Some(class_def) = self.classes.get(class_name) {
+            for (name, _is_public, _default, _is_rw) in &class_def.attributes {
+                if name == attr_name {
+                    return class_def.attribute_types.get(attr_name).cloned();
+                }
+            }
+        }
+        None
+    }
+
+    fn native_type_byte_width(type_name: &str) -> u32 {
+        match type_name {
+            "uint8" | "int8" | "byte" => 1,
+            "uint16" | "int16" => 2,
+            "uint32" | "int32" => 4,
+            "uint64" | "int64" | "uint" | "int" => 8,
+            _ => 0,
+        }
     }
 }

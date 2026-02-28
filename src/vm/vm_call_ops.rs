@@ -49,6 +49,77 @@ impl VM {
         }
     }
 
+    fn rewrite_method_name(method_raw: &str, modifier: Option<&str>) -> String {
+        match modifier {
+            Some("^") => format!("^{}", method_raw),
+            Some("!") if method_raw.contains("::") => method_raw.to_string(),
+            Some("!") => format!("!{}", method_raw),
+            _ => method_raw.to_string(),
+        }
+    }
+
+    fn call_method_all_with_fallback(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+        skip_native: bool,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if !skip_native && let Some(native_result) = self.try_native_method(target, method, args) {
+            return Ok(vec![native_result?]);
+        }
+        self.interpreter
+            .call_method_all_with_values(target.clone(), method, args.to_vec())
+    }
+
+    fn call_method_mut_with_temp_target(
+        &mut self,
+        item: &Value,
+        method: &str,
+        args: Vec<Value>,
+        slot: usize,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let temp_name = format!("__mutsu_hyper_target_{slot}");
+        self.interpreter
+            .env_mut()
+            .insert(temp_name.clone(), item.clone());
+        let result =
+            self.interpreter
+                .call_method_mut_with_values(&temp_name, item.clone(), method, args)?;
+        let updated = self
+            .interpreter
+            .env()
+            .get(&temp_name)
+            .cloned()
+            .unwrap_or_else(|| item.clone());
+        self.interpreter.env_mut().remove(&temp_name);
+        Ok((result, updated))
+    }
+
+    fn call_method_all_with_temp_target(
+        &mut self,
+        item: &Value,
+        method: &str,
+        args: Vec<Value>,
+        slot: usize,
+    ) -> Result<(Vec<Value>, Value), RuntimeError> {
+        let temp_name = format!("__mutsu_hyper_target_{slot}");
+        self.interpreter
+            .env_mut()
+            .insert(temp_name.clone(), item.clone());
+        let result = self
+            .interpreter
+            .call_method_all_with_values(item.clone(), method, args)?;
+        let updated = self
+            .interpreter
+            .env()
+            .get(&temp_name)
+            .cloned()
+            .unwrap_or_else(|| item.clone());
+        self.interpreter.env_mut().remove(&temp_name);
+        Ok((result, updated))
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -93,7 +164,32 @@ impl VM {
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
-        if !self.interpreter.has_proto(&name)
+        // Check if there's a CALL-ME override from trait_mod mixin
+        let call_me_override = self
+            .interpreter
+            .env()
+            .get(&format!("&{}", name))
+            .cloned()
+            .and_then(|callable| {
+                if let Value::Mixin(_, ref mixins) = callable {
+                    let has_call_me = mixins.keys().any(|key| {
+                        key.strip_prefix("__mutsu_role__")
+                            .is_some_and(|rn| self.interpreter.role_has_method(rn, "CALL-ME"))
+                    });
+                    if has_call_me {
+                        return Some(callable);
+                    }
+                }
+                None
+            });
+        if let Some(callable) = call_me_override {
+            let result = self
+                .interpreter
+                .call_method_with_values(callable, "CALL-ME", args);
+            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+        } else if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             self.interpreter
@@ -104,7 +200,7 @@ impl VM {
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             self.stack.push(native_result?);
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
@@ -188,7 +284,7 @@ impl VM {
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             self.stack.push(native_result?);
         } else {
             let result = self.interpreter.call_function(&name, args)?;
@@ -209,13 +305,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        // Modifiers that need method-name rewriting before runtime dispatch.
-        let method = match modifier.as_deref() {
-            Some("^") => format!("^{}", method_raw),
-            Some("!") if method_raw.contains("::") => method_raw,
-            Some("!") => format!("!{}", method_raw),
-            _ => method_raw,
-        };
+        let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallMethod"));
@@ -264,7 +354,7 @@ impl VM {
             let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
-                let r = if let Some(nr) = Self::try_native_method(v, &method, &args) {
+                let r = if let Some(nr) = self.try_native_method(v, &method, &args) {
                     nr?
                 } else {
                     self.interpreter
@@ -316,8 +406,10 @@ impl VM {
         {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
+        let target_for_mod = target.clone();
+        let args_for_mod = args.clone();
         let call_result = if !skip_native {
-            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+            if let Some(native_result) = self.try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
@@ -332,15 +424,23 @@ impl VM {
                 self.stack.push(call_result.unwrap_or(Value::Nil));
             }
             Some("+") => {
-                // .+method: must succeed, wraps result in a list
-                let val = call_result?;
-                self.stack.push(Value::array(vec![val]));
+                let vals = self.call_method_all_with_fallback(
+                    &target_for_mod,
+                    &method,
+                    &args_for_mod,
+                    skip_native,
+                )?;
+                self.stack.push(Value::array(vals));
                 self.sync_locals_from_env(code);
             }
             Some("*") => {
-                // .*method: wraps in list if found, empty list if not
-                match call_result {
-                    Ok(val) => self.stack.push(Value::array(vec![val])),
+                match self.call_method_all_with_fallback(
+                    &target_for_mod,
+                    &method,
+                    &args_for_mod,
+                    skip_native,
+                ) {
+                    Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(_) => self.stack.push(Value::array(vec![])),
                 }
             }
@@ -388,7 +488,7 @@ impl VM {
             self.interpreter.call_sub_value(name_val, call_args, false)
         } else {
             let method = name_val.to_string_value();
-            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+            if let Some(native_result) = self.try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
@@ -412,12 +512,7 @@ impl VM {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let method = match modifier.as_deref() {
-            Some("^") => format!("^{}", method_raw),
-            Some("!") if method_raw.contains("::") => method_raw,
-            Some("!") => format!("!{}", method_raw),
-            _ => method_raw,
-        };
+        let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallMethodMut"));
@@ -466,7 +561,7 @@ impl VM {
             let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
-                let r = if let Some(nr) = Self::try_native_method(v, &method, &args) {
+                let r = if let Some(nr) = self.try_native_method(v, &method, &args) {
                     nr?
                 } else {
                     self.interpreter
@@ -509,7 +604,7 @@ impl VM {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
         let call_result = if !skip_native {
-            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+            if let Some(native_result) = self.try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
@@ -620,7 +715,7 @@ impl VM {
             let result = self.interpreter.eval_call_on_value(target, args);
             self.interpreter.set_pending_call_arg_sources(None);
             result?
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             native_result?
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
@@ -639,8 +734,11 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
         arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
     ) -> Result<(), RuntimeError> {
-        let method = Self::const_str(code, name_idx).to_string();
+        let method_raw = Self::const_str(code, name_idx).to_string();
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in HyperMethodCall"));
@@ -651,17 +749,295 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in HyperMethodCall target"))?;
-        let items = crate::runtime::value_to_list(&target);
+        let mut items = crate::runtime::value_to_list(&target);
         let mut results = Vec::with_capacity(items.len());
-        for item in &items {
-            let call_result =
-                if let Some(native_result) = Self::try_native_method(item, &method, &args) {
-                    native_result?
-                } else {
-                    self.interpreter
-                        .call_method_with_values(item.clone(), &method, args.clone())?
+        for (idx, item) in items.iter_mut().enumerate() {
+            let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
+            let mut skip_native = method == "VAR"
+                || (quoted
+                    && matches!(
+                        method.as_str(),
+                        "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+                    ));
+            if !skip_native
+                && !matches!(
+                    method.as_str(),
+                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+                )
+            {
+                let class_name = match item {
+                    Value::Instance { class_name, .. } => Some(class_name.as_str()),
+                    Value::Package(name) => Some(name.as_str()),
+                    _ => None,
                 };
-            results.push(call_result);
+                if let Some(cn) = class_name
+                    && self.interpreter.has_user_method(cn, &method)
+                {
+                    skip_native = true;
+                }
+            }
+            let item_args = args.clone();
+            match modifier.as_deref() {
+                Some("?") => {
+                    let val = if !skip_native {
+                        if let Some(native_result) =
+                            self.try_native_method(item, &method, &item_args)
+                        {
+                            native_result.unwrap_or(Value::Package("Any".to_string()))
+                        } else {
+                            match self
+                                .call_method_mut_with_temp_target(item, &method, item_args, idx)
+                            {
+                                Ok((v, updated)) => {
+                                    *item = updated;
+                                    v
+                                }
+                                Err(_) => Value::Package("Any".to_string()),
+                            }
+                        }
+                    } else {
+                        match self.call_method_mut_with_temp_target(item, &method, item_args, idx) {
+                            Ok((v, updated)) => {
+                                *item = updated;
+                                v
+                            }
+                            Err(_) => Value::Package("Any".to_string()),
+                        }
+                    };
+                    results.push(val);
+                }
+                Some("+") => {
+                    let vals = if !skip_native {
+                        if let Some(native_result) =
+                            self.try_native_method(item, &method, &item_args)
+                        {
+                            vec![native_result?]
+                        } else {
+                            let (v, updated) = self
+                                .call_method_all_with_temp_target(item, &method, item_args, idx)?;
+                            *item = updated;
+                            v
+                        }
+                    } else {
+                        let (v, updated) =
+                            self.call_method_all_with_temp_target(item, &method, item_args, idx)?;
+                        *item = updated;
+                        v
+                    };
+                    results.push(Value::array(vals));
+                }
+                Some("*") => {
+                    if !skip_native
+                        && let Some(native_result) =
+                            self.try_native_method(item, &method, &item_args)
+                    {
+                        match native_result {
+                            Ok(v) => results.push(Value::array(vec![v])),
+                            Err(_) => results.push(Value::array(vec![])),
+                        }
+                    } else {
+                        match self.call_method_all_with_temp_target(item, &method, item_args, idx) {
+                            Ok((vals, updated)) => {
+                                *item = updated;
+                                results.push(Value::array(vals));
+                            }
+                            Err(_) => results.push(Value::array(vec![])),
+                        }
+                    }
+                }
+                _ => {
+                    let val = if !skip_native {
+                        if let Some(native_result) =
+                            self.try_native_method(item, &method, &item_args)
+                        {
+                            native_result?
+                        } else {
+                            let (v, updated) = self
+                                .call_method_mut_with_temp_target(item, &method, item_args, idx)?;
+                            *item = updated;
+                            v
+                        }
+                    } else {
+                        let (v, updated) =
+                            self.call_method_mut_with_temp_target(item, &method, item_args, idx)?;
+                        *item = updated;
+                        v
+                    };
+                    results.push(val);
+                }
+            }
+        }
+        if let Value::Array(existing, is_array) = &target {
+            self.interpreter.overwrite_array_items_by_identity_for_vm(
+                existing,
+                items.clone(),
+                *is_array,
+            );
+            if let Some((source, indices, source_is_array)) =
+                crate::runtime::utils::get_grep_view_binding(existing)
+            {
+                let mut source_items = source.to_vec();
+                for (filtered_idx, source_idx) in indices.iter().enumerate() {
+                    if filtered_idx < items.len() && *source_idx < source_items.len() {
+                        source_items[*source_idx] = items[filtered_idx].clone();
+                    }
+                }
+                self.interpreter.overwrite_array_items_by_identity_for_vm(
+                    &source,
+                    source_items,
+                    source_is_array,
+                );
+            }
+            self.sync_locals_from_env(code);
+        }
+        self.stack.push(Value::array(results));
+        Ok(())
+    }
+
+    pub(super) fn exec_hyper_method_call_dynamic_op(
+        &mut self,
+        code: &CompiledCode,
+        arity: u32,
+        modifier_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let arity = arity as usize;
+        if self.stack.len() < arity + 2 {
+            return Err(RuntimeError::new(
+                "VM stack underflow in HyperMethodCallDynamic",
+            ));
+        }
+        let start = self.stack.len() - arity;
+        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let name_val = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("VM stack underflow in HyperMethodCallDynamic name")
+        })?;
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("VM stack underflow in HyperMethodCallDynamic target")
+        })?;
+        let mut items = crate::runtime::value_to_list(&target);
+        let mut results = Vec::with_capacity(items.len());
+        let method = (!matches!(
+            &name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ))
+        .then(|| {
+            let method_raw = name_val.to_string_value();
+            Self::rewrite_method_name(&method_raw, modifier.as_deref())
+        });
+        for (idx, item) in items.iter_mut().enumerate() {
+            let item_args = args.clone();
+            if matches!(
+                &name_val,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            ) {
+                let mut call_args = Vec::with_capacity(item_args.len() + 1);
+                call_args.push(item.clone());
+                call_args.extend(item_args);
+                match modifier.as_deref() {
+                    Some("?") => {
+                        results.push(
+                            self.interpreter
+                                .call_sub_value(name_val.clone(), call_args, false)
+                                .unwrap_or(Value::Package("Any".to_string())),
+                        );
+                    }
+                    Some("+") => {
+                        let val =
+                            self.interpreter
+                                .call_sub_value(name_val.clone(), call_args, false)?;
+                        results.push(Value::array(vec![val]));
+                    }
+                    Some("*") => {
+                        match self
+                            .interpreter
+                            .call_sub_value(name_val.clone(), call_args, false)
+                        {
+                            Ok(v) => results.push(Value::array(vec![v])),
+                            Err(_) => results.push(Value::array(vec![])),
+                        }
+                    }
+                    _ => {
+                        results.push(self.interpreter.call_sub_value(
+                            name_val.clone(),
+                            call_args,
+                            false,
+                        )?);
+                    }
+                }
+                continue;
+            }
+            let method = method
+                .as_ref()
+                .expect("method string exists for non-callables");
+            match modifier.as_deref() {
+                Some("?") => {
+                    let val = if let Some(native_result) =
+                        self.try_native_method(item, method, &item_args)
+                    {
+                        native_result.unwrap_or(Value::Package("Any".to_string()))
+                    } else {
+                        match self.call_method_mut_with_temp_target(item, method, item_args, idx) {
+                            Ok((v, updated)) => {
+                                *item = updated;
+                                v
+                            }
+                            Err(_) => Value::Package("Any".to_string()),
+                        }
+                    };
+                    results.push(val);
+                }
+                Some("+") => {
+                    let vals = if let Some(native_result) =
+                        self.try_native_method(item, method, &item_args)
+                    {
+                        vec![native_result?]
+                    } else {
+                        let (v, updated) =
+                            self.call_method_all_with_temp_target(item, method, item_args, idx)?;
+                        *item = updated;
+                        v
+                    };
+                    results.push(Value::array(vals));
+                }
+                Some("*") => {
+                    if let Some(native_result) = self.try_native_method(item, method, &item_args) {
+                        match native_result {
+                            Ok(v) => results.push(Value::array(vec![v])),
+                            Err(_) => results.push(Value::array(vec![])),
+                        }
+                    } else {
+                        match self.call_method_all_with_temp_target(item, method, item_args, idx) {
+                            Ok((vals, updated)) => {
+                                *item = updated;
+                                results.push(Value::array(vals));
+                            }
+                            Err(_) => results.push(Value::array(vec![])),
+                        }
+                    }
+                }
+                _ => {
+                    let val = if let Some(native_result) =
+                        self.try_native_method(item, method, &item_args)
+                    {
+                        native_result?
+                    } else {
+                        let (v, updated) =
+                            self.call_method_mut_with_temp_target(item, method, item_args, idx)?;
+                        *item = updated;
+                        v
+                    };
+                    results.push(val);
+                }
+            }
+        }
+        if let Value::Array(existing, is_array) = &target {
+            self.interpreter.overwrite_array_items_by_identity_for_vm(
+                existing,
+                items.clone(),
+                *is_array,
+            );
+            self.sync_locals_from_env(code);
         }
         self.stack.push(Value::array(results));
         Ok(())
@@ -720,7 +1096,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(None);
             call_result?;
             self.sync_locals_from_env(code);
-        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+        } else if let Some(native_result) = self.try_native_function(&name, &args) {
             native_result?;
         } else {
             self.interpreter.set_pending_call_arg_sources(arg_sources);

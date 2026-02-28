@@ -11,6 +11,7 @@ mod display;
 mod error;
 pub(crate) mod signature;
 mod types;
+pub(crate) use types::what_type_name;
 
 /// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
 pub(crate) fn current_time_secs_f64() -> f64 {
@@ -571,6 +572,19 @@ impl PartialEq for Value {
             (Value::Complex(r, i), Value::Num(f)) | (Value::Num(f), Value::Complex(r, i)) => {
                 *i == 0.0 && *r == *f
             }
+            (Value::Complex(r, i), Value::Rat(n, d)) | (Value::Rat(n, d), Value::Complex(r, i)) => {
+                *d != 0 && *i == 0.0 && *r == (*n as f64 / *d as f64)
+            }
+            (Value::Complex(r, i), Value::FatRat(n, d))
+            | (Value::FatRat(n, d), Value::Complex(r, i)) => {
+                *d != 0 && *i == 0.0 && *r == (*n as f64 / *d as f64)
+            }
+            (Value::Complex(r, i), Value::BigRat(n, d))
+            | (Value::BigRat(n, d), Value::Complex(r, i)) => {
+                !d.is_zero()
+                    && *i == 0.0
+                    && *r == (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+            }
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Set(a), Value::Set(b)) => a == b,
             (Value::Bag(a), Value::Bag(b)) => a == b,
@@ -1055,6 +1069,8 @@ impl Value {
             }
             Value::Whatever => f64::INFINITY,
             Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
+            Value::Array(items, ..) => items.len() as f64,
+            Value::Hash(map) => map.len() as f64,
             Value::Instance {
                 class_name,
                 attributes,

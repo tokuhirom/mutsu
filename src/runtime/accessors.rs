@@ -34,6 +34,12 @@ impl Interpreter {
                 return Some(spec.clone());
             }
         }
+        // Also check the FunctionDef registry
+        if let Some(def) = self.resolve_function(name)
+            && let Some(ref rt) = def.return_type
+        {
+            return Some(rt.clone());
+        }
         None
     }
 
@@ -53,6 +59,10 @@ impl Interpreter {
     pub(crate) fn is_definite_return_spec(&self, spec: &str) -> bool {
         let s = spec.trim();
         if s.is_empty() {
+            return false;
+        }
+        // Coercion types like Str(Numeric:D) or Foo:D() are type constraints, not definite returns
+        if s.contains('(') && s.ends_with(')') {
             return false;
         }
         if Self::return_spec_scalar_name(s).is_some() {
@@ -176,11 +186,12 @@ impl Interpreter {
             };
         };
         if !self.is_definite_return_spec(spec) {
-            return match result {
-                Ok(v) => Ok(v),
-                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                Err(e) => Err(e),
+            let value = match result {
+                Ok(v) => v,
+                Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                Err(e) => return Err(e),
             };
+            return self.enforce_return_type_constraint(spec, value);
         }
 
         match result {
@@ -196,6 +207,180 @@ impl Interpreter {
                 self.evaluate_definite_return_value(spec)
             }
             Err(e) => Err(e),
+        }
+    }
+
+    /// Create an X::TypeCheck::Return exception
+    fn throw_type_check_return(&self, got: &Value) -> RuntimeError {
+        let msg = format!(
+            "Type check failed for return value; expected a type object coercion, got {}",
+            super::utils::value_type_name(got)
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(msg.clone()));
+        let exception = Value::make_instance("X::TypeCheck::Return".to_string(), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(exception));
+        err
+    }
+
+    /// Create an X::Coerce::Impossible exception
+    fn throw_coerce_impossible(&self, target: &str, got: &Value) -> RuntimeError {
+        let msg = format!(
+            "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
+            super::utils::value_type_name(got),
+            target
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(msg.clone()));
+        let exception = Value::make_instance("X::Coerce::Impossible".to_string(), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(exception));
+        err
+    }
+
+    /// Check if a value is a Failure instance
+    fn is_failure_value(value: &Value) -> bool {
+        matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
+    }
+
+    /// Enforce a return type constraint on a return value.
+    /// Handles coercion types like Str(Numeric:D), Foo:D(), and subset types.
+    fn enforce_return_type_constraint(
+        &mut self,
+        spec: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        // Nil and Failure pass through unconditionally
+        if matches!(value, Value::Nil) || Self::is_failure_value(&value) {
+            return Ok(value);
+        }
+
+        // Check if this is a subset type
+        if let Some(subset) = self.subsets.get(spec).cloned() {
+            // For subsets with coercion base types, coerce first then check predicate
+            let coerced = if subset.base.contains('(') && subset.base.ends_with(')') {
+                self.enforce_coercion_return(&subset.base, value)?
+            } else {
+                // Non-coercion subset: just check the base type
+                if !self.type_matches_value(&subset.base, &value) {
+                    return Err(self.throw_type_check_return(&value));
+                }
+                value
+            };
+            // Check the where predicate if present
+            if let Some(ref pred) = subset.predicate {
+                let pred_clone = pred.clone();
+                if !self.check_where_constraint(&pred_clone, &coerced) {
+                    return Err(self.throw_type_check_return(&coerced));
+                }
+            }
+            return Ok(coerced);
+        }
+
+        // Check if this is a coercion type like Str(Numeric:D) or Foo:D()
+        if spec.contains('(') && spec.ends_with(')') {
+            return self.enforce_coercion_return(spec, value);
+        }
+
+        // Plain type constraint (e.g., Str, Int:D)
+        if !self.type_matches_value(spec, &value) {
+            return Err(self.throw_type_check_return(&value));
+        }
+        Ok(value)
+    }
+
+    /// Enforce a coercion return type like Str(Numeric:D) or Foo:D().
+    fn enforce_coercion_return(&mut self, spec: &str, value: Value) -> Result<Value, RuntimeError> {
+        // Parse the coercion type: strip smiley from the whole spec first
+        let (spec_no_smiley, outer_smiley) = super::types::strip_type_smiley(spec);
+        let (full_target, source) = if let Some(open) = spec_no_smiley.find('(')
+            && spec_no_smiley.ends_with(')')
+        {
+            let target = &spec_no_smiley[..open];
+            let src = &spec_no_smiley[open + 1..spec_no_smiley.len() - 1];
+            (target, if src.is_empty() { None } else { Some(src) })
+        } else if let Some(open) = spec.find('(')
+            && spec.ends_with(')')
+        {
+            let target = &spec[..open];
+            let src = &spec[open + 1..spec.len() - 1];
+            (target, if src.is_empty() { None } else { Some(src) })
+        } else {
+            return Ok(value);
+        };
+
+        // Determine definite requirement from target smiley
+        let (base_target, target_smiley) = super::types::strip_type_smiley(full_target);
+        let requires_definite = target_smiley == Some(":D") || outer_smiley == Some(":D");
+
+        // If there's a source constraint, check it
+        if let Some(src) = source {
+            // The value must match the source type, OR already be of the target type
+            if !self.type_matches_value(src, &value)
+                && !self.type_matches_value(base_target, &value)
+            {
+                return Err(self.throw_type_check_return(&value));
+            }
+        }
+
+        // If value already matches target type, return it directly
+        if self.type_matches_value(full_target, &value) {
+            return Ok(value);
+        }
+
+        // Try to coerce the value
+        let coerced = self.try_coerce_value_for_return(base_target, value.clone())?;
+
+        // Check if coercion produced a valid result
+        if requires_definite && !super::types::value_is_defined(&coerced) {
+            return Err(self.throw_coerce_impossible(spec, &value));
+        }
+
+        // Check if the coerced value actually matches the target type
+        if !self.type_matches_value(base_target, &coerced) {
+            return Err(self.throw_coerce_impossible(spec, &value));
+        }
+
+        // For subset targets, check the where constraint
+        if let Some(subset) = self.subsets.get(base_target).cloned()
+            && let Some(ref pred) = subset.predicate
+        {
+            let pred_clone = pred.clone();
+            if !self.check_where_constraint(&pred_clone, &coerced) {
+                return Err(self.throw_coerce_impossible(spec, &value));
+            }
+        }
+
+        Ok(coerced)
+    }
+
+    /// Try to coerce a value for a return type constraint.
+    /// For subset types, coerces to the subset's base type first.
+    fn try_coerce_value_for_return(
+        &mut self,
+        target: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        // If target is a subset, coerce to the subset's base type
+        if let Some(subset) = self.subsets.get(target).cloned() {
+            let (base, _) = super::types::strip_type_smiley(&subset.base);
+            return self.try_coerce_value_for_constraint(&format!("{}()", base), value);
+        }
+        self.try_coerce_value_for_constraint(&format!("{}()", target), value)
+    }
+
+    /// Check a where constraint against a value
+    fn check_where_constraint(&mut self, pred: &Expr, value: &Value) -> bool {
+        // Evaluate the predicate expression to get a callable value
+        let pred_val = match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        // Call the predicate with the value
+        match self.call_sub_value(pred_val, vec![value.clone()], false) {
+            Ok(result) => result.truthy(),
+            Err(_) => false,
         }
     }
 
@@ -615,6 +800,14 @@ impl Interpreter {
         self.token_defs = token_defs;
         self.proto_subs = proto_subs;
         self.proto_tokens = proto_tokens;
+    }
+
+    pub(crate) fn push_block_scope_depth(&mut self) {
+        self.block_scope_depth += 1;
+    }
+
+    pub(crate) fn pop_block_scope_depth(&mut self) {
+        self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
     }
 
     /// Push a saved variable value for `let` scope management.

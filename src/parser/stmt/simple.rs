@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use regex::Regex;
 
 use super::super::expr::expression;
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{is_loop_label_name, ws, ws1};
 use super::super::parse_result::{
     PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
 };
@@ -51,6 +51,8 @@ thread_local! {
     /// Infix associativity traits to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_ASSOC_PRESEED: RefCell<HashMap<String, String>> =
         RefCell::new(HashMap::new());
+    /// Imported function names to pre-register after scope reset (for EVAL).
+    static EVAL_IMPORTED_FUNCTION_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -306,6 +308,17 @@ pub(in crate::parser) fn reset_user_subs() {
             register_user_infix_assoc(name, assoc);
         }
     });
+    EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
+        let names = preseed.borrow();
+        SCOPES.with(|s| {
+            let mut scopes = s.borrow_mut();
+            if let Some(scope) = scopes.last_mut() {
+                for name in names.iter() {
+                    scope.imported_functions.insert(name.clone());
+                }
+            }
+        });
+    });
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).
@@ -318,6 +331,12 @@ pub(in crate::parser) fn set_eval_operator_preseed(names: Vec<String>) {
 pub(in crate::parser) fn set_eval_operator_assoc_preseed(assoc: HashMap<String, String>) {
     EVAL_OPERATOR_ASSOC_PRESEED.with(|preseed| {
         *preseed.borrow_mut() = assoc;
+    });
+}
+
+pub(in crate::parser) fn set_eval_imported_function_preseed(names: Vec<String>) {
+    EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
     });
 }
 
@@ -1086,6 +1105,7 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
             &err.messages,
         ),
         remaining_len: err.remaining_len.or(Some(rest.len())),
+        exception: None,
     })?;
     let mut args = vec![first_arg];
     loop {
@@ -1133,6 +1153,7 @@ pub(super) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
         messages: merge_expected_messages("expected return value expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(rest.len())),
+        exception: None,
     })?;
     let stmt = Stmt::Return(expr);
     parse_statement_modifier(rest, stmt)
@@ -1143,9 +1164,9 @@ pub(super) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: last LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
         && let Ok((r, label)) = ident(rest)
-        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        && is_loop_label_name(&label)
     {
         return parse_statement_modifier(r, Stmt::Last(Some(label)));
     }
@@ -1156,9 +1177,9 @@ pub(super) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: next LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
         && let Ok((r, label)) = ident(rest)
-        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        && is_loop_label_name(&label)
     {
         return parse_statement_modifier(r, Stmt::Next(Some(label)));
     }
@@ -1169,9 +1190,9 @@ pub(super) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: redo LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
         && let Ok((r, label)) = ident(rest)
-        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+        && is_loop_label_name(&label)
     {
         return parse_statement_modifier(r, Stmt::Redo(Some(label)));
     }
@@ -1407,13 +1428,123 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    let (rest, expr) = expression(input).map_err(|err| PError {
-        messages: merge_expected_messages("expected expression statement", &err.messages),
-        remaining_len: err.remaining_len.or(Some(input.len())),
+    let (rest, expr) = expression(input).map_err(|err| {
+        if err.is_fatal()
+            && (err.exception.is_some()
+                || err
+                    .messages
+                    .first()
+                    .is_some_and(|m| m.contains("X::Comp::Trait::Unknown")))
+        {
+            return err;
+        }
+        PError {
+            messages: merge_expected_messages("expected expression statement", &err.messages),
+            remaining_len: err.remaining_len.or(Some(input.len())),
+            exception: err.exception,
+        }
     })?;
 
     // Check for index assignment after expression
     let (rest, _) = ws(rest)?;
+    if let Some(stripped) = rest
+        .strip_prefix("\u{00BB}.=")
+        .or_else(|| rest.strip_prefix(">>.="))
+    {
+        let (stripped, _) = ws(stripped)?;
+        let (r, method_name) = take_while1(stripped, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })
+        .map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected method name after hyper '.='",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(stripped.len())),
+            exception: None,
+        })?;
+        let method_name = method_name.to_string();
+        let (r, method_args) = if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else {
+            (r, Vec::new())
+        };
+        let make_rhs = |target: Expr| Expr::HyperMethodCall {
+            target: Box::new(target),
+            name: method_name.clone(),
+            args: method_args.clone(),
+            modifier: None,
+            quoted: false,
+        };
+        match expr {
+            Expr::Var(name) => {
+                let stmt = Stmt::Assign {
+                    name: name.clone(),
+                    expr: make_rhs(Expr::Var(name)),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
+            Expr::ArrayVar(name) => {
+                let stmt = Stmt::Assign {
+                    name: format!("@{}", name),
+                    expr: make_rhs(Expr::ArrayVar(name)),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
+            Expr::HashVar(name) => {
+                let stmt = Stmt::Assign {
+                    name: format!("%{}", name),
+                    expr: make_rhs(Expr::HashVar(name)),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
+            Expr::Index { target, index } => {
+                let tmp_idx = format!(
+                    "__mutsu_idx_{}",
+                    TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+                );
+                let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+                let lhs_expr = Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(tmp_idx_expr.clone()),
+                };
+                let assigned_value = make_rhs(lhs_expr);
+                let stmt = Stmt::Expr(Expr::DoBlock {
+                    body: vec![
+                        Stmt::VarDecl {
+                            name: tmp_idx.clone(),
+                            expr: *index,
+                            type_constraint: None,
+                            is_state: false,
+                            is_our: false,
+                            is_dynamic: false,
+                            is_export: false,
+                            export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
+                        },
+                        Stmt::Expr(Expr::IndexAssign {
+                            target,
+                            index: Box::new(tmp_idx_expr),
+                            value: Box::new(assigned_value),
+                        }),
+                    ],
+                    label: None,
+                });
+                return parse_statement_modifier(r, stmt);
+            }
+            _ => {
+                return Err(PError::expected("assignable expression before hyper '.='"));
+            }
+        }
+    }
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
         let (r, method_name) = take_while1(stripped, |c: char| {
@@ -1422,6 +1553,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         .map_err(|err| PError {
             messages: merge_expected_messages("expected method name after '.='", &err.messages),
             remaining_len: err.remaining_len.or(Some(stripped.len())),
+            exception: None,
         })?;
         let method_name = method_name.to_string();
         let (r, method_args) = if r.starts_with('(') {
@@ -1488,6 +1620,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             is_dynamic: false,
                             is_export: false,
                             export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
                         },
                         Stmt::Expr(Expr::IndexAssign {
                             target,
@@ -1500,7 +1633,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 return parse_statement_modifier(r, stmt);
             }
             _ => {
-                return Err(PError::expected("assignable expression before '.='"));
+                // Non-lvalue targets still support `.=` dispatch in statement position,
+                // but must not sink the returned value.
+                let stmt = Stmt::Expr(Expr::Call {
+                    name: "sink".to_string(),
+                    args: vec![make_rhs(expr)],
+                });
+                return parse_statement_modifier(r, stmt);
             }
         }
     }
@@ -1513,6 +1652,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         if let Expr::Index { target, index } = expr {
             let stmt = Stmt::Expr(Expr::IndexAssign {
@@ -1533,6 +1673,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Expr(Expr::IndexAssign {
             target,
@@ -1552,6 +1693,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?;
         if let Expr::Index { target, index } = expr {
             let stmt = Stmt::Expr(Expr::IndexAssign {
@@ -1564,6 +1706,119 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
+    }
+
+    // Reverse bind assignment is intentionally unsupported in Raku.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && (rest.starts_with("R:=") || rest.starts_with("R::="))
+    {
+        return Err(PError::fatal(
+            "Cannot reverse the args of := because list assignment operators are too fiddly"
+                .to_string(),
+        ));
+    }
+
+    // Reverse assignment: `value R= target` means `target = value`.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && rest.starts_with("R=")
+        && !rest.starts_with("R==")
+    {
+        let r = &rest[2..];
+        let (r, _) = ws(r)?;
+        let (r, target_expr) =
+            super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected assignable expression after 'R='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
+            })?;
+        if let Expr::DoStmt(stmt) = &target_expr
+            && let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                ..
+            } = stmt.as_ref()
+        {
+            let stmt = Stmt::VarDecl {
+                name: name.clone(),
+                expr,
+                type_constraint: type_constraint.clone(),
+                is_state: *is_state,
+                is_our: *is_our,
+                is_dynamic: *is_dynamic,
+                is_export: *is_export,
+                export_tags: export_tags.clone(),
+                custom_traits: custom_traits.clone(),
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } = &target_expr
+        {
+            let target_var_name = match target.as_ref() {
+                Expr::Var(var_name) => Some(var_name.clone()),
+                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
+                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                _ => None,
+            };
+            let assigned = method_lvalue_assign_expr(
+                (**target).clone(),
+                target_var_name,
+                name.clone(),
+                args.clone(),
+                expr,
+            );
+            let stmt = Stmt::Expr(assigned);
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::Call { name, args } = &target_expr {
+            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
+                name.clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::CallOn { target, args } = &target_expr {
+            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
+                (**target).clone(),
+                args.clone(),
+                expr,
+            ));
+            return parse_statement_modifier(r, stmt);
+        }
+        let stmt = match target_expr {
+            Expr::Var(name) => Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::ArrayVar(name) => Stmt::Assign {
+                name: format!("@{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            Expr::HashVar(name) => Stmt::Assign {
+                name: format!("%{}", name),
+                expr,
+                op: AssignOp::Assign,
+            },
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr)),
+        };
+        return parse_statement_modifier(r, stmt);
     }
 
     // Generic assignment on non-variable lhs (e.g. `.key = 1`).
@@ -1582,6 +1837,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         if let Expr::MethodCall {
             target,
@@ -1631,7 +1887,12 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ));
             return parse_statement_modifier(r, stmt);
         }
-        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        let stmt = match expr {
+            Expr::Literal(_) | Expr::BareWord(_) => {
+                Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
+            }
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs)),
+        };
         return parse_statement_modifier(r, stmt);
     }
 
@@ -1646,6 +1907,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
         return parse_statement_modifier(r, stmt);
@@ -1663,6 +1925,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let stmts = vec![
                 Stmt::Expr(expr),
@@ -1683,6 +1946,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
             })?;
             let var_expr = Expr::Var(var_name.clone());
             let stmts = vec![
@@ -1714,6 +1978,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
         })?;
         if let Expr::Index { target, index } = &expr {
             let tmp_idx = format!(
@@ -1752,6 +2017,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),
@@ -2000,8 +2266,8 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Test/Test::Util functions are NOT listed here — they are registered dynamically
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
-    "dd", "exit", "proceed", "succeed", "push", "pop", "shift", "unshift", "append", "prepend",
-    "elems", "chars", "defined", "warn", "EVAL", "EVALFILE",
+    "dd", "exit", "proceed", "succeed", "done", "push", "pop", "shift", "unshift", "append",
+    "prepend", "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.
@@ -2048,6 +2314,10 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Succeed));
     }
+    if name == "done" {
+        let (rest, _) = opt_char(rest, ';');
+        return Ok((rest, Stmt::ReactDone));
+    }
 
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
     // When there was whitespace before `(`, treat `(` as expression grouping, not call parens.
@@ -2055,15 +2325,19 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         parse_stmt_call_args_no_paren(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?
     } else {
         parse_stmt_call_args(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
             remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
         })?
     };
     let mut args = args;
-    if known_call_is_expression_prefix(input, rest) {
+    // Test assertion calls (e.g. `is [1], [1], 'desc'`) can start with bracketed
+    // arguments and be mistaken for an expression prefix. Keep them as calls.
+    if !is_test_assertion_callable(&name) && known_call_is_expression_prefix(input, rest) {
         return Err(PError::expected("known function call"));
     }
     if is_test_assertion_callable(&name) {
