@@ -372,6 +372,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             && op
                 .chars()
                 .all(|c| !c.is_whitespace() && !c.is_alphanumeric() && c != '_' && c != '\'')
+            && !op.chars().any(|c| matches!(c, '$' | '@' | '%' | '&'))
             && !op
                 .chars()
                 .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'))

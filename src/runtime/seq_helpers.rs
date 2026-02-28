@@ -1101,26 +1101,30 @@ impl Interpreter {
                     return false;
                 }
                 let selected = if let Some(needed) = *repeat {
-                    let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
-                    all.retain(|c| c.from == earliest);
-                    if all.len() < needed {
-                        self.env.insert("/".to_string(), Value::Nil);
-                        return false;
-                    }
-                    all.into_iter().take(needed).collect::<Vec<_>>()
-                } else {
-                    let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
-                        std::collections::BTreeMap::new();
-                    for capture in all {
-                        let key = capture.from;
-                        match best_by_start.get(&key) {
-                            Some(existing) if capture.to <= existing.to => {}
-                            _ => {
-                                best_by_start.insert(key, capture);
+                    if needed == 0 {
+                        let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
+                            std::collections::BTreeMap::new();
+                        for capture in all {
+                            let key = capture.from;
+                            match best_by_start.get(&key) {
+                                Some(existing) if capture.to <= existing.to => {}
+                                _ => {
+                                    best_by_start.insert(key, capture);
+                                }
                             }
                         }
+                        best_by_start.into_values().collect::<Vec<_>>()
+                    } else {
+                        let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
+                        all.retain(|c| c.from == earliest);
+                        if all.len() < needed {
+                            self.env.insert("/".to_string(), Value::Nil);
+                            return false;
+                        }
+                        all.into_iter().take(needed).collect::<Vec<_>>()
                     }
-                    best_by_start.into_values().collect::<Vec<_>>()
+                } else {
+                    all
                 };
                 if selected.is_empty() {
                     self.env.insert("/".to_string(), Value::Nil);

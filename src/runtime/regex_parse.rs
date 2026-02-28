@@ -410,6 +410,11 @@ impl Interpreter {
         } else {
             source.trim()
         };
+        // For multiline :s patterns, trailing indentation before the closing
+        // delimiter is layout whitespace, not a semantic sigspace token.
+        if sigspace && source.contains('\n') {
+            source = source.trim_end();
+        }
         // Quote-word delimiters in regex patterns (e.g., «word») represent
         // literal text content, not literal guillemet characters.
         if let Some(inner) = source.strip_prefix('«').and_then(|s| s.strip_suffix('»')) {
@@ -477,7 +482,7 @@ impl Interpreter {
                                     items: vec![ClassItem::Space],
                                 }),
                                 quant: RegexQuant::ZeroOrMore,
-                                named_capture: pending_named_capture.take(),
+                                named_capture: None,
                                 ratchet,
                             });
                         }
@@ -485,13 +490,23 @@ impl Interpreter {
                         if tokens.last().is_some_and(token_is_ws_like) {
                             continue;
                         }
+                        let next_is_anchor_end = {
+                            let mut lookahead = chars.clone();
+                            while lookahead.next_if(|ch| ch.is_whitespace()).is_some() {}
+                            lookahead.peek().is_some_and(|ch| *ch == '$')
+                                && lookahead.clone().skip(1).all(|ch| ch.is_whitespace())
+                        };
                         tokens.push(RegexToken {
                             atom: RegexAtom::CharClass(CharClass {
                                 negated: false,
                                 items: vec![ClassItem::Space],
                             }),
-                            quant: RegexQuant::OneOrMore,
-                            named_capture: pending_named_capture.take(),
+                            quant: if next_is_anchor_end {
+                                RegexQuant::ZeroOrMore
+                            } else {
+                                RegexQuant::OneOrMore
+                            },
+                            named_capture: None,
                             ratchet,
                         });
                     }
@@ -524,10 +539,18 @@ impl Interpreter {
                     }
                     capture_name.push(ch);
                 }
-                if !capture_name.is_empty() && chars.peek() == Some(&'=') {
-                    chars.next();
-                    pending_named_capture = Some(capture_name);
-                    continue;
+                if !capture_name.is_empty() {
+                    while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                        chars.next();
+                    }
+                    if chars.peek() == Some(&'=') {
+                        chars.next();
+                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                            chars.next();
+                        }
+                        pending_named_capture = Some(capture_name);
+                        continue;
+                    }
                 }
                 tokens.push(RegexToken {
                     atom: RegexAtom::Literal('$'),
@@ -976,14 +999,22 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
-                    let alternatives: Vec<&str> = group_pattern.split('|').collect();
+                    let alternatives = Self::split_top_level_alternation(&group_pattern);
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
-                            let parsed_alt = if ignore_case {
-                                self.parse_regex(&format!(":i {}", alt))
+                            let parsed_alt = if ignore_case || sigspace {
+                                let mut scoped = String::new();
+                                if ignore_case {
+                                    scoped.push_str(":i ");
+                                }
+                                if sigspace {
+                                    scoped.push_str(":s ");
+                                }
+                                scoped.push_str(alt.trim_end());
+                                self.parse_regex(&scoped)
                             } else {
-                                self.parse_regex(alt)
+                                self.parse_regex(&alt)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
@@ -1003,8 +1034,16 @@ impl Interpreter {
                         };
                         RegexAtom::CaptureGroup(group_pat)
                     } else {
-                        let parsed_group = if ignore_case {
-                            self.parse_regex(&format!(":i {}", group_pattern))
+                        let parsed_group = if ignore_case || sigspace {
+                            let mut scoped = String::new();
+                            if ignore_case {
+                                scoped.push_str(":i ");
+                            }
+                            if sigspace {
+                                scoped.push_str(":s ");
+                            }
+                            scoped.push_str(group_pattern.trim_end());
+                            self.parse_regex(&scoped)
                         } else {
                             self.parse_regex(&group_pattern)
                         };
@@ -1035,14 +1074,22 @@ impl Interpreter {
                         }
                     }
                     // Parse the group as alternation
-                    let alternatives: Vec<&str> = group_pattern.split('|').collect();
+                    let alternatives = Self::split_top_level_alternation(&group_pattern);
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
-                            let parsed_alt = if ignore_case {
-                                self.parse_regex(&format!(":i {}", alt))
+                            let parsed_alt = if ignore_case || sigspace {
+                                let mut scoped = String::new();
+                                if ignore_case {
+                                    scoped.push_str(":i ");
+                                }
+                                if sigspace {
+                                    scoped.push_str(":s ");
+                                }
+                                scoped.push_str(alt.trim_end());
+                                self.parse_regex(&scoped)
                             } else {
-                                self.parse_regex(alt)
+                                self.parse_regex(&alt)
                             };
                             if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
@@ -1050,8 +1097,16 @@ impl Interpreter {
                         }
                         RegexAtom::Alternation(alt_patterns)
                     } else {
-                        let parsed_group = if ignore_case {
-                            self.parse_regex(&format!(":i {}", group_pattern))
+                        let parsed_group = if ignore_case || sigspace {
+                            let mut scoped = String::new();
+                            if ignore_case {
+                                scoped.push_str(":i ");
+                            }
+                            if sigspace {
+                                scoped.push_str(":s ");
+                            }
+                            scoped.push_str(group_pattern.trim_end());
+                            self.parse_regex(&scoped)
                         } else {
                             self.parse_regex(&group_pattern)
                         };
@@ -1153,6 +1208,64 @@ impl Interpreter {
                     i += 1;
                 }
                 continue;
+            }
+            // Array interpolation in regex groups: (@name) / ( @name )
+            // Expand to an alternation group from the current array value.
+            if ch == '(' {
+                let mut j = i + 1;
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                if j < chars.len() && chars[j] == '@' {
+                    j += 1;
+                    let name_start = j;
+                    while j < chars.len()
+                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
+                    {
+                        j += 1;
+                    }
+                    if j > name_start {
+                        let mut k = j;
+                        while k < chars.len() && chars[k].is_whitespace() {
+                            k += 1;
+                        }
+                        if k < chars.len() && chars[k] == ')' {
+                            let bare_name: String = chars[name_start..j].iter().collect();
+                            let sigiled_name = format!("@{}", bare_name);
+                            let value = self
+                                .env
+                                .get(&sigiled_name)
+                                .cloned()
+                                .or_else(|| self.env.get(&bare_name).cloned())
+                                .unwrap_or(Value::Nil);
+                            let entries: Vec<String> = match value {
+                                Value::Array(items, ..)
+                                | Value::Seq(items)
+                                | Value::Slip(items) => items
+                                    .iter()
+                                    .map(|v| {
+                                        Self::escape_regex_scalar_literal(&v.to_string_value())
+                                    })
+                                    .collect(),
+                                Value::Nil => Vec::new(),
+                                other => {
+                                    vec![Self::escape_regex_scalar_literal(
+                                        &other.to_string_value(),
+                                    )]
+                                }
+                            };
+                            if entries.is_empty() {
+                                out.push_str("()");
+                            } else {
+                                out.push('(');
+                                out.push_str(&entries.join("|"));
+                                out.push(')');
+                            }
+                            i = k + 1;
+                            continue;
+                        }
+                    }
+                }
             }
             if ch == '\\' {
                 out.push(ch);

@@ -17,6 +17,7 @@ use super::super::stmt::assign::try_parse_assign_expr;
 #[derive(Default)]
 struct MatchAdverbs {
     exhaustive: bool,
+    overlap: bool,
     repeat: Option<usize>,
     ignore_case: bool,
     ignore_mark: bool,
@@ -88,14 +89,11 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
-        if name == "ex"
-            || name == "exhaustive"
-            || name == "ov"
-            || name == "overlap"
-            || name == "g"
-            || name == "global"
-        {
+        if name == "ex" || name == "exhaustive" || name == "g" || name == "global" {
             adverbs.exhaustive = true;
+        } else if name == "ov" || name == "overlap" {
+            adverbs.exhaustive = true;
+            adverbs.overlap = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
         } else if name == "m" || name == "ignoremark" {
@@ -518,7 +516,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     Expr::Literal(Value::RegexWithAdverbs {
                         pattern,
                         exhaustive: adverbs.exhaustive,
-                        repeat: adverbs.repeat,
+                        repeat: if adverbs.overlap && adverbs.repeat.is_none() {
+                            Some(0)
+                        } else {
+                            adverbs.repeat
+                        },
                         perl5: adverbs.perl5,
                         pos: adverbs.pos,
                     }),
@@ -807,6 +809,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
+        let (spec, _) = ws(spec)?;
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             if is_delim {
@@ -838,7 +841,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         Value::RegexWithAdverbs {
                             pattern,
                             exhaustive: adverbs.exhaustive,
-                            repeat: adverbs.repeat,
+                            repeat: if adverbs.overlap && adverbs.repeat.is_none() {
+                                Some(0)
+                            } else {
+                                adverbs.repeat
+                            },
                             perl5: adverbs.perl5,
                             pos: adverbs.pos,
                         }

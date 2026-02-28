@@ -406,6 +406,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_match_regex_with_adverb_and_ws_before_braced_delim() {
+        let (rest, expr) = primary("m:exhaustive { s o+ }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MatchRegex(Value::RegexWithAdverbs {
+                pattern: ref s,
+                exhaustive: true,
+                repeat: None,
+                perl5: false,
+                ..
+            }) if s == " s o+ "
+        ));
+    }
+
+    #[test]
     fn parse_hash_literal_with_semicolon_separator() {
         let (rest, expr) = primary("{ out => \"x\"; }").unwrap();
         assert_eq!(rest, "");
