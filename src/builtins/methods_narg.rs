@@ -416,8 +416,17 @@ pub(crate) fn native_method_1arg(
         }
         "fmt" => {
             let fmt = arg.to_string_value();
-            let rendered = runtime::format_sprintf(&fmt, Some(target));
-            Some(Ok(Value::Str(rendered)))
+            if fmt_joinable_target(target) {
+                let rendered = runtime::value_to_list(target)
+                    .into_iter()
+                    .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                Some(Ok(Value::Str(rendered)))
+            } else {
+                let rendered = runtime::format_sprintf(&fmt, Some(target));
+                Some(Ok(Value::Str(rendered)))
+            }
         }
         "parse-base" => {
             let radix = match arg {
@@ -660,6 +669,28 @@ pub(crate) fn native_method_1arg(
                 _ => return None,
             };
             Some(Ok(Value::Complex(mag * angle.cos(), mag * angle.sin())))
+        }
+        "roots" => {
+            let n = match arg {
+                Value::Int(i) if *i > 0 => *i as usize,
+                _ => return None,
+            };
+            let (re, im) = runtime::to_complex_parts(target)?;
+            let r = (re * re + im * im).sqrt();
+            let theta = im.atan2(re);
+            let mag = r.powf(1.0 / n as f64);
+            let mut roots = Vec::with_capacity(n);
+            for k in 0..n {
+                let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
+                let rr = mag * angle.cos();
+                let ii = mag * angle.sin();
+                if ii.abs() < 1e-12 {
+                    roots.push(Value::Num(rr));
+                } else {
+                    roots.push(Value::Complex(rr, ii));
+                }
+            }
+            Some(Ok(Value::array(roots)))
         }
         "atan2" => {
             // User-defined types need runtime coercion via .Numeric/.Bridge

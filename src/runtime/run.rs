@@ -2,6 +2,23 @@ use super::*;
 use crate::ast::Stmt;
 
 impl Interpreter {
+    fn raku_single_quoted_literal(value: &str) -> String {
+        let mut escaped = String::with_capacity(value.len() + 2);
+        escaped.push('\'');
+        for ch in value.chars() {
+            match ch {
+                '\'' => escaped.push_str("\\'"),
+                '\\' => escaped.push_str("\\\\"),
+                '\n' => escaped.push_str("\\n"),
+                '\r' => escaped.push_str("\\r"),
+                '\t' => escaped.push_str("\\t"),
+                _ => escaped.push(ch),
+            }
+        }
+        escaped.push('\'');
+        escaped
+    }
+
     /// Register top-level, non-empty sub bodies before execution so calls that appear
     /// earlier in source can resolve to later definitions.
     fn preregister_top_level_subs(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
@@ -93,6 +110,8 @@ impl Interpreter {
                 parents,
                 is_hidden,
                 hidden_parents,
+                does_parents,
+                repr,
                 body: _,
             } = &stmts[idx]
             {
@@ -103,6 +122,8 @@ impl Interpreter {
                     parents: parents.clone(),
                     is_hidden: *is_hidden,
                     hidden_parents: hidden_parents.clone(),
+                    does_parents: does_parents.clone(),
+                    repr: repr.clone(),
                     body,
                 });
             }
@@ -159,7 +180,10 @@ impl Interpreter {
             if skip_lines_remaining > 0 {
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
                     skip_lines_remaining -= 1;
-                    output.push_str(&format!("skip '{}', 1;\n", skip_reason));
+                    output.push_str(&format!(
+                        "skip {}, 1;\n",
+                        Self::raku_single_quoted_literal(&skip_reason)
+                    ));
                     continue;
                 }
                 output.push_str(line);
@@ -189,7 +213,10 @@ impl Interpreter {
                     skip_block_declared_emitted = false;
                     if let Some(count) = skip_block_declared_tests.take() {
                         for _ in 0..count {
-                            output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
+                            output.push_str(&format!(
+                                "skip {}, 1;\n",
+                                Self::raku_single_quoted_literal(&skip_block_reason)
+                            ));
                         }
                         skip_block_declared_emitted = true;
                     }
@@ -201,7 +228,10 @@ impl Interpreter {
                 } else {
                     // Not a block — treat as single-line skip for test assertions.
                     if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
-                        output.push_str(&format!("skip '{}', 1;\n", reason));
+                        output.push_str(&format!(
+                            "skip {}, 1;\n",
+                            Self::raku_single_quoted_literal(reason)
+                        ));
                         skip_block_pending = None;
                         continue;
                     }
@@ -232,7 +262,10 @@ impl Interpreter {
                 }
                 // Emit skip for lines that look like test assertions
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
-                    output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
+                    output.push_str(&format!(
+                        "skip {}, 1;\n",
+                        Self::raku_single_quoted_literal(&skip_block_reason)
+                    ));
                 } else {
                     output.push('\n');
                 }
@@ -307,7 +340,10 @@ impl Interpreter {
                 && !trimmed.is_empty()
                 && !trimmed.starts_with('#')
             {
-                output.push_str(&format!("todo '{}';\n", reason));
+                output.push_str(&format!(
+                    "todo {};\n",
+                    Self::raku_single_quoted_literal(reason)
+                ));
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;

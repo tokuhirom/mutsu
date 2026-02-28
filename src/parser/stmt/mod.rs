@@ -567,6 +567,8 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::unless_stmt,
     control::with_stmt,
     control::labeled_loop_stmt,
+    control::race_for_stmt,
+    control::hyper_for_stmt,
     control::for_stmt,
     control::while_stmt,
     control::until_stmt,
@@ -909,6 +911,17 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
+    }
+
+    #[test]
+    fn parse_paren_expr_mutating_method_stmt() {
+        let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::Expr(Expr::Call { name, .. }) if name == "sink"
+        ));
     }
 
     #[test]
@@ -1321,6 +1334,13 @@ mod tests {
     fn assign_stmt_reports_missing_method_name_for_mutating_call() {
         let err = assign::assign_stmt("$x .=").unwrap_err();
         assert!(err.message().contains("method name after '.='"));
+    }
+
+    #[test]
+    fn assign_stmt_parses_zip_compound_assign() {
+        let (rest, stmt) = assign::assign_stmt("$a Z+= 2;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(stmt, Stmt::Assign { .. }));
     }
 
     #[test]

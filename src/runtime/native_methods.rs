@@ -1301,8 +1301,8 @@ impl Interpreter {
                     }
                 }
 
-                // If this Supply has a supply_id (belongs to Proc::Async or signal()),
-                // check if there's a live channel — if so, start a background reader thread
+                // If this Supply has a supply_id, register the tap globally
+                // so that .start (Proc::Async) can find and call it later
                 if let Some(Value::Int(sid)) = attributes.get("supply_id") {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }

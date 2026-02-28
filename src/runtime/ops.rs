@@ -15,11 +15,8 @@ impl Interpreter {
         if shift >= i64::BITS as u64 {
             return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
         }
-        if let Some(v) = a.checked_shl(shift as u32) {
-            Value::Int(v)
-        } else {
-            Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
-        }
+        // Use BigInt for the shift to avoid i64 overflow (Raku integers are arbitrary precision)
+        Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
     }
 
     fn shift_right_i64(a: i64, b: i64) -> Value {
@@ -50,7 +47,11 @@ impl Interpreter {
         right: &Value,
     ) -> Result<Value, RuntimeError> {
         let to_num = |v: &Value| -> f64 {
-            match v {
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
                 Value::Rat(n, d) => {
@@ -79,7 +80,11 @@ impl Interpreter {
             }
         };
         let to_int = |v: &Value| -> i64 {
-            match v {
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
                 Value::Int(i) => *i,
                 Value::Num(f) => *f as i64,
                 Value::Rat(n, d) => {
@@ -137,22 +142,7 @@ impl Interpreter {
                     Ok(Value::Int(to_int(left) * to_int(right)))
                 }
             }
-            "/" => {
-                if let (Value::Int(a), Value::Int(b)) = (left, right) {
-                    if *b == 0 {
-                        Ok(crate::value::make_rat(*a, 0))
-                    } else {
-                        Ok(crate::value::make_rat(*a, *b))
-                    }
-                } else {
-                    let denom = to_num(right);
-                    if denom == 0.0 {
-                        Err(RuntimeError::numeric_divide_by_zero())
-                    } else {
-                        Ok(Value::Num(to_num(left) / denom))
-                    }
-                }
-            }
+            "/" => crate::builtins::arith_div(left.clone(), right.clone()),
             "%" => {
                 if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) % to_num(right)))
@@ -160,7 +150,7 @@ impl Interpreter {
                     Ok(Value::Int(to_int(left) % to_int(right)))
                 }
             }
-            "**" => Ok(Value::Num(to_num(left).powf(to_num(right)))),
+            "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
             "~" => Ok(Value::Str(format!(
                 "{}{}",
                 crate::runtime::utils::coerce_to_str(left),
@@ -506,6 +496,11 @@ impl Interpreter {
         right: Value,
         f: fn(i32) -> bool,
     ) -> Result<Value, RuntimeError> {
+        if matches!(left, Value::Pair(..) | Value::ValuePair(..))
+            || matches!(right, Value::Pair(..) | Value::ValuePair(..))
+        {
+            return Err(RuntimeError::new("X::Multi::NoMatch"));
+        }
         // Version-vs-Version comparison: use version_cmp_parts directly
         if let (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) =
             (&left, &right)

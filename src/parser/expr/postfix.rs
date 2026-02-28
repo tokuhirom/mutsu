@@ -96,6 +96,7 @@ fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
             | Expr::MethodCall { .. }
             | Expr::CallOn { .. }
             | Expr::HyperMethodCall { .. }
+            | Expr::HyperMethodCallDynamic { .. }
     )
 }
 
@@ -114,6 +115,10 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
             true
         }
         Expr::HyperMethodCall { args, .. } => {
+            args.push(arg);
+            true
+        }
+        Expr::HyperMethodCallDynamic { args, .. } => {
             args.push(arg);
             true
         }
@@ -195,8 +200,8 @@ fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
         let rest = &input[start + end + 1..];
         // Check if content has interpolation
         if content.contains('$') || content.contains('@') || content.contains('{') {
-            use super::super::primary::string::interpolate_string_content;
-            let name_expr = interpolate_string_content(content);
+            use super::super::primary::string::interpolate_string_content_with_modes;
+            let name_expr = interpolate_string_content_with_modes(content, true, true);
             return Some((rest, QuotedMethodName::Dynamic(name_expr)));
         }
         return Some((rest, QuotedMethodName::Static(content.to_string())));
@@ -492,36 +497,24 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // ^expr — upto operator: ^5 means 0..^5
     // Use postfix_expr_tight so that `^10 .batch(3)` parses as `(^10).batch(3)`,
     // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
-    if input.starts_with('^')
-        && !input.starts_with("^..")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic() || c == b'_')
-    {
+    if input.starts_with('^') && !input.starts_with("^..") {
         let rest = &input[1..];
-        let (rest, expr) = postfix_expr_tight(rest)?;
-        return postfix_expr_continue(
-            rest,
-            Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Int(0))),
-                op: TokenKind::DotDotCaret,
-                right: Box::new(expr),
-            },
-        );
+        if let Ok((rest, expr)) = postfix_expr_tight(rest) {
+            return postfix_expr_continue(
+                rest,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Int(0))),
+                    op: TokenKind::DotDotCaret,
+                    right: Box::new(expr),
+                },
+            );
+        }
     }
-    // |@array or |%hash or |$scalar or |ident — slip/flatten prefix
-    if input.starts_with('|')
-        && !input.starts_with("||")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'@'
-            || c == b'%'
-            || c == b'$'
-            || c == b'.'
-            || c == b'('
-            || c == b'['
-            || c.is_ascii_alphabetic()
-            || c == b'_')
-    {
-        let rest = &input[1..];
+    // Hyper-prefix slip forms: |<< expr / |>> expr.
+    // Lower to the same unary Pipe AST used by plain `|expr`.
+    if input.starts_with("|<<") || input.starts_with("|>>") {
+        let rest = &input[3..];
+        let (rest, _) = ws(rest)?;
         let (rest, expr) = postfix_expr(rest)?;
         return Ok((
             rest,
@@ -530,6 +523,20 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 expr: Box::new(expr),
             },
         ));
+    }
+    // Prefix slip: `|expr` (e.g. |@a, |$c, |<a b>, |(1,2), |.method)
+    // Parse by delegating to term parsing after `|` so all primary starters work.
+    if input.starts_with('|') && !input.starts_with("||") {
+        let rest = &input[1..];
+        if let Ok((rest, expr)) = postfix_expr(rest) {
+            return Ok((
+                rest,
+                Expr::Unary {
+                    op: TokenKind::Pipe,
+                    expr: Box::new(expr),
+                },
+            ));
+        }
     }
     postfix_expr(input)
 }
@@ -644,6 +651,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Check for .{index} syntax: object.{$expr}
+            if let Some(r) = r.strip_prefix('{') {
+                let (r, _) = ws(r)?;
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, '}')?;
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                };
+                rest = r;
+                continue;
+            }
             // Check for .<key> angle-bracket hash access: %h.<foo>, $obj.<bar>
             if r.starts_with('<')
                 && !r.starts_with("<=")
@@ -729,6 +749,58 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             } else {
                 (r, None)
             };
+            if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&')
+            {
+                let (r, name_expr) = primary(r)?;
+                let r = consume_unspace(r);
+                if r.starts_with('(') {
+                    let (r, _) = parse_char(r, '(')?;
+                    let (r, _) = ws(r)?;
+                    let (r, args) = parse_call_arg_list(r)?;
+                    let (r, _) = ws(r)?;
+                    let (r, _) = parse_char(r, ')')?;
+                    expr = Expr::DynamicMethodCall {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    };
+                    rest = r;
+                    continue;
+                }
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(':') && !r2.starts_with("::") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    let (r3, first_arg) = expression(r3)?;
+                    let mut args = vec![first_arg];
+                    let mut r_inner = r3;
+                    loop {
+                        let (r4, _) = ws(r_inner)?;
+                        if !r4.starts_with(',') {
+                            break;
+                        }
+                        let r4 = &r4[1..];
+                        let (r4, _) = ws(r4)?;
+                        let (r4, next) = expression(r4)?;
+                        args.push(next);
+                        r_inner = r4;
+                    }
+                    expr = Expr::DynamicMethodCall {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    };
+                    rest = r_inner;
+                    continue;
+                }
+                expr = Expr::DynamicMethodCall {
+                    target: Box::new(expr),
+                    name_expr: Box::new(name_expr),
+                    args: Vec::new(),
+                };
+                rest = r;
+                continue;
+            }
             // Parse method name
             if let Ok((r, name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
@@ -841,6 +913,35 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             // Dynamic method name via sigiled expression: .$meth or .$meth(...)
             if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&')
             {
+                if r.starts_with("$(") || r.starts_with("&(") {
+                    let r_name = &r[2..];
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, name_expr) = expression(r_name)?;
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, _) = parse_char(r_name, ')')?;
+                    let (r_name, _) = ws(r_name)?;
+                    if r_name.starts_with('(') {
+                        let (r_name, _) = parse_char(r_name, '(')?;
+                        let (r_name, _) = ws(r_name)?;
+                        let (r_name, args) = parse_call_arg_list(r_name)?;
+                        let (r_name, _) = ws(r_name)?;
+                        let (r_name, _) = parse_char(r_name, ')')?;
+                        expr = Expr::DynamicMethodCall {
+                            target: Box::new(expr),
+                            name_expr: Box::new(name_expr),
+                            args,
+                        };
+                        rest = r_name;
+                        continue;
+                    }
+                    expr = Expr::DynamicMethodCall {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args: Vec::new(),
+                    };
+                    rest = r_name;
+                    continue;
+                }
                 let (r_name, name_expr) = super::super::primary::primary(r)?;
                 let (r_name, _) = ws(r_name)?;
                 if r_name.starts_with('(') {
@@ -1216,6 +1317,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             } else {
                 &rest[2..]
             };
+            // Hyper `.=` assignment is handled by statement-level assignment parsing.
+            if after_hyper.starts_with(".=") {
+                break;
+            }
             // Check for hyper + superscript exponent: »²
             if let Some((exp, len)) = parse_superscript_exp(after_hyper) {
                 rest = &after_hyper[len..];
@@ -1242,17 +1347,77 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     target: Box::new(expr),
                     name: "AT-POS".to_string(),
                     args: vec![index],
+                    modifier: None,
+                    quoted: false,
                 };
                 rest = r;
                 continue;
             }
-            // Check for ».method or >>.method
+            // Check for ».method / >>.method and modifier forms like ».?method, ».+method, »!Type::meth.
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
-            if let Ok((r, name)) =
-                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            let (r, modifier) = if let Some(stripped) = r.strip_prefix('?') {
+                (stripped, Some('?'))
+            } else if let Some(stripped) = r.strip_prefix('^') {
+                (stripped, Some('^'))
+            } else if let Some(stripped) = r.strip_prefix('+') {
+                (stripped, Some('+'))
+            } else if r.starts_with('*') && !r.starts_with("**") {
+                (&r[1..], Some('*'))
+            } else if let Some(stripped) = r.strip_prefix('!') {
+                (stripped, Some('!'))
+            } else {
+                (r, None)
+            };
+
+            // Hyper postcircumfix key lookup: >>.<a>
+            if r.starts_with('<')
+                && !r.starts_with("<=")
+                && !r.starts_with("<<")
+                && !r.starts_with("<=>")
             {
-                let name = name.to_string();
-                // Check for args in parens
+                let r2 = &r[1..];
+                if let Some(end) = r2.find('>') {
+                    let content = &r2[..end];
+                    let keys = split_angle_words(content);
+                    if !keys.is_empty()
+                        && keys.iter().all(|key| {
+                            !key.is_empty()
+                                && key.chars().all(|c| {
+                                    c.is_alphanumeric() || c == '_' || c == '-' || c == ':'
+                                })
+                        })
+                    {
+                        let args = if keys.len() == 1 {
+                            vec![Expr::Literal(Value::Str(keys[0].to_string()))]
+                        } else {
+                            vec![Expr::ArrayLiteral(
+                                keys.into_iter()
+                                    .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                                    .collect(),
+                            )]
+                        };
+                        expr = Expr::HyperMethodCall {
+                            target: Box::new(expr),
+                            name: "AT-KEY".to_string(),
+                            args,
+                            modifier,
+                            quoted: false,
+                        };
+                        rest = &r2[end + 1..];
+                        continue;
+                    }
+                }
+            }
+
+            // Static method names (includes private owner qualification in `!Type::method`)
+            let parsed_static_name = if modifier == Some('!') {
+                parse_private_method_name(r)
+            } else {
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+                    .ok()
+                    .map(|(rr, name)| (rr, name.to_string()))
+            };
+            if let Some((r, name)) = parsed_static_name {
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
@@ -1263,17 +1428,117 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         target: Box::new(expr),
                         name,
                         args,
+                        modifier,
+                        quoted: false,
                     };
                     rest = r;
                     continue;
                 }
-                // No-arg hyper method call
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
                     name,
                     args: Vec::new(),
+                    modifier,
+                    quoted: false,
                 };
                 rest = r;
+                continue;
+            }
+
+            // Quoted method names: »."foo"(...), ».+"$method"(...)
+            if let Some((r, qname)) = parse_quoted_method_name(r) {
+                if !r.starts_with('(') {
+                    return Err(PError::expected_at(
+                        "parenthesized arguments after quoted method name",
+                        r,
+                    ));
+                }
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                match qname {
+                    QuotedMethodName::Static(name) => {
+                        expr = Expr::HyperMethodCall {
+                            target: Box::new(expr),
+                            name,
+                            args,
+                            modifier,
+                            quoted: true,
+                        };
+                    }
+                    QuotedMethodName::Dynamic(name_expr) => {
+                        expr = Expr::HyperMethodCallDynamic {
+                            target: Box::new(expr),
+                            name_expr: Box::new(name_expr),
+                            args,
+                            modifier,
+                        };
+                    }
+                }
+                rest = r;
+                continue;
+            }
+
+            // Dynamic method name via sigiled expression: ».$meth, ».&code(...)
+            if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&')
+            {
+                if r.starts_with("$(") || r.starts_with("&(") {
+                    let r_name = &r[2..];
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, name_expr) = expression(r_name)?;
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, _) = parse_char(r_name, ')')?;
+                    let (r_name, _) = ws(r_name)?;
+                    if r_name.starts_with('(') {
+                        let (r_name, _) = parse_char(r_name, '(')?;
+                        let (r_name, _) = ws(r_name)?;
+                        let (r_name, args) = parse_call_arg_list(r_name)?;
+                        let (r_name, _) = ws(r_name)?;
+                        let (r_name, _) = parse_char(r_name, ')')?;
+                        expr = Expr::HyperMethodCallDynamic {
+                            target: Box::new(expr),
+                            name_expr: Box::new(name_expr),
+                            args,
+                            modifier,
+                        };
+                        rest = r_name;
+                        continue;
+                    }
+                    expr = Expr::HyperMethodCallDynamic {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args: Vec::new(),
+                        modifier,
+                    };
+                    rest = r_name;
+                    continue;
+                }
+                let (r_name, name_expr) = super::super::primary::primary(r)?;
+                let (r_name, _) = ws(r_name)?;
+                if r_name.starts_with('(') {
+                    let (r_name, _) = parse_char(r_name, '(')?;
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, args) = parse_call_arg_list(r_name)?;
+                    let (r_name, _) = ws(r_name)?;
+                    let (r_name, _) = parse_char(r_name, ')')?;
+                    expr = Expr::HyperMethodCallDynamic {
+                        target: Box::new(expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                        modifier,
+                    };
+                    rest = r_name;
+                    continue;
+                }
+                expr = Expr::HyperMethodCallDynamic {
+                    target: Box::new(expr),
+                    name_expr: Box::new(name_expr),
+                    args: Vec::new(),
+                    modifier,
+                };
+                rest = r_name;
                 continue;
             }
         }
@@ -1448,9 +1713,27 @@ fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
         }
     }
     let mut chars = input.chars();
+    let mut len = 0usize;
+    let mut sign = 1i64;
+    if let Some(first) = chars.clone().next() {
+        match first {
+            '\u{207A}' => {
+                // ⁺
+                len += first.len_utf8();
+                chars.next();
+            }
+            '\u{207B}' | '\u{00AF}' => {
+                // ⁻ or ¯
+                sign = -1;
+                len += first.len_utf8();
+                chars.next();
+            }
+            _ => {}
+        }
+    }
     let first = chars.next()?;
     let mut value = superscript_digit(first)?;
-    let mut len = first.len_utf8();
+    len += first.len_utf8();
     for c in chars {
         if let Some(d) = superscript_digit(c) {
             value = value * 10 + d;
@@ -1459,5 +1742,5 @@ fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
             break;
         }
     }
-    Some((value, len))
+    Some((sign * value, len))
 }

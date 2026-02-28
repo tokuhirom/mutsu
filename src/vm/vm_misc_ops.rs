@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReductionAssoc {
+    Left,
+    Right,
+    Chain,
+}
+
 /// Check if a type name is a core Raku type that should always be accepted.
 fn is_core_raku_type(name: &str) -> bool {
     matches!(
@@ -66,10 +73,192 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Buf"
             | "Blob"
             | "utf8"
-    )
+    ) || crate::runtime::native_types::is_native_int_type(name)
 }
 
 impl VM {
+    fn is_builtin_reduction_op(op: &str) -> bool {
+        if let Some(inner) = op.strip_prefix('R').or_else(|| op.strip_prefix('Z'))
+            && !inner.is_empty()
+            && Self::is_builtin_reduction_op(inner)
+        {
+            return true;
+        }
+        matches!(
+            op,
+            "+" | "-"
+                | "*"
+                | "/"
+                | "%"
+                | "~"
+                | "||"
+                | "&&"
+                | "//"
+                | "%%"
+                | "**"
+                | "^^"
+                | "+&"
+                | "+|"
+                | "+^"
+                | "+<"
+                | "+>"
+                | "~&"
+                | "~|"
+                | "~^"
+                | "~<"
+                | "~>"
+                | "?&"
+                | "?|"
+                | "?^"
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "<=>"
+                | "==="
+                | "=:="
+                | "=>"
+                | "eqv"
+                | "eq"
+                | "ne"
+                | "lt"
+                | "gt"
+                | "le"
+                | "ge"
+                | "leg"
+                | "cmp"
+                | "~~"
+                | "min"
+                | "max"
+                | "gcd"
+                | "lcm"
+                | "and"
+                | "or"
+                | "not"
+                | ","
+                | "after"
+                | "before"
+                | "X"
+                | "Z"
+                | "x"
+                | "xx"
+                | "&"
+                | "|"
+                | "^"
+                | "o"
+                | "∘"
+        )
+    }
+
+    fn reduction_op_associativity(&self, op: &str) -> ReductionAssoc {
+        let infix_name = format!("infix:<{}>", op);
+        if let Some(assoc) = self.interpreter.infix_associativity(&infix_name) {
+            return match assoc.as_str() {
+                "right" => ReductionAssoc::Right,
+                "chain" => ReductionAssoc::Chain,
+                _ => ReductionAssoc::Left,
+            };
+        }
+        match op {
+            "**" => ReductionAssoc::Right,
+            "=" | ":=" | "=>" | "x" | "xx" => ReductionAssoc::Right,
+            "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
+            | "le" | "ge" | "~~" | "=~=" | "=:=" => ReductionAssoc::Chain,
+            _ => ReductionAssoc::Left,
+        }
+    }
+
+    fn reduction_callable_for_op(&self, op: &str) -> Option<Value> {
+        if let Some(name) = op.strip_prefix('&') {
+            let callable = self.interpreter.resolve_code_var(name);
+            if matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+            ) {
+                return Some(callable);
+            }
+        }
+        if Self::is_builtin_reduction_op(op) {
+            return None;
+        }
+        let infix_name = format!("infix:<{}>", op);
+        let callable = self.interpreter.resolve_code_var(&infix_name);
+        if matches!(
+            callable,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+        ) {
+            return Some(callable);
+        }
+        if let Some(callable) = self
+            .interpreter
+            .env()
+            .get(&format!("&{}", infix_name))
+            .cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+            )
+        {
+            return Some(callable);
+        }
+        if let Some(callable) = self.interpreter.env().get(&format!("&{}", op)).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Instance { .. }
+            )
+        {
+            return Some(callable);
+        }
+        None
+    }
+
+    fn reduction_callable_arity(&self, callable: &Value) -> usize {
+        let (params, param_defs) = self.interpreter.callable_signature(callable);
+        if !param_defs.is_empty() {
+            let mut total = 0usize;
+            let mut required = 0usize;
+            for pd in &param_defs {
+                if pd.named
+                    || pd.slurpy
+                    || pd.double_slurpy
+                    || pd.traits.iter().any(|t| t == "invocant")
+                {
+                    continue;
+                }
+                total += 1;
+                let is_required = pd.required || (!pd.optional_marker && pd.default.is_none());
+                if is_required {
+                    required += 1;
+                }
+            }
+            if required >= 2 {
+                return required;
+            }
+            if total >= 2 {
+                return total;
+            }
+        }
+        params.len().max(2)
+    }
+
+    fn reduction_step_with_args(
+        &mut self,
+        base_op: &str,
+        callable: Option<&Value>,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(callable) = callable {
+            if let Value::Routine { name, .. } = callable {
+                return self.interpreter.call_user_routine_direct(name, args);
+            }
+            return self.interpreter.eval_call_on_value(callable.clone(), args);
+        }
+        debug_assert!(args.len() == 2);
+        self.eval_reduction_operator_values(base_op, &args[0], &args[1])
+    }
+
     fn array_elements_match_constraint(&mut self, constraint: &str, value: &Value) -> bool {
         match value {
             Value::Array(items, ..) => items
@@ -217,6 +406,29 @@ impl VM {
         } else {
             val
         };
+        if let Value::Str(s) = &val {
+            let trimmed = s.trim();
+            if !trimmed.is_empty()
+                && trimmed.parse::<i64>().is_err()
+                && trimmed.parse::<f64>().is_err()
+            {
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::Str(format!(
+                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                        s
+                    )),
+                );
+                let ex = Value::make_instance("X::Str::Numeric".to_string(), ex_attrs);
+                let mut failure_attrs = std::collections::HashMap::new();
+                failure_attrs.insert("exception".to_string(), ex);
+                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                self.stack
+                    .push(Value::make_instance("Failure".to_string(), failure_attrs));
+                return Ok(());
+            }
+        }
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
         Ok(())
@@ -507,19 +719,65 @@ impl VM {
             }
             return Ok(());
         }
+        let callable = self.reduction_callable_for_op(&base_op);
+        let arity = callable
+            .as_ref()
+            .map(|c| self.reduction_callable_arity(c))
+            .unwrap_or(2);
+        let step = arity.saturating_sub(1).max(1);
+        let assoc = if base_op == "=>" {
+            ReductionAssoc::Right
+        } else if runtime::is_chain_comparison_op(&base_op) {
+            ReductionAssoc::Chain
+        } else {
+            self.reduction_op_associativity(&base_op)
+        };
+
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
                 return Ok(());
             }
-            let mut acc = list[0].clone();
-            let mut out = Vec::with_capacity(list.len());
-            out.push(acc.clone());
-            for item in &list[1..] {
-                let v = self.eval_reduction_operator_values(&base_op, &acc, item)?;
-                acc = if negate { Value::Bool(!v.truthy()) } else { v };
-                out.push(acc.clone());
+            if list.len() == 1 {
+                self.stack
+                    .push(Value::Seq(std::sync::Arc::new(vec![list[0].clone()])));
+                return Ok(());
             }
+            let out = match assoc {
+                ReductionAssoc::Right => {
+                    let mut out = Vec::new();
+                    let mut acc = list.last().cloned().unwrap_or(Value::Nil);
+                    out.push(acc.clone());
+                    let mut right_edge = list.len().saturating_sub(1);
+                    while right_edge >= step {
+                        let start = right_edge - step;
+                        let mut call_args = list[start..right_edge].to_vec();
+                        call_args.push(acc);
+                        let v =
+                            self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
+                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                        out.push(acc.clone());
+                        right_edge = start;
+                    }
+                    out
+                }
+                _ => {
+                    let mut out = Vec::new();
+                    let mut acc = list[0].clone();
+                    out.push(acc.clone());
+                    let mut idx = 1usize;
+                    while idx + step <= list.len() {
+                        let mut call_args = vec![acc];
+                        call_args.extend(list[idx..idx + step].iter().cloned());
+                        let v =
+                            self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
+                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                        out.push(acc.clone());
+                        idx += step;
+                    }
+                    out
+                }
+            };
             self.stack.push(Value::Seq(std::sync::Arc::new(out)));
             return Ok(());
         }
@@ -548,20 +806,40 @@ impl VM {
                     self.stack.push(acc);
                     return Ok(());
                 }
-                let acc = if base_op == "=>" {
-                    let mut acc = list.last().cloned().unwrap_or(Value::Nil);
-                    for item in list[..list.len() - 1].iter().rev() {
-                        let v = self.eval_reduction_operator_values(&base_op, item, &acc)?;
-                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                let acc = match assoc {
+                    ReductionAssoc::Right => {
+                        let mut acc = list.last().cloned().unwrap_or(Value::Nil);
+                        let mut right_edge = list.len().saturating_sub(1);
+                        while right_edge >= step {
+                            let start = right_edge - step;
+                            let mut call_args = list[start..right_edge].to_vec();
+                            call_args.push(acc);
+                            let v = self.reduction_step_with_args(
+                                &base_op,
+                                callable.as_ref(),
+                                call_args,
+                            )?;
+                            acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                            right_edge = start;
+                        }
+                        acc
                     }
-                    acc
-                } else {
-                    let mut acc = list[0].clone();
-                    for item in &list[1..] {
-                        let v = self.eval_reduction_operator_values(&base_op, &acc, item)?;
-                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                    _ => {
+                        let mut acc = list[0].clone();
+                        let mut idx = 1usize;
+                        while idx + step <= list.len() {
+                            let mut call_args = vec![acc];
+                            call_args.extend(list[idx..idx + step].iter().cloned());
+                            let v = self.reduction_step_with_args(
+                                &base_op,
+                                callable.as_ref(),
+                                call_args,
+                            )?;
+                            acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                            idx += step;
+                        }
+                        acc
                     }
-                    acc
                 };
                 self.stack.push(acc);
             }
@@ -662,6 +940,13 @@ impl VM {
             return Err(RuntimeError::new(
                 "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
             ));
+        }
+        // Native integer type check: validate value is an integer in range
+        if crate::runtime::native_types::is_native_int_type(base_constraint) {
+            if !matches!(value, Value::Nil) {
+                self.validate_native_int_assignment(base_constraint, &value)?;
+            }
+            return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
@@ -881,6 +1166,89 @@ impl VM {
             }
         }
         *ip = end;
+        Ok(())
+    }
+
+    /// Validate and coerce a value for native integer type assignment.
+    /// Throws on: string values, non-integer numerics (floats), NaN, out-of-range values.
+    pub(super) fn validate_native_int_assignment(
+        &mut self,
+        type_name: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        use crate::runtime::native_types;
+        use num_bigint::BigInt as NumBigInt;
+        use num_traits::ToPrimitive;
+
+        // Reject strings
+        if matches!(value, Value::Str(_)) {
+            return Err(RuntimeError::new(format!(
+                "Cannot convert string to native integer type '{}'",
+                type_name
+            )));
+        }
+        // Reject NaN
+        if let Value::Num(n) = value {
+            if n.is_nan() {
+                return Err(RuntimeError::new(format!(
+                    "Cannot convert NaN to native integer type '{}'",
+                    type_name
+                )));
+            }
+            // Reject non-integer floats
+            if n.fract() != 0.0 {
+                return Err(RuntimeError::new(format!(
+                    "Cannot convert non-integer value to native integer type '{}'",
+                    type_name
+                )));
+            }
+        }
+        // Reject Rat with non-integer value
+        if let Value::Rat(n, d) = value
+            && *d != 0
+            && *n % *d != 0
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot convert non-integer value to native integer type '{}'",
+                type_name
+            )));
+        }
+
+        // Convert value to BigInt for range checking
+        let big_val = match value {
+            Value::Int(n) => NumBigInt::from(*n),
+            Value::BigInt(n) => n.clone(),
+            Value::Num(n) => NumBigInt::from(*n as i64),
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    NumBigInt::from(0)
+                } else {
+                    NumBigInt::from(*n / *d)
+                }
+            }
+            Value::Bool(b) => NumBigInt::from(if *b { 1 } else { 0 }),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Cannot convert value to native integer type '{}'",
+                    type_name
+                )));
+            }
+        };
+
+        // Check range — throw if out of range
+        if !native_types::is_in_native_range(type_name, &big_val) {
+            return Err(RuntimeError::new(format!(
+                "Cannot assign value {} to native type '{}': value is outside the range",
+                big_val, type_name
+            )));
+        }
+
+        // Coerce to Int on the stack
+        let int_val = big_val.to_i64().map(Value::Int).unwrap_or_else(|| {
+            // For uint64 values that don't fit in i64, store as BigInt
+            Value::BigInt(big_val)
+        });
+        *self.stack.last_mut().unwrap() = int_val;
         Ok(())
     }
 }

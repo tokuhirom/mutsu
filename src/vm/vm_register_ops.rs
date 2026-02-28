@@ -409,6 +409,44 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_apply_var_trait_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        trait_name_idx: u32,
+        has_arg: bool,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx);
+        let trait_name = Self::const_str(code, trait_name_idx).to_string();
+        if !(self.interpreter.has_proto("trait_mod:<is>")
+            || self.interpreter.has_multi_candidates("trait_mod:<is>"))
+        {
+            return Err(RuntimeError::new(format!(
+                "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
+                trait_name
+            )));
+        }
+        let trait_value = if has_arg {
+            self.stack.pop().unwrap_or(Value::Nil)
+        } else {
+            Value::Bool(true)
+        };
+        let target = self
+            .interpreter
+            .env()
+            .get(name)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let var_obj = self
+            .interpreter
+            .call_method_mut_with_values(name, target, "VAR", vec![])?;
+        let named_arg = Value::Pair(trait_name, Box::new(trait_value));
+        self.interpreter
+            .call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
     pub(super) fn exec_register_enum_op(
         &mut self,
         code: &CompiledCode,
@@ -440,6 +478,8 @@ impl VM {
             parents,
             is_hidden,
             hidden_parents,
+            does_parents,
+            repr,
             body,
         } = stmt
         {
@@ -455,8 +495,15 @@ impl VM {
                 parents,
                 *is_hidden,
                 hidden_parents,
+                does_parents,
                 body,
             )?;
+            // Register CUnion repr if present
+            if let Some(repr_name) = repr
+                && repr_name == "CUnion"
+            {
+                self.interpreter.register_cunion_class(&resolved_name);
+            }
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(resolved_name));
