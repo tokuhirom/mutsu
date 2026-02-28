@@ -56,32 +56,16 @@ fi
 if [[ ! -d "$CLONE_DIR" ]]; then
   mkdir -p "$SANDBOX_BASE"
 
-  # origin の最新を取得
-  DEFAULT_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "main")"
-  echo "Fetching origin/${DEFAULT_BRANCH}..."
-  if git -C "$REPO_ROOT" fetch origin "$DEFAULT_BRANCH" 2>/dev/null; then
-    # update-ref only when the working tree is clean to avoid confusing git status
-    if git -C "$REPO_ROOT" diff --quiet && git -C "$REPO_ROOT" diff --cached --quiet; then
-      git -C "$REPO_ROOT" update-ref "refs/heads/${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null || true
-    else
-      echo "Warning: working tree has uncommitted changes, skipping update-ref" >&2
-    fi
-  else
-    echo "Warning: could not fetch from origin (offline?), using local state" >&2
-  fi
-
   # 親リポジトリの GitHub remote URL を取得
   UPSTREAM_URL="$(git -C "$REPO_ROOT" remote get-url origin)"
 
   echo "Cloning into sandbox for branch '${BRANCH}'..."
-  git clone --local "$REPO_ROOT" "$CLONE_DIR"
+  git clone "$UPSTREAM_URL" "$CLONE_DIR"
 
-  # origin を GitHub の URL に差し替え (push/fetch できるようにする)
   cd "$CLONE_DIR"
-  git remote set-url origin "$UPSTREAM_URL"
 
   # ブランチが既にリモートにあれば checkout、なければ新規作成
-  if git fetch origin "$BRANCH" 2>/dev/null && git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
+  if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
     git checkout -b "$BRANCH" "origin/${BRANCH}"
   else
     git checkout -b "$BRANCH"
