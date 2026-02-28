@@ -1060,6 +1060,11 @@ impl VM {
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
             if saved_env.contains_key(&k) {
+                // Lexical topic is block-scoped; don't write inner `$_` back
+                // to the outer scope on block exit.
+                if k == "_" {
+                    continue;
+                }
                 // Dynamic variables (e.g. $*VAR) are scoped to the block:
                 // restore to the saved value rather than propagating the inner value.
                 if k.starts_with('*') {

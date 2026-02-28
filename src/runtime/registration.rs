@@ -1733,6 +1733,18 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
+                        if !class_def.parents.iter().any(|p| p == role_name) {
+                            class_def.parents.insert(0, role_name.clone());
+                            class_def.mro.clear();
+                        }
+                        continue;
+                    }
                     let role =
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
@@ -1891,6 +1903,18 @@ impl Interpreter {
                         continue;
                     }
                     if self.classes.contains_key(role_name) {
+                        self.role_parents
+                            .entry(name.to_string())
+                            .or_default()
+                            .push(role_name.clone());
+                        continue;
+                    }
+                    if !self.roles.contains_key(role_name)
+                        && matches!(
+                            role_name.as_str(),
+                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                        )
+                    {
                         self.role_parents
                             .entry(name.to_string())
                             .or_default()

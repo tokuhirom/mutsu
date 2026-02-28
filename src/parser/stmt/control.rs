@@ -9,10 +9,36 @@ use super::decl::parse_array_shape_suffix;
 use super::sub;
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
 
+fn condition_has_assignment_tail(rest: &str) -> bool {
+    if rest.starts_with(":=") || rest.starts_with("::=") || rest.starts_with("⚛=") {
+        return true;
+    }
+    if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
+        return true;
+    }
+    super::assign::parse_compound_assign_op(rest).is_some()
+        || super::assign::parse_custom_compound_assign_op(rest).is_some()
+}
+
+fn condition_expr(input: &str) -> PResult<'_, Expr> {
+    match expression(input) {
+        Ok((rest, cond)) => {
+            let (tail, _) = ws(rest)?;
+            if condition_has_assignment_tail(tail)
+                && let Ok((assign_rest, assign_cond)) = super::assign::try_parse_assign_expr(input)
+            {
+                return Ok((assign_rest, assign_cond));
+            }
+            Ok((rest, cond))
+        }
+        Err(_) => super::assign::try_parse_assign_expr(input),
+    }
+}
+
 pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("if", input).ok_or_else(|| PError::expected("if statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     // Optional binding: `if EXPR -> $var { }`
     let (rest, binding_var) = parse_binding_var(rest)?;
@@ -49,7 +75,7 @@ fn parse_binding_var(input: &str) -> PResult<'_, Option<String>> {
 pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
     if let Some(r) = keyword("elsif", input) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, then_branch) = block(r)?;
         let (r, _) = ws(r)?;
@@ -76,7 +102,7 @@ pub(super) fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
 pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unless", input).ok_or_else(|| PError::expected("unless statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     // unless cannot have else/elsif/orwith — check but consume the trailing clause
@@ -161,7 +187,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -175,7 +201,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -843,7 +869,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("while", input).ok_or_else(|| PError::expected("while statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
         let (rest, (param, _param_def, params)) = parse_for_params(rest)?;
@@ -895,7 +921,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("until", input).ok_or_else(|| PError::expected("until statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
         let (rest, (param, _param_def, params)) = parse_for_params(rest)?;
@@ -1061,7 +1087,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     // repeat while/until COND { BODY }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, (param, _param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
@@ -1100,7 +1126,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, (param, _param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
@@ -1146,7 +1172,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1163,7 +1189,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1199,7 +1225,7 @@ pub(super) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("when", input).ok_or_else(|| PError::expected("when statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::When { cond, body }))
@@ -1228,7 +1254,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         .or_else(|| keyword("without", input))
         .ok_or_else(|| PError::expected("with/without statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond_expr) = expression(rest)?;
+    let (rest, cond_expr) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
 
     // Check for optional pointy block: -> $param { ... }
@@ -1291,7 +1317,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, else_branch) = if keyword("orwith", rest).is_some() {
         let r = keyword("orwith", rest).unwrap();
         let (r, _) = ws1(r)?;
-        let (r, orwith_cond_expr) = expression(r)?;
+        let (r, orwith_cond_expr) = condition_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, orwith_body) = block(r)?;
 

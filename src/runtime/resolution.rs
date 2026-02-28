@@ -451,6 +451,7 @@ impl Interpreter {
                 new_env.insert("_".to_string(), first_positional.clone());
             } else if data.params.is_empty()
                 && sanitized_args.is_empty()
+                && data.name.is_empty()
                 && let Some(caller_topic) = saved_env.get("_")
             {
                 new_env.insert("_".to_string(), caller_topic.clone());

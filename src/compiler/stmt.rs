@@ -340,13 +340,23 @@ impl Compiler {
                     self.compile_condition_expr(cond);
                 }
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
-                self.compile_body_with_implicit_try(then_branch);
+                if Self::body_mutates_topic(then_branch) {
+                    self.compile_stmt(&Stmt::Block(then_branch.clone()));
+                } else {
+                    self.compile_body_with_implicit_try(then_branch);
+                }
                 if else_branch.is_empty() {
                     self.code.patch_jump(jump_else);
                 } else {
                     let jump_end = self.code.emit(OpCode::Jump(0));
                     self.code.patch_jump(jump_else);
-                    self.compile_body_with_implicit_try(else_branch);
+                    if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
+                        self.compile_stmt(&else_branch[0]);
+                    } else if Self::body_mutates_topic(else_branch) {
+                        self.compile_stmt(&Stmt::Block(else_branch.clone()));
+                    } else {
+                        self.compile_body_with_implicit_try(else_branch);
+                    }
                     self.code.patch_jump(jump_end);
                 }
             }
@@ -361,6 +371,7 @@ impl Compiler {
                     body_end: 0,
                     label: label.clone(),
                     collect: false,
+                    isolate_topic: Self::body_mutates_topic(&loop_body),
                 });
                 self.compile_condition_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
