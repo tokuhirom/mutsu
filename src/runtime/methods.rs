@@ -2548,21 +2548,54 @@ impl Interpreter {
             }
             "comb" if args.len() == 1 => {
                 let text = target.to_string_value();
-                let pattern = match &args[0] {
-                    Value::Regex(pat) => pat.clone(),
-                    Value::Str(s) => s.clone(),
-                    _ => args[0].to_string_value(),
-                };
-                let matches = self.regex_find_all(&pattern, &text);
-                let chars: Vec<char> = text.chars().collect();
-                let result: Vec<Value> = matches
-                    .iter()
-                    .map(|(start, end)| {
-                        let s: String = chars[*start..*end].iter().collect();
-                        Value::Str(s)
-                    })
-                    .collect();
-                return Ok(Value::array(result));
+                match &args[0] {
+                    Value::Str(needle) => {
+                        if needle.is_empty() {
+                            let chars = text
+                                .chars()
+                                .map(|ch| Value::Str(ch.to_string()))
+                                .collect::<Vec<_>>();
+                            return Ok(Value::array(chars));
+                        }
+                        let mut result = Vec::new();
+                        let mut offset = 0usize;
+                        while offset <= text.len() {
+                            let Some(pos) = text[offset..].find(needle) else {
+                                break;
+                            };
+                            let start = offset + pos;
+                            let end = start + needle.len();
+                            result.push(Value::Str(text[start..end].to_string()));
+                            offset = end;
+                        }
+                        return Ok(Value::array(result));
+                    }
+                    Value::Regex(pat) => {
+                        let matches = self.regex_find_all(pat, &text);
+                        let chars: Vec<char> = text.chars().collect();
+                        let result: Vec<Value> = matches
+                            .iter()
+                            .map(|(start, end)| {
+                                let s: String = chars[*start..*end].iter().collect();
+                                Value::Str(s)
+                            })
+                            .collect();
+                        return Ok(Value::array(result));
+                    }
+                    _ => {
+                        let pattern = args[0].to_string_value();
+                        let matches = self.regex_find_all(&pattern, &text);
+                        let chars: Vec<char> = text.chars().collect();
+                        let result: Vec<Value> = matches
+                            .iter()
+                            .map(|(start, end)| {
+                                let s: String = chars[*start..*end].iter().collect();
+                                Value::Str(s)
+                            })
+                            .collect();
+                        return Ok(Value::array(result));
+                    }
+                }
             }
             "IO" if args.is_empty() => {
                 let s = target.to_string_value();

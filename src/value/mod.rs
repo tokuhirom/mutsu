@@ -1069,6 +1069,8 @@ impl Value {
             }
             Value::Whatever => f64::INFINITY,
             Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
+            Value::Array(items, ..) => items.len() as f64,
+            Value::Hash(map) => map.len() as f64,
             Value::Instance {
                 class_name,
                 attributes,

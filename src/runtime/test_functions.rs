@@ -709,12 +709,20 @@ impl Interpreter {
             match arg {
                 Value::Int(i) if *i > 0 => {
                     let n = *i as usize;
-                    ranges.push((n, n));
+                    ranges.push(TodoRange {
+                        start: n,
+                        end: n,
+                        reason: String::new(),
+                    });
                 }
                 Value::Range(a, b) => {
                     let start = (*a).min(*b).max(1) as usize;
                     let end = (*a).max(*b).max(1) as usize;
-                    ranges.push((start, end));
+                    ranges.push(TodoRange {
+                        start,
+                        end,
+                        reason: String::new(),
+                    });
                 }
                 _ => {}
             }
@@ -1262,13 +1270,15 @@ impl Interpreter {
     }
 
     fn test_fn_todo(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let _reason = Self::positional_string(args, 0);
-        let count_str = Self::positional_value(args, 1).map(|v| v.to_string_value());
-        let count = count_str.and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
+        let reason = Self::positional_string(args, 0);
+        let count = Self::positional_value(args, 1)
+            .map(|v| v.to_string_value())
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(1);
         let state = self.test_state.get_or_insert_with(TestState::new);
         let start = state.ran + 1;
         let end = start + count - 1;
-        state.force_todo.push((start, end));
+        state.force_todo.push(TodoRange { start, end, reason });
         Ok(Value::Nil)
     }
 
@@ -1746,21 +1756,16 @@ impl Interpreter {
                 } else {
                     nested.exit_code
                 };
-                let stdout_only = if stderr_content.is_empty() {
-                    output
-                } else {
-                    output.replace(&stderr_content, "")
-                };
-                (stdout_only, stderr_content, s)
+                let (stdout_tap, tap_err) = Self::split_tap_output_streams(&output);
+                let mut err = stderr_content;
+                err.push_str(&tap_err);
+                (stdout_tap, err, s)
             }
             Err(e) => {
                 let combined = nested.output.clone();
-                let stdout_only = if stderr_content.is_empty() {
-                    combined
-                } else {
-                    combined.replace(&stderr_content, "")
-                };
+                let (stdout_only, tap_err) = Self::split_tap_output_streams(&combined);
                 let mut err = stderr_content;
+                err.push_str(&tap_err);
                 if !e.message.is_empty() {
                     if !err.is_empty() && !err.ends_with('\n') {
                         err.push('\n');
@@ -1776,6 +1781,36 @@ impl Interpreter {
                 (stdout_only, err, s)
             }
         }
+    }
+
+    fn split_tap_output_streams(output: &str) -> (String, String) {
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut last_not_ok_todo: Option<bool> = None;
+
+        for line in output.split_inclusive('\n') {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("not ok ") {
+                last_not_ok_todo = Some(trimmed.contains("# TODO"));
+                stdout.push_str(line);
+                continue;
+            }
+            if trimmed.starts_with("ok ") {
+                last_not_ok_todo = None;
+                stdout.push_str(line);
+                continue;
+            }
+            let is_failure_diag = trimmed.starts_with("# Failed test")
+                || trimmed.starts_with("# at ")
+                || trimmed.starts_with("# You failed");
+            if is_failure_diag && matches!(last_not_ok_todo, Some(false)) {
+                stderr.push_str(line);
+                continue;
+            }
+            stdout.push_str(line);
+        }
+
+        (stdout, stderr)
     }
 
     /// `doesn't-hang` — run code in a subprocess and verify it completes
