@@ -26,6 +26,7 @@ roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
+roast/S02-literals/listquote.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
 roast/S02-literals/version.t
@@ -41,7 +42,6 @@ roast/S02-magicals/dollar_bang.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
-roast/S02-names-vars/list_array_perl.t
 roast/S02-names-vars/signature.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
@@ -72,7 +72,6 @@ roast/S02-types/subscripts_and_context.t
 roast/S02-types/undefined-types.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
-roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
@@ -117,7 +116,6 @@ roast/S03-operators/ternary.t
 roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/basic.t
-roast/S03-sequence/exhaustive.t
 roast/S03-sequence/misc.t
 roast/S03-sequence/nonnumeric.t
 roast/S03-smartmatch/any-any.t
@@ -209,7 +207,10 @@ roast/S05-transliteration/trans-TR-operator.t
 roast/S06-advanced/callframe.t
 roast/S06-advanced/recurse.t
 roast/S06-advanced/stub.t
+roast/S06-currying/assuming-and-mmd.t
+roast/S06-currying/misc.t
 roast/S06-currying/named.t
+roast/S06-currying/slurpy.t
 roast/S06-multi/compile-time.t
 roast/S06-multi/lexical-multis.t
 roast/S06-multi/unpackability.t

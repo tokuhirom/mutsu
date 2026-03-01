@@ -814,7 +814,7 @@ impl Interpreter {
                             other => items.push(other),
                         }
                     }
-                    self.env.insert(key, Value::array(items));
+                    self.env.insert(key, Value::real_array(items));
                     return Ok(Value::Nil);
                 }
                 "unshift" | "prepend" => {
@@ -827,8 +827,8 @@ impl Interpreter {
                     };
                     let mut pref = args;
                     pref.extend(items);
-                    let result = Value::array(pref.clone());
-                    self.env.insert(key, Value::array(pref));
+                    let result = Value::real_array(pref.clone());
+                    self.env.insert(key, Value::real_array(pref));
                     return Ok(result);
                 }
                 "pop" => {
@@ -840,7 +840,7 @@ impl Interpreter {
                         },
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
-                    self.env.insert(key, Value::array(items));
+                    self.env.insert(key, Value::real_array(items));
                     return Ok(out);
                 }
                 "shift" => {
@@ -856,7 +856,7 @@ impl Interpreter {
                     } else {
                         items.remove(0)
                     };
-                    self.env.insert(key, Value::array(items));
+                    self.env.insert(key, Value::real_array(items));
                     return Ok(out);
                 }
                 "splice" => {
@@ -894,8 +894,8 @@ impl Interpreter {
                             other => items.insert(start, other.clone()),
                         }
                     }
-                    self.env.insert(key, Value::array(items));
-                    return Ok(Value::array(removed));
+                    self.env.insert(key, Value::real_array(items));
+                    return Ok(Value::real_array(removed));
                 }
                 "squish" => {
                     let current = self.env.get(&key).cloned().unwrap_or(target.clone());
@@ -905,9 +905,10 @@ impl Interpreter {
                         other => vec![other],
                     };
                     if self.in_lvalue_assignment {
-                        self.env.insert(key, Value::array(squished_items.clone()));
+                        self.env
+                            .insert(key, Value::real_array(squished_items.clone()));
                     }
-                    return Ok(Value::array(squished_items));
+                    return Ok(Value::real_array(squished_items));
                 }
                 _ => {}
             }

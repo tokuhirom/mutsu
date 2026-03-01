@@ -2287,6 +2287,15 @@ impl Interpreter {
 
     /// Write a shared array variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
+        // Ensure @-variables always store Array(true) (real Arrays)
+        let value = if key.starts_with('@') {
+            match value {
+                Value::Array(items, false) => Value::Array(items, true),
+                other => other,
+            }
+        } else {
+            value
+        };
         self.env.insert(key.to_string(), value.clone());
         if key.starts_with('@') {
             let mut sv = self.shared_vars.lock().unwrap();

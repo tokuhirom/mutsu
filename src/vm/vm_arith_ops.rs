@@ -143,6 +143,15 @@ impl VM {
         self.stack.push(Value::Bool(!val.truthy()));
     }
 
+    pub(super) fn exec_decont_op(&mut self) {
+        let val = self.stack.pop().unwrap();
+        let new_val = match val {
+            Value::Array(items, _) => Value::Array(items, false),
+            other => other,
+        };
+        self.stack.push(new_val);
+    }
+
     pub(super) fn exec_make_slip_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let items = match &val {

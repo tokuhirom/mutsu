@@ -514,6 +514,10 @@ impl VM {
                 self.exec_make_slip_op();
                 *ip += 1;
             }
+            OpCode::Decont => {
+                self.exec_decont_op();
+                *ip += 1;
+            }
 
             // -- Logic / coercion --
             OpCode::Not => {
