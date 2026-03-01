@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn resolve_function_with_alias(
@@ -561,7 +562,7 @@ impl Interpreter {
     fn rewrite_proto_dispatch_stmt(stmt: &Stmt) -> Stmt {
         match stmt {
             Stmt::Expr(Expr::Whatever) => Stmt::Expr(Expr::Call {
-                name: "__PROTO_DISPATCH__".to_string(),
+                name: Symbol::intern("__PROTO_DISPATCH__"),
                 args: Vec::new(),
             }),
             Stmt::Expr(expr) => Stmt::Expr(Self::rewrite_proto_dispatch_expr(expr)),
@@ -673,7 +674,7 @@ impl Interpreter {
                 if body.len() == 1 && matches!(body[0], Stmt::Expr(Expr::Whatever)) =>
             {
                 Expr::Call {
-                    name: "__PROTO_DISPATCH__".to_string(),
+                    name: Symbol::intern("__PROTO_DISPATCH__"),
                     args: Vec::new(),
                 }
             }
@@ -700,7 +701,7 @@ impl Interpreter {
                 else_expr: Box::new(Self::rewrite_proto_dispatch_expr(else_expr)),
             },
             Expr::Call { name, args } => Expr::Call {
-                name: name.clone(),
+                name: *name,
                 // Keep call arguments intact so closure literals like `{*}`
                 // used as callbacks are not treated as proto dispatch.
                 args: args.to_vec(),
@@ -713,7 +714,7 @@ impl Interpreter {
                 quoted,
             } => Expr::MethodCall {
                 target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
-                name: name.clone(),
+                name: *name,
                 // Same rule as Expr::Call: don't rewrite callback arguments.
                 args: args.to_vec(),
                 modifier: *modifier,

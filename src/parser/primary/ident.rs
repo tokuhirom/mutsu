@@ -3,6 +3,7 @@ use super::super::parse_result::{
 };
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::stmt::{keyword, statement_pub};
@@ -45,7 +46,7 @@ fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Ve
 
 fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     Expr::Call {
-        name: name.clone(),
+        name: Symbol::intern(&name),
         args: attach_test_callsite_line(&name, input, args),
     }
 }
@@ -59,7 +60,13 @@ pub(super) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = super::super::helpers::ws(rest)?;
         // Check for empty circumfix: `open close` with nothing inside
         if let Some(after) = rest.strip_prefix(close_delim.as_str()) {
-            return Ok((after, Expr::Call { name, args: vec![] }));
+            return Ok((
+                after,
+                Expr::Call {
+                    name: Symbol::intern(&name),
+                    args: vec![],
+                },
+            ));
         }
         // Parse first argument
         let (r, arg) = super::super::expr::expression(rest)?;
@@ -72,7 +79,13 @@ pub(super) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
         }
         // Check for closing delimiter
         if let Some(after) = r.strip_prefix(close_delim.as_str()) {
-            return Ok((after, Expr::Call { name, args }));
+            return Ok((
+                after,
+                Expr::Call {
+                    name: Symbol::intern(&name),
+                    args,
+                },
+            ));
         }
         return Err(PError::expected("closing circumfix delimiter"));
     }
@@ -87,7 +100,13 @@ fn parse_circumfix_rest<'a>(
 ) -> PResult<'a, Expr> {
     loop {
         if let Some(after) = rest.strip_prefix(close_delim) {
-            return Ok((after, Expr::Call { name, args }));
+            return Ok((
+                after,
+                Expr::Call {
+                    name: Symbol::intern(&name),
+                    args,
+                },
+            ));
         }
         let (r, arg) = super::super::expr::expression(rest)?;
         args.push(arg);
@@ -99,7 +118,13 @@ fn parse_circumfix_rest<'a>(
         }
         let (r, _) = super::super::helpers::ws(r)?;
         if let Some(after) = r.strip_prefix(close_delim) {
-            return Ok((after, Expr::Call { name, args }));
+            return Ok((
+                after,
+                Expr::Call {
+                    name: Symbol::intern(&name),
+                    args,
+                },
+            ));
         }
         return Err(PError::expected("closing circumfix delimiter or ','"));
     }
@@ -110,7 +135,10 @@ pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
     {
         let expr = if callable {
-            Expr::Call { name, args: vec![] }
+            Expr::Call {
+                name: Symbol::intern(&name),
+                args: vec![],
+            }
         } else {
             Expr::BareWord(name)
         };
@@ -300,7 +328,7 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((
             &input[4..],
             Expr::Call {
-                name: "rand".to_string(),
+                name: Symbol::intern("rand"),
                 args: vec![],
             },
         ));
@@ -312,7 +340,7 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((
             &input[3..],
             Expr::Call {
-                name: "now".to_string(),
+                name: Symbol::intern("now"),
                 args: vec![],
             },
         ));
@@ -324,7 +352,7 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((
             &input[4..],
             Expr::Call {
-                name: "time".to_string(),
+                name: Symbol::intern("time"),
                 args: vec![],
             },
         ));
@@ -729,7 +757,7 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
         r,
         Some(Expr::MethodCall {
             target: Box::new(first_arg),
-            name: name.to_string(),
+            name: Symbol::intern(name),
             args,
             modifier: None,
             quoted: false,
@@ -929,7 +957,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 if let Some(end_pos) = r.find(delim_end) {
                     let op_name = &r[..end_pos];
                     let r = &r[end_pos + delim_end.len()..];
-                    let full_name = format!("{}:<{}>", name, op_name);
+                    let full_name = Symbol::intern(&format!("{}:<{}>", name, op_name));
                     // Check if followed by (args)
                     let (r, _) = ws(r)?;
                     if let Some(r) = r.strip_prefix('(') {
@@ -956,7 +984,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             },
                         ));
                     }
-                    return Ok((r, Expr::BareWord(full_name)));
+                    return Ok((r, Expr::BareWord(full_name.resolve())));
                 }
             }
         }
@@ -1211,15 +1239,22 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         "die" | "fail" => {
             let (r, _) = ws(rest)?;
+            let sym_name = Symbol::intern(&name);
             // die/fail with no argument
             if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
-                return Ok((r, Expr::Call { name, args: vec![] }));
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: sym_name,
+                        args: vec![],
+                    },
+                ));
             }
             let (r, arg) = expression(r)?;
             return Ok((
                 r,
                 Expr::Call {
-                    name,
+                    name: sym_name,
                     args: vec![arg],
                 },
             ));
@@ -1235,7 +1270,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Call {
-                    name: name.clone(),
+                    name: Symbol::intern(&name),
                     args: vec![wrapped],
                 },
             ));
@@ -1247,7 +1282,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Call {
-                    name: name.clone(),
+                    name: Symbol::intern(&name),
                     args: vec![expr],
                 },
             ));
@@ -1259,7 +1294,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((
                     r,
                     Expr::Call {
-                        name: "start".to_string(),
+                        name: Symbol::intern("start"),
                         args: vec![make_anon_sub(body)],
                     },
                 ));
@@ -1269,7 +1304,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((
                     r,
                     Expr::Call {
-                        name: "start".to_string(),
+                        name: Symbol::intern("start"),
                         args: vec![make_anon_sub(vec![stmt])],
                     },
                 ));
@@ -1428,11 +1463,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 if after_ws.starts_with(')') {
                     // foo($obj:) → $obj.foo()
                     let (rest, _) = parse_char(after_ws, ')')?;
+                    let sym_name = Symbol::intern(&name);
                     return Ok((
                         rest,
                         Expr::MethodCall {
                             target: Box::new(first_arg),
-                            name: name.clone(),
+                            name: sym_name,
                             args: vec![],
                             modifier: None,
                             quoted: false,
@@ -1449,7 +1485,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         rest,
                         Expr::MethodCall {
                             target: Box::new(first_arg),
-                            name: name.clone(),
+                            name: Symbol::intern(&name),
                             args: method_args,
                             modifier: None,
                             quoted: false,
@@ -1464,7 +1500,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     rest,
                     Expr::MethodCall {
                         target: Box::new(first_arg),
-                        name: name.clone(),
+                        name: Symbol::intern(&name),
                         args: method_args,
                         modifier: None,
                         quoted: false,

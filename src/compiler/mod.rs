@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -175,7 +176,7 @@ impl Compiler {
                 if sub.named {
                     let method_result = Expr::MethodCall {
                         target: Box::new(Expr::Var(target_name.clone())),
-                        name: sub.name.clone(),
+                        name: Symbol::intern(&sub.name),
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,

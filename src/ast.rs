@@ -1,3 +1,4 @@
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use std::collections::hash_map::DefaultHasher;
@@ -114,7 +115,7 @@ pub(crate) enum Expr {
     },
     MethodCall {
         target: Box<Expr>,
-        name: String,
+        name: Symbol,
         args: Vec<Expr>,
         modifier: Option<char>,
         /// True when the method name was quoted (e.g. `."DEFINITE"()`),
@@ -128,7 +129,7 @@ pub(crate) enum Expr {
     },
     HyperMethodCall {
         target: Box<Expr>,
-        name: String,
+        name: Symbol,
         args: Vec<Expr>,
         modifier: Option<char>,
         /// True when the method name was quoted in source.
@@ -211,7 +212,7 @@ pub(crate) enum Expr {
     },
     Hash(Vec<(String, Option<Expr>)>),
     Call {
-        name: String,
+        name: Symbol,
         args: Vec<Expr>,
     },
     Try {

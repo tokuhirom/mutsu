@@ -2,6 +2,7 @@ use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_tag};
 
 use crate::ast::{Expr, Stmt};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -241,9 +242,9 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         Expr::Call { name, args } => Ok((
             r,
             Expr::Call {
-                name: "__mutsu_assign_named_sub_lvalue".to_string(),
+                name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
                 args: vec![
-                    Expr::Literal(Value::Str(name)),
+                    Expr::Literal(Value::Str(name.resolve())),
                     Expr::ArrayLiteral(args),
                     rhs,
                 ],
@@ -252,7 +253,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         Expr::CallOn { target, args } => Ok((
             r,
             Expr::Call {
-                name: "__mutsu_assign_callable_lvalue".to_string(),
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![*target, Expr::ArrayLiteral(args), rhs],
             },
         )),
@@ -980,7 +981,7 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(Expr::Call {
-                name: "__mutsu_feed_array_assign".to_string(),
+                name: Symbol::intern("__mutsu_feed_array_assign"),
                 args: vec![source],
             }),
         },
@@ -1006,11 +1007,11 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             Expr::CallOn { target, args }
         }
         Expr::BareWord(name) => Expr::Call {
-            name,
+            name: Symbol::intern(&name),
             args: vec![source],
         },
         Expr::Whatever => Expr::Call {
-            name: "__mutsu_feed_whatever".to_string(),
+            name: Symbol::intern("__mutsu_feed_whatever"),
             args: vec![source],
         },
         other => Expr::CallOn {
@@ -1025,21 +1026,21 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(Expr::Call {
-                name: "__mutsu_feed_append".to_string(),
+                name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::Var(name), source],
             }),
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
             expr: Box::new(Expr::Call {
-                name: "__mutsu_feed_append".to_string(),
+                name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::ArrayVar(name), source],
             }),
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name.clone()),
             expr: Box::new(Expr::Call {
-                name: "__mutsu_feed_append".to_string(),
+                name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::HashVar(name), source],
             }),
         },
@@ -1052,17 +1053,17 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 target,
                 index,
                 value: Box::new(Expr::Call {
-                    name: "__mutsu_feed_append".to_string(),
+                    name: Symbol::intern("__mutsu_feed_append"),
                     args: vec![current, source],
                 }),
             }
         }
         Expr::Whatever => Expr::Call {
-            name: "__mutsu_feed_append_whatever".to_string(),
+            name: Symbol::intern("__mutsu_feed_append_whatever"),
             args: vec![source],
         },
         other => Expr::Call {
-            name: "__mutsu_feed_append".to_string(),
+            name: Symbol::intern("__mutsu_feed_append"),
             args: vec![other, source],
         },
     }

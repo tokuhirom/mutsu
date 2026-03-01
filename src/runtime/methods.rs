@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::CallArg;
+use crate::symbol::Symbol;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
 impl Interpreter {
@@ -3813,10 +3814,10 @@ impl Interpreter {
                     let method_args = args.into_iter().map(Expr::Literal).collect();
                     let body = vec![Stmt::Expr(Expr::MethodCall {
                         target: Box::new(Expr::Call {
-                            name: "__method_compose_target__".to_string(),
+                            name: Symbol::intern("__method_compose_target__"),
                             args: call_args,
                         }),
-                        name: method.to_string(),
+                        name: Symbol::intern(method),
                         args: method_args,
                         modifier: None,
                         quoted: false,

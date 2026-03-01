@@ -8,6 +8,7 @@ use super::super::parse_result::{
 use super::super::primary::parse_call_arg_list;
 
 use crate::ast::{AssignOp, Expr, Stmt};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -86,7 +87,7 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
     if matches!(op, CompoundAssignOp::Mul | CompoundAssignOp::Power) {
         Expr::Ternary {
             cond: Box::new(Expr::Call {
-                name: "defined".to_string(),
+                name: Symbol::intern("defined"),
                 args: vec![lhs.clone()],
             }),
             then_expr: Box::new(lhs),
@@ -101,7 +102,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
     if matches!(op, CompoundAssignOp::DefinedOr) {
         Expr::Ternary {
             cond: Box::new(Expr::Call {
-                name: "defined".to_string(),
+                name: Symbol::intern("defined"),
                 args: vec![lhs.clone()],
             }),
             then_expr: Box::new(lhs),
@@ -310,14 +311,14 @@ fn method_lvalue_assign_expr(
         None => Expr::Literal(Value::Nil),
     });
     Expr::Call {
-        name: "__mutsu_assign_method_lvalue".to_string(),
+        name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
     }
 }
 
 fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr) -> Expr {
     Expr::Call {
-        name: "__mutsu_assign_named_sub_lvalue".to_string(),
+        name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
         args: vec![
             Expr::Literal(Value::Str(name)),
             Expr::ArrayLiteral(call_args),
@@ -328,7 +329,7 @@ fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr)
 
 fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
     Expr::Call {
-        name: "__mutsu_assign_callable_lvalue".to_string(),
+        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
     }
 }
@@ -523,7 +524,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             rest,
             Expr::Call {
-                name: "__mutsu_atomic_add_var".to_string(),
+                name: Symbol::intern("__mutsu_atomic_add_var"),
                 args: vec![Expr::Literal(Value::Str(name)), rhs],
             },
         ));
@@ -637,10 +638,10 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::HashVar(name) => Some(format!("%{}", name)),
                     _ => None,
                 };
-                method_lvalue_assign_expr(*target, target_var_name, name, args, rhs)
+                method_lvalue_assign_expr(*target, target_var_name, name.resolve(), args, rhs)
             }
         }
-        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name, args, rhs),
+        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
         _ => return Err(PError::expected("assignment expression")),
     };
@@ -649,7 +650,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "__mutsu_atomic_store_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_store_var"),
                     args: vec![Expr::Literal(Value::Str(name)), *expr],
                 },
             ));
@@ -827,7 +828,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 name,
                 expr: Box::new(Expr::MethodCall {
                     target: Box::new(method_target),
-                    name: method_name.to_string(),
+                    name: Symbol::intern(method_name),
                     args,
                     modifier: None,
                     quoted: false,
@@ -925,7 +926,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         return Ok((
             rest,
             Expr::Call {
-                name: "__mutsu_atomic_add_var".to_string(),
+                name: Symbol::intern("__mutsu_atomic_add_var"),
                 args: vec![Expr::Literal(Value::Str(name)), rhs],
             },
         ));
@@ -950,7 +951,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "__mutsu_atomic_store_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_store_var"),
                     args: vec![Expr::Literal(Value::Str(name)), rhs],
                 },
             ));
@@ -1088,7 +1089,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 let (rest, expr) = parse_assign_expr_or_comma(rest)?;
                 if is_atomic {
                     let stmt = Stmt::Expr(Expr::Call {
-                        name: "__mutsu_atomic_store_var".to_string(),
+                        name: Symbol::intern("__mutsu_atomic_store_var"),
                         args: vec![Expr::Literal(Value::Str(bare_name)), expr],
                     });
                     return parse_statement_modifier(rest, stmt);
@@ -1136,7 +1137,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let (rest, rhs) = parse_assign_expr_or_comma(after_op)?;
             let current_value = Expr::MethodCall {
                 target: Box::new(var_expr.clone()),
-                name: method_name.clone(),
+                name: Symbol::intern(&method_name),
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
@@ -1147,7 +1148,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 right: Box::new(rhs),
             };
             let assign_call = Expr::Call {
-                name: "__mutsu_assign_method_lvalue".to_string(),
+                name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![
                     var_expr,
                     Expr::Literal(Value::Str(method_name)),
@@ -1274,7 +1275,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         let expr = Expr::MethodCall {
             target: Box::new(var_expr),
-            name: method_name,
+            name: Symbol::intern(&method_name),
             args,
             modifier: None,
             quoted: false,
@@ -1313,7 +1314,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         let stmt = Stmt::Expr(Expr::Call {
-            name: "__mutsu_atomic_add_var".to_string(),
+            name: Symbol::intern("__mutsu_atomic_add_var"),
             args: vec![Expr::Literal(Value::Str(name)), rhs],
         });
         return parse_statement_modifier(rest, stmt);
@@ -1339,7 +1340,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         })?;
         if is_atomic {
             let stmt = Stmt::Expr(Expr::Call {
-                name: "__mutsu_atomic_store_var".to_string(),
+                name: Symbol::intern("__mutsu_atomic_store_var"),
                 args: vec![Expr::Literal(Value::Str(name)), expr],
             });
             return parse_statement_modifier(rest, stmt);

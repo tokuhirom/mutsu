@@ -1,6 +1,7 @@
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, Stmt};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -364,7 +365,7 @@ pub(super) fn itemized_bracket_expr(input: &str) -> PResult<'_, Expr> {
         rest,
         Expr::MethodCall {
             target: Box::new(inner),
-            name: "item".to_string(),
+            name: Symbol::intern("item"),
             args: vec![],
             modifier: None,
             quoted: false,

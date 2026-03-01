@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
@@ -432,7 +433,7 @@ impl Interpreter {
                     self.validate_private_access_in_expr(caller_class, arg)?;
                 }
                 if *modifier == Some('!')
-                    && let Some((owner_class, _)) = name.split_once("::")
+                    && let Some((owner_class, _)) = name.resolve().split_once("::")
                     && owner_class != caller_class
                     && !self
                         .class_trusts
@@ -1984,7 +1985,7 @@ impl Interpreter {
                                     param_defs: Vec::new(),
                                     body: vec![Stmt::Expr(Expr::MethodCall {
                                         target: Box::new(Expr::Var(attr_var_name.clone())),
-                                        name: handle_name.clone(),
+                                        name: Symbol::intern(handle_name),
                                         args: Vec::new(),
                                         modifier: None,
                                         quoted: false,
@@ -2264,7 +2265,7 @@ impl Interpreter {
                                 param_defs: Vec::new(),
                                 body: vec![Stmt::Expr(Expr::MethodCall {
                                     target: Box::new(Expr::Var(attr_var_name.clone())),
-                                    name: handle_name.clone(),
+                                    name: Symbol::intern(handle_name),
                                     args: Vec::new(),
                                     modifier: None,
                                     quoted: false,

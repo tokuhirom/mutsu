@@ -1,6 +1,7 @@
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::Expr;
+use crate::symbol::Symbol;
 use crate::token_kind::{lookup_emoji_sequence, lookup_unicode_char_by_name};
 use crate::value::Value;
 
@@ -414,7 +415,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return Ok((
             rest,
             Expr::Call {
-                name: "__mutsu_make_format".to_string(),
+                name: Symbol::intern("__mutsu_make_format"),
                 args: vec![content_expr],
             },
         ));
@@ -537,7 +538,7 @@ pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::Call {
-            name: "QX".to_string(),
+            name: Symbol::intern("QX"),
             args: vec![command_expr],
         },
     ))
@@ -561,7 +562,7 @@ pub(super) fn backtick_qx_string(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::Call {
-            name: "QX".to_string(),
+            name: Symbol::intern("QX"),
             args: vec![command_expr],
         },
     ))
@@ -696,7 +697,7 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
         if let Some(after_parens) = after_name.strip_prefix("()") {
             expr = Expr::MethodCall {
                 target: Box::new(expr),
-                name: method_name.to_string(),
+                name: Symbol::intern(method_name),
                 args: vec![],
                 modifier: None,
                 quoted: false,

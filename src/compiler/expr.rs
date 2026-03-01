@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Compiler {
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
@@ -169,7 +170,7 @@ impl Compiler {
                         }
                     } else {
                         self.compile_expr(&Expr::Call {
-                            name: "__mutsu_incdec_nomatch".to_string(),
+                            name: Symbol::intern("__mutsu_incdec_nomatch"),
                             args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
                         });
                     }
@@ -200,7 +201,7 @@ impl Compiler {
                         }
                     } else {
                         self.compile_expr(&Expr::Call {
-                            name: "__mutsu_incdec_nomatch".to_string(),
+                            name: Symbol::intern("__mutsu_incdec_nomatch"),
                             args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
                         });
                     }
@@ -520,13 +521,13 @@ impl Compiler {
                     }
                 }
                 // Rewrite shift(@arr)/pop(@arr) → @arr.shift()/@arr.pop() for mutability
-                else if matches!(name.as_str(), "shift" | "pop")
+                else if matches!(name.resolve().as_str(), "shift" | "pop")
                     && args.len() == 1
                     && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
                 {
                     let method_call = Expr::MethodCall {
                         target: Box::new(args[0].clone()),
-                        name: name.clone(),
+                        name: *name,
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
@@ -535,14 +536,14 @@ impl Compiler {
                 }
                 // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend → @arr.push(val...)
                 else if matches!(
-                    name.as_str(),
+                    name.resolve().as_str(),
                     "push" | "unshift" | "append" | "prepend" | "splice"
                 ) && args.len() >= 2
                     && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
                 {
                     let method_call = Expr::MethodCall {
                         target: Box::new(args[0].clone()),
-                        name: name.clone(),
+                        name: *name,
                         args: args[1..].to_vec(),
                         modifier: None,
                         quoted: false,
@@ -583,7 +584,7 @@ impl Compiler {
                     for arg in &rewritten_args {
                         self.compile_call_arg(arg);
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                     self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity,
@@ -649,7 +650,7 @@ impl Compiler {
                         for arg in args {
                             self.compile_expr(arg);
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                         self.code.emit(OpCode::CallFunc {
                             name_idx,
                             arity,
@@ -679,7 +680,7 @@ impl Compiler {
                             };
                             if let Some(delta) = delta {
                                 let atomic_add = Expr::Call {
-                                    name: "__mutsu_atomic_add_var".to_string(),
+                                    name: Symbol::intern("__mutsu_atomic_add_var"),
                                     args: vec![Expr::Literal(Value::Str(vname.clone())), delta],
                                 };
                                 self.compile_expr(&atomic_add);
@@ -700,7 +701,7 @@ impl Compiler {
                         for arg in args {
                             self.compile_expr(arg);
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                         self.code.emit(OpCode::CallFunc {
                             name_idx,
                             arity,
@@ -718,7 +719,7 @@ impl Compiler {
                     {
                         let method_call = Expr::MethodCall {
                             target: Box::new(args[0].clone()),
-                            name: "VAR".to_string(),
+                            name: Symbol::intern("VAR"),
                             args: Vec::new(),
                             modifier: None,
                             quoted: false,
@@ -762,7 +763,7 @@ impl Compiler {
                                 break; // only one slip supported
                             }
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                         self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
@@ -774,7 +775,7 @@ impl Compiler {
                         for arg in args {
                             self.compile_call_arg(arg);
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                         self.code.emit(OpCode::CallFunc {
                             name_idx,
                             arity,
@@ -819,7 +820,7 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                 let target_name_idx = self.code.add_constant(Value::Str(target_name));
                 let modifier_idx =
                     modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
@@ -869,7 +870,7 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                 let modifier_idx =
                     modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
                 self.code.emit(OpCode::CallMethod {
@@ -906,7 +907,7 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                 let modifier_idx =
                     modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
                 self.code.emit(OpCode::HyperMethodCall {
@@ -1009,7 +1010,7 @@ impl Compiler {
                     }
                 } else {
                     self.compile_expr(&Expr::Call {
-                        name: "__mutsu_incdec_nomatch".to_string(),
+                        name: Symbol::intern("__mutsu_incdec_nomatch"),
                         args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
                     });
                 }
@@ -1042,7 +1043,7 @@ impl Compiler {
                     }
                 } else {
                     self.compile_expr(&Expr::Call {
-                        name: "__mutsu_incdec_nomatch".to_string(),
+                        name: Symbol::intern("__mutsu_incdec_nomatch"),
                         args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
                     });
                 }
@@ -1285,7 +1286,7 @@ impl Compiler {
                             is_rw: false,
                         };
                         let rewritten = Expr::Call {
-                            name: "__mutsu_reverse_andthen".to_string(),
+                            name: Symbol::intern("__mutsu_reverse_andthen"),
                             args: vec![eval_left.clone(), thunked],
                         };
                         self.compile_expr(&rewritten);
@@ -1316,7 +1317,7 @@ impl Compiler {
                             is_rw: false,
                         };
                         let rewritten = Expr::Call {
-                            name: "__mutsu_reverse_xx".to_string(),
+                            name: Symbol::intern("__mutsu_reverse_xx"),
                             args: vec![eval_right.clone(), thunked],
                         };
                         self.compile_expr(&rewritten);

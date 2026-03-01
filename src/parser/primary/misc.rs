@@ -1,6 +1,7 @@
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
+use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
@@ -257,7 +258,7 @@ fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Call {
-                name: "slip".to_string(),
+                name: Symbol::intern("slip"),
                 args: vec![expr],
             },
         ));
@@ -1318,7 +1319,7 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "hash".to_string(),
+                    name: Symbol::intern("hash"),
                     args,
                 },
             ));

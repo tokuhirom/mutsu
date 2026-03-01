@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Compiler {
     fn compile_condition_expr(&mut self, cond: &Expr) {
@@ -494,7 +495,7 @@ impl Compiler {
                         .collect();
                     let method_call = Expr::MethodCall {
                         target: Box::new(invocant_expr),
-                        name: name.clone(),
+                        name: Symbol::intern(name),
                         args: method_args,
                         modifier: None,
                         quoted: false,
@@ -520,7 +521,7 @@ impl Compiler {
                         })
                         .collect();
                     let call_expr = Expr::Call {
-                        name: name.clone(),
+                        name: Symbol::intern(name),
                         args: expr_args,
                     };
                     self.compile_expr(&call_expr);
@@ -1124,7 +1125,7 @@ impl Compiler {
                     index_mode: false,
                 });
                 let assign_expr = Expr::Call {
-                    name: "__mutsu_assign_method_lvalue".to_string(),
+                    name: Symbol::intern("__mutsu_assign_method_lvalue"),
                     args: vec![
                         Expr::Var(var_name.clone()),
                         Expr::Literal(Value::Str(method_name.clone())),
