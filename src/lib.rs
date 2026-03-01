@@ -10,6 +10,7 @@ mod regex_validate;
 #[cfg(feature = "native")]
 pub mod repl;
 mod runtime;
+pub mod symbol;
 mod token_kind;
 mod trace;
 mod value;
