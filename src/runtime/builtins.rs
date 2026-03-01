@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -483,8 +484,8 @@ impl Interpreter {
         err.is_fail = is_fail;
         if let Value::Instance { class_name, .. } = value
             && (class_name == "Exception"
-                || class_name.starts_with("X::")
-                || class_name.starts_with("CX::"))
+                || class_name.resolve().starts_with("X::")
+                || class_name.resolve().starts_with("CX::"))
         {
             err.exception = Some(Box::new(value.clone()));
         }
@@ -703,7 +704,7 @@ impl Interpreter {
                     };
                     let key = Value::Int(i);
                     if i < 0 || i as usize >= items.len() {
-                        rows.push((key, Value::Package("Any".to_string()), false));
+                        rows.push((key, Value::Package(Symbol::intern("Any")), false));
                         continue;
                     }
                     let ui = i as usize;
@@ -728,7 +729,7 @@ impl Interpreter {
                     let value = map
                         .get(&key_str)
                         .cloned()
-                        .unwrap_or_else(|| Value::Package("Any".to_string()));
+                        .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
                     rows.push((key, value, exists));
                 }
             }
@@ -1153,7 +1154,7 @@ impl Interpreter {
             && !name.starts_with('@')
         {
             if matches!(value, Value::Nil) {
-                value = Value::Package(constraint.clone());
+                value = Value::Package(Symbol::intern(&constraint));
             } else if !self.type_matches_value(&constraint, &value) {
                 return Err(RuntimeError::new(format!(
                     "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
@@ -1332,7 +1333,7 @@ impl Interpreter {
     fn make_stub_exception(message: String) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(message));
-        Value::make_instance("X::StubCode".to_string(), attrs)
+        Value::make_instance(Symbol::intern("X::StubCode"), attrs)
     }
 
     fn builtin_stub_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1365,7 +1366,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(msg));
         err.exception = Some(Box::new(Value::make_instance(
-            "X::Multi::NoMatch".to_string(),
+            Symbol::intern("X::Multi::NoMatch"),
             attrs,
         )));
         Err(err)
@@ -1413,14 +1414,14 @@ impl Interpreter {
                         Some(invocant.clone()),
                     )?;
                     self.overwrite_instance_bindings_by_identity(
-                        class_name,
+                        &class_name.resolve(),
                         *target_id,
                         updated.clone(),
                     );
                     (
                         result,
                         Some(Value::Instance {
-                            class_name: class_name.clone(),
+                            class_name: *class_name,
                             attributes: std::sync::Arc::new(updated),
                             id: *target_id,
                         }),

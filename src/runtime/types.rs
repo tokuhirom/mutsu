@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 
@@ -406,10 +407,10 @@ fn code_signature_matches_value(
         if let Some(captured) = constraint.strip_prefix("::")
             && let Some(Value::Package(name)) = interpreter.env.get(captured)
         {
-            return name.clone();
+            return name.resolve();
         }
         if let Some(Value::Package(name)) = interpreter.env.get(constraint) {
-            return name.clone();
+            return name.resolve();
         }
         constraint.to_string()
     }
@@ -494,7 +495,7 @@ impl Interpreter {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg));
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Assignment::RO".to_string(),
+                Symbol::intern("X::Assignment::RO"),
                 attrs,
             )));
             return Err(err);
@@ -514,7 +515,7 @@ impl Interpreter {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg));
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Multi::NoMatch".to_string(),
+                Symbol::intern("X::Multi::NoMatch"),
                 attrs,
             )));
             return Err(err);
@@ -554,10 +555,10 @@ impl Interpreter {
 
     pub(crate) fn captured_type_object(value: &Value) -> Value {
         match value {
-            Value::Package(name) => Value::Package(name.clone()),
-            Value::Instance { class_name, .. } => Value::Package(class_name.clone()),
-            Value::Nil => Value::Package("Any".to_string()),
-            _ => Value::Package(super::value_type_name(value).to_string()),
+            Value::Package(name) => Value::Package(*name),
+            Value::Instance { class_name, .. } => Value::Package(*class_name),
+            Value::Nil => Value::Package(Symbol::intern("Any")),
+            _ => Value::Package(Symbol::intern(super::value_type_name(value))),
         }
     }
 
@@ -583,7 +584,7 @@ impl Interpreter {
             return Value::hash(std::collections::HashMap::new());
         }
         if let Some(constraint) = &pd.type_constraint {
-            return Value::Package(Self::optional_type_object_name(constraint));
+            return Value::Package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }
         Value::Nil
     }
@@ -968,9 +969,10 @@ impl Interpreter {
                     None
                 }
             }
-            Value::Package(name) | Value::Str(name) if self.roles.contains_key(name) => {
-                Some((name.clone(), Vec::new()))
+            Value::Package(name) if self.roles.contains_key(&name.resolve()) => {
+                Some((name.resolve(), Vec::new()))
             }
+            Value::Str(name) if self.roles.contains_key(name) => Some((name.clone(), Vec::new())),
             _ => None,
         }
     }
@@ -1036,7 +1038,8 @@ impl Interpreter {
             false
         };
         if let Value::Package(package_name) = value
-            && let Some((lhs_base, lhs_inner)) = Self::parse_generic_constraint(package_name)
+            && let Some((lhs_base, lhs_inner)) =
+                Self::parse_generic_constraint(&package_name.resolve())
             && let Some((rhs_base, rhs_inner)) = Self::parse_generic_constraint(constraint)
             && Self::type_matches(rhs_base, lhs_base)
         {
@@ -1054,12 +1057,13 @@ impl Interpreter {
         if let Value::Package(package_name) = value
             && let Some((target, source)) = parse_coercion_type(constraint)
         {
-            let target_ok = package_matches_type(package_name, target);
+            let pkg_resolved = package_name.resolve();
+            let target_ok = package_matches_type(&pkg_resolved, target);
             let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
             return target_ok || source_ok;
         }
         if let Value::Package(package_name) = value
-            && package_matches_type(package_name, constraint)
+            && package_matches_type(&package_name.resolve(), constraint)
         {
             return true;
         }
@@ -1098,9 +1102,9 @@ impl Interpreter {
             }
         }
         if let Some(Value::Package(bound)) = self.env.get(constraint).cloned()
-            && bound != constraint
+            && bound != *constraint
         {
-            return self.type_matches_value(&bound, value);
+            return self.type_matches_value(&bound.resolve(), value);
         }
         // Handle type smileys (:U, :D, :_)
         let (base_constraint, smiley) = strip_type_smiley(constraint);
@@ -1176,10 +1180,10 @@ impl Interpreter {
         }
         // Type-object checks: Package values should respect declared class/role ancestry.
         if let Value::Package(package_name) = value {
-            if Self::type_matches(constraint, package_name) {
+            if Self::type_matches(constraint, &package_name.resolve()) {
                 return true;
             }
-            let mro = self.class_mro(package_name);
+            let mro = self.class_mro(&package_name.resolve());
             if mro.iter().any(|parent| parent == constraint) {
                 return true;
             }
@@ -1220,8 +1224,8 @@ impl Interpreter {
             {
                 return true;
             }
-            if self.roles.contains_key(package_name) {
-                let mut stack = vec![package_name.clone()];
+            if self.roles.contains_key(&package_name.resolve()) {
+                let mut stack: Vec<String> = vec![package_name.resolve()];
                 let mut seen = HashSet::new();
                 while let Some(role) = stack.pop() {
                     if !seen.insert(role.clone()) {
@@ -1240,11 +1244,11 @@ impl Interpreter {
         }
         // Check Instance class name against constraint (including parent classes)
         if let Value::Instance { class_name, .. } = value {
-            if Self::type_matches(constraint, class_name) {
+            if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
             }
             // Check parent classes of the instance
-            if let Some(class_def) = self.classes.get(class_name.as_str()) {
+            if let Some(class_def) = self.classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {
                     if Self::type_matches(constraint, &parent) {
                         return true;
@@ -1776,7 +1780,7 @@ impl Interpreter {
                             let mut ex_attrs = std::collections::HashMap::new();
                             ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
                             let exception = Value::make_instance(
-                                "X::TypeCheck::Binding::Parameter".to_string(),
+                                Symbol::intern("X::TypeCheck::Binding::Parameter"),
                                 ex_attrs,
                             );
                             err.exception = Some(Box::new(exception));
@@ -1805,7 +1809,7 @@ impl Interpreter {
                         let mut ex_attrs = std::collections::HashMap::new();
                         ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
                         let exception = Value::make_instance(
-                            "X::TypeCheck::Binding::Parameter".to_string(),
+                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
                         );
                         err.exception = Some(Box::new(exception));
@@ -1899,7 +1903,7 @@ impl Interpreter {
                                 ex_attrs
                                     .insert("message".to_string(), Value::Str(err.message.clone()));
                                 let exception = Value::make_instance(
-                                    "X::TypeCheck::Binding::Parameter".to_string(),
+                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
                                     ex_attrs,
                                 );
                                 err.exception = Some(Box::new(exception));
@@ -1994,7 +1998,7 @@ impl Interpreter {
                         let mut ex_attrs = std::collections::HashMap::new();
                         ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
                         let exception = Value::make_instance(
-                            "X::TypeCheck::Binding::Parameter".to_string(),
+                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
                         );
                         err.exception = Some(Box::new(exception));
@@ -2185,10 +2189,10 @@ impl Interpreter {
             attributes,
             ..
         } = &value
-            && self.class_has_method(class_name, base_target)
+            && self.class_has_method(&class_name.resolve(), base_target)
         {
             let (coerced, _) = self.run_instance_method(
-                class_name,
+                &class_name.resolve(),
                 (**attributes).clone(),
                 base_target,
                 vec![],
@@ -2203,7 +2207,7 @@ impl Interpreter {
             }
             if self.classes.contains_key(base_target)
                 && let Ok(coerced) = self.call_method_with_values(
-                    Value::Package(base_target.to_string()),
+                    Value::Package(Symbol::intern(base_target)),
                     "COERCE",
                     vec![value],
                 )

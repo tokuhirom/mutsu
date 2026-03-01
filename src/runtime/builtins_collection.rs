@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use std::collections::HashMap as StdHashMap;
 
 /// Format the result of `first()` according to adverb flags (:k, :kv, :p).
@@ -31,7 +32,7 @@ impl Interpreter {
             );
             let mut attrs = StdHashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg.clone()));
-            let ex = Value::make_instance("X::TypeCheck::Argument".to_string(), attrs);
+            let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
@@ -53,7 +54,7 @@ impl Interpreter {
             );
             let mut attrs = StdHashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg.clone()));
-            let ex = Value::make_instance("X::TypeCheck::Argument".to_string(), attrs);
+            let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
@@ -857,7 +858,7 @@ impl Interpreter {
         if matches!(positional.first(), Some(Value::Bool(_))) {
             let mut err = RuntimeError::new("Cannot use Bool as a matcher");
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Match::Bool".to_string(),
+                Symbol::intern("X::Match::Bool"),
                 std::collections::HashMap::new(),
             )));
             return Err(err);

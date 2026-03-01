@@ -1,3 +1,4 @@
+use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -614,7 +615,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "&&" | "and" | "?&" => Value::Bool(true),
         "||" | "or" | "?|" | "^^" => Value::Bool(false),
         "?^" => Value::Bool(false),
-        "//" => Value::Package("Any".to_string()),
+        "//" => Value::Package(Symbol::intern("Any")),
         "min" => Value::Num(f64::INFINITY),
         "max" => Value::Num(f64::NEG_INFINITY),
         // Junction operators

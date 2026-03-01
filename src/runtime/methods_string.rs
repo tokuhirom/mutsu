@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn translate_newlines_for_encode(&self, input: &str) -> String {
@@ -531,7 +532,7 @@ impl Interpreter {
             "message".to_string(),
             Value::Str("X::OutOfRange".to_string()),
         );
-        let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
         let mut err = RuntimeError::new("X::OutOfRange".to_string());
         err.exception = Some(Box::new(ex));
         err

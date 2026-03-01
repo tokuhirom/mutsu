@@ -1,4 +1,5 @@
 use super::Value;
+use crate::symbol::Symbol;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,7 +185,7 @@ impl RuntimeError {
             "message".to_string(),
             Value::Str(format!("Cannot {} a fixed-dimension array", operation)),
         );
-        let ex = Value::make_instance("X::IllegalOnFixedDimensionArray".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::IllegalOnFixedDimensionArray"), attrs);
         let mut err = Self::new(format!("Cannot {} a fixed-dimension array", operation));
         err.exception = Some(Box::new(ex));
         err
@@ -202,7 +203,7 @@ impl RuntimeError {
                 name
             )),
         );
-        let ex = Value::make_instance("X::Attribute::Required".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::Attribute::Required"), attrs);
         let mut err = Self::new(format!(
             "The attribute '{}' is required, but you did not provide a value for it.",
             name
@@ -217,7 +218,7 @@ impl RuntimeError {
             "message".to_string(),
             Value::Str("Attempt to divide by zero".to_string()),
         );
-        let ex = Value::make_instance("X::Numeric::DivideByZero".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
         let mut err = Self::new("X::Numeric::DivideByZero");
         err.exception = Some(Box::new(ex));
         err

@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn compute_class_mro(
@@ -158,9 +159,9 @@ impl Interpreter {
         let invocant_for_dispatch = if let Some(inv) = &invocant {
             inv.clone()
         } else if attributes.is_empty() {
-            Value::Package(receiver_class_name.to_string())
+            Value::Package(Symbol::intern(receiver_class_name))
         } else {
-            Value::make_instance(receiver_class_name.to_string(), attributes.clone())
+            Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
         };
         let remaining: Vec<(String, MethodDef)> = all_candidates
             .into_iter()
@@ -205,9 +206,9 @@ impl Interpreter {
         let base = if let Some(invocant) = invocant {
             invocant
         } else if attributes.is_empty() {
-            Value::Package(receiver_class_name.to_string())
+            Value::Package(Symbol::intern(receiver_class_name))
         } else {
-            Value::make_instance(receiver_class_name.to_string(), attributes.clone())
+            Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
         };
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
@@ -246,11 +247,13 @@ impl Interpreter {
         // Set ::?CLASS / ::?ROLE compile-time variable for the method body
         self.env.insert(
             "?CLASS".to_string(),
-            Value::Package(owner_class.to_string()),
+            Value::Package(Symbol::intern(owner_class)),
         );
         if let Some(role_name) = role_context {
-            self.env
-                .insert("?ROLE".to_string(), Value::Package(role_name));
+            self.env.insert(
+                "?ROLE".to_string(),
+                Value::Package(Symbol::intern(&role_name)),
+            );
         } else {
             self.env.remove("?ROLE");
         }
@@ -373,7 +376,7 @@ impl Interpreter {
                     },
                     Value::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => Value::Instance {
-                    class_name: class_name.clone(),
+                    class_name: *class_name,
                     attributes: std::sync::Arc::new(attributes.clone()),
                     id: *base_id,
                 },

@@ -440,7 +440,7 @@ pub(crate) fn native_method_1arg(
                     "message".to_string(),
                     Value::Str(format!("batch size must be at least 1, got {}", n)),
                 );
-                let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+                let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
                 let mut err = RuntimeError::new(format!(
                     "X::OutOfRange: batch size must be at least 1, got {}",
                     n
@@ -948,10 +948,10 @@ fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
     } = target
         && (class_name == "Buf"
             || class_name == "Blob"
-            || class_name.starts_with("Buf[")
-            || class_name.starts_with("Blob[")
-            || class_name.starts_with("buf")
-            || class_name.starts_with("blob"))
+            || class_name.resolve().starts_with("Buf[")
+            || class_name.resolve().starts_with("Blob[")
+            || class_name.resolve().starts_with("buf")
+            || class_name.resolve().starts_with("blob"))
         && let Some(Value::Array(items, ..)) = attributes.get("bytes")
     {
         return Some(

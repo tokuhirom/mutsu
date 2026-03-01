@@ -520,9 +520,12 @@ impl VM {
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
             let env = self.interpreter.env_mut();
-            env.insert("_".to_string(), Value::Package(resolved_name.clone()));
+            env.insert(
+                "_".to_string(),
+                Value::Package(Symbol::intern(&resolved_name)),
+            );
             env.entry(resolved_name.clone())
-                .or_insert(Value::Package(resolved_name));
+                .or_insert(Value::Package(Symbol::intern(&resolved_name)));
             self.sync_locals_from_env(code);
             Ok(())
         } else {
@@ -548,7 +551,7 @@ impl VM {
                 .register_role_decl(&name_str, type_params, type_param_defs, body)?;
             self.interpreter
                 .env_mut()
-                .insert("_".to_string(), Value::Package(name_str));
+                .insert("_".to_string(), Value::Package(Symbol::intern(&name_str)));
             self.sync_locals_from_env(code);
             Ok(())
         } else {

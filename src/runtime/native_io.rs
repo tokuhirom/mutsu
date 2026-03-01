@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use num_traits::ToPrimitive;
 
 enum IoPathExtensionPartsSpec {
@@ -67,7 +68,7 @@ impl Interpreter {
                 )))
             }
             "IO" => Ok(Value::make_instance(
-                "IO::Path".to_string(),
+                Symbol::intern("IO::Path"),
                 attributes.clone(),
             )),
             "basename" => {
@@ -152,7 +153,7 @@ impl Interpreter {
                 if let Some(subst) = subst {
                     let Some(parts_to_replace) = selected_parts else {
                         return Ok(Value::make_instance(
-                            "IO::Path".to_string(),
+                            Symbol::intern("IO::Path"),
                             attributes.clone(),
                         ));
                     };
@@ -170,7 +171,7 @@ impl Interpreter {
                         Self::io_path_extension_strip_n_parts(basename, parts_to_replace)
                     else {
                         return Ok(Value::make_instance(
-                            "IO::Path".to_string(),
+                            Symbol::intern("IO::Path"),
                             attributes.clone(),
                         ));
                     };
@@ -184,7 +185,7 @@ impl Interpreter {
                         "path".to_string(),
                         Value::Str(format!("{dir_prefix}{new_basename}")),
                     );
-                    Ok(Value::make_instance("IO::Path".to_string(), new_attrs))
+                    Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
                 } else {
                     let Some(parts) = selected_parts else {
                         return Ok(Value::Str(String::new()));
@@ -405,7 +406,7 @@ impl Interpreter {
                     RuntimeError::new(format!("Failed to mkdir '{}': {}", p, err))
                 })?;
                 Ok(Value::make_instance(
-                    "IO::Path".to_string(),
+                    Symbol::intern("IO::Path"),
                     attributes.clone(),
                 ))
             }
@@ -428,7 +429,7 @@ impl Interpreter {
                     {
                         attrs.insert("cwd".to_string(), Value::Str(cwd.clone()));
                     }
-                    Value::make_instance("IO::Path".to_string(), attrs)
+                    Value::make_instance(Symbol::intern("IO::Path"), attrs)
                 };
                 for entry in fs::read_dir(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to read dir '{}': {}", p, err))
@@ -677,7 +678,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let target_val = Value::make_instance("IO::Handle".to_string(), target.clone());
+        let target_val = Value::make_instance(Symbol::intern("IO::Handle"), target.clone());
         match method {
             "close" => Ok(Value::Bool(self.close_handle_value(&target_val)?)),
             "get" => Ok(self
@@ -831,7 +832,7 @@ impl Interpreter {
 
         let is_bin = target.get("bin").is_some_and(|v| v.truthy());
 
-        let target_val = Value::make_instance("IO::Handle".to_string(), target.clone());
+        let target_val = Value::make_instance(Symbol::intern("IO::Handle"), target.clone());
 
         let mut values = Vec::new();
         if is_bin {
@@ -846,7 +847,7 @@ impl Interpreter {
                         chunk.iter().map(|b| Value::Int(*b as i64)).collect();
                     let mut buf_attrs = HashMap::new();
                     buf_attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    values.push(Value::make_instance("Buf".to_string(), buf_attrs));
+                    values.push(Value::make_instance(Symbol::intern("Buf"), buf_attrs));
                 }
                 if bytes.len() < size {
                     break;
@@ -877,7 +878,7 @@ impl Interpreter {
         let mut supply_attrs = HashMap::new();
         supply_attrs.insert("live".to_string(), Value::Bool(false));
         supply_attrs.insert("values".to_string(), Value::array(values));
-        Ok(Value::make_instance("Supply".to_string(), supply_attrs))
+        Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs))
     }
 
     pub(super) fn native_io_pipe(

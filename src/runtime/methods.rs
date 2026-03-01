@@ -638,7 +638,7 @@ impl Interpreter {
             Value::Int(i) => vec![Value::Int(i)],
             Value::Package(ref name) => {
                 // Enum type as shape: use the number of enum variants
-                if let Some(variants) = self.enum_types.get(name) {
+                if let Some(variants) = self.enum_types.get(&name.resolve()) {
                     vec![Value::Int(variants.len() as i64)]
                 } else if name == "Bool" {
                     // Bool is a builtin enum with 2 values (False, True)
@@ -655,7 +655,7 @@ impl Interpreter {
                 Value::Int(i) if *i >= 0 => *i as usize,
                 Value::Num(f) if *f >= 0.0 => *f as usize,
                 Value::Package(name) => {
-                    if let Some(variants) = self.enum_types.get(name) {
+                    if let Some(variants) = self.enum_types.get(&name.resolve()) {
                         variants.len()
                     } else if name == "Bool" {
                         2
@@ -732,24 +732,31 @@ impl Interpreter {
         } = &target
         {
             if let Some(private_method_name) = method.strip_prefix('!')
-                && let Some((resolved_owner, method_def)) =
-                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_any_owner(
+                    &class_name.resolve(),
+                    private_method_name,
+                    &args,
+                )
             {
                 let (result, updated) = self.run_instance_method_resolved(
-                    class_name,
+                    &class_name.resolve(),
                     &resolved_owner,
                     method_def,
                     (**attributes).clone(),
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name.resolve(),
+                    *target_id,
+                    updated,
+                );
                 return Ok(vec![result]);
             }
 
             if let Some((owner_class, private_method_name)) = method.split_once("::")
                 && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
-                    class_name,
+                    &class_name.resolve(),
                     owner_class,
                     private_method_name,
                     &args,
@@ -773,24 +780,29 @@ impl Interpreter {
                     return Err(RuntimeError::new("X::Method::Private::Permission"));
                 }
                 let (result, updated) = self.run_instance_method_resolved(
-                    class_name,
+                    &class_name.resolve(),
                     &resolved_owner,
                     method_def,
                     (**attributes).clone(),
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name.resolve(),
+                    *target_id,
+                    updated,
+                );
                 return Ok(vec![result]);
             }
 
-            let candidates = self.resolve_all_methods_with_owner(class_name, method, &args);
+            let candidates =
+                self.resolve_all_methods_with_owner(&class_name.resolve(), method, &args);
             if !candidates.is_empty() {
                 let mut attrs = (**attributes).clone();
                 let mut out = Vec::with_capacity(candidates.len());
                 for (resolved_owner, method_def) in candidates {
                     let (result, updated) = self.run_instance_method_resolved(
-                        class_name,
+                        &class_name.resolve(),
                         &resolved_owner,
                         method_def,
                         attrs,
@@ -800,7 +812,11 @@ impl Interpreter {
                     attrs = updated;
                     out.push(result);
                 }
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, attrs);
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name.resolve(),
+                    *target_id,
+                    attrs,
+                );
                 return Ok(out);
             }
         }
@@ -971,7 +987,7 @@ impl Interpreter {
 
                     let mut updated = items.to_vec();
                     if index >= updated.len() {
-                        updated.resize(index + 1, Value::Package("Any".to_string()));
+                        updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
                     }
                     updated[index] = value.clone();
                     self.overwrite_array_bindings_by_identity(
@@ -1117,8 +1133,14 @@ impl Interpreter {
                         mixins.get(enum_type),
                         Some(Value::Enum { key, .. }) if key == probe_key
                     ),
-                    Value::Package(name) | Value::Str(name) => {
-                        mixins.contains_key(name)
+                    Value::Package(name) => {
+                        let n = name.resolve();
+                        mixins.contains_key(&n)
+                            || mixins.contains_key(&format!("__mutsu_role__{}", n))
+                            || inner.does_check(&n)
+                    }
+                    Value::Str(name) => {
+                        mixins.contains_key(name.as_str())
                             || mixins.contains_key(&format!("__mutsu_role__{}", name))
                             || inner.does_check(name)
                     }
@@ -1132,7 +1154,7 @@ impl Interpreter {
         // first instantiates the role, then dispatches the method on that instance.
         if method != "new" {
             if let Value::Package(role_name) = &target
-                && let Some(role) = self.roles.get(role_name)
+                && let Some(role) = self.roles.get(&role_name.resolve())
             {
                 let is_public_attr_accessor = args.is_empty()
                     && role
@@ -1159,12 +1181,14 @@ impl Interpreter {
         }
 
         // Enum type-object dispatch for Bool and user enums (e.g. `Order.roll`).
-        let enum_type_name = match &target {
-            Value::Package(type_name) => Some(type_name),
-            Value::Str(type_name) if self.enum_types.contains_key(type_name) => Some(type_name),
+        let enum_type_name: Option<String> = match &target {
+            Value::Package(type_name) => Some(type_name.resolve()),
+            Value::Str(type_name) if self.enum_types.contains_key(type_name) => {
+                Some(type_name.clone())
+            }
             Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
                 Value::Enum { enum_type, .. } if self.enum_types.contains_key(enum_type) => {
-                    Some(enum_type)
+                    Some(enum_type.clone())
                 }
                 _ => None,
             }),
@@ -1177,7 +1201,7 @@ impl Interpreter {
             let pool: Option<Vec<Value>> = if type_name == "Bool" {
                 Some(vec![Value::Bool(false), Value::Bool(true)])
             } else {
-                self.enum_types.get(type_name).map(|variants| {
+                self.enum_types.get(&type_name).map(|variants| {
                     variants
                         .iter()
                         .enumerate()
@@ -1364,11 +1388,11 @@ impl Interpreter {
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
-            || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, "Bridge"))
+            || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
             || (matches!(method, "AT-KEY" | "keys")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash"))
             || (!is_pseudo_method
-                && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
+                && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {
@@ -1475,7 +1499,7 @@ impl Interpreter {
                 )
                 && let Some(Value::Str(type_name)) = attributes.get("name")
             {
-                how_args.insert(0, Value::Package(type_name.clone()));
+                how_args.insert(0, Value::Package(Symbol::intern(type_name)));
             }
             return self.dispatch_classhow_method(method, how_args);
         }
@@ -1515,7 +1539,7 @@ impl Interpreter {
                     });
                 }
                 Value::Package(class_name) => {
-                    return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
+                    return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
                 _ => {}
             }
@@ -1573,7 +1597,7 @@ impl Interpreter {
                     args.first().cloned().unwrap_or(Value::Nil),
                 );
                 attrs.insert("handled".to_string(), Value::Bool(false));
-                return Ok(Value::make_instance("Failure".to_string(), attrs));
+                return Ok(Value::make_instance(Symbol::intern("Failure"), attrs));
             }
             "handled"
                 if args.is_empty()
@@ -1698,7 +1722,7 @@ impl Interpreter {
             }
             "default" if args.is_empty() => {
                 if matches!(target, Value::Array(..)) {
-                    return Ok(Value::Package("Any".to_string()));
+                    return Ok(Value::Package(Symbol::intern("Any")));
                 }
             }
             "note" if args.is_empty() => {
@@ -1721,7 +1745,7 @@ impl Interpreter {
                     bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes_vals));
-                return Ok(Value::make_instance("Buf".to_string(), attrs));
+                return Ok(Value::make_instance(Symbol::intern("Buf"), attrs));
             }
             "decode" => {
                 if let Value::Instance {
@@ -1761,7 +1785,8 @@ impl Interpreter {
             }
             "does" if args.len() == 1 => {
                 let role_name = match &args[0] {
-                    Value::Package(name) | Value::Str(name) => name.clone(),
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.clone(),
                     _ => return Ok(Value::Bool(false)),
                 };
                 return Ok(Value::Bool(target.does_check(&role_name)));
@@ -1769,7 +1794,7 @@ impl Interpreter {
             "start" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let block = args.into_iter().next().unwrap_or(Value::Nil);
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
                     let mut thread_interp = self.clone_for_thread();
                     std::thread::spawn(move || {
@@ -1797,7 +1822,7 @@ impl Interpreter {
             "in" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
                     std::thread::spawn(move || {
                         if secs > 0.0 {
@@ -1822,7 +1847,7 @@ impl Interpreter {
                     let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
                     let now = crate::value::current_time_secs_f64();
                     let delay = (at_time - now).max(0.0);
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
                     std::thread::spawn(move || {
                         if delay > 0.0 {
@@ -1836,7 +1861,7 @@ impl Interpreter {
             "kept" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let value = args.into_iter().next().unwrap_or(Value::Bool(true));
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     promise.keep(value, String::new(), String::new());
                     return Ok(Value::Promise(promise));
                 }
@@ -1847,14 +1872,14 @@ impl Interpreter {
                         .into_iter()
                         .next()
                         .unwrap_or_else(|| Value::Str("Died".to_string()));
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     promise.break_with(reason_val, String::new(), String::new());
                     return Ok(Value::Promise(promise));
                 }
             }
             "allof" => {
                 if let Some(cls) = self.promise_class_name(&target) {
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
                     let mut promises = Vec::new();
                     for arg in &args {
@@ -1881,7 +1906,7 @@ impl Interpreter {
             }
             "anyof" => {
                 if let Some(cls) = self.promise_class_name(&target) {
-                    let promise = SharedPromise::new_with_class(cls);
+                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
                     let mut promises = Vec::new();
                     for arg in &args {
@@ -1915,11 +1940,14 @@ impl Interpreter {
             "WHAT" if args.is_empty() => {
                 if let Some(info) = self.container_type_metadata(&target) {
                     if let Some(declared) = info.declared_type {
-                        return Ok(Value::Package(declared));
+                        return Ok(Value::Package(Symbol::intern(&declared)));
                     }
                     match &target {
                         Value::Array(_, _) => {
-                            return Ok(Value::Package(format!("Array[{}]", info.value_type)));
+                            return Ok(Value::Package(Symbol::intern(&format!(
+                                "Array[{}]",
+                                info.value_type
+                            ))));
                         }
                         Value::Hash(_) => {
                             let name = if let Some(key_type) = info.key_type {
@@ -1927,12 +1955,12 @@ impl Interpreter {
                             } else {
                                 format!("Hash[{}]", info.value_type)
                             };
-                            return Ok(Value::Package(name));
+                            return Ok(Value::Package(Symbol::intern(&name)));
                         }
                         _ => {}
                     }
                 }
-                let type_name = match &target {
+                let type_name: &str = match &target {
                     Value::Int(_) => "Int",
                     Value::BigInt(_) => "Int",
                     Value::Num(_) => "Num",
@@ -1957,7 +1985,15 @@ impl Interpreter {
                     Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
                     Value::Enum { enum_type, .. } => enum_type.as_str(),
                     Value::Nil => "Any",
-                    Value::Package(name) => name.as_str(),
+                    Value::Package(name) => {
+                        let resolved = name.resolve();
+                        let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                            ""
+                        } else {
+                            &resolved
+                        };
+                        return Ok(Value::Package(Symbol::intern(visible)));
+                    }
                     Value::Routine { is_regex: true, .. } => "Regex",
                     Value::Routine { .. } => "Sub",
                     Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
@@ -1967,7 +2003,15 @@ impl Interpreter {
                     },
                     Value::WeakSub(_) => "Sub",
                     Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
-                    Value::Instance { class_name, .. } => class_name.as_str(),
+                    Value::Instance { class_name, .. } => {
+                        let resolved = class_name.resolve();
+                        let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                            ""
+                        } else {
+                            &resolved
+                        };
+                        return Ok(Value::Package(Symbol::intern(visible)));
+                    }
                     Value::Junction { .. } => "Junction",
                     Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
                     Value::Version { .. } => "Version",
@@ -1984,7 +2028,7 @@ impl Interpreter {
                     }
                     Value::Proxy { .. } => "Proxy",
                     Value::CustomType { name, .. } => {
-                        return Ok(Value::Package(name.clone()));
+                        return Ok(Value::Package(Symbol::intern(name)));
                     }
                     Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
                     Value::ParametricRole {
@@ -1994,14 +2038,17 @@ impl Interpreter {
                         let args_str: Vec<String> = type_args
                             .iter()
                             .map(|a| match a {
-                                Value::Package(n) => n.clone(),
+                                Value::Package(n) => n.resolve(),
                                 Value::ParametricRole { .. } => {
                                     // Recursively get the WHAT name for nested parametric roles
                                     if let Ok(Value::Package(n)) =
                                         self.call_method_with_values(a.clone(), "WHAT", Vec::new())
                                     {
                                         // Strip surrounding parens from (Name)
-                                        n.trim_start_matches('(').trim_end_matches(')').to_string()
+                                        n.resolve()
+                                            .trim_start_matches('(')
+                                            .trim_end_matches(')')
+                                            .to_string()
                                     } else {
                                         a.to_string_value()
                                     }
@@ -2010,7 +2057,7 @@ impl Interpreter {
                             })
                             .collect();
                         let name = format!("{}[{}]", base_name, args_str.join(","));
-                        return Ok(Value::Package(name));
+                        return Ok(Value::Package(Symbol::intern(&name)));
                     }
                 };
                 let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
@@ -2018,7 +2065,7 @@ impl Interpreter {
                 } else {
                     type_name
                 };
-                return Ok(Value::Package(visible_type_name.to_string()));
+                return Ok(Value::Package(Symbol::intern(visible_type_name)));
             }
             "HOW" => {
                 if !args.is_empty() {
@@ -2047,7 +2094,7 @@ impl Interpreter {
                     let args_str = type_args
                         .iter()
                         .map(|v| match v {
-                            Value::Package(n) => n.clone(),
+                            Value::Package(n) => n.resolve(),
                             other => other.to_string_value(),
                         })
                         .collect::<Vec<_>>()
@@ -2056,14 +2103,14 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("name".to_string(), Value::Str(full_name));
                     return Ok(Value::make_instance(
-                        "Perl6::Metamodel::CurriedRoleHOW".to_string(),
+                        Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"),
                         attrs,
                     ));
                 }
                 // Return a meta-object (ClassHOW) for any value
                 let type_name = match &target {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
                     _ => {
                         // Get type name via WHAT logic
                         let tn = match &target {
@@ -2110,19 +2157,19 @@ impl Interpreter {
                 };
                 let mut attrs = HashMap::new();
                 attrs.insert("name".to_string(), Value::Str(type_name));
-                return Ok(Value::make_instance(how_name.to_string(), attrs));
+                return Ok(Value::make_instance(Symbol::intern(how_name), attrs));
             }
             "WHO" if args.is_empty() => {
                 if let Value::Package(name) = &target {
-                    return Ok(self.package_stash_value(name));
+                    return Ok(self.package_stash_value(&name.resolve()));
                 }
                 return Ok(Value::Hash(Arc::new(HashMap::new())));
             }
             "WHY" if args.is_empty() => {
                 // Return declarator doc comment attached to this type/package/sub
                 let keys: Vec<String> = match &target {
-                    Value::Package(name) => vec![name.clone()],
-                    Value::Instance { class_name, .. } => vec![class_name.clone()],
+                    Value::Package(name) => vec![name.resolve()],
+                    Value::Instance { class_name, .. } => vec![class_name.resolve()],
                     Value::Sub(sub_data) => {
                         let mut k = Vec::new();
                         if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
@@ -2144,9 +2191,9 @@ impl Interpreter {
             }
             "^name" if args.is_empty() => {
                 return Ok(Value::Str(match &target {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
-                    Value::Promise(p) => p.class_name(),
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    Value::Promise(p) => p.class_name().resolve(),
                     Value::ParametricRole {
                         base_name,
                         type_args,
@@ -2154,7 +2201,7 @@ impl Interpreter {
                         let args_str = type_args
                             .iter()
                             .map(|v| match v {
-                                Value::Package(n) => n.clone(),
+                                Value::Package(n) => n.resolve(),
                                 other => other.to_string_value(),
                             })
                             .collect::<Vec<_>>()
@@ -2165,10 +2212,12 @@ impl Interpreter {
                 }));
             }
             "enums" => {
-                let type_name = match &target {
-                    Value::Str(name) | Value::Package(name) => Some(name.as_str()),
+                let type_name_owned = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.clone()),
                     _ => None,
                 };
+                let type_name = type_name_owned.as_deref();
                 if let Some(type_name) = type_name
                     && let Some(variants) = self.enum_types.get(type_name)
                 {
@@ -2192,7 +2241,7 @@ impl Interpreter {
             }
             "subparse" | "parse" | "parsefile" => {
                 if let Value::Package(ref package_name) = target {
-                    return self.dispatch_package_parse(package_name, method, &args);
+                    return self.dispatch_package_parse(&package_name.resolve(), method, &args);
                 }
             }
             "match" => {
@@ -2421,7 +2470,7 @@ impl Interpreter {
                         let values = if let Some(on_demand_cb) =
                             attributes.get("on_demand_callback")
                         {
-                            let emitter = Value::make_instance("Supplier".to_string(), {
+                            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                                 let mut a = HashMap::new();
                                 a.insert("emitted".to_string(), Value::array(Vec::new()));
                                 a.insert("done".to_string(), Value::Bool(false));
@@ -2490,14 +2539,14 @@ impl Interpreter {
                         attrs.insert("squish_scan_index".to_string(), Value::Int(0));
                         attrs.insert("squish_prev_key".to_string(), Value::Nil);
                         attrs.insert("squish_initialized".to_string(), Value::Bool(false));
-                        return Ok(Value::make_instance("Iterator".to_string(), attrs));
+                        return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
                     }
                 }
                 let items = crate::runtime::utils::value_to_list(&target);
                 let mut attrs = HashMap::new();
                 attrs.insert("items".to_string(), Value::array(items));
                 attrs.insert("index".to_string(), Value::Int(0));
-                return Ok(Value::make_instance("Iterator".to_string(), attrs));
+                return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
             }
             "produce" => {
                 let callable = args
@@ -2532,7 +2581,7 @@ impl Interpreter {
                     let mapper = args.first().cloned().unwrap_or(Value::Nil);
                     let source_values =
                         if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-                            let emitter = Value::make_instance("Supplier".to_string(), {
+                            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                                 let mut a = HashMap::new();
                                 a.insert("emitted".to_string(), Value::array(Vec::new()));
                                 a.insert("done".to_string(), Value::Bool(false));
@@ -2573,7 +2622,7 @@ impl Interpreter {
                             .cloned()
                             .unwrap_or(Value::Bool(false)),
                     );
-                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);
@@ -2652,7 +2701,7 @@ impl Interpreter {
                     attrs.insert("values".to_string(), Value::array(values));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
             }
             "repository-for-name" => {
@@ -2666,7 +2715,7 @@ impl Interpreter {
                             Box::new(Value::Str(prefix.to_string())),
                         )];
                         return self.call_method_with_values(
-                            Value::Package("CompUnit::Repository::FileSystem".to_string()),
+                            Value::Package(Symbol::intern("CompUnit::Repository::FileSystem")),
                             "new",
                             new_args,
                         );
@@ -2683,7 +2732,7 @@ impl Interpreter {
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(true));
                     attrs.insert("signals".to_string(), Value::array(args.clone()));
-                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
             }
             "on-demand" => {
@@ -2696,7 +2745,7 @@ impl Interpreter {
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
                     attrs.insert("on_demand_callback".to_string(), callback);
-                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
                 // on-demand called on a Supply instance should die
                 if let Value::Instance { ref class_name, .. } = target
@@ -2735,8 +2784,8 @@ impl Interpreter {
                 // self.bless(:attr1($val1), :attr2($val2), ...)
                 // Creates a new instance of the invocant's class with attributes from named args
                 let class_name = match &target {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Package(name) => *name,
+                    Value::Instance { class_name, .. } => *class_name,
                     _ => {
                         return Err(RuntimeError::new(
                             "bless can only be called on a class or instance",
@@ -2745,9 +2794,9 @@ impl Interpreter {
                 };
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
-                if self.classes.contains_key(&class_name) {
+                if self.classes.contains_key(&class_name.resolve()) {
                     for (attr_name, _is_public, default, _is_rw, _, _) in
-                        self.collect_class_attributes(&class_name)
+                        self.collect_class_attributes(&class_name.resolve())
                     {
                         let val = if let Some(expr) = default {
                             self.eval_block_value(&[Stmt::Expr(expr)])?
@@ -2764,23 +2813,23 @@ impl Interpreter {
                     }
                 }
                 // Run BUILD/TWEAK if defined
-                if self.class_has_method(&class_name, "BUILD") {
+                if self.class_has_method(&class_name.resolve(), "BUILD") {
                     let (_v, updated) = self.run_instance_method(
-                        &class_name,
+                        &class_name.resolve(),
                         attributes.clone(),
                         "BUILD",
                         Vec::new(),
-                        Some(Value::make_instance(class_name.clone(), attributes.clone())),
+                        Some(Value::make_instance(class_name, attributes.clone())),
                     )?;
                     attributes = updated;
                 }
-                if self.class_has_method(&class_name, "TWEAK") {
+                if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let (_v, updated) = self.run_instance_method(
-                        &class_name,
+                        &class_name.resolve(),
                         attributes.clone(),
                         "TWEAK",
                         Vec::new(),
-                        Some(Value::make_instance(class_name.clone(), attributes.clone())),
+                        Some(Value::make_instance(class_name, attributes.clone())),
                     )?;
                     attributes = updated;
                 }
@@ -2793,7 +2842,7 @@ impl Interpreter {
                     let secs = crate::value::current_time_secs_f64();
                     let mut attrs = HashMap::new();
                     attrs.insert("epoch".to_string(), Value::Num(secs));
-                    return Ok(Value::make_instance("DateTime".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("DateTime"), attrs));
                 }
             }
             "today" if args.is_empty() => {
@@ -2804,7 +2853,7 @@ impl Interpreter {
                     let days = secs / 86_400;
                     let mut attrs = HashMap::new();
                     attrs.insert("days".to_string(), Value::Int(days as i64));
-                    return Ok(Value::make_instance("Date".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Date"), attrs));
                 }
             }
             "DateTime" if args.is_empty() => {
@@ -2821,7 +2870,7 @@ impl Interpreter {
                         "epoch".to_string(),
                         Value::Num(Self::date_days_to_epoch_with_leap_seconds(*days)),
                     );
-                    return Ok(Value::make_instance("DateTime".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("DateTime"), attrs));
                 }
             }
             "Instant" if args.is_empty() => {
@@ -2838,7 +2887,7 @@ impl Interpreter {
                         .unwrap_or(0.0);
                     let mut attrs = HashMap::new();
                     attrs.insert("value".to_string(), Value::Num(epoch));
-                    return Ok(Value::make_instance("Instant".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
                 }
             }
             "grab" => {
@@ -2861,7 +2910,7 @@ impl Interpreter {
                     attrs.insert("values".to_string(), Value::array(result_values));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
                 // Class-level Supply.grab should die
                 if let Value::Package(ref class_name) = target
@@ -2906,7 +2955,7 @@ impl Interpreter {
                     attrs.insert("values".to_string(), Value::array(values));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
             }
             "grep" => {
@@ -3040,7 +3089,7 @@ impl Interpreter {
             match method {
                 "key" => return Ok(Value::Str(key.clone())),
                 "value" | "Int" | "Numeric" => return Ok(Value::Int(*value)),
-                "WHAT" => return Ok(Value::Package(enum_type.clone())),
+                "WHAT" => return Ok(Value::Package(Symbol::intern(enum_type))),
                 "raku" | "perl" => {
                     return Ok(Value::Str(format!("{}::{}", enum_type, key)));
                 }
@@ -3129,11 +3178,14 @@ impl Interpreter {
         } = &target
         {
             if let Some(private_method_name) = method.strip_prefix('!')
-                && let Some((resolved_owner, method_def)) =
-                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_any_owner(
+                    &class_name.resolve(),
+                    private_method_name,
+                    &args,
+                )
             {
                 let (result, _updated) = self.run_instance_method_resolved(
-                    class_name,
+                    &class_name.resolve(),
                     &resolved_owner,
                     method_def,
                     (**attributes).clone(),
@@ -3145,7 +3197,7 @@ impl Interpreter {
 
             if let Some((owner_class, private_method_name)) = method.split_once("::")
                 && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
-                    class_name,
+                    &class_name.resolve(),
                     owner_class,
                     private_method_name,
                     &args,
@@ -3169,14 +3221,18 @@ impl Interpreter {
                     return Err(RuntimeError::new("X::Method::Private::Permission"));
                 }
                 let (result, updated) = self.run_instance_method_resolved(
-                    class_name,
+                    &class_name.resolve(),
                     &resolved_owner,
                     method_def,
                     (**attributes).clone(),
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name.resolve(),
+                    *target_id,
+                    updated,
+                );
                 return Ok(result);
             }
 
@@ -3287,7 +3343,7 @@ impl Interpreter {
                         attrs.insert("from".to_string(), Value::Str("Raku".to_string()));
                         attrs.insert("short-name".to_string(), Value::Str(short_name));
                         attrs.insert("precompiled".to_string(), Value::Bool(false));
-                        let compunit = Value::make_instance("CompUnit".to_string(), attrs);
+                        let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
                         return Ok(compunit);
                     }
@@ -3302,33 +3358,38 @@ impl Interpreter {
                 if method_name.is_empty() {
                     return Ok(Value::Bool(false));
                 }
-                let can = self.class_has_method(class_name, &method_name)
-                    || self.has_user_method(class_name, &method_name)
+                let can = self.class_has_method(&class_name.resolve(), &method_name)
+                    || self.has_user_method(&class_name.resolve(), &method_name)
                     || matches!(
                         method_name.as_str(),
                         "isa" | "gist" | "raku" | "perl" | "name" | "clone"
                     );
                 return Ok(Value::Bool(can));
             }
-            if self.is_native_method(class_name, method) {
-                return self.call_native_instance_method(class_name, attributes, method, args);
+            if self.is_native_method(&class_name.resolve(), method) {
+                return self.call_native_instance_method(
+                    &class_name.resolve(),
+                    attributes,
+                    method,
+                    args,
+                );
             }
             if method == "isa" {
                 let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                    Value::Package(name) => name,
+                    Value::Package(name) => name.resolve(),
                     Value::Str(name) => name,
-                    Value::Instance { class_name, .. } => class_name,
+                    Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other.to_string_value(),
                 };
                 return Ok(Value::Bool(
-                    self.class_mro(class_name).contains(&target_name),
+                    self.class_mro(&class_name.resolve()).contains(&target_name),
                 ));
             }
             if method == "gist"
                 && args.is_empty()
-                && (class_name.starts_with("X::")
+                && (class_name.resolve().starts_with("X::")
                     || class_name == "Exception"
-                    || class_name.ends_with("Exception"))
+                    || class_name.resolve().ends_with("Exception"))
                 && let Some(msg) = attributes.get("message")
             {
                 return Ok(Value::Str(msg.to_string_value()));
@@ -3353,12 +3414,12 @@ impl Interpreter {
                         attrs.insert(key.clone(), *boxed.clone());
                     }
                 }
-                return Ok(Value::make_instance(class_name.clone(), attrs));
+                return Ok(Value::make_instance(*class_name, attrs));
             }
             if method == "Bool"
                 && args.is_empty()
                 && ((target.does_check("Real") || target.does_check("Numeric"))
-                    || self.has_user_method(class_name, "Bridge"))
+                    || self.has_user_method(&class_name.resolve(), "Bridge"))
                 && let Ok(coerced) = self
                     .call_method_with_values(target.clone(), "Numeric", vec![])
                     .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
@@ -3368,7 +3429,7 @@ impl Interpreter {
             if method == "Bridge"
                 && args.is_empty()
                 && target.does_check("Real")
-                && !self.has_user_method(class_name, "Bridge")
+                && !self.has_user_method(&class_name.resolve(), "Bridge")
             {
                 if let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
                     && coerced != target
@@ -3383,8 +3444,8 @@ impl Interpreter {
             }
             if method == "Bridge"
                 && args.is_empty()
-                && self.has_user_method(class_name, "Num")
-                && !self.has_user_method(class_name, "Bridge")
+                && self.has_user_method(&class_name.resolve(), "Num")
+                && !self.has_user_method(&class_name.resolve(), "Bridge")
                 && let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
                 && coerced != target
             {
@@ -3392,12 +3453,12 @@ impl Interpreter {
             }
             if method == "log"
                 && args.len() == 1
-                && self.has_user_method(class_name, "Bridge")
+                && self.has_user_method(&class_name.resolve(), "Bridge")
                 && let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![])
             {
                 let base = if let Some(arg) = args.first() {
                     if matches!(arg, Value::Instance { class_name, .. }
-                        if self.has_user_method(class_name, "Bridge"))
+                        if self.has_user_method(&class_name.resolve(), "Bridge"))
                     {
                         self.call_method_with_values(arg.clone(), "Numeric", vec![])
                             .or_else(|_| {
@@ -3413,28 +3474,34 @@ impl Interpreter {
                 return self.call_method_with_values(bridged, "log", vec![base]);
             }
             // User-defined methods take priority over auto-generated accessors
-            if self.has_user_method(class_name, method) {
+            if self.has_user_method(&class_name.resolve(), method) {
                 let (result, updated) = self.run_instance_method(
-                    class_name,
+                    &class_name.resolve(),
                     (**attributes).clone(),
                     method,
                     args,
                     Some(target.clone()),
                 )?;
                 self.overwrite_instance_bindings_by_identity(
-                    class_name,
+                    &class_name.resolve(),
                     *target_id,
                     updated.clone(),
                 );
                 // Auto-FETCH if the method returned a Proxy
                 if let Value::Proxy { ref fetcher, .. } = result {
-                    return self.proxy_fetch(fetcher, None, class_name, &updated, *target_id);
+                    return self.proxy_fetch(
+                        fetcher,
+                        None,
+                        &class_name.resolve(),
+                        &updated,
+                        *target_id,
+                    );
                 }
                 return Ok(result);
             }
             // Fallback: auto-generated accessor for public attributes
             if args.is_empty() {
-                let class_attrs = self.collect_class_attributes(class_name);
+                let class_attrs = self.collect_class_attributes(&class_name.resolve());
                 if class_attrs.is_empty() {
                     if let Some(val) = attributes.get(method) {
                         return Ok(val.clone());
@@ -3453,7 +3520,7 @@ impl Interpreter {
         // their coercion bridge so default Real behavior is available.
         if matches!(target, Value::Instance { ref class_name, .. }
             if (target.does_check("Real") || target.does_check("Numeric"))
-                || self.has_user_method(class_name, "Bridge"))
+                || self.has_user_method(&class_name.resolve(), "Bridge"))
         {
             if matches!(method, "Bridge" | "Real")
                 && let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
@@ -3470,7 +3537,7 @@ impl Interpreter {
                     let mut delegated_args = Vec::with_capacity(args.len());
                     for arg in &args {
                         let coerced_arg = if matches!(arg, Value::Instance { class_name, .. }
-                            if self.has_user_method(class_name, "Bridge")
+                            if self.has_user_method(&class_name.resolve(), "Bridge")
                                 || arg.does_check("Real")
                                 || arg.does_check("Numeric"))
                         {
@@ -3533,7 +3600,7 @@ impl Interpreter {
                 let mut attrs = HashMap::new();
                 // Match Rakudo's Instant.from-posix behavior (TAI includes leap-second offset).
                 attrs.insert("value".to_string(), Value::Num(secs + 10.0));
-                return Ok(Value::make_instance("Instant".to_string(), attrs));
+                return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
             }
             if name == "Supply" && method == "interval" {
                 let seconds = args.first().map_or(1.0, |value| match value {
@@ -3573,15 +3640,18 @@ impl Interpreter {
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
                 attrs.insert("live".to_string(), Value::Bool(true));
-                return Ok(Value::make_instance("Supply".to_string(), attrs));
+                return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
             }
             if let Some(private_method_name) = method.strip_prefix('!')
-                && let Some((resolved_owner, method_def)) =
-                    self.resolve_private_method_any_owner(name, private_method_name, &args)
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_any_owner(
+                    &name.resolve(),
+                    private_method_name,
+                    &args,
+                )
             {
                 let attrs = HashMap::new();
                 let (result, _updated) = self.run_instance_method_resolved(
-                    name,
+                    &name.resolve(),
                     &resolved_owner,
                     method_def,
                     attrs,
@@ -3591,10 +3661,10 @@ impl Interpreter {
                 return Ok(result);
             }
             // Package (type object) dispatch — check user-defined methods
-            if self.has_user_method(name, method) {
+            if self.has_user_method(&name.resolve(), method) {
                 let attrs = HashMap::new();
                 let (result, _updated) =
-                    self.run_instance_method(name, attrs, method, args, None)?;
+                    self.run_instance_method(&name.resolve(), attrs, method, args, None)?;
                 return Ok(result);
             }
         }
@@ -3633,8 +3703,8 @@ impl Interpreter {
             && let Value::Package(ref class_name) = target
         {
             let method_name = args[0].to_string_value();
-            if (self.class_has_method(class_name, &method_name)
-                || self.has_user_method(class_name, &method_name))
+            if (self.class_has_method(&class_name.resolve(), &method_name)
+                || self.has_user_method(&class_name.resolve(), &method_name))
                 && let Some(val) = self.classhow_find_method(&target, &method_name)
             {
                 return Ok(Value::array(vec![val]));
@@ -3646,13 +3716,13 @@ impl Interpreter {
         // Dispatch order: wildcard delegation → FALLBACK → built-in fallbacks → error.
         {
             let fallback_class = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.clone()),
-                Value::Package(name) => Some(name.clone()),
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(name) => Some(*name),
                 _ => None,
             };
             if let Some(ref class_name) = fallback_class {
                 // Try wildcard delegation: forward to delegate attribute's object
-                let wildcard_attrs = self.collect_wildcard_handles(class_name);
+                let wildcard_attrs = self.collect_wildcard_handles(&class_name.resolve());
                 if let Value::Instance { attributes, .. } = &target {
                     for attr_var in &wildcard_attrs {
                         let attr_key = attr_var.trim_start_matches('!').trim_start_matches('.');
@@ -3671,7 +3741,7 @@ impl Interpreter {
                 }
 
                 // Try user-defined FALLBACK method
-                if method != "FALLBACK" && self.has_user_method(class_name, "FALLBACK") {
+                if method != "FALLBACK" && self.has_user_method(&class_name.resolve(), "FALLBACK") {
                     let mut fallback_args = vec![Value::Str(method.to_string())];
                     fallback_args.extend(args);
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
@@ -3696,16 +3766,22 @@ impl Interpreter {
             },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
-                    if crate::value::is_internal_anon_type_name(&name) {
+                    if crate::value::is_internal_anon_type_name(&name.resolve()) {
                         return Ok(Value::Str("()".to_string()));
                     }
-                    let short = name.split("::").last().unwrap_or(&name);
+                    let resolved = name.resolve();
+                    let short = resolved.split("::").last().unwrap_or(&resolved);
                     Ok(Value::Str(format!("({})", short)))
                 }
                 other => Ok(Value::Str(other.to_string_value())),
             },
             "WHERE" if args.is_empty() => {
-                if let Value::Package(name) | Value::Str(name) = target {
+                let type_obj_name = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.clone()),
+                    _ => None,
+                };
+                if let Some(name) = type_obj_name {
                     if !self.roles.contains_key(&name) {
                         return Err(RuntimeError::new(format!(
                             "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
@@ -3721,12 +3797,12 @@ impl Interpreter {
                 }
             }
             "raku" | "perl" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::Str(name.clone())),
+                Value::Package(name) => Ok(Value::Str(name.resolve())),
                 other => Ok(Value::Str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {
                 Value::Routine { name, .. } => Ok(Value::Str(name)),
-                Value::Package(name) => Ok(Value::Str(name)),
+                Value::Package(name) => Ok(Value::Str(name.resolve())),
                 Value::Str(name) => Ok(Value::Str(name)),
                 Value::Sub(data) => Ok(Value::Str(data.name.clone())),
                 _ => Ok(Value::Nil),
@@ -3735,7 +3811,7 @@ impl Interpreter {
                 Value::CustomType { repr, .. } | Value::CustomTypeInstance { repr, .. } => {
                     Ok(Value::Str(repr))
                 }
-                Value::Package(name) if self.classes.contains_key(&name) => {
+                Value::Package(name) if self.classes.contains_key(&name.resolve()) => {
                     Ok(Value::Str("P6opaque".to_string()))
                 }
                 _ => Ok(Value::Str("P6opaque".to_string())),
@@ -3745,7 +3821,12 @@ impl Interpreter {
                 _ => Ok(Value::Str(target.to_string_value())),
             },
             "Numeric" | "Real" if args.is_empty() => {
-                if let Value::Package(name) | Value::Str(name) = target {
+                let num_name = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.clone()),
+                    _ => None,
+                };
+                if let Some(name) = num_name {
                     if self.roles.contains_key(&name) {
                         Ok(Value::Int(0))
                     } else {
@@ -3768,7 +3849,8 @@ impl Interpreter {
                 )),
             },
             // Metamodel::*HOW methods
-            "new_type" if matches!(&target, Value::Package(n) if n.starts_with("Metamodel::")) => {
+            "new_type" if matches!(&target, Value::Package(n) if n.resolve().starts_with("Metamodel::")) =>
+            {
                 // Metamodel::PackageHOW.new_type(name => 'Foo')
                 // Returns a type object (Package) with the given name
                 let name = args
@@ -3785,7 +3867,7 @@ impl Interpreter {
                         }
                     })
                     .unwrap_or_else(|| "Anon".to_string());
-                Ok(Value::Package(name))
+                Ok(Value::Package(Symbol::intern(&name)))
             }
             // Metamodel::Primitives static methods
             _ if matches!(&target, Value::Package(n) if n == "Metamodel::Primitives") => {
@@ -3861,10 +3943,10 @@ impl Interpreter {
                         .iter()
                         .all(|value| self.are_value_matches_type(value, &candidate))
                     {
-                        return Ok(Value::Package(candidate));
+                        return Ok(Value::Package(Symbol::intern(&candidate)));
                     }
                 }
-                Ok(Value::Package("Any".to_string()))
+                Ok(Value::Package(Symbol::intern("Any")))
             }
             [expected] => {
                 let expected_type = self.are_expected_type_name(expected);
@@ -3910,17 +3992,17 @@ impl Interpreter {
 
     fn are_specific_candidate_type_names(&mut self, value: &Value) -> Vec<String> {
         match value {
-            Value::Package(name) => vec![name.clone()],
-            Value::Instance { class_name, .. } => self.class_mro(class_name),
+            Value::Package(name) => vec![name.resolve()],
+            Value::Instance { class_name, .. } => self.class_mro(&class_name.resolve()),
             _ => vec![crate::runtime::utils::value_type_name(value).to_string()],
         }
     }
 
     fn are_expected_type_name(&self, value: &Value) -> String {
         match value {
-            Value::Package(name) => name.clone(),
+            Value::Package(name) => name.resolve(),
             Value::Str(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             _ => value.to_string_value(),
         }
     }
@@ -3936,8 +4018,8 @@ impl Interpreter {
 
     fn are_actual_type_name(value: &Value) -> String {
         match value {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             _ => crate::runtime::utils::value_type_name(value).to_string(),
         }
     }

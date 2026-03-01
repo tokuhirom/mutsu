@@ -414,7 +414,7 @@ impl Value {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
             Value::Package(s) => {
-                if is_internal_anon_type_name(s) {
+                if is_internal_anon_type_name(&s.resolve()) {
                     "()".to_string()
                 } else {
                     format!("({})", s)
@@ -446,8 +446,8 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Exception"
-                || class_name.starts_with("X::")
-                || class_name.starts_with("CX::") =>
+                || class_name.resolve().starts_with("X::")
+                || class_name.resolve().starts_with("CX::") =>
             {
                 attributes
                     .get("message")

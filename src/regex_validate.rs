@@ -1,3 +1,4 @@
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::collections::HashMap;
 
@@ -33,7 +34,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     let msg = "The use of hash variables in regexes is reserved";
                     let mut attrs = HashMap::new();
                     attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-                    let ex = Value::make_instance("X::Syntax::Reserved".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     return Err(err);
@@ -63,7 +64,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         let mut attrs = HashMap::new();
                         attrs.insert("message".to_string(), Value::Str(msg.to_string()));
                         attrs.insert("symbol".to_string(), Value::Str(symbol.to_string()));
-                        let ex = Value::make_instance("X::Attribute::Regex".to_string(), attrs);
+                        let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
                         let mut err = RuntimeError::new(msg);
                         err.exception = Some(Box::new(ex));
                         return Err(err);
@@ -166,7 +167,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     let mut attrs = HashMap::new();
                     attrs.insert("message".to_string(), Value::Str(msg.to_string()));
                     attrs.insert("symbol".to_string(), Value::Str(ct.to_string()));
-                    let ex = Value::make_instance("X::Attribute::Regex".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     return Err(err);
@@ -177,7 +178,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     let mut attrs = HashMap::new();
                     attrs.insert("message".to_string(), Value::Str(msg.to_string()));
                     let ex = Value::make_instance(
-                        "X::Syntax::Regex::Alias::LongName".to_string(),
+                        Symbol::intern("X::Syntax::Regex::Alias::LongName"),
                         attrs,
                     );
                     let mut err = RuntimeError::new(msg);
@@ -230,7 +231,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         let mut attrs = HashMap::new();
                         attrs.insert("message".to_string(), Value::Str(msg.to_string()));
                         attrs.insert("symbol".to_string(), Value::Str(symbol));
-                        let ex = Value::make_instance("X::Attribute::Regex".to_string(), attrs);
+                        let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
                         let mut err = RuntimeError::new(msg);
                         err.exception = Some(Box::new(ex));
                         return Err(err);
@@ -432,7 +433,8 @@ fn validate_backslash_sequence(esc: char) -> Result<(), RuntimeError> {
             let msg = format!("Unrecognized backslash sequence: \\{}", esc);
             let mut attrs = HashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg.clone()));
-            let ex = Value::make_instance("X::Backslash::UnrecognizedSequence".to_string(), attrs);
+            let ex =
+                Value::make_instance(Symbol::intern("X::Backslash::UnrecognizedSequence"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             Err(err)
@@ -448,7 +450,10 @@ pub(crate) fn make_unrecognized_metachar_error(metachar: char) -> RuntimeError {
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::Str(msg.clone()));
     attrs.insert("metachar".to_string(), Value::Str(metachar.to_string()));
-    let ex = Value::make_instance("X::Syntax::Regex::UnrecognizedMetachar".to_string(), attrs);
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::UnrecognizedMetachar"),
+        attrs,
+    );
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
@@ -459,7 +464,10 @@ fn make_unrecognized_modifier_error(modifier: &str) -> RuntimeError {
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::Str(msg.clone()));
     attrs.insert("modifier".to_string(), Value::Str(modifier.to_string()));
-    let ex = Value::make_instance("X::Syntax::Regex::UnrecognizedModifier".to_string(), attrs);
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::UnrecognizedModifier"),
+        attrs,
+    );
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
@@ -472,7 +480,7 @@ fn make_quantifier_error(quant: char) -> RuntimeError {
     );
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::Str(msg.clone()));
-    let ex = Value::make_instance("X::Syntax::Regex::Quantifier".to_string(), attrs);
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Quantifier"), attrs);
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err

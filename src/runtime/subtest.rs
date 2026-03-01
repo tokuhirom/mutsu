@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::native_methods::{SupplyEvent, take_supply_channel};
+use crate::symbol::Symbol;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -170,7 +171,7 @@ impl Interpreter {
                             emitter_attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                             emitter_attrs.insert("done".to_string(), Value::Bool(false));
                             let emitter =
-                                Value::make_instance("Supplier".to_string(), emitter_attrs);
+                                Value::make_instance(Symbol::intern("Supplier"), emitter_attrs);
                             // Execute the on-demand callback, which calls emit on the emitter
                             self.supply_emit_buffer.push(Vec::new());
                             let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);

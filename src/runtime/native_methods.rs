@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -723,7 +724,7 @@ impl Interpreter {
             "cancellation-id".to_string(),
             Value::Int(next_cancellation_id() as i64),
         );
-        Value::make_instance("Cancellation".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Cancellation"), attrs)
     }
 
     fn scheduler_times_arg(args: &[Value]) -> Result<Option<usize>, RuntimeError> {
@@ -887,7 +888,7 @@ impl Interpreter {
                 attrs.insert("lock-id".to_string(), Value::Int(lock_id as i64));
                 attrs.insert("cond-id".to_string(), Value::Int(cond_id as i64));
                 Ok(Value::make_instance(
-                    "Lock::ConditionVariable".to_string(),
+                    Symbol::intern("Lock::ConditionVariable"),
                     attrs,
                 ))
             }
@@ -1252,7 +1253,7 @@ impl Interpreter {
                 );
                 compiler_attrs.insert(
                     "signature".to_string(),
-                    Value::make_instance("Blob".to_string(), {
+                    Value::make_instance(Symbol::intern("Blob"), {
                         let mut a = HashMap::new();
                         a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
                         a
@@ -1265,7 +1266,7 @@ impl Interpreter {
                 compiler_attrs.insert("release".to_string(), Value::Str("0.1.0".to_string()));
                 compiler_attrs.insert("codename".to_string(), Value::Str("mutsu".to_string()));
                 compiler_attrs.insert("id".to_string(), Value::Str(String::new()));
-                Value::make_instance("Compiler".to_string(), compiler_attrs)
+                Value::make_instance(Symbol::intern("Compiler"), compiler_attrs)
             }
             "backend" => Value::Str("mutsu".to_string()),
             "gist" => {
@@ -1368,7 +1369,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 let mut attrs = HashMap::new();
                 attrs.insert("encoding".to_string(), Value::Str(enc_name));
-                Value::make_instance("Encoding::Encoder".to_string(), attrs)
+                Value::make_instance(Symbol::intern("Encoding::Encoder"), attrs)
             }
             "decoder" => {
                 let enc_name = attributes
@@ -1377,7 +1378,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 let mut attrs = HashMap::new();
                 attrs.insert("encoding".to_string(), Value::Str(enc_name));
-                Value::make_instance("Encoding::Decoder".to_string(), attrs)
+                Value::make_instance(Symbol::intern("Encoding::Decoder"), attrs)
             }
             "gist" | "Str" => {
                 let name = attributes
@@ -1386,7 +1387,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 Value::Str(format!("Encoding::Builtin<{}>", name))
             }
-            "WHAT" => Value::Package("Encoding::Builtin".to_string()),
+            "WHAT" => Value::Package(Symbol::intern("Encoding::Builtin")),
             _ => Value::Nil,
         }
     }
@@ -1406,7 +1407,7 @@ impl Interpreter {
                 let bytes: Vec<Value> = input.bytes().map(|b| Value::Int(b as i64)).collect();
                 Value::array(bytes)
             }
-            "WHAT" => Value::Package("Encoding::Encoder".to_string()),
+            "WHAT" => Value::Package(Symbol::intern("Encoding::Encoder")),
             _ => Value::Nil,
         }
     }
@@ -1424,7 +1425,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 Value::Str(input)
             }
-            "WHAT" => Value::Package("Encoding::Decoder".to_string()),
+            "WHAT" => Value::Package(Symbol::intern("Encoding::Decoder")),
             _ => Value::Nil,
         }
     }

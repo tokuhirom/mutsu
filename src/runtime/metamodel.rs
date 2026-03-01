@@ -192,7 +192,7 @@ impl Interpreter {
                     return true;
                 }
                 if let Value::Package(type_name) = cached_type
-                    && lhs.isa_check(type_name)
+                    && lhs.isa_check(&type_name.resolve())
                 {
                     return true;
                 }

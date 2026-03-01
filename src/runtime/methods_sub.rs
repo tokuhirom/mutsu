@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
 impl Interpreter {
@@ -255,28 +256,28 @@ impl Interpreter {
         }
         if method == "assuming" {
             let mut next = (*data).clone();
-            let make_failure = |sub_data: &crate::value::SubData,
-                                expected: Value,
-                                symbol: String| {
-                let mut ex_attrs = std::collections::HashMap::new();
-                ex_attrs.insert("expected".to_string(), expected.clone());
-                ex_attrs.insert("symbol".to_string(), Value::Str(symbol));
-                ex_attrs.insert(
-                    "payload".to_string(),
-                    Value::Str(expected.to_string_value()),
-                );
-                let exception = Value::make_instance("X::TypeCheck::Binding".to_string(), ex_attrs);
-                let mut failure_attrs = std::collections::HashMap::new();
-                failure_attrs.insert("exception".to_string(), exception);
-                failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                let failure = Value::make_instance("Failure".to_string(), failure_attrs);
-                let mut mixins = std::collections::HashMap::new();
-                mixins.insert("Failure".to_string(), failure);
-                Value::Mixin(
-                    Box::new(Value::Sub(std::sync::Arc::new(sub_data.clone()))),
-                    mixins,
-                )
-            };
+            let make_failure =
+                |sub_data: &crate::value::SubData, expected: Value, symbol: String| {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("expected".to_string(), expected.clone());
+                    ex_attrs.insert("symbol".to_string(), Value::Str(symbol));
+                    ex_attrs.insert(
+                        "payload".to_string(),
+                        Value::Str(expected.to_string_value()),
+                    );
+                    let exception =
+                        Value::make_instance(Symbol::intern("X::TypeCheck::Binding"), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
+                    let mut mixins = std::collections::HashMap::new();
+                    mixins.insert("Failure".to_string(), failure);
+                    Value::Mixin(
+                        Box::new(Value::Sub(std::sync::Arc::new(sub_data.clone()))),
+                        mixins,
+                    )
+                };
             let mut incoming_named = std::collections::HashMap::new();
             for arg in args {
                 if let Value::Pair(key, boxed) = arg {
@@ -316,7 +317,7 @@ impl Interpreter {
                 {
                     return Some(Ok(make_failure(
                         &next,
-                        Value::Package("X::TypeCheck::Assignment".to_string()),
+                        Value::Package(Symbol::intern("X::TypeCheck::Assignment")),
                         format!("${}", pd.name),
                     )));
                 }
@@ -342,7 +343,7 @@ impl Interpreter {
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());
-            return Some(Ok(Value::Package(type_name)));
+            return Some(Ok(Value::Package(Symbol::intern(&type_name))));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
             let sig = self.sub_signature_value(data);

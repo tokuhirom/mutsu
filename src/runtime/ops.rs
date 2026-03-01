@@ -199,7 +199,7 @@ impl Interpreter {
     fn reduction_repeat_error(class_name: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(message.to_string()));
-        let ex = Value::make_instance(class_name.to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern(class_name), attrs);
         let mut err = RuntimeError::new(message.to_string());
         err.exception = Some(Box::new(ex));
         err

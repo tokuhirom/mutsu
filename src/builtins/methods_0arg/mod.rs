@@ -225,7 +225,7 @@ fn dispatch_capture(
             Some(Ok(Value::Str(target.to_string_value())))
         }
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
-        "WHAT" => Some(Ok(Value::Package("Capture".to_string()))),
+        "WHAT" => Some(Ok(Value::Package(Symbol::intern("Capture")))),
         "flat" => {
             // $(expr) produces a Capture representing an itemized container.
             // .flat on it should return itself as opaque (don't descend).
@@ -555,9 +555,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
     // Native int type .Range method
     if let Value::Package(name) = target
-        && crate::runtime::native_types::is_native_int_type(name)
+        && crate::runtime::native_types::is_native_int_type(&name.resolve())
         && method == "Range"
-        && let Some((min_big, max_big)) = crate::runtime::native_types::native_int_bounds(name)
+        && let Some((min_big, max_big)) =
+            crate::runtime::native_types::native_int_bounds(&name.resolve())
     {
         let min_i64 = min_big.to_i64();
         let max_i64 = max_big.to_i64();
@@ -675,7 +676,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }))),
         "WHICH" => {
             let which_str = match target {
-                Value::Package(name) => name.clone(),
+                Value::Package(name) => name.resolve(),
                 Value::Int(n) => format!("Int|{}", n),
                 Value::BigInt(n) => format!("Int|{}", n),
                 Value::Num(n) => format!("Num|{}", n),
@@ -693,7 +694,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("WHICH".to_string(), Value::Str(which_str));
-            Some(Ok(Value::make_instance("ObjAt".to_string(), attrs)))
+            Some(Ok(Value::make_instance(Symbol::intern("ObjAt"), attrs)))
         }
         "Bool" => {
             if matches!(target, Value::Instance { .. })
@@ -1936,7 +1937,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let bytes: Vec<Value> = s.as_bytes().iter().map(|&b| Value::Int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(bytes));
-            Some(Ok(Value::make_instance("Buf".to_string(), attrs)))
+            Some(Ok(Value::make_instance(Symbol::intern("Buf"), attrs)))
         }
         "sink" => match target {
             Value::Instance {

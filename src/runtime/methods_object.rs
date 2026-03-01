@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn dispatch_new(
@@ -15,7 +16,7 @@ impl Interpreter {
             );
             let mut attrs = HashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg.clone()));
-            let ex = Value::make_instance("X::Constructor::BadType".to_string(), attrs);
+            let ex = Value::make_instance(Symbol::intern("X::Constructor::BadType"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
@@ -153,18 +154,22 @@ impl Interpreter {
                 }
                 self.env = saved_role_param_env;
                 return Ok(Value::Mixin(
-                    Box::new(Value::make_instance(base_name.clone(), HashMap::new())),
+                    Box::new(Value::make_instance(
+                        Symbol::intern(base_name),
+                        HashMap::new(),
+                    )),
                     mixins,
                 ));
             }
         }
 
         if let Value::Package(class_name) = &target {
-            let parametric = Self::parse_parametric_type_name(class_name);
+            let cn_resolved = class_name.resolve();
+            let parametric = Self::parse_parametric_type_name(&cn_resolved);
             let (base_class_name, type_args) = if let Some((base, args)) = &parametric {
                 (base.as_str(), Some(args.clone()))
             } else {
-                (class_name.as_str(), None)
+                (cn_resolved.as_str(), None)
             };
             match base_class_name {
                 "Array" | "List" | "Positional" | "array" => {
@@ -229,10 +234,10 @@ impl Interpreter {
                                 attrs.insert("got".to_string(), item.clone());
                                 attrs.insert(
                                     "expected".to_string(),
-                                    Value::Package(constraint.clone()),
+                                    Value::Package(Symbol::intern(constraint)),
                                 );
                                 let ex = Value::make_instance(
-                                    "X::TypeCheck::Assignment".to_string(),
+                                    Symbol::intern("X::TypeCheck::Assignment"),
                                     attrs,
                                 );
                                 let mut err = RuntimeError::new(msg);
@@ -253,7 +258,7 @@ impl Interpreter {
                         let info = crate::runtime::ContainerTypeInfo {
                             value_type: constraint.clone(),
                             key_type: None,
-                            declared_type: Some(class_name.clone()),
+                            declared_type: Some(class_name.resolve()),
                         };
                         self.register_container_type_metadata(&result, info);
                     }
@@ -289,7 +294,7 @@ impl Interpreter {
                         let info = crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type,
-                            declared_type: Some(class_name.clone()),
+                            declared_type: Some(class_name.resolve()),
                         };
                         self.register_container_type_metadata(&result, info);
                     }
@@ -365,7 +370,7 @@ impl Interpreter {
                         "days".to_string(),
                         Value::Int(Self::civil_to_epoch_days(year, month, day)),
                     );
-                    return Ok(Value::make_instance("Date".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Date"), attrs));
                 }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));
@@ -375,7 +380,10 @@ impl Interpreter {
                 }
                 "Stash" => {
                     // Stash is essentially a Hash but with type Stash
-                    return Ok(Value::make_instance("Stash".to_string(), HashMap::new()));
+                    return Ok(Value::make_instance(
+                        Symbol::intern("Stash"),
+                        HashMap::new(),
+                    ));
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
                 "Supplier" => {
@@ -386,10 +394,10 @@ impl Interpreter {
                         "supplier_id".to_string(),
                         Value::Int(super::native_methods::next_supplier_id() as i64),
                     );
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
-                    return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
+                    return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
                 "Proxy" => {
                     let mut fetcher = Value::Nil;
@@ -455,7 +463,7 @@ impl Interpreter {
                         self.make_io_path_instance(&canonical_prefix),
                     );
                     attrs.insert("short-id".to_string(), Value::Str("file".to_string()));
-                    let repo = Value::make_instance(class_name.clone(), attrs);
+                    let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);
                 }
@@ -488,16 +496,16 @@ impl Interpreter {
                     attrs.insert("started".to_string(), Value::Bool(false));
                     attrs.insert(
                         "stdout".to_string(),
-                        Value::make_instance("Supply".to_string(), stdout_supply_attrs),
+                        Value::make_instance(Symbol::intern("Supply"), stdout_supply_attrs),
                     );
                     attrs.insert(
                         "stderr".to_string(),
-                        Value::make_instance("Supply".to_string(), stderr_supply_attrs),
+                        Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
                     );
                     if w_flag {
                         attrs.insert("w".to_string(), Value::Bool(true));
                     }
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "IO::Path" => {
                     let mut path = String::new();
@@ -536,7 +544,7 @@ impl Interpreter {
                     if let Some(cwd) = cwd_attr {
                         attrs.insert("cwd".to_string(), Value::Str(cwd));
                     }
-                    return Ok(Value::make_instance("IO::Path".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }
                 "utf8" | "utf16" => {
                     let elems: Vec<Value> = args
@@ -553,7 +561,7 @@ impl Interpreter {
                         .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(elems));
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
@@ -574,10 +582,10 @@ impl Interpreter {
                                 ..
                             } if class_name == "Buf"
                                 || class_name == "Blob"
-                                || class_name.starts_with("Buf[")
-                                || class_name.starts_with("Blob[")
-                                || class_name.starts_with("buf")
-                                || class_name.starts_with("blob") =>
+                                || class_name.resolve().starts_with("Buf[")
+                                || class_name.resolve().starts_with("Blob[")
+                                || class_name.resolve().starts_with("buf")
+                                || class_name.resolve().starts_with("blob") =>
                             {
                                 if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                                     items.to_vec()
@@ -588,11 +596,12 @@ impl Interpreter {
                             _ => vec![],
                         })
                         .collect();
-                    let is_blob = class_name.starts_with("Blob") || class_name.starts_with("blob");
+                    let is_blob = class_name.resolve().starts_with("Blob")
+                        || class_name.resolve().starts_with("blob");
                     let type_name = if is_blob { "Blob" } else { "Buf" }.to_string();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(type_name, attrs));
+                    return Ok(Value::make_instance(Symbol::intern(&type_name), attrs));
                 }
                 "Rat" => {
                     let a = match args.first() {
@@ -677,14 +686,15 @@ impl Interpreter {
                         .unwrap_or_default();
                     let mut frame_attrs = HashMap::new();
                     frame_attrs.insert("file".to_string(), Value::Str(file));
-                    let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
+                    let frame =
+                        Value::make_instance(Symbol::intern("Backtrace::Frame"), frame_attrs);
                     return Ok(Value::array(vec![frame]));
                 }
                 "Lock" | "Lock::Async" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Slip" => {
                     return Ok(Value::slip(args.clone()));
@@ -731,7 +741,7 @@ impl Interpreter {
                     } else {
                         attrs.insert("named".to_string(), Value::hash(HashMap::new()));
                     }
-                    return Ok(Value::make_instance("Match".to_string(), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Match"), attrs));
                 }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Junction" => {
@@ -785,7 +795,7 @@ impl Interpreter {
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
-                                declared_type: Some(class_name.clone()),
+                                declared_type: Some(class_name.resolve()),
                             },
                         );
                         return Ok(result);
@@ -811,7 +821,7 @@ impl Interpreter {
                         crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type: None,
-                            declared_type: Some(class_name.clone()),
+                            declared_type: Some(class_name.resolve()),
                         },
                     );
                     return Ok(result);
@@ -849,13 +859,13 @@ impl Interpreter {
                         crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type,
-                            declared_type: Some(class_name.clone()),
+                            declared_type: Some(class_name.resolve()),
                         },
                     );
                     return Ok(result);
                 }
             }
-            if let Some(role) = self.roles.get(class_name).cloned() {
+            if let Some(role) = self.roles.get(&class_name.resolve()).cloned() {
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
                 for arg in &args {
@@ -883,29 +893,34 @@ impl Interpreter {
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
                 return Ok(Value::Mixin(
-                    Box::new(Value::make_instance(class_name.clone(), HashMap::new())),
+                    Box::new(Value::make_instance(*class_name, HashMap::new())),
                     mixins,
                 ));
             }
             // CUnion repr classes use byte-overlay construction
-            if self.cunion_classes.contains(class_name) {
-                return self.construct_cunion_instance(class_name, &args);
+            if self.cunion_classes.contains(&cn_resolved) {
+                return self.construct_cunion_instance(&cn_resolved, &args);
             }
-            if self.classes.contains_key(class_name)
+            if self.classes.contains_key(&cn_resolved)
                 || type_args
                     .as_ref()
                     .is_some_and(|_| self.classes.contains_key(base_class_name))
             {
-                let class_key = if self.classes.contains_key(class_name) {
-                    class_name.as_str()
+                let class_key = if self.classes.contains_key(&cn_resolved) {
+                    cn_resolved.as_str()
                 } else {
                     base_class_name
                 };
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
-                    let (result, _updated) =
-                        self.run_instance_method(class_name, empty_attrs, "new", args, None)?;
+                    let (result, _updated) = self.run_instance_method(
+                        &class_name.resolve(),
+                        empty_attrs,
+                        "new",
+                        args,
+                        None,
+                    )?;
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
@@ -915,7 +930,9 @@ impl Interpreter {
                     for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
                     }
-                } else if let Some(role_bindings) = self.class_role_param_bindings.get(class_name) {
+                } else if let Some(role_bindings) =
+                    self.class_role_param_bindings.get(&class_name.resolve())
+                {
                     for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
                     }
@@ -967,7 +984,7 @@ impl Interpreter {
                             class_name: src_class,
                             attributes: src_attrs,
                             ..
-                        } if class_mro.iter().any(|name| name == src_class) => {
+                        } if class_mro.iter().any(|name| name == &src_class.resolve()) => {
                             for (attr, value) in src_attrs.iter() {
                                 attrs.insert(attr.clone(), value.clone());
                             }
@@ -994,7 +1011,9 @@ impl Interpreter {
                     for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
                     }
-                } else if let Some(role_bindings) = self.class_role_param_bindings.get(class_name) {
+                } else if let Some(role_bindings) =
+                    self.class_role_param_bindings.get(&class_name.resolve())
+                {
                     for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
                     }
@@ -1006,7 +1025,7 @@ impl Interpreter {
                         continue;
                     }
                     let val = if let Some(expr) = default {
-                        let temp_self = Value::make_instance(class_name.clone(), attrs.clone());
+                        let temp_self = Value::make_instance(*class_name, attrs.clone());
                         let old_self = self.env.get("self").cloned();
                         self.env.insert("self".to_string(), temp_self);
                         let result = self.eval_block_value(&[Stmt::Expr(expr)]);
@@ -1027,18 +1046,18 @@ impl Interpreter {
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
                 let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
-                if self.class_has_method(class_name, "BUILD") {
+                if self.class_has_method(&class_name.resolve(), "BUILD") {
                     let build_args = if has_direct_build {
                         args.clone()
                     } else {
                         Vec::new()
                     };
                     let (_v, updated) = self.run_instance_method(
-                        class_name,
+                        &class_name.resolve(),
                         attrs.clone(),
                         "BUILD",
                         build_args,
-                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
+                        Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
                     // After BUILD runs, check required attributes that BUILD didn't set
@@ -1058,22 +1077,22 @@ impl Interpreter {
                         }
                     }
                 }
-                if self.class_has_method(class_name, "TWEAK") {
+                if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let tweak_args = if has_direct_tweak {
                         args.clone()
                     } else {
                         Vec::new()
                     };
                     let (_v, updated) = self.run_instance_method(
-                        class_name,
+                        &class_name.resolve(),
                         attrs.clone(),
                         "TWEAK",
                         tweak_args,
-                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
+                        Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
                 }
-                let instance = Value::make_instance(class_name.clone(), attrs);
+                let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {
                         let value_type = type_args
@@ -1085,7 +1104,7 @@ impl Interpreter {
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
-                                declared_type: Some(class_name.clone()),
+                                declared_type: Some(class_name.resolve()),
                             },
                         );
                     } else if self.class_mro(class_key).iter().any(|n| n == "Hash") {
@@ -1099,7 +1118,7 @@ impl Interpreter {
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type,
-                                declared_type: Some(class_name.clone()),
+                                declared_type: Some(class_name.resolve()),
                             },
                         );
                     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -244,7 +245,7 @@ impl Interpreter {
             };
             if should_replace {
                 *bound = Value::Instance {
-                    class_name: class_name.to_string(),
+                    class_name: Symbol::intern(class_name),
                     attributes: std::sync::Arc::new(updated.clone()),
                     id,
                 };
@@ -355,7 +356,7 @@ impl Interpreter {
             self.env.insert(
                 var_name.to_string(),
                 Value::Instance {
-                    class_name: class_name.to_string(),
+                    class_name: Symbol::intern(class_name),
                     attributes: std::sync::Arc::new(updated),
                     id: target_id,
                 },
@@ -529,7 +530,7 @@ impl Interpreter {
         };
 
         let method_def = self
-            .resolve_method(&class_name, method, &method_args)
+            .resolve_method(&class_name.resolve(), method, &method_args)
             .ok_or_else(|| {
                 RuntimeError::new(format!("No matching candidates for method: {method}"))
             })?;
@@ -544,7 +545,7 @@ impl Interpreter {
             updated.insert(attr_name, value.clone());
             if let Some(var_name) = target_var {
                 self.overwrite_instance_bindings_by_identity(
-                    &class_name,
+                    &class_name.resolve(),
                     target_id,
                     updated.clone(),
                 );
@@ -563,12 +564,12 @@ impl Interpreter {
         // The method body doesn't directly expose an attribute — run it and check for Proxy
         let attrs_map = (*attributes).clone();
         let (method_result, updated_attrs) =
-            self.run_instance_method(&class_name, attrs_map, method, method_args, None)?;
+            self.run_instance_method(&class_name.resolve(), attrs_map, method, method_args, None)?;
         if let Value::Proxy { storer, .. } = &method_result {
             return self.proxy_store(
                 storer,
                 target_var,
-                &class_name,
+                &class_name.resolve(),
                 &updated_attrs,
                 target_id,
                 value,
@@ -672,7 +673,7 @@ impl Interpreter {
                 "dynamic".to_string(),
                 Value::Bool(self.is_var_dynamic(target_var)),
             );
-            let meta = Value::make_instance(class_name.to_string(), attributes);
+            let meta = Value::make_instance(Symbol::intern(class_name), attributes);
             self.set_var_meta_value(target_var, meta.clone());
             return Ok(meta);
         }
@@ -684,7 +685,7 @@ impl Interpreter {
             let type_name = self
                 .var_type_constraint(target_var)
                 .unwrap_or_else(|| "Mu".to_string());
-            return Ok(Value::Package(type_name));
+            return Ok(Value::Package(Symbol::intern(&type_name)));
         }
 
         if let Value::Instance {
@@ -755,12 +756,12 @@ impl Interpreter {
                     ),
                 );
                 self.overwrite_instance_bindings_by_identity(
-                    class_name,
+                    &class_name.resolve(),
                     *id,
                     updated_attrs.clone(),
                 );
                 return Ok(Value::Instance {
-                    class_name: class_name.clone(),
+                    class_name: *class_name,
                     attributes: std::sync::Arc::new(updated_attrs),
                     id: *id,
                 });
@@ -1031,8 +1032,8 @@ impl Interpreter {
         } = target.clone()
         {
             if (class_name == "Buf"
-                || class_name.starts_with("Buf[")
-                || class_name.starts_with("buf"))
+                || class_name.resolve().starts_with("Buf[")
+                || class_name.resolve().starts_with("buf"))
                 && matches!(method, "write-ubits" | "write-bits")
                 && args.len() == 3
             {
@@ -1069,12 +1070,12 @@ impl Interpreter {
                     Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
                 );
                 self.overwrite_instance_bindings_by_identity(
-                    &class_name,
+                    &class_name.resolve(),
                     target_id,
                     updated.clone(),
                 );
                 let updated_instance = Value::Instance {
-                    class_name: class_name.clone(),
+                    class_name,
                     attributes: std::sync::Arc::new(updated),
                     id: target_id,
                 };
@@ -1200,7 +1201,7 @@ impl Interpreter {
                                         Value::Bool(initialized),
                                     );
                                     self.overwrite_instance_bindings_by_identity(
-                                        &class_name,
+                                        &class_name.resolve(),
                                         target_id,
                                         updated.clone(),
                                     );
@@ -1276,12 +1277,12 @@ impl Interpreter {
                     updated.insert("squish_prev_key".to_string(), prev_key);
                     updated.insert("squish_initialized".to_string(), Value::Bool(initialized));
                     self.overwrite_instance_bindings_by_identity(
-                        &class_name,
+                        &class_name.resolve(),
                         target_id,
                         updated.clone(),
                     );
                     let updated_instance = Value::Instance {
-                        class_name: class_name.clone(),
+                        class_name,
                         attributes: std::sync::Arc::new(updated),
                         id: target_id,
                     };
@@ -1411,14 +1412,14 @@ impl Interpreter {
 
                 updated.insert("index".to_string(), Value::Int(index as i64));
                 self.overwrite_instance_bindings_by_identity(
-                    &class_name,
+                    &class_name.resolve(),
                     target_id,
                     updated.clone(),
                 );
                 self.env.insert(
                     target_var.to_string(),
                     Value::Instance {
-                        class_name: class_name.clone(),
+                        class_name,
                         attributes: std::sync::Arc::new(updated),
                         id: target_id,
                     },
@@ -1427,7 +1428,7 @@ impl Interpreter {
             }
 
             if args.len() == 1 {
-                let class_attrs = self.collect_class_attributes(&class_name);
+                let class_attrs = self.collect_class_attributes(&class_name.resolve());
                 let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
                 } else {
@@ -1440,21 +1441,21 @@ impl Interpreter {
                 if is_public_rw_accessor {
                     // User-defined rw method takes priority over simple accessor
                     let has_rw_method = self
-                        .resolve_method(&class_name, method, &[])
+                        .resolve_method(&class_name.resolve(), method, &[])
                         .is_some_and(|m| m.is_rw);
                     if !has_rw_method {
                         let mut updated = (*attributes).clone();
                         let assigned = args[0].clone();
                         updated.insert(method.to_string(), assigned.clone());
                         self.overwrite_instance_bindings_by_identity(
-                            &class_name,
+                            &class_name.resolve(),
                             target_id,
                             updated.clone(),
                         );
                         self.env.insert(
                             target_var.to_string(),
                             Value::Instance {
-                                class_name: class_name.clone(),
+                                class_name,
                                 attributes: std::sync::Arc::new(updated),
                                 id: target_id,
                             },
@@ -1469,7 +1470,7 @@ impl Interpreter {
                 } else {
                     // Check if there's a user-defined method with is_rw
                     let has_rw_method = self
-                        .resolve_method(&class_name, method, &[])
+                        .resolve_method(&class_name.resolve(), method, &[])
                         .is_some_and(|m| m.is_rw);
                     if has_rw_method {
                         // Signal to assign_method_lvalue to handle via Proxy
@@ -1497,24 +1498,24 @@ impl Interpreter {
                 }
             }
 
-            if self.is_native_method(&class_name, method) {
+            if self.is_native_method(&class_name.resolve(), method) {
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
-                    &class_name,
+                    &class_name.resolve(),
                     (*attributes).clone(),
                     method,
                     args.clone(),
                 ) {
                     Ok((result, updated)) => {
                         self.overwrite_instance_bindings_by_identity(
-                            &class_name,
+                            &class_name.resolve(),
                             target_id,
                             updated.clone(),
                         );
                         self.env.insert(
                             target_var.to_string(),
                             Value::Instance {
-                                class_name: class_name.clone(),
+                                class_name,
                                 attributes: std::sync::Arc::new(updated),
                                 id: target_id,
                             },
@@ -1523,7 +1524,7 @@ impl Interpreter {
                     }
                     Err(_) => {
                         return self.call_native_instance_method(
-                            &class_name,
+                            &class_name.resolve(),
                             &attributes,
                             method,
                             args,
@@ -1542,16 +1543,18 @@ impl Interpreter {
                 method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
-            if self.has_user_method(&class_name, method) && (!is_pseudo_method || skip_pseudo) {
+            if self.has_user_method(&class_name.resolve(), method)
+                && (!is_pseudo_method || skip_pseudo)
+            {
                 let (result, updated) = self.run_instance_method(
-                    &class_name,
+                    &class_name.resolve(),
                     (*attributes).clone(),
                     method,
                     args,
                     Some(target.clone()),
                 )?;
                 self.overwrite_instance_bindings_by_identity(
-                    &class_name,
+                    &class_name.resolve(),
                     target_id,
                     updated.clone(),
                 );
@@ -1559,7 +1562,7 @@ impl Interpreter {
                 self.env.insert(
                     target_var.to_string(),
                     Value::Instance {
-                        class_name: class_name.clone(),
+                        class_name,
                         attributes: std::sync::Arc::new(updated),
                         id: target_id,
                     },
@@ -1569,7 +1572,7 @@ impl Interpreter {
                     return self.proxy_fetch(
                         fetcher,
                         Some(target_var),
-                        &class_name,
+                        &class_name.resolve(),
                         &updated_clone,
                         target_id,
                     );

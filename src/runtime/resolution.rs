@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     fn is_stub_method_body(body: &[Stmt]) -> bool {
@@ -315,7 +316,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("status".to_string(), Value::Str(status.to_string()));
         attrs.insert("result".to_string(), result);
-        Value::make_instance("Promise".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Promise"), attrs)
     }
 
     pub(super) fn make_supply_instance(&self) -> Value {
@@ -324,7 +325,7 @@ impl Interpreter {
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
-        Value::make_instance("Supply".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Supply"), attrs)
     }
 
     pub(crate) fn eval_xx_repeat_thunk(

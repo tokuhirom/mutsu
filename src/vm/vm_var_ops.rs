@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
@@ -46,9 +47,9 @@ impl VM {
 
     fn typed_container_default(&self, target: &Value) -> Value {
         if let Some(info) = self.interpreter.container_type_metadata(target) {
-            Value::Package(info.value_type)
+            Value::Package(Symbol::intern(&info.value_type))
         } else if matches!(target, Value::Hash(_)) {
-            Value::Package("Any".to_string())
+            Value::Package(Symbol::intern("Any"))
         } else {
             Value::Nil
         }
@@ -166,7 +167,7 @@ impl VM {
         );
         let mut err = RuntimeError::new("X::NotEnoughDimensions");
         err.exception = Some(Box::new(Value::make_instance(
-            "X::NotEnoughDimensions".to_string(),
+            Symbol::intern("X::NotEnoughDimensions"),
             attrs,
         )));
         err
@@ -264,16 +265,16 @@ impl VM {
             ));
         }
         if indices.is_empty() {
-            return Ok(Value::Package("Any".to_string()));
+            return Ok(Value::Package(Symbol::intern("Any")));
         }
         let Some(i) = Self::index_to_usize(&indices[0]) else {
-            return Ok(Value::Package("Any".to_string()));
+            return Ok(Value::Package(Symbol::intern("Any")));
         };
         let Value::Array(items, ..) = target else {
-            return Ok(Value::Package("Any".to_string()));
+            return Ok(Value::Package(Symbol::intern("Any")));
         };
         if i >= items.len() {
-            return Ok(Value::Package("Any".to_string()));
+            return Ok(Value::Package(Symbol::intern("Any")));
         }
         let arr = Arc::make_mut(items);
         if indices.len() == 1 {
@@ -402,7 +403,7 @@ impl VM {
                 || self.interpreter.is_role(name)
                 || Self::is_builtin_type(name)
             {
-                Value::Package(name.to_string())
+                Value::Package(Symbol::intern(name))
             } else if name.contains("::")
                 && !name.starts_with('$')
                 && !name.starts_with('@')
@@ -436,7 +437,7 @@ impl VM {
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
-            Value::Package(name.to_string())
+            Value::Package(Symbol::intern(name))
         } else if self.interpreter.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
         {
@@ -479,9 +480,9 @@ impl VM {
             Value::Slip(std::sync::Arc::new(vec![]))
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
-            Value::Package(name.to_string())
+            Value::Package(Symbol::intern(name))
         } else if name.contains("::") {
-            Value::Package(name.to_string())
+            Value::Package(Symbol::intern(name))
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.
             let ch = name.chars().next().unwrap();
@@ -526,10 +527,10 @@ impl VM {
                             i
                         )),
                     );
-                    let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
                     let mut failure_attrs = std::collections::HashMap::new();
                     failure_attrs.insert("exception".to_string(), ex);
-                    Value::make_instance("Failure".to_string(), failure_attrs)
+                    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
                 } else {
                     let default =
                         self.typed_container_default(&Value::Array(items.clone(), is_arr));
@@ -750,10 +751,10 @@ impl VM {
                     "message".to_string(),
                     Value::Str("Type Str does not support associative indexing.".to_string()),
                 );
-                let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
+                let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                 let mut failure_attrs = std::collections::HashMap::new();
                 failure_attrs.insert("exception".to_string(), ex);
-                Value::make_instance("Failure".to_string(), failure_attrs)
+                Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
@@ -895,13 +896,13 @@ impl VM {
                 }
             }
             // Role parameterization: e.g. R1[C1] → ParametricRole
-            (Value::Package(name), idx) if self.interpreter.is_role(&name) => {
+            (Value::Package(name), idx) if self.interpreter.is_role(&name.resolve()) => {
                 let type_args = match idx {
                     Value::Array(items, ..) => items.as_ref().clone(),
                     other => vec![other],
                 };
                 Value::ParametricRole {
-                    base_name: name,
+                    base_name: name.resolve(),
                     type_args,
                 }
             }
@@ -914,7 +915,7 @@ impl VM {
                 let args = type_args
                     .into_iter()
                     .map(|v| match v {
-                        Value::Package(name) => name,
+                        Value::Package(name) => name.resolve(),
                         other => {
                             let s = other.to_string_value();
                             s.trim_start_matches('(').trim_end_matches(')').to_string()
@@ -922,7 +923,7 @@ impl VM {
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                Value::Package(format!("{}[{}]", name, args))
+                Value::Package(Symbol::intern(&format!("{}[{}]", name, args)))
             }
             // Pair subscript: $pair<key> returns value if key matches, Nil otherwise
             (Value::Pair(key, value), Value::Str(idx)) => {
@@ -1704,7 +1705,7 @@ impl VM {
         // When assigning Nil to a typed container element, use the type object
         let val = if matches!(val, Value::Nil) {
             if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
-                Value::Package(constraint)
+                Value::Package(Symbol::intern(&constraint))
             } else {
                 val
             }
@@ -1750,7 +1751,7 @@ impl VM {
                         if let Value::Array(items, ..) = container {
                             let arr = Arc::make_mut(items);
                             if max_idx >= arr.len() {
-                                arr.resize(max_idx + 1, Value::Package("Any".to_string()));
+                                arr.resize(max_idx + 1, Value::Package(Symbol::intern("Any")));
                             }
                         }
                         // Assign each value to the corresponding index
@@ -1840,7 +1841,7 @@ impl VM {
                                     );
                                     let arr = Arc::make_mut(items);
                                     if i >= arr.len() {
-                                        arr.resize(i + 1, Value::Package("Any".to_string()));
+                                        arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
                                     }
                                     arr[i] = if is_self_array_ref {
                                         Self::self_array_ref_marker()
@@ -2163,7 +2164,7 @@ impl VM {
         {
             if matches!(val, Value::Nil) {
                 // Assigning Nil to a typed variable resets it to the type object
-                val = Value::Package(constraint.clone());
+                val = Value::Package(Symbol::intern(&constraint));
             } else if !self.interpreter.type_matches_value(&constraint, &val) {
                 return Err(RuntimeError::new(format!(
                     "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",

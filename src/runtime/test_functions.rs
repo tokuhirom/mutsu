@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     fn unwrap_test_arg_value(value: &Value) -> Value {
@@ -736,7 +737,7 @@ impl Interpreter {
         }
         let value = positionals.first().copied().unwrap_or(&Value::Nil);
         let type_name = match positionals.get(1) {
-            Some(Value::Package(name)) => name.clone(),
+            Some(Value::Package(name)) => name.resolve(),
             Some(Value::Nil) => "Nil".to_string(),
             Some(v) => v.to_string_value(),
             None => String::new(),
@@ -924,7 +925,7 @@ impl Interpreter {
                 // Check exception field first for structured exceptions
                 let ex_class = err.exception.as_ref().and_then(|ex| {
                     if let Value::Instance { class_name, .. } = ex.as_ref() {
-                        Some(class_name.as_str())
+                        Some(class_name.resolve())
                     } else {
                         None
                     }
@@ -965,7 +966,7 @@ impl Interpreter {
         // Use subtest format only when we have a structured exception with attributes
         let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
             if let Value::Instance { class_name, .. } = ex {
-                class_name.starts_with("X::") || class_name != "Exception"
+                class_name.resolve().starts_with("X::") || class_name != "Exception"
             } else {
                 false
             }
@@ -1103,7 +1104,7 @@ impl Interpreter {
         let sink_type_ok = |err: &RuntimeError| {
             let ex_class = err.exception.as_ref().and_then(|ex| {
                 if let Value::Instance { class_name, .. } = ex.as_ref() {
-                    Some(class_name.as_str())
+                    Some(class_name.resolve())
                 } else {
                     None
                 }
@@ -1306,9 +1307,9 @@ impl Interpreter {
             .unwrap_or(Value::Nil);
         let role_val = Self::positional_value(args, 1)
             .cloned()
-            .unwrap_or_else(|| Value::Package(Self::positional_string(args, 1)));
+            .unwrap_or_else(|| Value::Package(Symbol::intern(&Self::positional_string(args, 1))));
         let role_name = match &role_val {
-            Value::Package(name) => name.clone(),
+            Value::Package(name) => name.resolve(),
             other => other.to_string_value(),
         };
         let desc = {
@@ -1373,7 +1374,7 @@ impl Interpreter {
 
         // 1. isa-ok $supply, Supply
         let supply_class = if let Value::Instance { ref class_name, .. } = supply {
-            class_name.clone()
+            class_name.resolve()
         } else {
             String::new()
         };
@@ -1403,7 +1404,7 @@ impl Interpreter {
         if let Value::Instance { ref attributes, .. } = supply {
             // For on-demand supplies, execute the callback to produce values
             if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-                let emitter = Value::make_instance("Supplier".to_string(), {
+                let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                     let mut a = HashMap::new();
                     a.insert("emitted".to_string(), Value::array(Vec::new()));
                     a.insert("done".to_string(), Value::Bool(false));
@@ -2041,7 +2042,7 @@ impl Interpreter {
         let path_str = path.to_string_lossy().to_string();
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("path".to_string(), Value::Str(path_str));
-        Ok(Value::make_instance("IO::Path".to_string(), attrs))
+        Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs))
     }
 
     /// `make-temp-dir` — create a temporary directory.
@@ -2070,7 +2071,7 @@ impl Interpreter {
         let path_str = path.to_string_lossy().to_string();
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("path".to_string(), Value::Str(path_str));
-        Ok(Value::make_instance("IO::Path".to_string(), attrs))
+        Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs))
     }
 
     fn positional_string_opt(args: &[Value], idx: usize) -> Option<String> {

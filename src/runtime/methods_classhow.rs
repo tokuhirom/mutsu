@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use crate::value::signature::make_params_value_from_param_defs;
 
 impl Interpreter {
@@ -6,11 +7,11 @@ impl Interpreter {
         let Value::Package(class_name) = invocant else {
             return None;
         };
-        let class_def = self.classes.get(class_name)?;
+        let class_def = self.classes.get(&class_name.resolve())?;
         let defs = class_def.methods.get(method_name)?;
         let def = defs.first()?;
         Some(Value::make_sub(
-            class_name.clone(),
+            class_name.resolve(),
             method_name.to_string(),
             def.params.clone(),
             def.param_defs.clone(),
@@ -56,7 +57,7 @@ impl Interpreter {
             });
         }
         if let Value::Package(class_name) = invocant
-            && let Some(class_def) = self.classes.get(class_name)
+            && let Some(class_def) = self.classes.get(&class_name.resolve())
             && class_def.native_methods.contains(method_name)
         {
             return Some(Value::Str(method_name.to_string()));
@@ -71,8 +72,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "name" if args.len() == 1 => Ok(Value::Str(match &args[0] {
-                Value::Package(name) => name.clone(),
-                Value::Instance { class_name, .. } => class_name.clone(),
+                Value::Package(name) => name.resolve(),
+                Value::Instance { class_name, .. } => class_name.resolve(),
                 Value::ParametricRole {
                     base_name,
                     type_args,
@@ -80,7 +81,7 @@ impl Interpreter {
                     let args_str = type_args
                         .iter()
                         .map(|v| match v {
-                            Value::Package(n) => n.clone(),
+                            Value::Package(n) => n.resolve(),
                             other => other.to_string_value(),
                         })
                         .collect::<Vec<_>>()
@@ -91,15 +92,15 @@ impl Interpreter {
             })),
             "ver" if args.len() == 1 => {
                 let invocant_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Package(name) => *name,
+                    Value::Instance { class_name, .. } => *class_name,
                     _ => {
                         return Err(RuntimeError::new(
                             "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
                         ));
                     }
                 };
-                let Some(meta) = self.type_metadata.get(&invocant_name) else {
+                let Some(meta) = self.type_metadata.get(&invocant_name.resolve()) else {
                     if invocant_name == "Grammar" {
                         return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
                     }
@@ -119,15 +120,15 @@ impl Interpreter {
             }
             "auth" if args.len() == 1 => {
                 let invocant_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Package(name) => *name,
+                    Value::Instance { class_name, .. } => *class_name,
                     _ => {
                         return Err(RuntimeError::new(
                             "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
                         ));
                     }
                 };
-                let Some(meta) = self.type_metadata.get(&invocant_name) else {
+                let Some(meta) = self.type_metadata.get(&invocant_name.resolve()) else {
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
                     ));
@@ -150,8 +151,9 @@ impl Interpreter {
                 if is_same {
                     return Ok(Value::Bool(true));
                 }
-                let mro = self.class_mro(class_name);
-                Ok(Value::Bool(mro.iter().any(|p| p == other_name)))
+                let mro = self.class_mro(&class_name.resolve());
+                let other_resolved = other_name.resolve();
+                Ok(Value::Bool(mro.iter().any(|p| p == &other_resolved)))
             }
             "mro" if !args.is_empty() => {
                 let mut include_roles = false;
@@ -173,14 +175,16 @@ impl Interpreter {
                 } else {
                     let mro = self.classhow_mro_names(&args[0]);
                     Ok(Value::array(
-                        mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+                        mro.into_iter()
+                            .map(|s| Value::Package(Symbol::intern(&s)))
+                            .collect::<Vec<_>>(),
                     ))
                 }
             }
             "archetypes" if !args.is_empty() => {
                 let invocant_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
                     _ => value_type_name(&args[0]).to_string(),
                 };
                 let base_name = invocant_name
@@ -193,7 +197,7 @@ impl Interpreter {
                     Value::Bool(self.roles.contains_key(base_name)),
                 );
                 Ok(Value::make_instance(
-                    "Perl6::Metamodel::Archetypes".to_string(),
+                    Symbol::intern("Perl6::Metamodel::Archetypes"),
                     attrs,
                 ))
             }
@@ -218,7 +222,9 @@ impl Interpreter {
                 } else {
                     let mro = self.classhow_mro_unhidden_names(&args[0]);
                     Ok(Value::array(
-                        mro.into_iter().map(Value::Package).collect::<Vec<_>>(),
+                        mro.into_iter()
+                            .map(|s| Value::Package(Symbol::intern(&s)))
+                            .collect::<Vec<_>>(),
                     ))
                 }
             }
@@ -246,7 +252,7 @@ impl Interpreter {
             }
             "add_method" if args.len() >= 3 => {
                 let class_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
+                    Value::Package(name) => name.resolve(),
                     Value::Str(name) => name.clone(),
                     _ => {
                         return Err(RuntimeError::new("add_method target must be a type object"));
@@ -300,9 +306,9 @@ impl Interpreter {
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
             "candidates" if !args.is_empty() => {
                 let base_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
+                    Value::Package(name) => name.resolve(),
                     Value::ParametricRole { base_name, .. } => base_name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other
                         .to_string_value()
                         .trim_start_matches('(')
@@ -312,23 +318,25 @@ impl Interpreter {
                 if let Some(candidates) = self.role_candidates.get(&base_name) {
                     let values = candidates
                         .iter()
-                        .map(|_| Value::Package(base_name.clone()))
+                        .map(|_| Value::Package(Symbol::intern(&base_name)))
                         .collect::<Vec<_>>();
                     return Ok(Value::array(values));
                 }
                 if self.roles.contains_key(&base_name) {
-                    return Ok(Value::array(vec![Value::Package(base_name)]));
+                    return Ok(Value::array(vec![Value::Package(Symbol::intern(
+                        &base_name,
+                    ))]));
                 }
                 Ok(Value::array(Vec::new()))
             }
             "concretization" if args.len() >= 2 => {
                 let class_name = match &args[0] {
-                    Value::Package(name) => name.clone(),
-                    Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
                     other => value_type_name(other).to_string(),
                 };
                 let role_name = match &args[1] {
-                    Value::Package(name) => name.clone(),
+                    Value::Package(name) => name.resolve(),
                     Value::ParametricRole {
                         base_name,
                         type_args,
@@ -336,7 +344,7 @@ impl Interpreter {
                         let args_str = type_args
                             .iter()
                             .map(|v| match v {
-                                Value::Package(n) => n.clone(),
+                                Value::Package(n) => n.resolve(),
                                 other => other.to_string_value(),
                             })
                             .collect::<Vec<_>>()
@@ -363,7 +371,7 @@ impl Interpreter {
                     for cr in &composed {
                         let cr_base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
                         if *cr == role_name || cr_base == base_role_name {
-                            return Some(Value::Package(cr_base.to_string()));
+                            return Some(Value::Package(Symbol::intern(cr_base)));
                         }
                     }
                     // Check transitive sub-roles
@@ -386,7 +394,7 @@ impl Interpreter {
                                 let p_base =
                                     p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
                                 if p_base == base_role_name || *p == role_name {
-                                    return Some(Value::Package(p_base.to_string()));
+                                    return Some(Value::Package(Symbol::intern(p_base)));
                                 }
                                 stack.push(p_base.to_string());
                             }
@@ -418,19 +426,20 @@ impl Interpreter {
                 // For a parameterized role like R[Int], return the base role R
                 match &args[0] {
                     Value::ParametricRole { base_name, .. } => {
-                        Ok(Value::Package(base_name.clone()))
+                        Ok(Value::Package(Symbol::intern(base_name)))
                     }
                     Value::Package(name) => {
-                        let base = name
+                        let resolved = name.resolve();
+                        let base = resolved
                             .split_once('[')
                             .map(|(b, _)| b)
-                            .unwrap_or(name.as_str());
-                        Ok(Value::Package(base.to_string()))
+                            .unwrap_or(resolved.as_str());
+                        Ok(Value::Package(Symbol::intern(base)))
                     }
                     _ => {
                         let s = args[0].to_string_value();
                         let base = s.split_once('[').map(|(b, _)| b).unwrap_or(s.as_str());
-                        Ok(Value::Package(base.to_string()))
+                        Ok(Value::Package(Symbol::intern(base)))
                     }
                 }
             }
@@ -443,8 +452,8 @@ impl Interpreter {
 
     pub(super) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
         let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             other => value_type_name(other).to_string(),
         };
         let mut mro = if self.classes.contains_key(&class_name) {
@@ -478,8 +487,8 @@ impl Interpreter {
         _concretizations: bool,
     ) -> Vec<Value> {
         let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             other => value_type_name(other).to_string(),
         };
         let base_mro = self.classhow_mro_names(invocant);
@@ -499,14 +508,14 @@ impl Interpreter {
             {
                 // This is a role in the class's parent list - include it with base name
                 if seen.insert(base_entry.to_string()) {
-                    result.push(Value::Package(base_entry.to_string()));
+                    result.push(Value::Package(Symbol::intern(base_entry)));
                     // Also add the role's parent classes that aren't already in base MRO
                     self.add_role_parents_to_mro(base_entry, &base_mro, &mut result, &mut seen);
                 }
             } else {
                 // This is a class
                 if seen.insert(entry.clone()) {
-                    result.push(Value::Package(entry.clone()));
+                    result.push(Value::Package(Symbol::intern(entry)));
                     // Insert composed roles for this class
                     let composed = self
                         .class_composed_roles
@@ -519,7 +528,7 @@ impl Interpreter {
                             .map(|(b, _)| b)
                             .unwrap_or(role_name.as_str());
                         if seen.insert(base_role.to_string()) {
-                            result.push(Value::Package(base_role.to_string()));
+                            result.push(Value::Package(Symbol::intern(base_role)));
                             // Add role's sub-roles (from `does` inside the role)
                             self.add_role_parents_to_mro(
                                 base_role,
@@ -550,7 +559,7 @@ impl Interpreter {
                     .map(|(b, _)| b)
                     .unwrap_or(parent.as_str());
                 if self.roles.contains_key(base) && seen.insert(base.to_string()) {
-                    result.push(Value::Package(base.to_string()));
+                    result.push(Value::Package(Symbol::intern(base)));
                     self.add_role_parents_to_mro(base, _base_mro, result, seen);
                 }
                 // Parent classes from roles are handled by the class MRO
@@ -561,8 +570,8 @@ impl Interpreter {
     /// Filter MRO to remove hidden classes and their associated roles.
     pub(super) fn filter_mro_unhidden(&self, invocant: &Value, mro: Vec<Value>) -> Vec<Value> {
         let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             other => value_type_name(other).to_string(),
         };
         // Collect hidden parent names for this class
@@ -611,7 +620,7 @@ impl Interpreter {
         mro.into_iter()
             .filter(|v| {
                 if let Value::Package(name) = v {
-                    !to_hide.contains(name)
+                    !to_hide.contains(&name.resolve())
                 } else {
                     true
                 }
@@ -636,8 +645,8 @@ impl Interpreter {
     /// MRO without hidden classes (no roles)
     pub(super) fn classhow_mro_unhidden_names(&mut self, invocant: &Value) -> Vec<String> {
         let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             other => value_type_name(other).to_string(),
         };
         let mro = self.classhow_mro_names(invocant);
@@ -672,8 +681,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let invocant = &args[0];
         let class_name = match invocant {
-            Value::Package(name) => name.clone(),
-            Value::Instance { class_name, .. } => class_name.clone(),
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             other => value_type_name(other).to_string(),
         };
 
@@ -1000,11 +1009,11 @@ impl Interpreter {
         };
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance("Signature".to_string(), sig_attrs),
+            Value::make_instance(Symbol::intern("Signature"), sig_attrs),
         );
-        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
-        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
-        Value::make_instance("Method".to_string(), attrs)
+        attrs.insert("returns".to_string(), Value::Package(Symbol::intern("Mu")));
+        attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+        Value::make_instance(Symbol::intern("Method"), attrs)
     }
 
     pub(super) fn make_method_object(
@@ -1037,15 +1046,15 @@ impl Interpreter {
         };
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance("Signature".to_string(), sig_attrs),
+            Value::make_instance(Symbol::intern("Signature"), sig_attrs),
         );
 
         // Return type
         let rt = return_type.unwrap_or_else(|| "Mu".to_string());
-        attrs.insert("returns".to_string(), Value::Package(rt.clone()));
-        attrs.insert("of".to_string(), Value::Package(rt));
+        attrs.insert("returns".to_string(), Value::Package(Symbol::intern(&rt)));
+        attrs.insert("of".to_string(), Value::Package(Symbol::intern(&rt)));
 
-        Value::make_instance("Method".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Method"), attrs)
     }
 
     pub(super) fn classhow_methods_tree(

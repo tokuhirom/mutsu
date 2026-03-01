@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 pub(super) struct ForLoopSpec {
     pub(super) param_idx: Option<u32>,
@@ -63,7 +64,7 @@ impl VM {
         if let Some(label) = signal.label.as_ref() {
             attrs.insert("label".to_string(), Value::Str(label.clone()));
         }
-        Some(Value::make_instance(class_name.to_string(), attrs))
+        Some(Value::make_instance(Symbol::intern(class_name), attrs))
     }
 
     pub(super) fn exec_while_loop_op(
@@ -738,7 +739,7 @@ impl VM {
                 } else {
                     let mut exc_attrs = std::collections::HashMap::new();
                     exc_attrs.insert("message".to_string(), Value::Str(e.message.clone()));
-                    Value::make_instance("Exception".to_string(), exc_attrs)
+                    Value::make_instance(Symbol::intern("Exception"), exc_attrs)
                 };
                 let saved_topic = self.interpreter.env().get("_").cloned();
                 self.interpreter

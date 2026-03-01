@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn dispatch_package_parse(
@@ -138,7 +139,7 @@ impl Interpreter {
                 if let Some(ast) = self.env.get("made").cloned() {
                     attrs.insert("ast".to_string(), ast);
                 }
-                Value::make_instance(class_name.clone(), attrs)
+                Value::make_instance(*class_name, attrs)
             } else {
                 match_obj
             };
@@ -218,11 +219,11 @@ impl Interpreter {
         ex_attrs.insert("pre".to_string(), Value::Str(pre));
         ex_attrs.insert("post".to_string(), Value::Str(post));
         ex_attrs.insert("highexpect".to_string(), Value::array(Vec::new()));
-        let exception = Value::make_instance("X::Syntax::Confused".to_string(), ex_attrs);
+        let exception = Value::make_instance(Symbol::intern("X::Syntax::Confused"), ex_attrs);
 
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
         failure_attrs.insert("handled".to_string(), Value::Bool(false));
-        Value::make_instance("Failure".to_string(), failure_attrs)
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 }

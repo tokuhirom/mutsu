@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     fn parse_and_eval_with_operators(
@@ -219,7 +220,7 @@ impl Interpreter {
             attrs.insert("inline".to_string(), Value::Bool(false));
             attrs.insert("__depth".to_string(), Value::Int(0));
             attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
-            return Some(Value::make_instance("CallFrame".to_string(), attrs));
+            return Some(Value::make_instance(Symbol::intern("CallFrame"), attrs));
         }
 
         // depth >= 1: walk up the caller env stack
@@ -238,7 +239,7 @@ impl Interpreter {
         attrs.insert("inline".to_string(), Value::Bool(false));
         attrs.insert("__depth".to_string(), Value::Int(depth as i64));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
-        Some(Value::make_instance("CallFrame".to_string(), attrs))
+        Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
     }
 
     fn current_routine_sub_value(&self) -> Value {

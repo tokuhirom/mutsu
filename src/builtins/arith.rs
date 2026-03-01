@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
@@ -127,7 +128,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let delta = runtime::to_float_value(&right).unwrap_or(0.0);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("value".to_string(), Value::Num(a - delta));
-        return Value::make_instance("Instant".to_string(), attrs);
+        return Value::make_instance(Symbol::intern("Instant"), attrs);
     }
     if let (Some(a), Some(b)) = (instance_days(&left), instance_days(&right)) {
         return Value::Int(a - b);
@@ -137,7 +138,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("days".to_string(), Value::Int(days - delta));
-        return Value::make_instance("Date".to_string(), attrs);
+        return Value::make_instance(Symbol::intern("Date"), attrs);
     }
     match (&left, &right) {
         (Value::Range(a, b), Value::Int(n)) => return Value::Range(a - n, b - n),

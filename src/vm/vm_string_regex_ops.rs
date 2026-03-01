@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 /// Apply samemark on a per-word basis: split both source and target by whitespace,
 /// apply samemark to each word pair, then reassemble with the replacement's whitespace.
@@ -653,11 +654,11 @@ impl VM {
                         sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
                         attrs.insert(
                             "signature".to_string(),
-                            Value::make_instance("Signature".to_string(), sig_attrs),
+                            Value::make_instance(Symbol::intern("Signature"), sig_attrs),
                         );
-                        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
-                        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
-                        return Ok(Value::make_instance("Method".to_string(), attrs));
+                        attrs.insert("returns".to_string(), Value::Package(Symbol::intern("Mu")));
+                        attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+                        return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                     }
                     Err(RuntimeError::new(format!(
                         "Unknown infix function: {}",
@@ -689,11 +690,14 @@ impl VM {
                             sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
                             attrs.insert(
                                 "signature".to_string(),
-                                Value::make_instance("Signature".to_string(), sig_attrs),
+                                Value::make_instance(Symbol::intern("Signature"), sig_attrs),
                             );
-                            attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
-                            attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
-                            return Ok(Value::make_instance("Method".to_string(), attrs));
+                            attrs.insert(
+                                "returns".to_string(),
+                                Value::Package(Symbol::intern("Mu")),
+                            );
+                            attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+                            return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                         }
                         Err(RuntimeError::new(format!(
                             "Unknown infix function: {}",

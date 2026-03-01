@@ -196,7 +196,7 @@ impl Compiler {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("symbol".to_string(), Value::Str(symbol));
                     let err =
-                        Value::make_instance("X::Dynamic::Postdeclaration".to_string(), attrs);
+                        Value::make_instance(Symbol::intern("X::Dynamic::Postdeclaration"), attrs);
                     let idx = self.code.add_constant(err);
                     self.code.emit(OpCode::LoadConst(idx));
                     self.code.emit(OpCode::Die);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn builtin_chrs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -150,6 +151,6 @@ impl Interpreter {
         let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
         let mut attrs = HashMap::new();
         attrs.insert("format".to_string(), Value::Str(fmt));
-        Ok(Value::make_instance("Format".to_string(), attrs))
+        Ok(Value::make_instance(Symbol::intern("Format"), attrs))
     }
 }

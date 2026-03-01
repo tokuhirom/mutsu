@@ -65,7 +65,7 @@ impl Compiler {
                 else if name == "?PACKAGE" || name == "?MODULE" {
                     let idx = self
                         .code
-                        .add_constant(Value::Package(self.current_package.clone()));
+                        .add_constant(Value::Package(Symbol::intern(&self.current_package)));
                     self.code.emit(OpCode::LoadConst(idx));
                 } else if name == "?CLASS" || name == "?ROLE" {
                     // ::?CLASS / ::?ROLE resolves at runtime from env

@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
 #[cfg(feature = "pcre2")]
 use pcre2::bytes::{Regex as PcreRegex, RegexBuilder as PcreRegexBuilder};
@@ -55,7 +56,7 @@ impl Interpreter {
         for parent in parents {
             let resolved_parent = if let Some(v) = param_map.get(parent) {
                 match v {
-                    Value::Package(name) => name.clone(),
+                    Value::Package(name) => name.resolve(),
                     other => other
                         .to_string_value()
                         .trim_start_matches('(')
@@ -80,7 +81,7 @@ impl Interpreter {
                             if let Ok(i) = spec.parse::<i64>() {
                                 Value::Int(i)
                             } else {
-                                Value::Package(spec.to_string())
+                                Value::Package(Symbol::intern(spec))
                             }
                         })
                 })
@@ -744,7 +745,7 @@ impl Interpreter {
             attrs.insert("to".to_string(), Value::Int(to as i64));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
-            Value::make_instance("Match".to_string(), attrs)
+            Value::make_instance(Symbol::intern("Match"), attrs)
         };
 
         let mut attrs = HashMap::new();
@@ -778,7 +779,7 @@ impl Interpreter {
             }
         }
         attrs.insert("named".to_string(), Value::hash(named));
-        let match_obj = Value::make_instance("Match".to_string(), attrs);
+        let match_obj = Value::make_instance(Symbol::intern("Match"), attrs);
         self.env.insert("/".to_string(), match_obj.clone());
 
         // Reset stale numeric captures before applying new ones.
@@ -1297,7 +1298,7 @@ impl Interpreter {
                     self.smart_match(hash_val, val)
                 } else {
                     // Key not in hash: compare against an undefined type object.
-                    self.smart_match(&Value::Package("Mu".to_string()), val)
+                    self.smart_match(&Value::Package(Symbol::intern("Mu")), val)
                 }
             }
             // Hash ~~ Hash: structural equality (eqv)
@@ -1393,11 +1394,12 @@ impl Interpreter {
                 },
                 Value::Package(rhs_name),
             ) => {
-                lhs_base == rhs_name
+                let rhs_resolved = rhs_name.resolve();
+                lhs_base == &rhs_resolved
                     || self
-                        .role_parent_args_for(lhs_base, lhs_args, rhs_name)
+                        .role_parent_args_for(lhs_base, lhs_args, &rhs_resolved)
                         .is_some()
-                    || self.role_is_subtype(lhs_base, rhs_name)
+                    || self.role_is_subtype(lhs_base, &rhs_resolved)
             }
             // Value instance/mixin ~~ parametric role: check composed role + type arguments.
             (
@@ -1412,7 +1414,7 @@ impl Interpreter {
                     let args_str = rhs_args
                         .iter()
                         .map(|v| match v {
-                            Value::Package(n) => n.clone(),
+                            Value::Package(n) => n.resolve(),
                             other => other.to_string_value(),
                         })
                         .collect::<Vec<_>>()
@@ -1479,7 +1481,8 @@ impl Interpreter {
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // Handle type smileys (:U, :D, :_)
-                let (base_type, smiley) = super::types::strip_type_smiley(type_name);
+                let type_name_resolved = type_name.resolve();
+                let (base_type, smiley) = super::types::strip_type_smiley(&type_name_resolved);
 
                 // Enum type object smartmatch against enum values.
                 if self.enum_types.contains_key(base_type) {
@@ -1505,7 +1508,7 @@ impl Interpreter {
                         _ => true,
                     };
                 }
-                self.type_matches_value(type_name, left)
+                self.type_matches_value(&type_name_resolved, left)
             }
             // Backward-compatibility: enum type objects may still arrive as Str values.
             (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name) => {
@@ -1732,18 +1735,22 @@ impl Interpreter {
                 if l_name == r_name {
                     return true;
                 }
+                let l_resolved = l_name.resolve();
+                let r_resolved = r_name.resolve();
                 // Built-in type hierarchy relationships (e.g. Int <: Cool <: Any)
-                if Self::type_matches(r_name, l_name) {
+                if Self::type_matches(&r_resolved, &l_resolved) {
                     return true;
                 }
                 // Check if l_name is a subclass of r_name
-                if let Some(class_def) = self.classes.get(l_name.as_str()) {
-                    if class_def.parents.iter().any(|p| p == r_name) {
+                if let Some(class_def) = self.classes.get(&l_resolved) {
+                    if class_def.parents.iter().any(|p| p == &r_resolved) {
                         return true;
                     }
                     // Transitive: check if any parent subtypes r_name
                     for parent in &class_def.parents {
-                        if self.parametric_arg_subtypes(&Value::Package(parent.clone()), rhs) {
+                        if self
+                            .parametric_arg_subtypes(&Value::Package(Symbol::intern(parent)), rhs)
+                        {
                             return true;
                         }
                     }

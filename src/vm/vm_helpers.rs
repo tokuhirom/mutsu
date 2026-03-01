@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl VM {
     fn twigil_dynamic_alias(name: &str) -> Option<String> {
@@ -106,7 +107,7 @@ impl VM {
             .unwrap_or(0);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("id".to_string(), Value::Int(numeric_id));
-        Value::make_instance("Thread".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Thread"), attrs)
     }
 
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
@@ -385,7 +386,7 @@ impl VM {
                 var_name, suggestion
             )),
         );
-        let ex = Value::make_instance("X::Undeclared".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::Undeclared"), attrs);
         let mut err = RuntimeError::new(format!(
             "X::Undeclared: Variable '{}' is not declared. Did you mean '{}'?",
             var_name, suggestion
@@ -776,7 +777,7 @@ impl VM {
             && (self.interpreter.type_matches_value("Real", target)
                 || self.interpreter.type_matches_value("Numeric", target)
                 || matches!(target, Value::Instance { class_name, .. }
-                    if self.interpreter.has_user_method(class_name, "Bridge")));
+                    if self.interpreter.has_user_method(&class_name.resolve(), "Bridge")));
         if bypass_supply_extrema_fastpath
             || bypass_supplier_supply_fastpath
             || bypass_gist_fastpath

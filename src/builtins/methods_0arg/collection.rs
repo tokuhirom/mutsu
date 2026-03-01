@@ -1,4 +1,5 @@
 use crate::runtime;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::sync::Arc;
 
@@ -325,7 +326,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             items.len()
                         )),
                     );
-                    let ex = Value::make_instance("X::Pairup::OddNumber".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::Pairup::OddNumber"), attrs);
                     let mut err = RuntimeError::new(format!(
                         "X::Pairup::OddNumber: Cannot pair up odd number of elements ({})",
                         items.len()
