@@ -28,6 +28,10 @@ If submodules are missing, run:
 - Use `snake_case` for Rust modules/functions/files, `CamelCase` for types/traits, `SCREAMING_SNAKE_CASE` for constants.
 - Name TAP tests in `t/` as descriptive `kebab-case.t` (for example, `statement-modifiers.t`).
 
+## Trust the Main Branch
+- The `main` branch is protected by GitHub branch protection — only code that passes CI is merged.
+- **Never** check whether a failing test also fails on `main`. If `make test` or `make roast` fails on your feature branch, the problem is in your changes. Do not waste time or resources switching to `main` to "verify".
+
 ## Testing Guidelines
 - Add or update tests for every behavior change, especially parser/runtime fixes.
 - Prefer targeted TAP regression tests in `t/` for language behavior changes.
