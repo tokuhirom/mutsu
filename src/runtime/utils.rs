@@ -411,6 +411,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         }
         Value::GenericRange { .. } => value,
         Value::Slip(items) | Value::Seq(items) => Value::Array(items, true),
+        Value::LazyList(_) => value,
         other => Value::real_array(vec![other]),
     }
 }

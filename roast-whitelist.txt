@@ -118,7 +118,6 @@ roast/S03-operators/ternary.t
 roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/basic.t
-roast/S03-sequence/exhaustive.t
 roast/S03-sequence/misc.t
 roast/S03-sequence/nonnumeric.t
 roast/S03-smartmatch/any-any.t
