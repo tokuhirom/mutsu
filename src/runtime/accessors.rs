@@ -738,44 +738,277 @@ impl Interpreter {
         self.current_package = pkg;
     }
 
-    pub(crate) fn package_stash_value(&self, package: &str) -> Value {
-        let mut symbols: HashMap<String, Value> = HashMap::new();
+    fn stash_symbol_key_from_env_tail(rest: &str) -> String {
+        if rest.starts_with('$')
+            || rest.starts_with('@')
+            || rest.starts_with('%')
+            || rest.starts_with('&')
+        {
+            return rest.to_string();
+        }
+        if rest.contains("::") || rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+            return rest.to_string();
+        }
+        format!("${rest}")
+    }
+
+    fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
+        let package = package.trim_end_matches("::");
+        let direct = format!("{package}::");
+        if let Some(rest) = key.strip_prefix(&direct) {
+            return Some(rest);
+        }
+        let needle = format!("::{package}::");
+        if let Some(idx) = key.rfind(&needle) {
+            let start = idx + needle.len();
+            return Some(&key[start..]);
+        }
+        None
+    }
+
+    fn make_stash_instance(package: &str, symbols: HashMap<String, Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(package.to_string()));
+        attrs.insert("symbols".to_string(), Value::hash(symbols));
+        Value::make_instance("Stash".to_string(), attrs)
+    }
+
+    fn package_export_tag_parts(package: &str) -> Option<(&str, &str)> {
+        let (module, rest) = package.split_once("::EXPORT::")?;
+        if module.is_empty() || rest.is_empty() || rest.contains("::") {
+            return None;
+        }
+        Some((module, rest))
+    }
+
+    fn package_export_module(package: &str) -> Option<&str> {
+        package.strip_suffix("::EXPORT")
+    }
+
+    fn qualify_stash_name(package: &str, symbol: &str) -> String {
+        let package = package.trim_end_matches("::");
+        if package.is_empty() {
+            symbol.to_string()
+        } else {
+            format!("{package}::{symbol}")
+        }
+    }
+
+    fn has_package_members(&self, package: &str) -> bool {
         let prefix = format!("{package}::");
+        self.env.keys().any(|k| k.starts_with(&prefix))
+            || self.functions.keys().any(|k| k.starts_with(&prefix))
+            || self.classes.keys().any(|k| k.starts_with(&prefix))
+            || self.exported_subs.contains_key(package)
+            || self.exported_vars.contains_key(package)
+    }
+
+    fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = stash
+        else {
+            return None;
+        };
+        if class_name != "Stash" {
+            return None;
+        }
+        let Value::Hash(symbols) = attributes.get("symbols")? else {
+            return None;
+        };
+        if let Some(value) = symbols.get(key) {
+            return Some(value.clone());
+        }
+        if !key.starts_with('$')
+            && !key.starts_with('@')
+            && !key.starts_with('%')
+            && !key.starts_with('&')
+        {
+            let scalar = format!("${key}");
+            if let Some(value) = symbols.get(&scalar) {
+                return Some(value.clone());
+            }
+        }
+        None
+    }
+
+    fn no_such_symbol_failure(name: &str) -> Value {
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert(
+            "message".to_string(),
+            Value::Str(format!("No such symbol '{name}'")),
+        );
+        let exception = Value::make_instance("X::AdHoc".to_string(), ex_attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance("Failure".to_string(), failure_attrs)
+    }
+
+    pub(crate) fn resolve_indirect_type_name(&self, name: &str) -> Value {
+        if name.is_empty() {
+            return Self::no_such_symbol_failure(name);
+        }
+        if let Some(code_name) = name.strip_prefix('&') {
+            return self.resolve_code_var(code_name);
+        }
+        if let Some(value) = self.env.get(name)
+            && !matches!(value, Value::Nil)
+        {
+            return value.clone();
+        }
+        if !self.method_class_stack.is_empty() && self.loaded_modules.contains(name) {
+            return Value::Package(name.to_string());
+        }
+
+        let mut parts = name.split("::").filter(|part| !part.is_empty());
+        let Some(first) = parts.next() else {
+            return Self::no_such_symbol_failure(name);
+        };
+
+        let mut current = if let Some(value) = self.env.get(first) {
+            value.clone()
+        } else if crate::runtime::utils::is_known_type_constraint(first)
+            || (name.contains("::")
+                && (self.has_package_members(first)
+                    || self.has_class(first)
+                    || self.is_role(first)))
+        {
+            Value::Package(first.to_string())
+        } else {
+            return Self::no_such_symbol_failure(name);
+        };
+
+        for part in parts {
+            current = match &current {
+                Value::Package(package) => {
+                    let stash = self.package_stash_value(package);
+                    if let Some(value) = Self::stash_lookup_symbol(&stash, part) {
+                        value
+                    } else {
+                        return Self::no_such_symbol_failure(name);
+                    }
+                }
+                Value::Instance { class_name, .. } if class_name == "Stash" => {
+                    if let Some(value) = Self::stash_lookup_symbol(&current, part) {
+                        value
+                    } else {
+                        return Self::no_such_symbol_failure(name);
+                    }
+                }
+                _ => return Self::no_such_symbol_failure(name),
+            };
+        }
+
+        current
+    }
+
+    pub(crate) fn package_stash_value(&self, package: &str) -> Value {
+        let package_name = package.trim_end_matches("::");
+
+        if let Some((module, tag)) = Self::package_export_tag_parts(package) {
+            let mut symbols: HashMap<String, Value> = HashMap::new();
+            if let Some(subs) = self.exported_subs.get(module) {
+                for (name, tags) in subs {
+                    if tag != "ALL" && !tags.contains(tag) {
+                        continue;
+                    }
+                    let fq = format!("{module}::{name}");
+                    symbols.insert(format!("&{name}"), self.resolve_code_var(&fq));
+                }
+            }
+            if let Some(vars) = self.exported_vars.get(module) {
+                for (name, tags) in vars {
+                    if tag != "ALL" && !tags.contains(tag) {
+                        continue;
+                    }
+                    let fq = format!("{module}::{name}");
+                    let val = self
+                        .env
+                        .get(&fq)
+                        .cloned()
+                        .or_else(|| self.env.get(name).cloned())
+                        .unwrap_or(Value::Nil);
+                    symbols.insert(name.clone(), val);
+                }
+            }
+            return Self::make_stash_instance(package, symbols);
+        }
+
+        if let Some(module) = Self::package_export_module(package_name) {
+            let mut tags = std::collections::BTreeSet::new();
+            if let Some(subs) = self.exported_subs.get(module) {
+                for tagset in subs.values() {
+                    tags.extend(tagset.iter().cloned());
+                }
+            }
+            if let Some(vars) = self.exported_vars.get(module) {
+                for tagset in vars.values() {
+                    tags.extend(tagset.iter().cloned());
+                }
+            }
+            let mut symbols: HashMap<String, Value> = HashMap::new();
+            for tag in tags {
+                symbols.insert(
+                    tag.clone(),
+                    Value::Package(Self::qualify_stash_name(package_name, &tag)),
+                );
+            }
+            return Self::make_stash_instance(package, symbols);
+        }
+
+        let mut symbols: HashMap<String, Value> = HashMap::new();
 
         for (key, val) in &self.env {
-            if let Some(rest) = key.strip_prefix(&prefix) {
-                let stash_key = if rest.starts_with('$')
-                    || rest.starts_with('@')
-                    || rest.starts_with('%')
-                    || rest.starts_with('&')
-                {
-                    rest.to_string()
-                } else {
-                    format!("${rest}")
-                };
+            if key.starts_with("__mutsu_callable_id::") {
+                continue;
+            }
+            if let Some(rest) = Self::stash_member_tail(key, package_name) {
+                let stash_key = Self::stash_symbol_key_from_env_tail(rest);
                 symbols.insert(stash_key, val.clone());
             }
         }
 
         for (key, def) in &self.functions {
-            if let Some(rest) = key.strip_prefix(&prefix) {
-                if rest.contains('/') || rest.contains(':') {
-                    continue;
-                }
-                symbols
-                    .entry(format!("&{rest}"))
-                    .or_insert_with(|| Value::Routine {
-                        package: def.package.clone(),
-                        name: def.name.clone(),
-                        is_regex: false,
-                    });
+            let Some(rest) = Self::stash_member_tail(key, package_name) else {
+                continue;
+            };
+            let base = rest.split('/').next().unwrap_or(rest);
+            if base.is_empty() || base.contains("::") || base.contains(':') {
+                continue;
             }
+            symbols
+                .entry(format!("&{base}"))
+                .or_insert_with(|| Value::Routine {
+                    package: def.package.clone(),
+                    name: def.name.clone(),
+                    is_regex: false,
+                });
         }
 
-        let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(package.to_string()));
-        attrs.insert("symbols".to_string(), Value::hash(symbols));
-        Value::make_instance("Stash".to_string(), attrs)
+        for class_name in self.classes.keys() {
+            let Some(rest) = Self::stash_member_tail(class_name, package_name) else {
+                continue;
+            };
+            if rest.is_empty() || rest.contains("::") {
+                continue;
+            }
+            symbols
+                .entry(rest.to_string())
+                .or_insert_with(|| Value::Package(Self::qualify_stash_name(package_name, rest)));
+        }
+
+        if self.exported_subs.contains_key(package_name)
+            || self.exported_vars.contains_key(package_name)
+        {
+            symbols.entry("EXPORT".to_string()).or_insert_with(|| {
+                Value::Package(Self::qualify_stash_name(package_name, "EXPORT"))
+            });
+        }
+
+        Self::make_stash_instance(package, symbols)
     }
 
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {

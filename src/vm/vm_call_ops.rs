@@ -396,6 +396,12 @@ impl VM {
                 skip_native = true;
             }
         }
+        if !skip_native
+            && matches!(method.as_str(), "AT-KEY" | "keys")
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
+        }
         if quoted
             && skip_native
             && matches!(
@@ -580,6 +586,12 @@ impl VM {
             {
                 skip_native = true;
             }
+        }
+        if !skip_native
+            && matches!(method.as_str(), "AT-KEY" | "keys")
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
         }
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());

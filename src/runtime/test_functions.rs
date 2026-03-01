@@ -787,6 +787,7 @@ impl Interpreter {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
+        nested.program_path = self.program_path.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
         nested.class_composed_roles = self.class_composed_roles.clone();
@@ -826,6 +827,7 @@ impl Interpreter {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
+        nested.program_path = self.program_path.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
         nested.class_composed_roles = self.class_composed_roles.clone();
@@ -867,6 +869,7 @@ impl Interpreter {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.lib_paths = self.lib_paths.clone();
+                nested.program_path = self.program_path.clone();
                 nested.functions = self.functions.clone();
                 nested.proto_functions = self.proto_functions.clone();
                 nested.token_defs = self.token_defs.clone();

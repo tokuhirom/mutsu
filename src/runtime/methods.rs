@@ -1325,6 +1325,8 @@ impl Interpreter {
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, "Bridge"))
+            || (matches!(method, "AT-KEY" | "keys")
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash"))
             || (!is_pseudo_method
                 && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
@@ -2909,6 +2911,22 @@ impl Interpreter {
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);
             }
+            "keys" if args.is_empty() => match target {
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => {
+                    let keys = match attributes.get("symbols") {
+                        Some(Value::Hash(map)) => {
+                            map.keys().cloned().map(Value::Str).collect::<Vec<Value>>()
+                        }
+                        _ => Vec::new(),
+                    };
+                    return Ok(Value::array(keys));
+                }
+                _ => {}
+            },
             "values" if args.is_empty() => match target {
                 Value::Capture { positional, named } => {
                     let mut vals = positional.clone();
@@ -2922,6 +2940,32 @@ impl Interpreter {
                 _ => return Ok(Value::array(Vec::new())),
             },
             "AT-KEY" if args.len() == 1 => match (&target, &args[0]) {
+                (
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    },
+                    idx,
+                ) if class_name == "Stash" => {
+                    let key = idx.to_string_value();
+                    if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
+                        if let Some(value) = symbols.get(&key) {
+                            return Ok(value.clone());
+                        }
+                        if !key.starts_with('$')
+                            && !key.starts_with('@')
+                            && !key.starts_with('%')
+                            && !key.starts_with('&')
+                        {
+                            let scalar = format!("${key}");
+                            if let Some(value) = symbols.get(&scalar) {
+                                return Ok(value.clone());
+                            }
+                        }
+                    }
+                    return Ok(Value::Nil);
+                }
                 (Value::Pair(key, value), idx) => {
                     if key == &idx.to_string_value() {
                         return Ok(*value.clone());

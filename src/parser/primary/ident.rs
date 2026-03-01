@@ -817,6 +817,99 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+fn is_require_terminator(input: &str) -> bool {
+    let trimmed = input.trim_start();
+    trimmed.is_empty()
+        || trimmed.starts_with(';')
+        || trimmed.starts_with('}')
+        || trimmed.starts_with(')')
+        || trimmed.starts_with(']')
+        || is_stmt_modifier_ahead(trimmed)
+}
+
+fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
+    let (mut rest, _) = ws1(rest)?;
+    let (r_target, target_raw) =
+        if let Ok((r_mod, mod_name)) = super::super::stmt::parse_sub_name_pub(rest) {
+            if r_mod.starts_with(":file(") {
+                (
+                    r_mod,
+                    Expr::Literal(Value::Package(normalize_raku_identifier(&mod_name))),
+                )
+            } else {
+                super::super::expr::term_expr(rest)?
+            }
+        } else {
+            super::super::expr::term_expr(rest)?
+        };
+    let module_name_for_parse = match &target_raw {
+        Expr::BareWord(name) => Some(name.clone()),
+        Expr::Literal(Value::Package(name)) => Some(name.clone()),
+        Expr::Literal(Value::Str(name)) => Some(name.clone()),
+        _ => None,
+    };
+    let target = if let Expr::BareWord(name) = target_raw {
+        Expr::Literal(Value::Package(name))
+    } else {
+        target_raw
+    };
+    rest = r_target;
+
+    let mut args = vec![target];
+
+    if let Some(module_name) = module_name_for_parse {
+        let is_path_like = module_name.ends_with(".rakumod")
+            || module_name.ends_with(".pm6")
+            || module_name.contains('/')
+            || module_name.contains('\\');
+        if !is_path_like {
+            crate::parser::stmt::simple::register_module_exports(&module_name);
+        }
+    }
+
+    let (r_ws, _) = ws(rest)?;
+    rest = r_ws;
+    if let Some(after_file) = rest.strip_prefix(":file(") {
+        let (r, _) = ws(after_file)?;
+        let (r, file_expr) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(
+                "__mutsu_require_file".to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(file_expr),
+        });
+        rest = r;
+    }
+
+    loop {
+        let ws_start = rest;
+        let (r, _) = ws(rest)?;
+        let consumed = &ws_start[..ws_start.len().saturating_sub(r.len())];
+        if consumed.contains('\n') {
+            rest = r;
+            break;
+        }
+        rest = r;
+        if is_require_terminator(rest) {
+            break;
+        }
+        if rest.starts_with('<') {
+            let (r, import_expr) = super::super::primary::primary(rest)?;
+            args.push(import_expr);
+            rest = r;
+            continue;
+        }
+        let (r, import_expr) = parse_listop_arg(rest)?;
+        args.push(import_expr);
+        rest = r;
+    }
+
+    Ok((rest, make_call_expr("require".to_string(), input, args)))
+}
+
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
@@ -1182,6 +1275,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 ));
             }
         }
+        "require" => {
+            return parse_require_expr(input, rest);
+        }
         "last" => {
             return Ok((
                 rest,
@@ -1232,11 +1328,35 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let mut r = rest;
         while r.starts_with("::") {
             let after = &r[2..];
+            if let Some(after_brace) = after.strip_prefix('{') {
+                let (r2, _) = ws(after_brace)?;
+                let (r2, key_expr) = expression(r2)?;
+                let (r2, _) = ws(r2)?;
+                let (r2, _) = parse_char(r2, '}')?;
+                let stash_name = format!("{full_name}::");
+                return Ok((
+                    r2,
+                    Expr::Index {
+                        target: Box::new(Expr::PseudoStash(stash_name)),
+                        index: Box::new(key_expr),
+                    },
+                ));
+            }
             // Handle ::<SYMBOL> subscript syntax (e.g., CORE::<&run>)
             if let Some(after_bracket) = after.strip_prefix('<')
                 && let Some(end) = after_bracket.find('>')
             {
                 let symbol = &after_bracket[..end];
+                if matches!(symbol.chars().next(), Some('$' | '@' | '%' | '&')) {
+                    let stash_name = format!("{full_name}::");
+                    return Ok((
+                        &after_bracket[end + 1..],
+                        Expr::Index {
+                            target: Box::new(Expr::PseudoStash(stash_name)),
+                            index: Box::new(Expr::Literal(Value::Str(symbol.to_string()))),
+                        },
+                    ));
+                }
                 full_name.push_str("::");
                 full_name.push_str(symbol);
                 r = &after_bracket[end + 1..];

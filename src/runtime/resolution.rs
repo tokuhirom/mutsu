@@ -410,7 +410,14 @@ impl Interpreter {
             },
             other => other,
         };
-        if let Value::Routine { name, .. } = &func {
+        if let Value::Routine { package, name, .. } = &func {
+            // Try fully-qualified name first (e.g. "A::foo"), then bare name
+            if !package.is_empty() && package != "GLOBAL" {
+                let fq = format!("{package}::{name}");
+                if self.resolve_function(&fq).is_some() {
+                    return self.call_function(&fq, args);
+                }
+            }
             return self.call_function(name, args);
         }
         if let Value::Sub(data) = func {

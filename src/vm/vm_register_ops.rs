@@ -511,9 +511,12 @@ impl VM {
             {
                 self.interpreter.register_cunion_class(&resolved_name);
             }
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), Value::Package(resolved_name));
+            // Register the class name in the lexical env so that
+            // ::("ClassName") indirect lookups can find it in the current scope.
+            let env = self.interpreter.env_mut();
+            env.insert("_".to_string(), Value::Package(resolved_name.clone()));
+            env.entry(resolved_name.clone())
+                .or_insert(Value::Package(resolved_name));
             self.sync_locals_from_env(code);
             Ok(())
         } else {

@@ -798,7 +798,8 @@ pub(in crate::parser) fn is_test_assertion_callable(name: &str) -> bool {
 /// Push a new lexical scope (called when entering a `{ }` block).
 pub(in crate::parser) fn push_scope() {
     SCOPES.with(|s| {
-        s.borrow_mut().push(LexicalScope::default());
+        let inherited = s.borrow().last().cloned().unwrap_or_default();
+        s.borrow_mut().push(inherited);
     });
 }
 
