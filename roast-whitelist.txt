@@ -42,7 +42,6 @@ roast/S02-magicals/dollar_bang.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
-roast/S02-names-vars/list_array_perl.t
 roast/S02-names-vars/signature.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
