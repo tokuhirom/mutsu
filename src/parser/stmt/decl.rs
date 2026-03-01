@@ -5,6 +5,7 @@ use super::super::parse_result::{
 };
 
 use crate::ast::{AssignOp, Expr, Stmt};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -204,7 +205,7 @@ fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
 
     Expr::MethodCall {
         target: Box::new(Expr::BareWord("Array".to_string())),
-        name: "new".to_string(),
+        name: Symbol::intern("new"),
         args: vec![Expr::Binary {
             left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
             op: TokenKind::FatArrow,
@@ -228,7 +229,7 @@ fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
 
     Expr::MethodCall {
         target: Box::new(Expr::BareWord("Array".to_string())),
-        name: "new".to_string(),
+        name: Symbol::intern("new"),
         args: vec![
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
@@ -826,7 +827,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (rest, mut expr) = parse_assign_expr_or_comma(rest)?;
         if is_array {
             expr = Expr::Call {
-                name: "__mutsu_feed_array_assign".to_string(),
+                name: Symbol::intern("__mutsu_feed_array_assign"),
                 args: vec![expr],
             };
         }
@@ -1025,7 +1026,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
         let expr = Expr::MethodCall {
             target: Box::new(Expr::BareWord(target_name)),
-            name: method_name,
+            name: Symbol::intern(&method_name),
             args,
             modifier: None,
             quoted: false,
@@ -1058,7 +1059,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             && let Ok((r_after, arg_expr)) = parse_assign_expr_or_comma(tail)
         {
             expr = Expr::Call {
-                name: name.clone(),
+                name: Symbol::intern(name),
                 args: vec![arg_expr],
             };
             rest = r_after;
@@ -1203,7 +1204,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
         let rhs = if is_binding && !has_named {
             Expr::MethodCall {
                 target: Box::new(raw_rhs),
-                name: "list".to_string(),
+                name: Symbol::intern("list"),
                 args: vec![],
                 modifier: None,
                 quoted: false,

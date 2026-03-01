@@ -376,7 +376,7 @@ fn contains_whatever(expr: &Expr) -> bool {
         // on Whatever, they don't create WhateverCode. e.g. *.WHAT returns (Whatever).
         Expr::MethodCall { target, name, .. }
             if matches!(
-                name.as_str(),
+                name.resolve().as_str(),
                 "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "DEFINITE" | "VAR"
             ) && is_whatever(target) =>
         {
@@ -542,7 +542,7 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             quoted,
         } => Expr::MethodCall {
             target: Box::new(replace_whatever_numbered(target, counter)),
-            name: name.clone(),
+            name: *name,
             args: args.clone(),
             modifier: *modifier,
             quoted: *quoted,
@@ -583,7 +583,7 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
             quoted,
         } => Expr::MethodCall {
             target: Box::new(rename_var(target, old_name, new_name)),
-            name: name.clone(),
+            name: *name,
             args: args
                 .iter()
                 .map(|a| rename_var(a, old_name, new_name))
@@ -694,7 +694,7 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             quoted,
         } => Expr::MethodCall {
             target: Box::new(replace_whatever_single(target)),
-            name: name.clone(),
+            name: *name,
             args: args.clone(),
             modifier: *modifier,
             quoted: *quoted,

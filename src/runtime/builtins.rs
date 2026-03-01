@@ -975,7 +975,7 @@ impl Interpreter {
                 for arg in args {
                     eval_args.push(self.eval_block_value(&[Stmt::Expr(arg.clone())])?);
                 }
-                self.assign_named_sub_lvalue_with_values(name, eval_args, value)
+                self.assign_named_sub_lvalue_with_values(&name.resolve(), eval_args, value)
             }
             Expr::CallOn { target, args } => {
                 let callable = self.eval_block_value(&[Stmt::Expr(*target.clone())])?;

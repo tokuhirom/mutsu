@@ -2,6 +2,7 @@ use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_wh
 
 use crate::ast::Expr;
 use crate::regex_validate::validate_regex_syntax;
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -586,7 +587,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Call {
-                    name: "__mutsu_stub_die".to_string(),
+                    name: Symbol::intern("__mutsu_stub_die"),
                     args: vec![msg],
                 },
             ));
@@ -607,7 +608,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Call {
-                name: "__mutsu_stub_die".to_string(),
+                name: Symbol::intern("__mutsu_stub_die"),
                 args: vec![msg],
             },
         ));
@@ -627,7 +628,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Call {
-                name: "__mutsu_stub_warn".to_string(),
+                name: Symbol::intern("__mutsu_stub_warn"),
                 args: vec![msg],
             },
         ));
@@ -1086,7 +1087,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
         (r, None)
     };
     let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
-    let name = name.to_string();
+    let name = Symbol::intern(name);
     // Detect illegal space between method name and parens: .method (args) is Confused
     // Raku requires no space between method name and opening paren.
     if (rest.starts_with(' ') || rest.starts_with('\t')) && !rest.starts_with('\\') {

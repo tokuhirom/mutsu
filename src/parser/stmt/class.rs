@@ -3,6 +3,7 @@ use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_whi
 use super::super::primary::regex::scan_to_delim;
 
 use crate::ast::{Expr, ParamDef, Stmt};
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident};
@@ -64,7 +65,7 @@ fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> {
 
 fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
     Stmt::Expr(Expr::Call {
-        name: "__MUTSU_SET_META__".to_string(),
+        name: Symbol::intern("__MUTSU_SET_META__"),
         args: vec![
             Expr::Literal(Value::Str(type_name.to_string())),
             Expr::Literal(Value::Str(key.to_string())),
@@ -335,7 +336,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     };
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
-        name: "__MUTSU_UNREGISTER_CLASS__".to_string(),
+        name: Symbol::intern("__MUTSU_UNREGISTER_CLASS__"),
         args: vec![Expr::Literal(Value::Str(user_name))],
     });
     Ok((rest, Stmt::Block(vec![class_decl, unregister])))

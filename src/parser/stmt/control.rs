@@ -4,6 +4,7 @@ use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 
 use super::decl::parse_array_shape_suffix;
@@ -1528,7 +1529,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let cond = Expr::MethodCall {
         target: Box::new(cond_expr),
-        name: "defined".to_string(),
+        name: Symbol::intern("defined"),
         args: Vec::new(),
         modifier: None,
         quoted: false,
@@ -1557,7 +1558,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 
         let orwith_cond = Expr::MethodCall {
             target: Box::new(orwith_cond_expr),
-            name: "defined".to_string(),
+            name: Symbol::intern("defined"),
             args: Vec::new(),
             modifier: None,
             quoted: false,

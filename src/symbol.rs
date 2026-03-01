@@ -4,8 +4,26 @@ use std::sync::{OnceLock, RwLock};
 
 /// An interned symbol — a lightweight handle that supports O(1) equality
 /// comparison instead of byte-by-byte string comparison.
+///
+/// Symbol-to-Symbol comparison is O(1) integer comparison.
+/// Symbol-to-`&str` comparison falls back to a table lookup (for migration
+/// convenience — prefer Symbol-to-Symbol where possible).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
+
+impl PartialEq<&str> for Symbol {
+    fn eq(&self, other: &&str) -> bool {
+        let table = global_table().read().unwrap();
+        table.id_to_str[self.0 as usize] == *other
+    }
+}
+
+impl PartialEq<str> for Symbol {
+    fn eq(&self, other: &str) -> bool {
+        let table = global_table().read().unwrap();
+        table.id_to_str[self.0 as usize] == other
+    }
+}
 
 struct SymbolTable {
     str_to_id: FxHashMap<String, Symbol>,
@@ -47,14 +65,7 @@ impl Symbol {
         sym
     }
 
-    /// Look up the original string for this symbol.
-    pub fn as_str(&self) -> SymbolStr {
-        SymbolStr { sym: *self }
-    }
-
-    /// Get the string slice for this symbol.  Requires holding the read lock
-    /// briefly, so prefer [`as_str`](Self::as_str) when you need a displayable
-    /// value rather than calling this in a tight loop.
+    /// Resolve the symbol back to its string representation.
     pub fn resolve(&self) -> String {
         let table = global_table().read().unwrap();
         table.id_to_str[self.0 as usize].clone()
@@ -76,18 +87,6 @@ impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let table = global_table().read().unwrap();
         f.write_str(&table.id_to_str[self.0 as usize])
-    }
-}
-
-/// A thin wrapper returned by [`Symbol::as_str`] that implements `Display`
-/// without requiring the caller to hold a lock manually.
-pub struct SymbolStr {
-    sym: Symbol,
-}
-
-impl fmt::Display for SymbolStr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.sym.fmt(f)
     }
 }
 

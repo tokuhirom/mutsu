@@ -713,7 +713,7 @@ impl Compiler {
                             })
                             .collect();
                         self.compile_expr(&Expr::Call {
-                            name: name.clone(),
+                            name: Symbol::intern(name),
                             args: expr_args,
                         });
                         main_leaves_value = true;

@@ -5,6 +5,7 @@ use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
 use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -79,7 +80,7 @@ fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
         _ => Expr::Literal(Value::Nil),
     };
     Expr::Call {
-        name: "__mutsu_subscript_adverb".to_string(),
+        name: Symbol::intern("__mutsu_subscript_adverb"),
         args: vec![
             *target,
             *index,
@@ -363,7 +364,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "__mutsu_atomic_pre_inc_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_pre_inc_var"),
                     args: vec![Expr::Literal(Value::Str(name))],
                 },
             ));
@@ -382,7 +383,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "__mutsu_atomic_pre_dec_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_pre_dec_var"),
                     args: vec![Expr::Literal(Value::Str(name))],
                 },
             ));
@@ -401,7 +402,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "__mutsu_atomic_fetch_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_fetch_var"),
                     args: vec![Expr::Literal(Value::Str(name))],
                 },
             ));
@@ -431,7 +432,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 after,
                 Expr::Call {
-                    name: format!("prefix:<({})>", op),
+                    name: Symbol::intern(&format!("prefix:<({})>", op)),
                     args: vec![arg],
                 },
             ));
@@ -459,7 +460,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             _ => prefix_expr(rest)?,
         };
         let mut result = Expr::Call {
-            name,
+            name: Symbol::intern(&name),
             args: vec![arg],
         };
         // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
@@ -471,7 +472,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
                     let after = &rest[post_len..];
                     result = Expr::Call {
-                        name: post_name,
+                        name: Symbol::intern(&post_name),
                         args: vec![result],
                     };
                     rest = after;
@@ -502,7 +503,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Call {
-                    name: "__mutsu_hyper_prefix".to_string(),
+                    name: Symbol::intern("__mutsu_hyper_prefix"),
                     args: vec![Expr::Literal(Value::Str(symbol.to_string())), arg],
                 },
             ));
@@ -888,7 +889,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if let Ok((r, name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
-                let name = name.to_string();
+                let name = Symbol::intern(name);
                 // Detect illegal space between method name and parens
                 if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
                     let after_ws = r.trim_start_matches([' ', '\t']);
@@ -976,7 +977,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     QuotedMethodName::Static(name) => {
                         expr = Expr::MethodCall {
                             target: Box::new(expr),
-                            name,
+                            name: Symbol::intern(&name),
                             args,
                             modifier,
                             quoted: true,
@@ -1053,7 +1054,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let after = &r[len..];
                 if is_postfix_operator_boundary(after) {
                     expr = Expr::Call {
-                        name: format!("postfix:<{op}>"),
+                        name: Symbol::intern(&format!("postfix:<{op}>")),
                         args: vec![expr],
                     };
                     rest = after;
@@ -1067,6 +1068,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if rest.starts_with('!') && !rest.starts_with("!=") {
             let after_bang = &rest[1..];
             if let Some((r, name)) = parse_private_method_name(after_bang) {
+                let name = Symbol::intern(&name);
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
@@ -1103,7 +1105,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let (r, _) = parse_char(r, ')')?;
             let who = Expr::MethodCall {
                 target: Box::new(expr),
-                name: "WHO".to_string(),
+                name: Symbol::intern("WHO"),
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
@@ -1218,7 +1220,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let r = &r[2..];
                 expr = Expr::MethodCall {
                     target: Box::new(indexed_expr),
-                    name: "values".to_string(),
+                    name: Symbol::intern("values"),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
@@ -1251,7 +1253,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let (r, _) = parse_char(r, '}')?;
             expr = Expr::MethodCall {
                 target: Box::new(expr),
-                name: "new".to_string(),
+                name: Symbol::intern("new"),
                 args,
                 modifier: None,
                 quoted: false,
@@ -1355,7 +1357,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         target: Box::new(expr),
                         index: Box::new(index),
                     }),
-                    name: "DELETE-KEY".to_string(),
+                    name: Symbol::intern("DELETE-KEY"),
                     args: vec![],
                     modifier: None,
                     quoted: false,
@@ -1392,7 +1394,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = &r_adv2[7..];
                 expr = Expr::MethodCall {
                     target: Box::new(expr),
-                    name: "DELETE-KEY".to_string(),
+                    name: Symbol::intern("DELETE-KEY"),
                     args: vec![],
                     modifier: None,
                     quoted: false,
@@ -1408,7 +1410,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             rest = &r_delete[7..];
             expr = Expr::MethodCall {
                 target: Box::new(expr),
-                name: "DELETE-KEY".to_string(),
+                name: Symbol::intern("DELETE-KEY"),
                 args: vec![],
                 modifier: None,
                 quoted: false,
@@ -1437,7 +1439,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 };
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
-                    name: name.to_string(),
+                    name: Symbol::intern(name),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
@@ -1469,7 +1471,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let (r, _) = parse_char(r, ']')?;
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
-                    name: "AT-POS".to_string(),
+                    name: Symbol::intern("AT-POS"),
                     args: vec![index],
                     modifier: None,
                     quoted: false,
@@ -1522,7 +1524,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         };
                         expr = Expr::HyperMethodCall {
                             target: Box::new(expr),
-                            name: "AT-KEY".to_string(),
+                            name: Symbol::intern("AT-KEY"),
                             args,
                             modifier,
                             quoted: false,
@@ -1542,6 +1544,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     .map(|(rr, name)| (rr, name.to_string()))
             };
             if let Some((r, name)) = parsed_static_name {
+                let name = Symbol::intern(&name);
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
@@ -1586,7 +1589,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     QuotedMethodName::Static(name) => {
                         expr = Expr::HyperMethodCall {
                             target: Box::new(expr),
-                            name,
+                            name: Symbol::intern(&name),
                             args,
                             modifier,
                             quoted: true,
@@ -1678,7 +1681,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if r.starts_with(close_delim.as_str()) {
                 let r = &r[close_delim.len()..];
                 expr = Expr::Call {
-                    name,
+                    name: Symbol::intern(&name),
                     args: vec![expr, arg],
                 };
                 rest = r;
@@ -1691,7 +1694,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             rest = after_atomic;
             if let Some(name) = atomic_var_name(&expr) {
                 expr = Expr::Call {
-                    name: "__mutsu_atomic_post_inc_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_post_inc_var"),
                     args: vec![Expr::Literal(Value::Str(name))],
                 };
             } else {
@@ -1706,7 +1709,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             rest = after_atomic;
             if let Some(name) = atomic_var_name(&expr) {
                 expr = Expr::Call {
-                    name: "__mutsu_atomic_post_dec_var".to_string(),
+                    name: Symbol::intern("__mutsu_atomic_post_dec_var"),
                     args: vec![Expr::Literal(Value::Str(name))],
                 };
             } else {
@@ -1741,7 +1744,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     // Don't consume this postfix here; let it be consumed at prefix level
                 } else {
                     expr = Expr::Call {
-                        name,
+                        name: Symbol::intern(&name),
                         args: vec![expr],
                     };
                     rest = after;
@@ -1754,7 +1757,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {
                 expr = Expr::Call {
-                    name: format!("postfix:<{op}>"),
+                    name: Symbol::intern(&format!("postfix:<{op}>")),
                     args: vec![expr],
                 };
                 rest = after;
@@ -1791,7 +1794,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             rest = &rest[2..];
             expr = Expr::MethodCall {
                 target: Box::new(expr),
-                name: "i".to_string(),
+                name: Symbol::intern("i"),
                 args: vec![],
                 modifier: None,
                 quoted: false,
@@ -1802,7 +1805,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             rest = &rest[1..];
             expr = Expr::MethodCall {
                 target: Box::new(expr),
-                name: "i".to_string(),
+                name: Symbol::intern("i"),
                 args: vec![],
                 modifier: None,
                 quoted: false,

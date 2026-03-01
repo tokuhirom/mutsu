@@ -3,6 +3,7 @@ use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages};
 
 use crate::ast::{CallArg, Expr, Stmt};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -293,7 +294,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             let if_stmt = Stmt::If {
                 cond: Expr::MethodCall {
                     target: Box::new(Expr::Var("_".to_string())),
-                    name: "defined".to_string(),
+                    name: Symbol::intern("defined"),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
@@ -316,7 +317,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             body: vec![Stmt::If {
                 cond: Expr::MethodCall {
                     target: Box::new(Expr::Var("_".to_string())),
-                    name: "defined".to_string(),
+                    name: Symbol::intern("defined"),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
@@ -358,7 +359,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             op: TokenKind::Bang,
             expr: Box::new(Expr::MethodCall {
                 target: Box::new(Expr::Var("_".to_string())),
-                name: "defined".to_string(),
+                name: Symbol::intern("defined"),
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,

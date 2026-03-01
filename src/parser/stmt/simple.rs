@@ -12,6 +12,7 @@ use super::super::parse_result::{
 };
 
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -1232,7 +1233,7 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
         rest_after_args,
         Stmt::Expr(Expr::MethodCall {
             target: Box::new(target),
-            name: method_name.to_string(),
+            name: Symbol::intern(method_name),
             args,
             modifier: None,
             quoted: false,
@@ -1478,14 +1479,14 @@ fn method_lvalue_assign_expr(
         None => Expr::Literal(Value::Nil),
     });
     Expr::Call {
-        name: "__mutsu_assign_method_lvalue".to_string(),
+        name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
     }
 }
 
 fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr) -> Expr {
     Expr::Call {
-        name: "__mutsu_assign_named_sub_lvalue".to_string(),
+        name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
         args: vec![
             Expr::Literal(Value::Str(name)),
             Expr::ArrayLiteral(call_args),
@@ -1496,7 +1497,7 @@ fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr)
 
 fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
     Expr::Call {
-        name: "__mutsu_assign_callable_lvalue".to_string(),
+        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
     }
 }
@@ -1521,7 +1522,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         let stmt = Stmt::Expr(Expr::MethodCall {
             target: Box::new(Expr::Var("_".to_string())),
-            name: method_name,
+            name: Symbol::intern(&method_name),
             args,
             modifier: None,
             quoted: false,
@@ -1577,7 +1578,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         let make_rhs = |target: Expr| Expr::HyperMethodCall {
             target: Box::new(target),
-            name: method_name.clone(),
+            name: Symbol::intern(&method_name),
             args: method_args.clone(),
             modifier: None,
             quoted: false,
@@ -1669,7 +1670,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         let make_rhs = |target: Expr| Expr::MethodCall {
             target: Box::new(target),
-            name: method_name.clone(),
+            name: Symbol::intern(&method_name),
             args: method_args.clone(),
             modifier: None,
             quoted: false,
@@ -1737,7 +1738,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 // Non-lvalue targets still support `.=` dispatch in statement position,
                 // but must not sink the returned value.
                 let stmt = Stmt::Expr(Expr::Call {
-                    name: "sink".to_string(),
+                    name: Symbol::intern("sink"),
                     args: vec![make_rhs(expr)],
                 });
                 return parse_statement_modifier(r, stmt);
@@ -1814,7 +1815,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 value: Box::new(Expr::Call {
-                    name: "__mutsu_bind_index_value".to_string(),
+                    name: Symbol::intern("__mutsu_bind_index_value"),
                     args: vec![value],
                 }),
             });
@@ -1891,7 +1892,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let assigned = method_lvalue_assign_expr(
                 (**target).clone(),
                 target_var_name,
-                name.clone(),
+                name.resolve(),
                 args.clone(),
                 expr,
             );
@@ -1900,7 +1901,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         if let Expr::Call { name, args } = &target_expr {
             let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
-                name.clone(),
+                name.resolve(),
                 args.clone(),
                 expr,
             ));
@@ -1977,7 +1978,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 method_lvalue_assign_expr(
                     (**target).clone(),
                     target_var_name,
-                    name.clone(),
+                    name.resolve(),
                     args.clone(),
                     rhs,
                 )
@@ -1987,7 +1988,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         if let Expr::Call { name, args } = &expr {
             let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
-                name.clone(),
+                name.resolve(),
                 args.clone(),
                 rhs,
             ));
@@ -2107,7 +2108,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let assigned_value = if matches!(op, super::assign::CompoundAssignOp::DefinedOr) {
                 Expr::Ternary {
                     cond: Box::new(Expr::Call {
-                        name: "defined".to_string(),
+                        name: Symbol::intern("defined"),
                         args: vec![lhs_expr.clone()],
                     }),
                     then_expr: Box::new(lhs_expr.clone()),
@@ -2316,7 +2317,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 rhs_rest,
                 Stmt::TempMethodAssign {
                     var_name: var_name.clone(),
-                    method_name: name,
+                    method_name: name.resolve(),
                     method_args: args,
                     value: rhs_expr,
                 },
