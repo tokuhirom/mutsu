@@ -937,12 +937,12 @@ fn extract_exported_names(source: &str) -> Vec<String> {
             Stmt::SubDecl {
                 name, is_export, ..
             } if *is_export => {
-                names.insert(name.clone());
+                names.insert(name.resolve());
             }
             Stmt::ProtoDecl {
                 name, is_export, ..
             } if *is_export => {
-                names.insert(name.clone());
+                names.insert(name.resolve());
             }
             _ => {}
         }
@@ -2465,6 +2465,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             ))),
         });
     }
-    let stmt = Stmt::Call { name, args };
+    let stmt = Stmt::Call {
+        name: Symbol::intern(&name),
+        args,
+    };
     parse_statement_modifier(rest, stmt)
 }

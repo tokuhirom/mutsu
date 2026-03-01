@@ -283,7 +283,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 r_tail = after_comma;
             }
             stmt_for_branch = Stmt::Call {
-                name: name.clone(),
+                name: *name,
                 args: call_args,
             };
         }
@@ -349,7 +349,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 r_tail = after_comma;
             }
             stmt_for_branch = Stmt::Call {
-                name: name.clone(),
+                name: *name,
                 args: call_args,
             };
         }

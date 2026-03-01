@@ -325,7 +325,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, body) = block(r)?;
     let class_decl = Stmt::ClassDecl {
-        name: user_name.clone(),
+        name: Symbol::intern(&user_name),
         name_expr: None,
         parents,
         is_hidden: false,
@@ -434,7 +434,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         })
     });
     let class_stmt = Stmt::ClassDecl {
-        name: name.clone(),
+        name: Symbol::intern(&name),
         name_expr,
         parents,
         is_hidden,
@@ -640,17 +640,22 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         body.insert(
             0,
             Stmt::DoesDecl {
-                name: "__mutsu_role_hidden__".to_string(),
+                name: Symbol::intern("__mutsu_role_hidden__"),
             },
         );
     }
     for role_name in parent_roles.into_iter().rev() {
-        body.insert(0, Stmt::DoesDecl { name: role_name });
+        body.insert(
+            0,
+            Stmt::DoesDecl {
+                name: Symbol::intern(&role_name),
+            },
+        );
     }
     Ok((
         rest,
         Stmt::RoleDecl {
-            name,
+            name: Symbol::intern(&name),
             type_params,
             type_param_defs,
             body,
@@ -665,7 +670,12 @@ pub(super) fn does_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = parse_token_like_name(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::DoesDecl { name }))
+    Ok((
+        rest,
+        Stmt::DoesDecl {
+            name: Symbol::intern(&name),
+        },
+    ))
 }
 
 /// Parse `trusts` declaration.
@@ -675,7 +685,12 @@ pub(super) fn trusts_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::TrustsDecl { name }))
+    Ok((
+        rest,
+        Stmt::TrustsDecl {
+            name: Symbol::intern(&name),
+        },
+    ))
 }
 
 /// Parse a `token`, `regex`, or `rule` declaration.
@@ -725,7 +740,7 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         Ok((
             rest,
             Stmt::RuleDecl {
-                name,
+                name: Symbol::intern(&name),
                 params,
                 param_defs,
                 body,
@@ -736,7 +751,7 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         Ok((
             rest,
             Stmt::TokenDecl {
-                name,
+                name: Symbol::intern(&name),
                 params,
                 param_defs,
                 body,
@@ -767,7 +782,13 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         r = r2;
     }
     let (rest, body) = block(r)?;
-    Ok((rest, Stmt::Package { name, body }))
+    Ok((
+        rest,
+        Stmt::Package {
+            name: Symbol::intern(&name),
+            body,
+        },
+    ))
 }
 
 /// Parse `module Name { ... }` declaration (non-unit form).
@@ -785,7 +806,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         }
     }
     let package_stmt = Stmt::Package {
-        name: name.clone(),
+        name: Symbol::intern(&name),
         body,
     };
     if stmts.is_empty() {
@@ -808,7 +829,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             r,
             Stmt::ClassDecl {
-                name,
+                name: Symbol::intern(&name),
                 name_expr: None,
                 parents: Vec::new(),
                 is_hidden: false,
@@ -827,7 +848,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::Package {
-            name,
+            name: Symbol::intern(&name),
             body: Vec::new(),
         },
     ))
@@ -841,7 +862,13 @@ pub(super) fn package_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
-    Ok((rest, Stmt::Package { name, body }))
+    Ok((
+        rest,
+        Stmt::Package {
+            name: Symbol::intern(&name),
+            body,
+        },
+    ))
 }
 
 /// Parse `proto` declaration.
@@ -888,7 +915,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             rest,
             Stmt::ProtoDecl {
-                name,
+                name: Symbol::intern(&name),
                 params,
                 param_defs,
                 body,
@@ -901,7 +928,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::ProtoDecl {
-            name,
+            name: Symbol::intern(&name),
             params,
             param_defs,
             body,

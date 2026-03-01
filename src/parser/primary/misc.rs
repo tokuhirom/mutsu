@@ -1240,12 +1240,17 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, mut body) = parse_block_body(rest)?;
     // Insert DoesDecl statements at the beginning of the body for `does` clauses
     for role_name in does_roles.into_iter().rev() {
-        body.insert(0, Stmt::DoesDecl { name: role_name });
+        body.insert(
+            0,
+            Stmt::DoesDecl {
+                name: Symbol::intern(&role_name),
+            },
+        );
     }
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
-            name,
+            name: Symbol::intern(&name),
             name_expr: None,
             parents,
             is_hidden: false,
@@ -1267,7 +1272,13 @@ pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
     let name = format!("__ANON_GRAMMAR_{id}__");
     let (rest, body) = parse_block_body(rest)?;
-    Ok((rest, Expr::DoStmt(Box::new(Stmt::Package { name, body }))))
+    Ok((
+        rest,
+        Expr::DoStmt(Box::new(Stmt::Package {
+            name: Symbol::intern(&name),
+            body,
+        })),
+    ))
 }
 
 /// Parse an anonymous role expression: `role { ... }` or `role :: { ... }`
@@ -1291,7 +1302,7 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
-            name,
+            name: Symbol::intern(&name),
             type_params: Vec::new(),
             type_param_defs: Vec::new(),
             body,

@@ -167,7 +167,7 @@ impl VM {
                     .eval_block_value(&[Stmt::Expr(expr.clone())])?
                     .to_string_value()
             } else {
-                name.clone()
+                name.resolve()
             };
             self.interpreter.register_sub_decl(
                 &resolved_name,
@@ -231,8 +231,13 @@ impl VM {
                 body,
                 multi,
             } => {
-                self.interpreter
-                    .register_token_decl(name, params, param_defs, body, *multi);
+                self.interpreter.register_token_decl(
+                    &name.resolve(),
+                    params,
+                    param_defs,
+                    body,
+                    *multi,
+                );
                 Ok(())
             }
             _ => Err(RuntimeError::new(
@@ -256,11 +261,12 @@ impl VM {
             custom_traits,
         } = stmt
         {
+            let name_str = name.resolve();
             self.interpreter
-                .register_proto_decl(name, params, param_defs, body)?;
+                .register_proto_decl(&name_str, params, param_defs, body)?;
             if *is_export {
                 self.interpreter
-                    .register_proto_decl_as_global(name, params, param_defs, body)?;
+                    .register_proto_decl_as_global(&name_str, params, param_defs, body)?;
             }
             // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
             if !custom_traits.is_empty()
@@ -270,7 +276,7 @@ impl VM {
                 for trait_name in custom_traits {
                     let sub_val = Value::make_sub(
                         self.interpreter.current_package().to_string(),
-                        name.clone(),
+                        name_str.clone(),
                         params.clone(),
                         param_defs.clone(),
                         body.clone(),
@@ -303,7 +309,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::ProtoToken { name } = stmt {
-            self.interpreter.register_proto_token_decl(name);
+            self.interpreter.register_proto_token_decl(&name.resolve());
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterProtoToken expects ProtoToken"))
@@ -459,11 +465,11 @@ impl VM {
             is_export,
         } = stmt
         {
-            let result = self
-                .interpreter
-                .register_enum_decl(name, variants, *is_export)?;
+            let result =
+                self.interpreter
+                    .register_enum_decl(&name.resolve(), variants, *is_export)?;
             // For anonymous enums, push the Map result onto the stack
-            if name.is_empty() {
+            if name.resolve().is_empty() {
                 self.stack.push(result);
             }
             self.sync_locals_from_env(code);
@@ -495,7 +501,7 @@ impl VM {
                     .eval_block_value(&[Stmt::Expr(expr.clone())])?
                     .to_string_value()
             } else {
-                name.clone()
+                name.resolve()
             };
             self.interpreter.register_class_decl(
                 &resolved_name,
@@ -537,11 +543,12 @@ impl VM {
             body,
         } = stmt
         {
+            let name_str = name.resolve();
             self.interpreter
-                .register_role_decl(name, type_params, type_param_defs, body)?;
+                .register_role_decl(&name_str, type_params, type_param_defs, body)?;
             self.interpreter
                 .env_mut()
-                .insert("_".to_string(), Value::Package(name.clone()));
+                .insert("_".to_string(), Value::Package(name_str));
             self.sync_locals_from_env(code);
             Ok(())
         } else {
@@ -562,7 +569,7 @@ impl VM {
         } = stmt
         {
             self.interpreter
-                .register_subset_decl(name, base, predicate.as_ref());
+                .register_subset_decl(&name.resolve(), base, predicate.as_ref());
             self.sync_locals_from_env(code);
             Ok(())
         } else {
