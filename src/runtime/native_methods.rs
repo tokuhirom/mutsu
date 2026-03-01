@@ -365,7 +365,12 @@ pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds:
     }
 }
 
-pub(super) fn register_supplier_lines_tap(supplier_id: u64, tap: Value, chomp: bool, delay_seconds: f64) {
+pub(super) fn register_supplier_lines_tap(
+    supplier_id: u64,
+    tap: Value,
+    chomp: bool,
+    delay_seconds: f64,
+) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
             .or_default()
@@ -380,7 +385,10 @@ pub(super) fn register_supplier_lines_tap(supplier_id: u64, tap: Value, chomp: b
     }
 }
 
-pub(super) fn supplier_emit_callbacks(supplier_id: u64, emitted_value: &Value) -> Vec<(Value, Value, f64)> {
+pub(super) fn supplier_emit_callbacks(
+    supplier_id: u64,
+    emitted_value: &Value,
+) -> Vec<(Value, Value, f64)> {
     let mut callbacks = Vec::new();
     if let Ok(mut map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get_mut(&supplier_id)
@@ -445,7 +453,10 @@ pub(super) fn register_supplier_done_callback(supplier_id: u64, done_cb: Value) 
 }
 
 impl Interpreter {
-    pub(super) fn resolve_supply_delay_seconds(&self, arg: Option<&Value>) -> Result<f64, RuntimeError> {
+    pub(super) fn resolve_supply_delay_seconds(
+        &self,
+        arg: Option<&Value>,
+    ) -> Result<f64, RuntimeError> {
         let Some(value) = arg else {
             return Err(RuntimeError::new(
                 "Supply.delayed requires a delay argument",
@@ -1039,9 +1050,7 @@ impl Interpreter {
 
     // --- Supply immutable ---
 
-
     // --- Proc::Async mutable ---
-
 
     // --- Promise immutable ---
 
