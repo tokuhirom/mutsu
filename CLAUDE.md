@@ -230,6 +230,10 @@ Per-type method documentation — consult when implementing methods on specific 
 - The goal is broad language coverage, not gaming the pass count.
 - After making changes, always run `./scripts/roast-history.sh` to regenerate category lists and check for newly passing tests. Compare the new `tmp/roast-pass.txt` against the whitelist to find tests to add.
 
+## Trust the main branch
+
+The `main` branch is protected by GitHub branch protection rules — only PRs that pass CI (`make test` + `make roast`) can be merged. **Do NOT waste time checking whether a failing test also fails on `main`.** If a test fails on your feature branch, the problem is in your changes, not in `main`. Checking out `main` or running tests against it to "verify" is pointless and wastes AI resources.
+
 ## Checking `make roast` results
 
 ```
