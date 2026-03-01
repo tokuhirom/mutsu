@@ -670,7 +670,9 @@ impl Interpreter {
 
     pub(super) fn package_looks_like_grammar(&self, package_name: &str) -> bool {
         let prefix = format!("{package_name}::");
-        self.token_defs.keys().any(|key| key.starts_with(&prefix))
+        self.token_defs
+            .keys()
+            .any(|key| key.resolve().starts_with(&prefix))
     }
 
     pub(super) fn dispatch_classhow_methods(

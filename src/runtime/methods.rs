@@ -467,10 +467,11 @@ impl Interpreter {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         for (key, def) in &self.functions {
-            if key == &exact_local
-                || key == &exact_global
-                || key.starts_with(&prefix_local)
-                || key.starts_with(&prefix_global)
+            let key_s = key.resolve();
+            if key_s == exact_local
+                || key_s == exact_global
+                || key_s.starts_with(&prefix_local)
+                || key_s.starts_with(&prefix_global)
             {
                 let fp =
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);

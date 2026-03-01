@@ -13,17 +13,21 @@ impl Interpreter {
 
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
-            return self.functions.get(name).cloned();
+            return self.functions.get(&Symbol::intern(name)).cloned();
         }
         let local = format!("{}::{}", self.current_package, name);
         self.functions
-            .get(&local)
+            .get(&Symbol::intern(&local))
             .cloned()
-            .or_else(|| self.functions.get(&format!("GLOBAL::{}", name)).cloned())
+            .or_else(|| {
+                self.functions
+                    .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
+                    .cloned()
+            })
     }
 
     pub(super) fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
-        let key = format!("{}::{}", self.current_package, name);
+        let key = Symbol::intern(&format!("{}::{}", self.current_package, name));
         if multi {
             self.token_defs.entry(key).or_default().push(def);
         } else {
@@ -34,18 +38,19 @@ impl Interpreter {
     pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();
-            if let Some(exact) = self.token_defs.get(name) {
+            if let Some(exact) = self.token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
             }
             let sym_prefix = format!("{name}:sym<");
-            let mut sym_keys: Vec<&String> = self
+            let mut sym_keys: Vec<String> = self
                 .token_defs
                 .keys()
+                .map(|key| key.resolve())
                 .filter(|key| key.starts_with(&sym_prefix))
                 .collect();
             sym_keys.sort();
-            for key in sym_keys {
-                if let Some(sym_defs) = self.token_defs.get(key) {
+            for key in &sym_keys {
+                if let Some(sym_defs) = self.token_defs.get(&Symbol::intern(key)) {
                     defs.extend(sym_defs.clone());
                 }
             }
@@ -54,18 +59,19 @@ impl Interpreter {
         let mut defs = Vec::new();
         for scope in [&self.current_package, "GLOBAL"] {
             let exact_key = format!("{scope}::{name}");
-            if let Some(exact) = self.token_defs.get(&exact_key) {
+            if let Some(exact) = self.token_defs.get(&Symbol::intern(&exact_key)) {
                 defs.extend(exact.clone());
             }
             let sym_prefix = format!("{scope}::{name}:sym<");
-            let mut sym_keys: Vec<&String> = self
+            let mut sym_keys: Vec<String> = self
                 .token_defs
                 .keys()
+                .map(|key| key.resolve())
                 .filter(|key| key.starts_with(&sym_prefix))
                 .collect();
             sym_keys.sort();
-            for key in sym_keys {
-                if let Some(sym_defs) = self.token_defs.get(key) {
+            for key in &sym_keys {
+                if let Some(sym_defs) = self.token_defs.get(&Symbol::intern(key)) {
                     defs.extend(sym_defs.clone());
                 }
             }

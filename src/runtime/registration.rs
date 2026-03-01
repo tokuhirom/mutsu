@@ -553,7 +553,8 @@ impl Interpreter {
 
     pub(crate) fn has_declared_function(&self, name: &str) -> bool {
         let fq = format!("{}::{}", self.current_package, name);
-        self.functions.contains_key(&fq) || self.functions.contains_key(name)
+        self.functions.contains_key(&Symbol::intern(&fq))
+            || self.functions.contains_key(&Symbol::intern(name))
     }
 
     pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {
@@ -563,7 +564,9 @@ impl Interpreter {
     /// Check if a multi-dispatched function with the given name exists (any arity).
     pub(crate) fn has_multi_function(&self, name: &str) -> bool {
         let fq_slash = format!("{}::{}/", self.current_package, name);
-        self.functions.keys().any(|k| k.starts_with(&fq_slash))
+        self.functions
+            .keys()
+            .any(|k| k.resolve().starts_with(&fq_slash))
     }
 
     fn malformed_return_value_compile_error() -> RuntimeError {
@@ -721,8 +724,12 @@ impl Interpreter {
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
-        let has_single = self.functions.contains_key(&single_key);
-        let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
+        let single_key_sym = Symbol::intern(&single_key);
+        let has_single = self.functions.contains_key(&single_key_sym);
+        let has_multi = self
+            .functions
+            .keys()
+            .any(|k| k.resolve().starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
         let allow_lexical_shadow = self.block_scope_depth > 0;
         let code_var_key = format!("&{}", name);
@@ -738,7 +745,7 @@ impl Interpreter {
                 )));
             }
         }
-        if let Some(existing) = self.functions.get(&single_key) {
+        if let Some(existing) = self.functions.get(&single_key_sym) {
             let same = existing.package == new_def.package
                 && existing.name == new_def.name
                 && existing.params == new_def.params
@@ -769,7 +776,7 @@ impl Interpreter {
         }
         let existing_is_stub = self
             .functions
-            .get(&single_key)
+            .get(&single_key_sym)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
             if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
@@ -813,7 +820,7 @@ impl Interpreter {
                     type_sig.join(",")
                 );
                 if name == "trait_mod:<is>" {
-                    match self.functions.entry(typed_fq.clone()) {
+                    match self.functions.entry(Symbol::intern(&typed_fq)) {
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             entry.insert(def.clone());
                         }
@@ -822,7 +829,7 @@ impl Interpreter {
                             loop {
                                 let key = format!("{}__m{}", typed_fq, idx);
                                 if let std::collections::hash_map::Entry::Vacant(entry) =
-                                    self.functions.entry(key)
+                                    self.functions.entry(Symbol::intern(&key))
                                 {
                                     entry.insert(def.clone());
                                     break;
@@ -832,12 +839,13 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    self.functions.insert(typed_fq, def.clone());
+                    self.functions
+                        .insert(Symbol::intern(&typed_fq), def.clone());
                 }
             }
             let fq = format!("{}::{}/{}", self.current_package, name, arity);
             if !has_types || name == "trait_mod:<is>" {
-                match self.functions.entry(fq.clone()) {
+                match self.functions.entry(Symbol::intern(&fq)) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);
                     }
@@ -846,7 +854,7 @@ impl Interpreter {
                         loop {
                             let key = format!("{}__m{}", fq, idx);
                             if let std::collections::hash_map::Entry::Vacant(entry) =
-                                self.functions.entry(key)
+                                self.functions.entry(Symbol::intern(&key))
                             {
                                 entry.insert(def);
                                 break;
@@ -856,11 +864,11 @@ impl Interpreter {
                     }
                 }
             } else {
-                self.functions.entry(fq).or_insert(def);
+                self.functions.entry(Symbol::intern(&fq)).or_insert(def);
             }
         } else {
             let fq = format!("{}::{}", self.current_package, name);
-            self.functions.insert(fq, def);
+            self.functions.insert(Symbol::intern(&fq), def);
         }
         let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package, name);
         self.env.insert(
@@ -938,7 +946,7 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package, name);
-        if self.functions.contains_key(&key) {
+        if self.functions.contains_key(&Symbol::intern(&key)) {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
@@ -953,7 +961,7 @@ impl Interpreter {
         self.proto_subs.insert(key);
         let fq = format!("{}::{}", self.current_package, name);
         self.proto_functions.insert(
-            fq,
+            Symbol::intern(&fq),
             FunctionDef {
                 package: Symbol::intern(&self.current_package),
                 name: Symbol::intern(name),
@@ -1059,16 +1067,20 @@ impl Interpreter {
             return_type: return_type.cloned(),
         };
         let single_key = format!("GLOBAL::{}", name);
+        let single_key_sym = Symbol::intern(&single_key);
         let multi_prefix = format!("GLOBAL::{}/", name);
-        let has_single = self.functions.contains_key(&single_key);
-        let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
+        let has_single = self.functions.contains_key(&single_key_sym);
+        let has_multi = self
+            .functions
+            .keys()
+            .any(|k| k.resolve().starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
         if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
                 .insert(format!("GLOBAL::{}", name), assoc.clone());
         }
-        if let Some(existing) = self.functions.get(&single_key) {
+        if let Some(existing) = self.functions.get(&single_key_sym) {
             let same = existing.package == def.package
                 && existing.name == def.name
                 && existing.params == def.params
@@ -1087,7 +1099,7 @@ impl Interpreter {
         }
         let existing_is_stub = self
             .functions
-            .get(&single_key)
+            .get(&single_key_sym)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
             if has_single && !has_proto && !supersede {
@@ -1108,11 +1120,12 @@ impl Interpreter {
             let has_types = type_sig.iter().any(|t| *t != "Any");
             if has_types {
                 let typed_fq = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
-                self.functions.insert(typed_fq, def.clone());
+                self.functions
+                    .insert(Symbol::intern(&typed_fq), def.clone());
             }
             let fq = format!("GLOBAL::{}/{}", name, arity);
             if !has_types {
-                match self.functions.entry(fq.clone()) {
+                match self.functions.entry(Symbol::intern(&fq)) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);
                     }
@@ -1121,7 +1134,7 @@ impl Interpreter {
                         loop {
                             let key = format!("{}__m{}", fq, idx);
                             if let std::collections::hash_map::Entry::Vacant(entry) =
-                                self.functions.entry(key)
+                                self.functions.entry(Symbol::intern(&key))
                             {
                                 entry.insert(def);
                                 break;
@@ -1131,7 +1144,7 @@ impl Interpreter {
                     }
                 }
             } else {
-                self.functions.entry(fq).or_insert(def);
+                self.functions.entry(Symbol::intern(&fq)).or_insert(def);
             }
         } else {
             if has_multi && !has_proto && !supersede {
@@ -1147,7 +1160,7 @@ impl Interpreter {
                 )));
             }
             let fq = format!("GLOBAL::{}", name);
-            self.functions.insert(fq, def);
+            self.functions.insert(Symbol::intern(&fq), def);
         }
         let callable_key = format!("__mutsu_callable_id::GLOBAL::{}", name);
         self.env.insert(
@@ -1166,7 +1179,7 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
-        if self.functions.contains_key(&key) {
+        if self.functions.contains_key(&Symbol::intern(&key)) {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
@@ -1184,7 +1197,7 @@ impl Interpreter {
         }
         self.proto_subs.insert(key.clone());
         self.proto_functions.insert(
-            key,
+            Symbol::intern(&key),
             FunctionDef {
                 package: Symbol::intern("GLOBAL"),
                 name: Symbol::intern(name),
@@ -2110,7 +2123,8 @@ impl Interpreter {
                             empty_sig: false,
                             return_type: None,
                         };
-                        self.functions.insert(qualified_name, func_def);
+                        self.functions
+                            .insert(Symbol::intern(&qualified_name), func_def);
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {

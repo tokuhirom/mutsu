@@ -561,9 +561,10 @@ impl Interpreter {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
             let prefix_global = format!("GLOBAL::{}/", lookup_name);
-            self.functions
-                .keys()
-                .any(|k| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
+            self.functions.keys().any(|k| {
+                let ks = k.resolve();
+                ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
+            })
         } else {
             false
         };
@@ -800,7 +801,10 @@ impl Interpreter {
     fn has_package_members(&self, package: &str) -> bool {
         let prefix = format!("{package}::");
         self.env.keys().any(|k| k.starts_with(&prefix))
-            || self.functions.keys().any(|k| k.starts_with(&prefix))
+            || self
+                .functions
+                .keys()
+                .any(|k| k.resolve().starts_with(&prefix))
             || self.classes.keys().any(|k| k.starts_with(&prefix))
             || self.exported_subs.contains_key(package)
             || self.exported_vars.contains_key(package)
@@ -978,7 +982,8 @@ impl Interpreter {
         }
 
         for (key, def) in &self.functions {
-            let Some(rest) = Self::stash_member_tail(key, package_name) else {
+            let key_s = key.resolve();
+            let Some(rest) = Self::stash_member_tail(&key_s, package_name) else {
                 continue;
             };
             let base = rest.split('/').next().unwrap_or(rest);

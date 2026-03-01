@@ -38,11 +38,12 @@ impl Interpreter {
     fn collect_operator_sub_names(&self) -> Vec<String> {
         let mut names = Vec::new();
         for key in self.functions.keys() {
+            let key_s = key.resolve();
             // Strip package prefix if present (e.g. "GLOBAL::circumfix:<⌊ ⌋>")
-            let name = if let Some(pos) = key.rfind("::") {
-                &key[pos + 2..]
+            let name = if let Some(pos) = key_s.rfind("::") {
+                &key_s[pos + 2..]
             } else {
-                key.as_str()
+                key_s.as_str()
             };
             if name.starts_with("circumfix:") || name.starts_with("postcircumfix:") {
                 names.push(name.to_string());
