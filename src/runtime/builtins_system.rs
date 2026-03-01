@@ -344,6 +344,15 @@ impl Interpreter {
                 self.loaded_modules.insert(module.clone());
             }
         } else if let Some(module) = module_name.as_ref() {
+            // For `require`, force a full reload if the module was previously loaded
+            // but its functions were cleaned up by pop_import_scope (e.g. when
+            // a previous `require` happened inside a block that has since exited).
+            let prefix = format!("{module}::");
+            if self.loaded_modules.contains(module)
+                && !self.functions.keys().any(|k| k.starts_with(&prefix))
+            {
+                self.loaded_modules.remove(module);
+            }
             self.use_module(module)?;
         } else {
             return Err(RuntimeError::new("require expects a module name"));
