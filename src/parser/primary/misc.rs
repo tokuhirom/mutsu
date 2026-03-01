@@ -390,7 +390,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             attrs.insert("gist".to_string(), Value::Str(":()".to_string()));
             return Ok((
                 r,
-                Expr::Literal(Value::make_instance("Signature".to_string(), attrs)),
+                Expr::Literal(Value::make_instance(Symbol::intern("Signature"), attrs)),
             ));
         }
         loop {
@@ -472,7 +472,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             attrs.insert("gist".to_string(), Value::Str(sig));
             return Ok((
                 r_end,
-                Expr::Literal(Value::make_instance("Signature".to_string(), attrs)),
+                Expr::Literal(Value::make_instance(Symbol::intern("Signature"), attrs)),
             ));
         }
     }

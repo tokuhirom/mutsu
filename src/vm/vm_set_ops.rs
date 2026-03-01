@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl VM {
     fn integral_bigint(value: &Value) -> Option<num_bigint::BigInt> {
@@ -469,7 +470,7 @@ impl VM {
                 "message".to_string(),
                 Value::Str("Cannot coerce a lazy list onto a Set".to_string()),
             );
-            let ex = Value::make_instance("X::Cannot::Lazy".to_string(), attrs);
+            let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
             let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");
             err.exception = Some(Box::new(ex));
             return Err(err);

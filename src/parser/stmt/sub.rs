@@ -52,7 +52,7 @@ fn static_default_type(expr: &Expr) -> Option<String> {
         Expr::Literal(Value::Rat(_, _)) => Some("Rat".to_string()),
         Expr::Literal(Value::Bool(_)) => Some("Bool".to_string()),
         Expr::Literal(Value::Str(_)) => Some("Str".to_string()),
-        Expr::Literal(Value::Package(name)) => Some(name.clone()),
+        Expr::Literal(Value::Package(name)) => Some(name.resolve()),
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
         _ => None,
     }

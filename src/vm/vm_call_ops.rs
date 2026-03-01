@@ -391,12 +391,12 @@ impl VM {
             )
         {
             let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.as_str()),
-                Value::Package(name) => Some(name.as_str()),
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(cn, &method)
+                && self.interpreter.has_user_method(&cn, &method)
             {
                 skip_native = true;
             }
@@ -587,12 +587,12 @@ impl VM {
             )
         {
             let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.as_str()),
-                Value::Package(name) => Some(name.as_str()),
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.interpreter.has_user_method(cn, &method)
+                && self.interpreter.has_user_method(&cn, &method)
             {
                 skip_native = true;
             }
@@ -756,12 +756,12 @@ impl VM {
                 )
             {
                 let class_name = match item {
-                    Value::Instance { class_name, .. } => Some(class_name.as_str()),
-                    Value::Package(name) => Some(name.as_str()),
+                    Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                    Value::Package(name) => Some(name.resolve()),
                     _ => None,
                 };
                 if let Some(cn) = class_name
-                    && self.interpreter.has_user_method(cn, &method)
+                    && self.interpreter.has_user_method(&cn, &method)
                 {
                     skip_native = true;
                 }
@@ -773,7 +773,7 @@ impl VM {
                         if let Some(native_result) =
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                         {
-                            native_result.unwrap_or(Value::Package("Any".to_string()))
+                            native_result.unwrap_or(Value::Package(Symbol::intern("Any")))
                         } else {
                             match self
                                 .call_method_mut_with_temp_target(item, &method, item_args, idx)
@@ -782,7 +782,7 @@ impl VM {
                                     *item = updated;
                                     v
                                 }
-                                Err(_) => Value::Package("Any".to_string()),
+                                Err(_) => Value::Package(Symbol::intern("Any")),
                             }
                         }
                     } else {
@@ -791,7 +791,7 @@ impl VM {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::Package("Any".to_string()),
+                            Err(_) => Value::Package(Symbol::intern("Any")),
                         }
                     };
                     results.push(val);
@@ -929,7 +929,7 @@ impl VM {
                         results.push(
                             self.interpreter
                                 .call_sub_value(name_val.clone(), call_args, false)
-                                .unwrap_or(Value::Package("Any".to_string())),
+                                .unwrap_or(Value::Package(Symbol::intern("Any"))),
                         );
                     }
                     Some("+") => {
@@ -965,14 +965,14 @@ impl VM {
                     let val = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
-                        native_result.unwrap_or(Value::Package("Any".to_string()))
+                        native_result.unwrap_or(Value::Package(Symbol::intern("Any")))
                     } else {
                         match self.call_method_mut_with_temp_target(item, method, item_args, idx) {
                             Ok((v, updated)) => {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::Package("Any".to_string()),
+                            Err(_) => Value::Package(Symbol::intern("Any")),
                         }
                     };
                     results.push(val);

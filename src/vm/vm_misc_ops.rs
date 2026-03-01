@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReductionAssoc {
@@ -420,12 +421,14 @@ impl VM {
                         s
                     )),
                 );
-                let ex = Value::make_instance("X::Str::Numeric".to_string(), ex_attrs);
+                let ex = Value::make_instance(Symbol::intern("X::Str::Numeric"), ex_attrs);
                 let mut failure_attrs = std::collections::HashMap::new();
                 failure_attrs.insert("exception".to_string(), ex);
                 failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                self.stack
-                    .push(Value::make_instance("Failure".to_string(), failure_attrs));
+                self.stack.push(Value::make_instance(
+                    Symbol::intern("Failure"),
+                    failure_attrs,
+                ));
                 return Ok(());
             }
         }
@@ -553,7 +556,7 @@ impl VM {
         // When assigning Nil to a typed variable, reset to the type object
         let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
             if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
-                Value::Package(constraint)
+                Value::Package(Symbol::intern(&constraint))
             } else {
                 val
             }

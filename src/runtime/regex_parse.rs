@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use ::regex::Regex;
 use std::cell::RefCell;
 
@@ -1560,7 +1561,7 @@ impl Interpreter {
             let msg = "The use of hashes in regexes is reserved";
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-            let ex = Value::make_instance("X::Syntax::Reserved".to_string(), attrs);
+            let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
@@ -1666,7 +1667,7 @@ impl Interpreter {
         let msg = "Can't use a long name as a regex alias";
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-        let ex = Value::make_instance("X::Syntax::Regex::Alias::LongName".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Alias::LongName"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(ex));
         err
@@ -1677,7 +1678,7 @@ impl Interpreter {
         let msg = "Prohibited regex interpolation";
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-        let ex = Value::make_instance("X::SecurityPolicy".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::SecurityPolicy"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(ex));
         err

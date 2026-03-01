@@ -1,4 +1,5 @@
 #![allow(clippy::result_large_err)]
+use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -510,7 +511,7 @@ impl Interpreter {
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         env.insert(
             "*SCHEDULER".to_string(),
-            Value::make_instance("ThreadPoolScheduler".to_string(), HashMap::new()),
+            Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
         );
         let mut classes = HashMap::new();
         classes.insert(

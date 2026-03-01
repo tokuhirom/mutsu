@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn dispatch_promise_method(
@@ -18,7 +19,7 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("payload".to_string(), Value::Str(msg.clone()));
                     attrs.insert("message".to_string(), Value::Str(msg.clone()));
-                    let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     Err(err)
@@ -85,7 +86,7 @@ impl Interpreter {
                             "Access denied to keep/break this Promise; already vowed".to_string(),
                         ),
                     );
-                    let ex = Value::make_instance("X::Promise::Vowed".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
                     let mut err = RuntimeError::new(
                         "Access denied to keep/break this Promise; already vowed".to_string(),
                     );
@@ -108,7 +109,7 @@ impl Interpreter {
                             "Access denied to keep/break this Promise; already vowed".to_string(),
                         ),
                     );
-                    let ex = Value::make_instance("X::Promise::Vowed".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
                     let mut err = RuntimeError::new(
                         "Access denied to keep/break this Promise; already vowed".to_string(),
                     );
@@ -131,7 +132,7 @@ impl Interpreter {
                         )),
                     );
                     let ex = Value::make_instance(
-                        "X::Promise::CauseOnlyValidOnBroken".to_string(),
+                        Symbol::intern("X::Promise::CauseOnlyValidOnBroken"),
                         attrs,
                     );
                     let mut err = RuntimeError::new(format!(
@@ -146,8 +147,8 @@ impl Interpreter {
                     // Wrap in X::AdHoc if it's a plain string
                     let cause = match &result {
                         Value::Instance { class_name, .. }
-                            if class_name.contains("Exception")
-                                || class_name.starts_with("X::") =>
+                            if class_name.resolve().contains("Exception")
+                                || class_name.resolve().starts_with("X::") =>
                         {
                             result
                         }
@@ -161,7 +162,7 @@ impl Interpreter {
                                 "message".to_string(),
                                 Value::Str(result.to_string_value()),
                             );
-                            Value::make_instance("X::AdHoc".to_string(), attrs)
+                            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                         }
                     };
                     Ok(cause)
@@ -172,7 +173,7 @@ impl Interpreter {
                 // Return a simple Vow object
                 let mut attrs = HashMap::new();
                 attrs.insert("promise".to_string(), target.clone());
-                Ok(Value::make_instance("Promise::Vow".to_string(), attrs))
+                Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
             }
             "WHAT" => Ok(Value::Package(shared.class_name())),
             "raku" | "perl" => Ok(Value::Str(format!(
@@ -182,11 +183,11 @@ impl Interpreter {
             "Str" | "gist" => Ok(Value::Str(format!("Promise({})", shared.status()))),
             "isa" => {
                 let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                    Value::Package(name) => name,
+                    Value::Package(name) => name.resolve(),
                     Value::Str(name) => name,
                     other => other.to_string_value(),
                 };
-                let cn = shared.class_name();
+                let cn = shared.class_name().resolve();
                 let is_match = cn == target_name
                     || target_name == "Promise"
                     || target_name == "Any"
@@ -233,7 +234,7 @@ impl Interpreter {
             }
             "closed" => Ok(Value::Bool(ch.closed())),
             "Bool" => Ok(Value::Bool(true)),
-            "WHAT" => Ok(Value::Package("Channel".to_string())),
+            "WHAT" => Ok(Value::Package(Symbol::intern("Channel"))),
             "Str" | "gist" => Ok(Value::Str("Channel".to_string())),
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on Channel",

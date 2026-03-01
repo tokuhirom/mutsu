@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     fn inferred_operator_arity(name: &str) -> Option<usize> {
@@ -113,12 +114,12 @@ impl Interpreter {
         let exception = err.exception.as_deref().cloned().unwrap_or_else(|| {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::Str(err.message.clone()));
-            Value::make_instance("X::AdHoc".to_string(), attrs)
+            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
         });
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
         failure_attrs.insert("handled".to_string(), Value::Bool(false));
-        Value::make_instance("Failure".to_string(), failure_attrs)
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     fn malformed_return_value_error(&self, value: &Value) -> RuntimeError {
@@ -218,7 +219,7 @@ impl Interpreter {
         );
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(msg.clone()));
-        let exception = Value::make_instance("X::TypeCheck::Return".to_string(), attrs);
+        let exception = Value::make_instance(Symbol::intern("X::TypeCheck::Return"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(exception));
         err
@@ -233,7 +234,7 @@ impl Interpreter {
         );
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(msg.clone()));
-        let exception = Value::make_instance("X::Coerce::Impossible".to_string(), attrs);
+        let exception = Value::make_instance(Symbol::intern("X::Coerce::Impossible"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(exception));
         err
@@ -689,7 +690,7 @@ impl Interpreter {
         }
         // For instances, check class methods
         if let Value::Instance { class_name, .. } = value {
-            return self.class_has_method(class_name, method);
+            return self.class_has_method(&class_name.resolve(), method);
         }
         // Universal methods available on all values
         matches!(
@@ -772,7 +773,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::Str(package.to_string()));
         attrs.insert("symbols".to_string(), Value::hash(symbols));
-        Value::make_instance("Stash".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Stash"), attrs)
     }
 
     fn package_export_tag_parts(package: &str) -> Option<(&str, &str)> {
@@ -842,11 +843,11 @@ impl Interpreter {
             "message".to_string(),
             Value::Str(format!("No such symbol '{name}'")),
         );
-        let exception = Value::make_instance("X::AdHoc".to_string(), ex_attrs);
+        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
         failure_attrs.insert("handled".to_string(), Value::Bool(false));
-        Value::make_instance("Failure".to_string(), failure_attrs)
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     pub(crate) fn resolve_indirect_type_name(&self, name: &str) -> Value {
@@ -862,7 +863,7 @@ impl Interpreter {
             return value.clone();
         }
         if !self.method_class_stack.is_empty() && self.loaded_modules.contains(name) {
-            return Value::Package(name.to_string());
+            return Value::Package(Symbol::intern(name));
         }
 
         let mut parts = name.split("::").filter(|part| !part.is_empty());
@@ -878,7 +879,7 @@ impl Interpreter {
                     || self.has_class(first)
                     || self.is_role(first)))
         {
-            Value::Package(first.to_string())
+            Value::Package(Symbol::intern(first))
         } else {
             return Self::no_such_symbol_failure(name);
         };
@@ -886,7 +887,7 @@ impl Interpreter {
         for part in parts {
             current = match &current {
                 Value::Package(package) => {
-                    let stash = self.package_stash_value(package);
+                    let stash = self.package_stash_value(&package.resolve());
                     if let Some(value) = Self::stash_lookup_symbol(&stash, part) {
                         value
                     } else {
@@ -955,7 +956,10 @@ impl Interpreter {
             for tag in tags {
                 symbols.insert(
                     tag.clone(),
-                    Value::Package(Self::qualify_stash_name(package_name, &tag)),
+                    Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                        package_name,
+                        &tag,
+                    ))),
                 );
             }
             return Self::make_stash_instance(package, symbols);
@@ -997,16 +1001,22 @@ impl Interpreter {
             if rest.is_empty() || rest.contains("::") {
                 continue;
             }
-            symbols
-                .entry(rest.to_string())
-                .or_insert_with(|| Value::Package(Self::qualify_stash_name(package_name, rest)));
+            symbols.entry(rest.to_string()).or_insert_with(|| {
+                Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                    package_name,
+                    rest,
+                )))
+            });
         }
 
         if self.exported_subs.contains_key(package_name)
             || self.exported_vars.contains_key(package_name)
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
-                Value::Package(Self::qualify_stash_name(package_name, "EXPORT"))
+                Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                    package_name,
+                    "EXPORT",
+                )))
             });
         }
 

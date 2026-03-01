@@ -293,7 +293,7 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Empty", Value::Slip(std::sync::Arc::new(vec![]))) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("Any", Value::Package("Any".to_string())) {
+    if let Ok(r) = try_kw("Any", Value::Package(Symbol::intern("Any"))) {
         return Ok(r);
     }
     // Unicode: ∅ (U+2205 EMPTY SET)
@@ -862,7 +862,9 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             if r_mod.starts_with(":file(") {
                 (
                     r_mod,
-                    Expr::Literal(Value::Package(normalize_raku_identifier(&mod_name))),
+                    Expr::Literal(Value::Package(Symbol::intern(&normalize_raku_identifier(
+                        &mod_name,
+                    )))),
                 )
             } else {
                 super::super::expr::term_expr(rest)?
@@ -872,12 +874,12 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
         };
     let module_name_for_parse = match &target_raw {
         Expr::BareWord(name) => Some(name.clone()),
-        Expr::Literal(Value::Package(name)) => Some(name.clone()),
+        Expr::Literal(Value::Package(name)) => Some(name.resolve()),
         Expr::Literal(Value::Str(name)) => Some(name.clone()),
         _ => None,
     };
     let target = if let Expr::BareWord(name) = target_raw {
-        Expr::Literal(Value::Package(name))
+        Expr::Literal(Value::Package(Symbol::intern(&name)))
     } else {
         target_raw
     };

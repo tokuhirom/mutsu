@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     fn dynamic_name_alias(name: &str) -> Option<String> {
@@ -15,7 +16,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance("Pod::Block".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Block"), attrs)
     }
 
     fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
@@ -23,7 +24,7 @@ impl Interpreter {
         attrs.insert("name".to_string(), Value::Str(name.to_string()));
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance("Pod::Block::Named".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Block::Named"), attrs)
     }
 
     fn make_pod_heading(level: &str, contents: Vec<Value>) -> Value {
@@ -31,7 +32,7 @@ impl Interpreter {
         attrs.insert("level".to_string(), Value::Str(level.to_string()));
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance("Pod::Heading".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Heading"), attrs)
     }
 
     fn make_pod_comment(content: String) -> Value {
@@ -41,7 +42,7 @@ impl Interpreter {
             Value::array(vec![Value::Str(content)]),
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance("Pod::Block::Comment".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Block::Comment"), attrs)
     }
 
     fn make_pod_para(lines: Vec<String>) -> Value {
@@ -51,7 +52,7 @@ impl Interpreter {
             Value::array(lines.into_iter().map(Value::Str).collect::<Vec<_>>()),
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance("Pod::Block::Para".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
     }
 
     fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
@@ -59,7 +60,7 @@ impl Interpreter {
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         attrs.insert("level".to_string(), Value::Int(level));
-        Value::make_instance("Pod::Item".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Item"), attrs)
     }
 
     fn make_pod_table(rows: Vec<Vec<String>>) -> Value {
@@ -72,7 +73,7 @@ impl Interpreter {
         attrs.insert("headers".to_string(), Value::array(Vec::new()));
         attrs.insert("caption".to_string(), Value::Str(String::new()));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance("Pod::Block::Table".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Pod::Block::Table"), attrs)
     }
 
     fn is_pod_table_separator(line: &str) -> bool {
@@ -656,7 +657,7 @@ impl Interpreter {
         if bin {
             attrs.insert("bin".to_string(), Value::Bool(true));
         }
-        Value::make_instance("IO::Handle".to_string(), attrs)
+        Value::make_instance(Symbol::intern("IO::Handle"), attrs)
     }
 
     pub(super) fn mode_name(mode: IoHandleMode) -> &'static str {
@@ -670,7 +671,7 @@ impl Interpreter {
 
     pub(super) fn make_io_spec_instance(&self) -> Value {
         let attrs = HashMap::new();
-        Value::make_instance("IO::Spec".to_string(), attrs)
+        Value::make_instance(Symbol::intern("IO::Spec"), attrs)
     }
 
     pub(super) fn make_distro_instance() -> Value {
@@ -786,14 +787,14 @@ impl Interpreter {
         attrs.insert("version".to_string(), version);
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance("Blob".to_string(), HashMap::new()),
+            Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
         );
         attrs.insert("desc".to_string(), Value::Str(desc));
         attrs.insert("release".to_string(), Value::Str(release));
         attrs.insert("path-sep".to_string(), Value::Str(path_sep));
         attrs.insert("is-win".to_string(), Value::Bool(is_win));
 
-        Value::make_instance("Distro".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Distro"), attrs)
     }
 
     pub(super) fn parse_version_string(s: &str) -> Value {
@@ -834,7 +835,7 @@ impl Interpreter {
         );
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance("Blob".to_string(), {
+            Value::make_instance(Symbol::intern("Blob"), {
                 let mut a = HashMap::new();
                 a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
                 a
@@ -857,7 +858,7 @@ impl Interpreter {
                 Value::Str("browser".to_string()),
             ]),
         );
-        Value::make_instance("Perl".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Perl"), attrs)
     }
 
     pub(super) fn make_vm_instance() -> Value {
@@ -884,7 +885,7 @@ impl Interpreter {
             "precomp-target".to_string(),
             Value::Str("mutsu".to_string()),
         );
-        Value::make_instance("VM".to_string(), attrs)
+        Value::make_instance(Symbol::intern("VM"), attrs)
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
@@ -996,7 +997,7 @@ impl Interpreter {
     pub(crate) fn make_io_path_instance(&self, path: &str) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("path".to_string(), Value::Str(path.to_string()));
-        Value::make_instance("IO::Path".to_string(), attrs)
+        Value::make_instance(Symbol::intern("IO::Path"), attrs)
     }
 
     pub(super) fn collect_doc_comments(&mut self, input: &str) {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 /// Options extracted from named arguments for run/shell.
 struct ProcOptions {
@@ -229,8 +230,10 @@ impl Interpreter {
 
         let source_single = format!("{module}::{symbol}");
         if self.has_class(&source_single) || self.is_role(&source_single) {
-            self.env
-                .insert(symbol.to_string(), Value::Package(source_single.clone()));
+            self.env.insert(
+                symbol.to_string(),
+                Value::Package(Symbol::intern(&source_single)),
+            );
             self.env.insert(
                 format!("__mutsu_sigilless_readonly::{symbol}"),
                 Value::Bool(true),
@@ -239,7 +242,7 @@ impl Interpreter {
         }
         if self.has_class(symbol) || self.is_role(symbol) {
             self.env
-                .insert(symbol.to_string(), Value::Package(symbol.to_string()));
+                .insert(symbol.to_string(), Value::Package(Symbol::intern(symbol)));
             self.env.insert(
                 format!("__mutsu_sigilless_readonly::{symbol}"),
                 Value::Bool(true),
@@ -314,7 +317,7 @@ impl Interpreter {
         let module_value =
             module_value.ok_or_else(|| RuntimeError::new("require expects a module"))?;
         let module_string = match &module_value {
-            Value::Package(name) => name.clone(),
+            Value::Package(name) => name.resolve(),
             Value::Str(name) => name.clone(),
             value @ Value::Instance { .. } => Self::missing_symbol_name_from_failure(value)
                 .unwrap_or_else(|| value.to_string_value()),
@@ -364,7 +367,7 @@ impl Interpreter {
             && should_install_stub
         {
             self.env
-                .insert(module.clone(), Value::Package(module.clone()));
+                .insert(module.clone(), Value::Package(Symbol::intern(module)));
             if !imports.is_empty() {
                 self.require_import_symbols(module, &imports)?;
             }
@@ -378,7 +381,7 @@ impl Interpreter {
             Ok(Value::Str(module_string))
         } else {
             let name = module_name.unwrap_or(module_string);
-            Ok(Value::Package(name))
+            Ok(Value::Package(Symbol::intern(&name)))
         }
     }
 
@@ -438,14 +441,14 @@ impl Interpreter {
         if let Some(out_content) = captured_out {
             attrs.insert("out".to_string(), Self::make_io_pipe(out_content));
         }
-        Value::make_instance("Proc".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Proc"), attrs)
     }
 
     /// Create an IO::Pipe instance wrapping captured content.
     fn make_io_pipe(content: String) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("content".to_string(), Value::Str(content));
-        Value::make_instance("IO::Pipe".to_string(), attrs)
+        Value::make_instance(Symbol::intern("IO::Pipe"), attrs)
     }
 
     /// Extract named options (cwd, env, :err, :out) from arguments.
@@ -896,9 +899,9 @@ impl Interpreter {
                         // Preserve exception object if it's already an exception instance
                         match &result {
                             Value::Instance { class_name, .. }
-                                if class_name.starts_with("X::")
+                                if class_name.resolve().starts_with("X::")
                                     || class_name == "Exception"
-                                    || class_name.ends_with("Exception") =>
+                                    || class_name.resolve().ends_with("Exception") =>
                             {
                                 err.exception = Some(Box::new(result));
                             }
@@ -913,7 +916,7 @@ impl Interpreter {
                                     "message".to_string(),
                                     Value::Str(result.to_string_value()),
                                 );
-                                let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
+                                let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                                 err.exception = Some(Box::new(ex));
                             }
                         }
@@ -1013,7 +1016,7 @@ impl Interpreter {
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
-        Ok(Value::make_instance("Supply".to_string(), attrs))
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 }
 

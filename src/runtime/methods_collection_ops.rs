@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::{CallArg, ControlFlowKind};
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn dispatch_rotate(
@@ -128,7 +129,7 @@ impl Interpreter {
             attrs.insert("values".to_string(), Value::array(vals));
             attrs.insert("taps".to_string(), Value::array(Vec::new()));
             attrs.insert("live".to_string(), Value::Bool(false));
-            Value::make_instance("Supply".to_string(), attrs)
+            Value::make_instance(Symbol::intern("Supply"), attrs)
         };
 
         let compare_or_key_fn = args.first().cloned();
@@ -530,7 +531,7 @@ impl Interpreter {
                 attrs.insert("values".to_string(), Value::array(collate_sorted(values)));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
             Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sorted(items.to_vec())))),
             other => {
@@ -792,7 +793,7 @@ impl Interpreter {
             } if class_name == "Supply" => {
                 let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback")
                 {
-                    let emitter = Value::make_instance("Supplier".to_string(), {
+                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
@@ -825,7 +826,7 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or(Value::Bool(false)),
                 );
-                Ok(Value::make_instance("Supply".to_string(), attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
             Value::Array(items, is_array) => {
                 let (filtered, mutated_items) =
@@ -991,7 +992,7 @@ impl Interpreter {
         if matches!(positional.first(), Some(Value::Bool(_))) {
             let mut err = RuntimeError::new("Cannot use Bool as a matcher");
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Match::Bool".to_string(),
+                Symbol::intern("X::Match::Bool"),
                 std::collections::HashMap::new(),
             )));
             return Err(err);
@@ -1203,7 +1204,10 @@ impl Interpreter {
         attrs.insert("handle".to_string(), Value::Int(id as i64));
         attrs.insert("host".to_string(), Value::Str(host));
         attrs.insert("port".to_string(), Value::Int(port as i64));
-        Ok(Value::make_instance("IO::Socket::INET".to_string(), attrs))
+        Ok(Value::make_instance(
+            Symbol::intern("IO::Socket::INET"),
+            attrs,
+        ))
     }
 
     /// Replay deferred Proc::Async taps on the main thread.
@@ -1252,8 +1256,11 @@ impl Interpreter {
             Value::Package(name) => {
                 if name == "Promise" {
                     Some("Promise".to_string())
-                } else if self.class_mro(name).contains(&"Promise".to_string()) {
-                    Some(name.clone())
+                } else if self
+                    .class_mro(&name.resolve())
+                    .contains(&"Promise".to_string())
+                {
+                    Some(name.resolve())
                 } else {
                     None
                 }
@@ -1284,12 +1291,15 @@ impl Interpreter {
                 .map(|s| Value::Str(s.clone()))
                 .collect();
             attrs.insert("alternative-names".to_string(), Value::array(alt_names));
-            Ok(Value::make_instance("Encoding::Builtin".to_string(), attrs))
+            Ok(Value::make_instance(
+                Symbol::intern("Encoding::Builtin"),
+                attrs,
+            ))
         } else {
             // Throw X::Encoding::Unknown
             let mut ex_attrs = HashMap::new();
             ex_attrs.insert("name".to_string(), Value::Str(name.clone()));
-            let ex = Value::make_instance("X::Encoding::Unknown".to_string(), ex_attrs);
+            let ex = Value::make_instance(Symbol::intern("X::Encoding::Unknown"), ex_attrs);
             let mut err = RuntimeError::new(format!("Unknown encoding '{}'", name));
             err.exception = Some(Box::new(ex));
             Err(err)
@@ -1326,8 +1336,10 @@ impl Interpreter {
             Err(conflicting_name) => {
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert("name".to_string(), Value::Str(conflicting_name.clone()));
-                let ex =
-                    Value::make_instance("X::Encoding::AlreadyRegistered".to_string(), ex_attrs);
+                let ex = Value::make_instance(
+                    Symbol::intern("X::Encoding::AlreadyRegistered"),
+                    ex_attrs,
+                );
                 let mut err = RuntimeError::new(format!(
                     "Encoding '{}' is already registered",
                     conflicting_name
@@ -1419,7 +1431,7 @@ impl Interpreter {
                                 count
                             )),
                         );
-                        let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+                        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
                         let mut err = RuntimeError::new(format!(
                             "X::OutOfRange: Expected non-negative count, got {}",
                             count
@@ -1606,7 +1618,7 @@ impl Interpreter {
                         "Rotoring gap is too large and causes an index below zero".to_string(),
                     ),
                 );
-                let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+                let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
                 let mut err =
                     RuntimeError::new("X::OutOfRange: Rotoring gap is too large".to_string());
                 err.exception = Some(Box::new(ex));

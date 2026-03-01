@@ -5,6 +5,7 @@ use crate::ast::Stmt;
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
+use crate::symbol::Symbol;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat};
 use num_traits::{Signed, Zero};
 
@@ -78,8 +79,8 @@ impl VM {
         err.is_fail = is_fail;
         if let Value::Instance { class_name, .. } = &value
             && (class_name == "Exception"
-                || class_name.starts_with("X::")
-                || class_name.starts_with("CX::"))
+                || class_name.resolve().starts_with("X::")
+                || class_name.resolve().starts_with("CX::"))
         {
             err.exception = Some(Box::new(value));
         }
@@ -440,11 +441,12 @@ impl VM {
                     let is_nil =
                         matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
                     if is_nil {
-                        let type_obj = Value::Package(
-                            self.interpreter
+                        let type_obj = Value::Package(Symbol::intern(
+                            &self
+                                .interpreter
                                 .var_type_constraint(&name)
                                 .unwrap_or(constraint.clone()),
-                        );
+                        ));
                         self.set_env_with_main_alias(&name, type_obj.clone());
                         self.update_local_if_exists(code, &name, &type_obj);
                     }
@@ -881,13 +883,13 @@ impl VM {
                 let val = self.stack.pop().unwrap();
                 // Check if the value has a user-defined .defined method
                 let class_name = match &val {
-                    Value::Package(name) => Some(name.clone()),
-                    Value::Instance { class_name, .. } => Some(class_name.clone()),
+                    Value::Package(name) => Some(*name),
+                    Value::Instance { class_name, .. } => Some(*class_name),
                     _ => None,
                 };
                 let has_user_defined = class_name
                     .as_ref()
-                    .is_some_and(|cn| self.interpreter.has_user_method(cn, "defined"));
+                    .is_some_and(|cn| self.interpreter.has_user_method(&cn.resolve(), "defined"));
                 let defined = if has_user_defined {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
@@ -896,7 +898,7 @@ impl VM {
                         _ => std::collections::HashMap::new(),
                     };
                     match self.interpreter.run_instance_method(
-                        &cn,
+                        &cn.resolve(),
                         attrs,
                         "defined",
                         Vec::new(),
@@ -1420,7 +1422,7 @@ impl VM {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.interpreter
                     .env_mut()
-                    .insert(name.clone(), Value::Package(name));
+                    .insert(name.clone(), Value::Package(Symbol::intern(&name)));
                 *ip += 1;
             }
 

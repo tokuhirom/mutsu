@@ -1,5 +1,6 @@
 use super::Value;
 use crate::ast::{Expr, ParamDef};
+use crate::symbol::Symbol;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -134,7 +135,7 @@ pub(crate) fn make_signature_value(info: SigInfo) -> Value {
         "params".to_string(),
         make_params_value_from_sig_params(&info.params),
     );
-    let val = Value::make_instance("Signature".to_string(), attrs);
+    let val = Value::make_instance(Symbol::intern("Signature"), attrs);
     // Register the SigInfo for later lookup (smartmatch, etc.)
     if let Value::Instance { id, .. } = &val {
         register_sig_info(*id, info);
@@ -167,7 +168,7 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
             make_params_value_from_sig_params(sub),
         );
     }
-    Value::make_instance("Parameter".to_string(), attrs)
+    Value::make_instance(Symbol::intern("Parameter"), attrs)
 }
 
 pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     fn normalize_sequence_arg(value: &Value) -> Value {
@@ -16,7 +17,7 @@ impl Interpreter {
             .join(",");
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("from".to_string(), Value::Str(from_str));
-        let ex = Value::make_instance("X::Sequence::Deduction".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::Sequence::Deduction"), attrs);
         let mut err = RuntimeError::new("X::Sequence::Deduction");
         err.exception = Some(Box::new(ex));
         err
@@ -26,7 +27,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("action".to_string(), Value::Str("endpoint".to_string()));
         attrs.insert("what".to_string(), Value::Str("list".to_string()));
-        let ex = Value::make_instance("X::Cannot::Empty".to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern("X::Cannot::Empty"), attrs);
         let mut err = RuntimeError::new("X::Cannot::Empty");
         err.exception = Some(Box::new(ex));
         err
@@ -679,7 +680,7 @@ impl Interpreter {
             && let Some(EndpointKind::Value(Value::Package(ref type_name))) = endpoint_kind
         {
             for (i, s) in seeds.iter().enumerate() {
-                if Self::seq_type_matches(s, type_name) {
+                if Self::seq_type_matches(s, &type_name.resolve()) {
                     let end = if exclusive { i } else { i + 1 };
                     let mut result: Vec<Value> = seeds[..end].to_vec();
                     result.extend(extra_rhs);
@@ -1135,7 +1136,7 @@ impl Interpreter {
                         }
                         EndpointKind::Value(ep) => {
                             if let Value::Package(type_name) = ep
-                                && Self::seq_type_matches(&item, type_name)
+                                && Self::seq_type_matches(&item, &type_name.resolve())
                             {
                                 if !exclusive {
                                     result.push(item);

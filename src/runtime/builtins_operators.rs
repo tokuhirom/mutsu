@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -67,7 +68,7 @@ impl Interpreter {
             attrs.insert("message".to_string(), Value::Str(msg.clone()));
             attrs.insert("type".to_string(), Value::Str(name.to_string()));
             attrs.insert("value".to_string(), first);
-            let ex = Value::make_instance("X::Enum::NoValue".to_string(), attrs);
+            let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
@@ -260,7 +261,7 @@ impl Interpreter {
                 )),
             );
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Multi::NoMatch".to_string(),
+                Symbol::intern("X::Multi::NoMatch"),
                 attrs,
             )));
             return Err(err);
@@ -272,7 +273,7 @@ impl Interpreter {
             ));
         }
         if name.starts_with("X::") {
-            return Ok(Value::Package(name.to_string()));
+            return Ok(Value::Package(Symbol::intern(name)));
         }
 
         // Check if multi candidates exist for this name (no matching arity/types)
@@ -288,7 +289,7 @@ impl Interpreter {
                 )),
             );
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Multi::NoMatch".to_string(),
+                Symbol::intern("X::Multi::NoMatch"),
                 attrs,
             )));
             return Err(err);
@@ -352,11 +353,11 @@ impl Interpreter {
             sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
             attrs.insert(
                 "signature".to_string(),
-                Value::make_instance("Signature".to_string(), sig_attrs),
+                Value::make_instance(Symbol::intern("Signature"), sig_attrs),
             );
-            attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
-            attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
-            return Ok(Value::make_instance("Method".to_string(), attrs));
+            attrs.insert("returns".to_string(), Value::Package(Symbol::intern("Mu")));
+            attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+            return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
         }
         if args.is_empty() {
             return Ok(reduction_identity(op));
@@ -506,7 +507,7 @@ impl Interpreter {
                         "message".to_string(),
                         Value::Str("Cannot coerce a lazy list onto a Set".to_string()),
                     );
-                    let ex = Value::make_instance("X::Cannot::Lazy".to_string(), attrs);
+                    let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
                     let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");
                     err.exception = Some(Box::new(ex));
                     return Err(err);
@@ -597,7 +598,7 @@ impl Interpreter {
     pub(super) fn repeat_error(class_name: &str, message: String) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::Str(message.clone()));
-        let ex = Value::make_instance(class_name.to_string(), attrs);
+        let ex = Value::make_instance(Symbol::intern(class_name), attrs);
         let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(ex));
         err

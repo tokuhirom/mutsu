@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 /// Check for NUL bytes in a path and return X::IO::Null error if found.
 fn check_null_in_path(path: &str) -> Result<(), RuntimeError> {
@@ -198,7 +199,7 @@ impl Interpreter {
             {
                 attrs.insert("cwd".to_string(), Value::Str(cwd.clone()));
             }
-            entries.push(Value::make_instance("IO::Path".to_string(), attrs));
+            entries.push(Value::make_instance(Symbol::intern("IO::Path"), attrs));
         };
 
         if test_opt.is_some() {
@@ -357,7 +358,7 @@ impl Interpreter {
                 requested
             ));
             err.exception = Some(Box::new(Value::make_instance(
-                "X::IO::Chdir".to_string(),
+                Symbol::intern("X::IO::Chdir"),
                 HashMap::new(),
             )));
             return Err(err);
@@ -367,7 +368,7 @@ impl Interpreter {
             let mut err =
                 RuntimeError::new(format!("Failed to chdir to '{}': {}", requested, chdir_err));
             err.exception = Some(Box::new(Value::make_instance(
-                "X::IO::Chdir".to_string(),
+                Symbol::intern("X::IO::Chdir"),
                 HashMap::new(),
             )));
             return Err(err);

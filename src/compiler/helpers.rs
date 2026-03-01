@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl Compiler {
     fn normalize_dynamic_scope_name(name: &str) -> String {
@@ -63,7 +64,7 @@ impl Compiler {
         let symbol = Self::dynamic_var_symbol(name);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("symbol".to_string(), Value::Str(symbol));
-        let err = Value::make_instance("X::Dynamic::Package".to_string(), attrs);
+        let err = Value::make_instance(Symbol::intern("X::Dynamic::Package"), attrs);
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
         self.code.emit(OpCode::Die);
@@ -381,7 +382,7 @@ impl Compiler {
                     attrs.insert("decl".to_string(), Value::Str(decl.to_string()));
                     attrs.insert("message".to_string(), Value::Str(message));
                     return Some(Value::make_instance(
-                        "X::Placeholder::NonPlaceholder".to_string(),
+                        Symbol::intern("X::Placeholder::NonPlaceholder"),
                         attrs,
                     ));
                 } else {

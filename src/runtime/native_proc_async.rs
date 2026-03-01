@@ -1,5 +1,6 @@
 use super::native_methods::*;
 use super::*;
+use crate::symbol::Symbol;
 use std::sync::mpsc;
 
 impl Interpreter {
@@ -73,7 +74,7 @@ impl Interpreter {
                         "message".to_string(),
                         Value::Str(format!("Failed to spawn '{}': {}", program, os_error_msg)),
                     );
-                    let os_error = Value::make_instance("X::OS".to_string(), ex_attrs);
+                    let os_error = Value::make_instance(Symbol::intern("X::OS"), ex_attrs);
                     attrs.insert("spawn_error".to_string(), os_error.clone());
 
                     // Break ready promise if set
@@ -248,7 +249,7 @@ impl Interpreter {
                     proc_attrs.insert("collected_stderr".to_string(), Value::Str(collected_stderr));
                     proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
                     proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
-                    let proc_val = Value::make_instance("Proc".to_string(), proc_attrs);
+                    let proc_val = Value::make_instance(Symbol::intern("Proc"), proc_attrs);
 
                     promise.keep(proc_val, String::new(), String::new());
                 });

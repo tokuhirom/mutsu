@@ -402,7 +402,11 @@ impl VM {
                         .eval_does_values(left.clone(), right.clone()),
                 )
             }
-            Value::Package(name) | Value::Str(name) if self.interpreter.has_role(name) => Some(
+            Value::Package(name) if self.interpreter.has_role(&name.resolve()) => Some(
+                self.interpreter
+                    .eval_does_values(left.clone(), right.clone()),
+            ),
+            Value::Str(name) if self.interpreter.has_role(name) => Some(
                 self.interpreter
                     .eval_does_values(left.clone(), right.clone()),
             ),
@@ -418,7 +422,7 @@ impl VM {
             Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
             Value::Num(_) => "Num".to_string(),
             Value::Str(_) => "Str".to_string(),
-            Value::Package(name) => name.clone(),
+            Value::Package(name) => name.resolve(),
             Value::Enum { enum_type, .. } => enum_type.clone(),
             _ => "Any".to_string(),
         };

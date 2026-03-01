@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
+use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
@@ -149,7 +150,7 @@ pub enum Value {
     CompUnitDepSpec {
         short_name: String,
     },
-    Package(String),
+    Package(Symbol),
     Routine {
         package: String,
         name: String,
@@ -177,7 +178,7 @@ pub enum Value {
     /// Upgrade to the strong value when accessed; returns Nil if expired.
     WeakSub(Weak<SubData>),
     Instance {
-        class_name: String,
+        class_name: Symbol,
         attributes: Arc<HashMap<String, Value>>,
         id: u64,
     },
@@ -275,7 +276,7 @@ struct PromiseState {
     result: Value,
     output: String, // captured stdout from thread
     stderr_output: String,
-    class_name: String, // "Promise" or subclass name
+    class_name: Symbol, // "Promise" or subclass name
 }
 
 #[derive(Debug, Clone)]
@@ -285,10 +286,10 @@ pub(crate) struct SharedPromise {
 
 impl SharedPromise {
     pub(crate) fn new() -> Self {
-        Self::new_with_class("Promise".to_string())
+        Self::new_with_class(Symbol::intern("Promise"))
     }
 
-    pub(crate) fn new_with_class(class_name: String) -> Self {
+    pub(crate) fn new_with_class(class_name: Symbol) -> Self {
         Self {
             inner: Arc::new((
                 Mutex::new(PromiseState {
@@ -312,16 +313,16 @@ impl SharedPromise {
                     result,
                     output: String::new(),
                     stderr_output: String::new(),
-                    class_name: "Promise".to_string(),
+                    class_name: Symbol::intern("Promise"),
                 }),
                 Condvar::new(),
             )),
         }
     }
 
-    pub(crate) fn class_name(&self) -> String {
+    pub(crate) fn class_name(&self) -> Symbol {
         let (lock, _) = &*self.inner;
-        lock.lock().unwrap().class_name.clone()
+        lock.lock().unwrap().class_name
     }
 
     pub(crate) fn keep(&self, result: Value, output: String, stderr: String) {
@@ -833,7 +834,7 @@ impl Value {
         }
     }
 
-    pub(crate) fn make_instance(class_name: String, attributes: HashMap<String, Value>) -> Self {
+    pub(crate) fn make_instance(class_name: Symbol, attributes: HashMap<String, Value>) -> Self {
         Value::Instance {
             class_name,
             attributes: Arc::new(attributes),
@@ -846,7 +847,7 @@ impl Value {
         let secs = current_time_secs_f64();
         let mut attrs = HashMap::new();
         attrs.insert("value".to_string(), Value::Num(secs));
-        Value::make_instance("Instant".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Instant"), attrs)
     }
 
     /// Create a Match object with positional captures.
@@ -902,7 +903,7 @@ impl Value {
             if let Some(o) = orig {
                 attrs.insert("orig".to_string(), Value::Str(o.to_string()));
             }
-            Value::make_instance("Match".to_string(), attrs)
+            Value::make_instance(Symbol::intern("Match"), attrs)
         }
 
         /// Build a Match object from a RegexCaptures, recursively handling subcaptures.
@@ -943,7 +944,7 @@ impl Value {
             if let Some(o) = orig {
                 attrs.insert("orig".to_string(), Value::Str(o.to_string()));
             }
-            Value::make_instance("Match".to_string(), attrs)
+            Value::make_instance(Symbol::intern("Match"), attrs)
         }
 
         let mut attrs = HashMap::new();
@@ -981,7 +982,7 @@ impl Value {
             }
         }
         attrs.insert("named".to_string(), Value::hash(named_caps_map));
-        Value::make_instance("Match".to_string(), attrs)
+        Value::make_instance(Symbol::intern("Match"), attrs)
     }
 
     pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {

@@ -186,6 +186,12 @@ impl Value {
 
     /// Check if this value is an instance of the given type name (Raku `isa` operator).
     pub(crate) fn isa_check(&self, type_name: &str) -> bool {
+        // For Instance/Package, extract name as owned String for later comparison
+        let owned_name: Option<String> = match self {
+            Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            Value::Package(name) => Some(name.resolve()),
+            _ => None,
+        };
         let my_type = match self {
             Value::Int(_) | Value::BigInt(_) => "Int",
             Value::Num(_) => "Num",
@@ -208,8 +214,7 @@ impl Value {
             | Value::RangeExclBoth(_, _)
             | Value::GenericRange { .. } => "Range",
             Value::Nil => "Nil",
-            Value::Instance { class_name, .. } => class_name.as_str(),
-            Value::Package(name) => name.as_str(),
+            Value::Instance { .. } | Value::Package(_) => owned_name.as_deref().unwrap(),
             Value::Enum { enum_type, .. } => enum_type.as_str(),
             Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                 Some(Value::Str(kind)) if kind == "Method" => "Method",
@@ -228,7 +233,7 @@ impl Value {
             Value::Slip(_) => "Slip",
             Value::Promise(p) => {
                 let cn = p.class_name();
-                if cn != "Promise" && type_name == cn {
+                if cn != "Promise" && cn == type_name {
                     return true;
                 }
                 // Also check if type_name is "Promise" (parent)
@@ -319,7 +324,7 @@ impl Value {
                 ) || matches!(
                     self,
                     Value::Package(name)
-                        if matches!(name.as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
+                        if matches!(name.resolve().as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
                 )
             }
             "Method" => {
@@ -337,7 +342,7 @@ impl Value {
             }
             "Exception" => {
                 if let Value::Instance { class_name, .. } = self {
-                    class_name.starts_with("X::") || class_name == "Exception"
+                    class_name.resolve().starts_with("X::") || class_name == "Exception"
                 } else {
                     false
                 }
@@ -367,7 +372,7 @@ impl Value {
                     self,
                     Value::Package(name)
                         if matches!(
-                            name.as_str(),
+                            name.resolve().as_str(),
                             "Array" | "List" | "Range" | "Buf" | "Blob" | "Capture"
                         )
                 )
@@ -386,7 +391,7 @@ impl Value {
                     self,
                     Value::Package(name)
                         if matches!(
-                            name.as_str(),
+                            name.resolve().as_str(),
                             "Hash" | "Map" | "Pair" | "Set" | "Bag" | "Mix" | "QuantHash" | "Capture"
                         )
                 )
@@ -435,37 +440,37 @@ impl Value {
 }
 
 /// Returns the Raku type name for a value (used in error messages).
-pub(crate) fn what_type_name(val: &Value) -> &str {
+pub(crate) fn what_type_name(val: &Value) -> String {
     match val {
-        Value::Int(_) | Value::BigInt(_) => "Int",
-        Value::Num(_) => "Num",
-        Value::Str(_) => "Str",
-        Value::Bool(_) => "Bool",
-        Value::Rat(_, _) | Value::BigRat(_, _) => "Rat",
-        Value::FatRat(_, _) => "FatRat",
-        Value::Complex(_, _) => "Complex",
-        Value::Array(..) | Value::LazyList(_) => "Array",
-        Value::Seq(_) => "Seq",
-        Value::Hash(_) => "Hash",
-        Value::Set(_) => "Set",
-        Value::Bag(_) => "Bag",
-        Value::Mix(_) => "Mix",
-        Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
+        Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
+        Value::Num(_) => "Num".to_string(),
+        Value::Str(_) => "Str".to_string(),
+        Value::Bool(_) => "Bool".to_string(),
+        Value::Rat(_, _) | Value::BigRat(_, _) => "Rat".to_string(),
+        Value::FatRat(_, _) => "FatRat".to_string(),
+        Value::Complex(_, _) => "Complex".to_string(),
+        Value::Array(..) | Value::LazyList(_) => "Array".to_string(),
+        Value::Seq(_) => "Seq".to_string(),
+        Value::Hash(_) => "Hash".to_string(),
+        Value::Set(_) => "Set".to_string(),
+        Value::Bag(_) => "Bag".to_string(),
+        Value::Mix(_) => "Mix".to_string(),
+        Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair".to_string(),
         Value::Range(_, _)
         | Value::RangeExcl(_, _)
         | Value::RangeExclStart(_, _)
         | Value::RangeExclBoth(_, _)
-        | Value::GenericRange { .. } => "Range",
-        Value::Nil => "Nil",
-        Value::Instance { class_name, .. } => class_name.as_str(),
-        Value::Package(name) => name.as_str(),
-        Value::Enum { enum_type, .. } => enum_type.as_str(),
-        Value::Sub(_) | Value::WeakSub(_) => "Sub",
-        Value::Routine { .. } => "Sub",
-        Value::Regex(_) => "Regex",
-        Value::Junction { .. } => "Junction",
-        Value::Slip(_) => "Slip",
-        Value::Mixin(_, _) => "Mixin",
-        _ => "Any",
+        | Value::GenericRange { .. } => "Range".to_string(),
+        Value::Nil => "Nil".to_string(),
+        Value::Instance { class_name, .. } => class_name.resolve(),
+        Value::Package(name) => name.resolve(),
+        Value::Enum { enum_type, .. } => enum_type.clone(),
+        Value::Sub(_) | Value::WeakSub(_) => "Sub".to_string(),
+        Value::Routine { .. } => "Sub".to_string(),
+        Value::Regex(_) => "Regex".to_string(),
+        Value::Junction { .. } => "Junction".to_string(),
+        Value::Slip(_) => "Slip".to_string(),
+        Value::Mixin(_, _) => "Mixin".to_string(),
+        _ => "Any".to_string(),
     }
 }

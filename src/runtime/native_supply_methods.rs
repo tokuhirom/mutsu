@@ -1,5 +1,6 @@
 use super::native_methods::*;
 use super::*;
+use crate::symbol::Symbol;
 use unicode_segmentation::UnicodeSegmentation;
 
 impl Interpreter {
@@ -54,7 +55,7 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or(Value::Bool(false)),
                 );
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "tail" => {
                 let values = match attributes.get("values") {
@@ -67,13 +68,13 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(values[start..].to_vec()));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "delayed" => {
                 let delay_seconds = self.resolve_supply_delay_seconds(args.first())?;
                 if delay_seconds <= 0.0 {
                     return Ok(Value::Instance {
-                        class_name: "Supply".to_string(),
+                        class_name: Symbol::intern("Supply"),
                         attributes: Arc::new(attributes.clone()),
                         id: 0,
                     });
@@ -81,7 +82,7 @@ impl Interpreter {
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("delay_seconds".to_string(), Value::Num(delay_seconds));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "min" => {
                 let mapper = args.first().cloned();
@@ -120,7 +121,7 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(result));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "split" => {
                 let needle = Self::positional_value_required(&args, 0, "split requires a needle")?;
@@ -131,7 +132,7 @@ impl Interpreter {
                     None => None,
                     Some(Value::Int(i)) => {
                         if *i <= 0 {
-                            return Ok(Value::make_instance("Supply".to_string(), {
+                            return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -144,7 +145,7 @@ impl Interpreter {
                     Some(Value::Num(f)) if f.is_infinite() && f.is_sign_positive() => None,
                     Some(Value::Num(f)) => {
                         if *f <= 0.0 {
-                            return Ok(Value::make_instance("Supply".to_string(), {
+                            return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -159,7 +160,7 @@ impl Interpreter {
                         if t.eq_ignore_ascii_case("inf") {
                             None
                         } else if t.eq_ignore_ascii_case("-inf") {
-                            return Ok(Value::make_instance("Supply".to_string(), {
+                            return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -170,7 +171,7 @@ impl Interpreter {
                             match t.parse::<i64>() {
                                 Ok(n) if n > 0 => Some(n as usize),
                                 _ => {
-                                    return Ok(Value::make_instance("Supply".to_string(), {
+                                    return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                         let mut attrs = HashMap::new();
                                         attrs
                                             .insert("values".to_string(), Value::array(Vec::new()));
@@ -185,7 +186,7 @@ impl Interpreter {
                     Some(other) => {
                         let n = other.to_f64();
                         if n <= 0.0 {
-                            return Ok(Value::make_instance("Supply".to_string(), {
+                            return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -245,7 +246,7 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(parts));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "reverse" => {
                 let values = match attributes.get("values") {
@@ -260,7 +261,7 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(values));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "repeated" => {
                 let as_fn = Self::named_value(&args, "as");
@@ -296,7 +297,7 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(result));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "tap" | "act" => {
                 // Immutable tap: emit all values and return a Tap instance
@@ -339,12 +340,12 @@ impl Interpreter {
                     std::thread::spawn(move || {
                         Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
-                    return Ok(Value::make_instance("Tap".to_string(), HashMap::new()));
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
 
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-                    let emitter = Value::make_instance("Supplier".to_string(), {
+                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
@@ -393,7 +394,7 @@ impl Interpreter {
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
-                Ok(Value::make_instance("Tap".to_string(), HashMap::new()))
+                Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()))
             }
             "do" => {
                 // Supply.do($callback) — create a new Supply that calls $callback
@@ -420,7 +421,7 @@ impl Interpreter {
                     };
                 do_cbs.push(callback);
                 new_attrs.insert("do_callbacks".to_string(), Value::array(do_cbs));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "Promise" => {
                 let promise = SharedPromise::new();
@@ -452,7 +453,7 @@ impl Interpreter {
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("scheduler".to_string(), scheduler);
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "lines" => {
                 // Create a derived Supply that splits incoming chunks into lines.
@@ -487,7 +488,7 @@ impl Interpreter {
                 if let Some(reason) = attributes.get("quit_reason") {
                     new_attrs.insert("quit_reason".to_string(), reason.clone());
                 }
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "merge" => {
                 // Supply.merge: merge multiple supplies into one
@@ -508,13 +509,13 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(all_values));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
-                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
                 Ok(Value::Instance {
-                    class_name: "Supply".to_string(),
+                    class_name: Symbol::intern("Supply"),
                     attributes: Arc::new(attributes.clone()),
                     id: 0, // placeholder — identity is checked via container, not id
                 })
@@ -551,7 +552,7 @@ impl Interpreter {
                 if let Some(reason) = quit_reason {
                     supply_attrs.insert("quit_reason".to_string(), reason);
                 }
-                Ok(Value::make_instance("Supply".to_string(), supply_attrs))
+                Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs))
             }
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
@@ -725,13 +726,13 @@ impl Interpreter {
                     std::thread::spawn(move || {
                         Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
-                    let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
+                    let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
                 }
 
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
-                    let emitter = Value::make_instance("Supplier".to_string(), {
+                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
@@ -787,7 +788,7 @@ impl Interpreter {
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
-                let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
+                let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                 Ok((tap_instance, attrs))
             }
             "repeated" => {
@@ -824,7 +825,10 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(result));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
-                Ok((Value::make_instance("Supply".to_string(), new_attrs), attrs))
+                Ok((
+                    Value::make_instance(Symbol::intern("Supply"), new_attrs),
+                    attrs,
+                ))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Supply",

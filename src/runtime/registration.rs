@@ -574,7 +574,7 @@ impl Interpreter {
             Value::Str("Malformed return value".to_string()),
         );
         err.exception = Some(Box::new(Value::make_instance(
-            "X::AdHoc".to_string(),
+            Symbol::intern("X::AdHoc"),
             attrs,
         )));
         err
@@ -1259,12 +1259,12 @@ impl Interpreter {
             .insert(enum_type_name.to_string(), enum_variants.clone());
         if !is_anonymous {
             self.env
-                .insert(name.to_string(), Value::Package(name.to_string()));
+                .insert(name.to_string(), Value::Package(Symbol::intern(name)));
             // Also register with fully-qualified package name
             if self.current_package != "GLOBAL" {
                 self.env.insert(
                     format!("{}::{}", self.current_package, name),
-                    Value::Package(name.to_string()),
+                    Value::Package(Symbol::intern(name)),
                 );
             }
         }
@@ -1319,7 +1319,7 @@ impl Interpreter {
         let mut values = Vec::with_capacity(arg_exprs.len());
         for expr in arg_exprs {
             if should_treat_role_arg_as_type_expr(expr) {
-                values.push(Value::Package(expr.trim().to_string()));
+                values.push(Value::Package(Symbol::intern(expr.trim())));
                 continue;
             }
             match crate::parse_dispatch::parse_source(expr)
@@ -1327,7 +1327,7 @@ impl Interpreter {
             {
                 Ok(value) => values.push(value),
                 Err(_) if looks_like_type_arg_expr(expr) => {
-                    values.push(Value::Package(expr.trim().to_string()));
+                    values.push(Value::Package(Symbol::intern(expr.trim())));
                 }
                 Err(err) => return Err(err),
             }
@@ -1637,7 +1637,7 @@ impl Interpreter {
                     .zip(role_arg_values.iter())
                     .map(|(p, v)| {
                         let value_name = match v {
-                            Value::Package(name) => name.clone(),
+                            Value::Package(name) => name.resolve(),
                             other => other
                                 .to_string_value()
                                 .trim_start_matches('(')
@@ -1679,7 +1679,7 @@ impl Interpreter {
                     for parent_spec in parent_specs {
                         let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
                             match v {
-                                Value::Package(name) => name.clone(),
+                                Value::Package(name) => name.resolve(),
                                 other => other
                                     .to_string_value()
                                     .trim_start_matches('(')
@@ -1694,7 +1694,7 @@ impl Interpreter {
                                     role_param_values
                                         .get(&arg)
                                         .map(|v| match v {
-                                            Value::Package(name) => name.clone(),
+                                            Value::Package(name) => name.resolve(),
                                             other => other
                                                 .to_string_value()
                                                 .trim_start_matches('(')
@@ -2451,7 +2451,7 @@ impl Interpreter {
             },
         );
         self.env
-            .insert(name.to_string(), Value::Package(name.to_string()));
+            .insert(name.to_string(), Value::Package(Symbol::intern(name)));
     }
 
     pub(crate) fn register_cunion_class(&mut self, name: &str) {
@@ -2558,7 +2558,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::make_instance(class_name.to_string(), attrs))
+        Ok(Value::make_instance(Symbol::intern(class_name), attrs))
     }
 
     /// Get the type constraint for a class attribute, searching MRO.

@@ -482,7 +482,7 @@ impl Interpreter {
                 )),
             );
             err.exception = Some(Box::new(Value::make_instance(
-                "X::Multi::NoMatch".to_string(),
+                Symbol::intern("X::Multi::NoMatch"),
                 attrs,
             )));
             return Err(err);
