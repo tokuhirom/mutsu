@@ -331,7 +331,17 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("itemized parenthesized expression"));
     }
     let (rest, inner) = paren_expr(rest)?;
-    Ok((rest, Expr::CaptureLiteral(vec![inner])))
+    // Lower $(expr) to expr.item — wraps the value in a Scalar container
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: "item".to_string(),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
 }
 
 /// Parse itemized brace expression: `${ }`.

@@ -793,7 +793,12 @@ impl Interpreter {
                                 },
                             }
                         };
-                    items.extend(args);
+                    for arg in args {
+                        match arg {
+                            Value::Scalar(inner) => items.push(*inner),
+                            other => items.push(other),
+                        }
+                    }
                     let result = Value::array(items.clone());
                     self.set_shared_var(&key, Value::array(items));
                     return Ok(result);
@@ -825,7 +830,13 @@ impl Interpreter {
                             _ => Vec::new(),
                         },
                     };
-                    let mut pref = args;
+                    let mut pref: Vec<Value> = args
+                        .into_iter()
+                        .map(|a| match a {
+                            Value::Scalar(inner) => *inner,
+                            other => other,
+                        })
+                        .collect();
                     pref.extend(items);
                     let result = Value::array(pref.clone());
                     self.env.insert(key, Value::array(pref));
@@ -993,7 +1004,11 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     for (i, arg) in args.iter().enumerate() {
-                        items.insert(i, arg.clone());
+                        let val = match arg {
+                            Value::Scalar(inner) => *inner.clone(),
+                            other => other.clone(),
+                        };
+                        items.insert(i, val);
                     }
                     let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
                     self.env

@@ -392,24 +392,36 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
     Ok(Value::hash(map))
 }
 
+/// Maximum number of elements when expanding an infinite range into an Array.
+/// TODO: Properly implement lazy arrays that reify elements on demand.
+const MAX_ARRAY_EXPAND: i64 = 100_000;
+
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     match value {
         Value::Array(..) => value,
         Value::Nil => Value::array(Vec::new()),
-        Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::Range(a, b) => Value::array((a..=b).map(Value::Int).collect()),
-        Value::RangeExcl(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExcl(a, b) => Value::array((a..b).map(Value::Int).collect()),
-        Value::RangeExclStart(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclStart(a, b) => Value::array((a + 1..=b).map(Value::Int).collect()),
-        Value::RangeExclBoth(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclBoth(a, b) => Value::array((a + 1..b).map(Value::Int).collect()),
+        Value::Range(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::array((a..=end).map(Value::Int).collect())
+        }
+        Value::RangeExcl(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::array((a..end).map(Value::Int).collect())
+        }
+        Value::RangeExclStart(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::array((a + 1..=end).map(Value::Int).collect())
+        }
+        Value::RangeExclBoth(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::array((a + 1..end).map(Value::Int).collect())
+        }
         Value::GenericRange {
             ref start, ref end, ..
         } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
             Value::array(value_to_list(&value))
         }
-        Value::GenericRange { .. } => value,
+        Value::GenericRange { .. } => Value::array(value_to_list(&value)),
         Value::Slip(items) | Value::Seq(items) => Value::Array(items, false),
         other => Value::array(vec![other]),
     }
@@ -551,6 +563,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::ParametricRole { .. } => "Package",
         Value::CustomType { .. } => "CustomType",
         Value::CustomTypeInstance { .. } => "CustomTypeInstance",
+        Value::Scalar(inner) => value_type_name(inner),
     }
 }
 

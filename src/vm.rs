@@ -1532,6 +1532,29 @@ impl VM {
                 self.exec_make_gather_op(code, *idx)?;
                 *ip += 1;
             }
+            OpCode::Eager => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let result = match val {
+                    Value::LazyList(ref ll) => {
+                        let items = self.interpreter.force_lazy_list_bridge(ll)?;
+                        // Sync interpreter env changes back to VM locals.
+                        // This ensures side effects from gather bodies propagate
+                        // to outer-scope variables (e.g., `$was-lazy = 0`).
+                        for (i, name) in code.locals.iter().enumerate() {
+                            if let Some(v) = self.interpreter.env().get(name)
+                                && i < self.locals.len()
+                            {
+                                self.locals[i] = v.clone();
+                            }
+                        }
+                        Value::array(items)
+                    }
+                    Value::Seq(items) => Value::array(items.to_vec()),
+                    other => other,
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
             OpCode::MakeAnonSub(idx) => {
                 self.exec_make_anon_sub_op(code, *idx)?;
                 *ip += 1;

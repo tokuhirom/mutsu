@@ -1723,6 +1723,17 @@ impl VM {
         {
             self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
         }
+        // Convert Range indices to Array for slice assignment
+        let idx = match idx {
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                Value::array(crate::runtime::utils::value_to_list(&idx))
+            }
+            other => other,
+        };
         match &idx {
             Value::Array(keys, ..) => {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
@@ -1754,6 +1765,7 @@ impl VM {
                         // Assign each value to the corresponding index
                         let vals = match &val {
                             Value::Array(v, ..) => (**v).clone(),
+                            Value::Seq(v) | Value::Slip(v) => (**v).clone(),
                             _ => vec![val.clone()],
                         };
                         for (i, key) in keys.iter().enumerate() {

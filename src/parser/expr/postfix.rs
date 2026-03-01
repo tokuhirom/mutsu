@@ -567,12 +567,12 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let (r, expr) = prefix_expr(r)?;
         return Ok((r, expr));
     }
-    // eager prefix (treated as no-op): eager expr
+    // eager prefix: force lazy evaluation
     if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
         let (r, _) = ws(r)?;
         let (r, expr) = prefix_expr(r)?;
-        return Ok((r, expr));
+        return Ok((r, Expr::Eager(Box::new(expr))));
     }
     // ^expr — upto operator: ^5 means 0..^5
     // Use postfix_expr_tight so that `^10 .batch(3)` parses as `(^10).batch(3)`,

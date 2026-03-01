@@ -9,6 +9,8 @@ impl VM {
         for val in raw {
             match val {
                 Value::Slip(items) => elems.extend(items.iter().cloned()),
+                // Scalar-wrapped values (.item / $()) are never flattened.
+                Value::Scalar(inner) => elems.push(*inner),
                 // In bracket-array literals (`[...]`), a single element is in
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each

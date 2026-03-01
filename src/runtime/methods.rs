@@ -825,6 +825,10 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Scalar containers are transparent for method dispatch (except .item itself)
+        if let Value::Scalar(inner) = target {
+            return self.call_method_with_values(*inner, method, args);
+        }
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {
             for arg in &mut args {
@@ -1382,11 +1386,44 @@ impl Interpreter {
             return result;
         }
 
-        // Force LazyList and re-dispatch as Seq for methods that need element access
+        // Force LazyList and re-dispatch as Seq for methods that need element access.
+        // Save/restore the environment to prevent gather body side effects from leaking
+        // into the outer scope (preserves laziness semantics).
         if let Value::LazyList(ll) = &target
-            && matches!(method, "elems" | "list" | "Array" | "Numeric" | "Int")
+            && matches!(
+                method,
+                "list"
+                    | "Array"
+                    | "Numeric"
+                    | "Int"
+                    | "first"
+                    | "grep"
+                    | "map"
+                    | "sort"
+                    | "reverse"
+                    | "join"
+                    | "head"
+                    | "tail"
+                    | "min"
+                    | "max"
+                    | "minmax"
+                    | "sum"
+                    | "flat"
+                    | "unique"
+                    | "squish"
+                    | "classify"
+                    | "categorize"
+                    | "produce"
+                    | "rotor"
+                    | "batch"
+                    | "reduce"
+                    | "combinations"
+                    | "permutations"
+            )
         {
+            let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(ll)?;
+            self.env = saved_env;
             let seq = Value::Seq(std::sync::Arc::new(items));
             return self.call_method_with_values(seq, method, args);
         }
@@ -2007,6 +2044,9 @@ impl Interpreter {
                             .collect();
                         let name = format!("{}[{}]", base_name, args_str.join(","));
                         return Ok(Value::Package(name));
+                    }
+                    Value::Scalar(inner) => {
+                        return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
                 };
                 let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {

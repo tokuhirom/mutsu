@@ -696,9 +696,9 @@ mod tests {
         let result = interp.run(
             "use Test; plan 1; EVAL q[[my $sub = sub () { 42 }; is [$sub()], [42], 'q-bracket eval';]];",
         );
-        assert!(result.is_ok());
-        assert!(interp.output.contains("1..1"));
-        assert!(interp.output.contains("ok 1 - q-bracket eval"));
+        assert!(result.is_ok(), "run failed: {:?}", result.err());
+        assert!(interp.output.contains("1..1"), "output: {}", interp.output);
+        assert!(interp.output.contains("ok 1 - q-bracket eval"), "output: {}", interp.output);
     }
 
     // END phasers must run even after die() or exit().
