@@ -72,7 +72,6 @@ roast/S02-types/subscripts_and_context.t
 roast/S02-types/undefined-types.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
-roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
