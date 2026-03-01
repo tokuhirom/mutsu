@@ -682,7 +682,9 @@ impl Interpreter {
     /// Check if a value can respond to a given method name.
     pub(crate) fn value_can_method(&mut self, value: &Value, method: &str) -> bool {
         // Check builtin 0-arg method (covers most built-in methods)
-        if crate::builtins::native_method_0arg(value, method).is_some() {
+        if crate::builtins::native_method_0arg(value, crate::symbol::Symbol::intern(method))
+            .is_some()
+        {
             return true;
         }
         // For instances, check class methods

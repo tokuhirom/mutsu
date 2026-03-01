@@ -202,7 +202,7 @@ impl Interpreter {
         method: &str,
     ) -> Result<Value, RuntimeError> {
         let target = args.first().cloned().unwrap_or(Value::Nil);
-        crate::builtins::native_method_0arg(&target, method)
+        crate::builtins::native_method_0arg(&target, crate::symbol::Symbol::intern(method))
             .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }
 

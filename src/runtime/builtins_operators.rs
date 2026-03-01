@@ -80,7 +80,9 @@ impl Interpreter {
         {
             return self.builtin_zip_with(args);
         }
-        if let Some(native_result) = crate::builtins::native_function(name, args) {
+        if let Some(native_result) =
+            crate::builtins::native_function(crate::symbol::Symbol::intern(name), args)
+        {
             return native_result;
         }
         if name == "substr"
@@ -116,7 +118,10 @@ impl Interpreter {
                 }
             }
             if all_ok
-                && let Some(native_result) = crate::builtins::native_function(name, &coerced_args)
+                && let Some(native_result) = crate::builtins::native_function(
+                    crate::symbol::Symbol::intern(name),
+                    &coerced_args,
+                )
             {
                 return native_result;
             }

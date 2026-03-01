@@ -1372,11 +1372,14 @@ impl Interpreter {
         let native_result = if bypass_native_fastpath {
             None
         } else {
-            match args.as_slice() {
-                [] => crate::builtins::native_method_0arg(&target, method),
-                [a] => crate::builtins::native_method_1arg(&target, method, a),
-                [a, b] => crate::builtins::native_method_2arg(&target, method, a, b),
-                _ => None,
+            {
+                let method_sym = crate::symbol::Symbol::intern(method);
+                match args.as_slice() {
+                    [] => crate::builtins::native_method_0arg(&target, method_sym),
+                    [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
+                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
+                    _ => None,
+                }
             }
         };
         if let Some(result) = native_result {
@@ -3481,14 +3484,16 @@ impl Interpreter {
                         };
                         delegated_args.push(coerced_arg);
                     }
+                    let method_sym = crate::symbol::Symbol::intern(method);
                     if delegated_args.is_empty()
-                        && let Some(result) = crate::builtins::native_method_0arg(&coerced, method)
+                        && let Some(result) =
+                            crate::builtins::native_method_0arg(&coerced, method_sym)
                     {
                         result
                     } else if delegated_args.len() == 1
                         && let Some(result) = crate::builtins::native_method_1arg(
                             &coerced,
-                            method,
+                            method_sym,
                             &delegated_args[0],
                         )
                     {
@@ -3496,7 +3501,7 @@ impl Interpreter {
                     } else if delegated_args.len() == 2
                         && let Some(result) = crate::builtins::native_method_2arg(
                             &coerced,
-                            method,
+                            method_sym,
                             &delegated_args[0],
                             &delegated_args[1],
                         )
