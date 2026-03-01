@@ -47,8 +47,8 @@ impl Interpreter {
     ) -> Option<Value> {
         let by_index = |idx: usize| -> Option<Value> {
             variants.get(idx).map(|(key, val)| Value::Enum {
-                enum_type: enum_name.to_string(),
-                key: key.clone(),
+                enum_type: Symbol::intern(enum_name),
+                key: Symbol::intern(key),
                 value: *val,
                 index: idx,
             })
@@ -63,7 +63,7 @@ impl Interpreter {
                 variants
                     .iter()
                     .enumerate()
-                    .find(|(_, (k, _))| *k == key)
+                    .find(|(_, (k, _))| k == &key.resolve())
                     .and_then(|(idx, _)| by_index(idx))
             }
             Value::Int(int_value) => variants
@@ -1064,7 +1064,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match callable {
             Value::Routine { name, .. } => {
-                self.assign_named_sub_lvalue_with_values(&name, call_args, value)
+                self.assign_named_sub_lvalue_with_values(&name.resolve(), call_args, value)
             }
             Value::Sub(data) => {
                 if let Some(target_expr) = Self::rw_sub_target_expr(&data.body) {
@@ -1472,8 +1472,8 @@ impl Interpreter {
         self.multi_dispatch_stack[stack_len - 1] = (remaining, Vec::new());
         // Return as a callable Sub value
         Ok(Value::make_sub(
-            next_def.package.resolve(),
-            next_def.name.resolve(),
+            next_def.package,
+            next_def.name,
             next_def.params.clone(),
             next_def.param_defs.clone(),
             next_def.body.clone(),
@@ -1714,12 +1714,12 @@ impl Interpreter {
     }
 
     fn callable_produce_assoc(&self, callable: &Value) -> OpAssoc {
-        let callable_name = match callable {
-            Value::Sub(data) => Some(data.name.as_str()),
-            Value::Routine { name, .. } => Some(name.as_str()),
+        let callable_name: Option<String> = match callable {
+            Value::Sub(data) => Some(data.name.resolve()),
+            Value::Routine { name, .. } => Some(name.resolve()),
             _ => None,
         };
-        if let Some(name) = callable_name
+        if let Some(name) = &callable_name
             && let Some(assoc) = self.infix_associativity(name)
         {
             return match assoc.as_str() {
@@ -1882,16 +1882,17 @@ impl Interpreter {
 
     /// Determine the associativity of an operator from its name.
     fn op_associativity(func: &Value) -> OpAssoc {
-        let name = match func {
-            Value::Routine { name, .. } => name.as_str(),
+        let name_str = match func {
+            Value::Routine { name, .. } => name.resolve(),
             _ => return OpAssoc::Left,
         };
         // Extract the operator from "infix:<op>"
-        let op = name
+        let op = name_str
             .strip_prefix("infix:<")
-            .and_then(|s| s.strip_suffix('>'))
-            .unwrap_or(name);
-        match op {
+            .and_then(|s: &str| s.strip_suffix('>'))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| name_str.clone());
+        match op.as_str() {
             "**" => OpAssoc::Right,
             "=" | ":=" | "=>" | "x" | "xx" => OpAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"

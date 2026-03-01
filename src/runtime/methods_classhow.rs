@@ -11,8 +11,8 @@ impl Interpreter {
         let defs = class_def.methods.get(method_name)?;
         let def = defs.first()?;
         Some(Value::make_sub(
-            class_name.resolve(),
-            method_name.to_string(),
+            *class_name,
+            Symbol::intern(method_name),
             def.params.clone(),
             def.param_defs.clone(),
             def.body.clone(),
@@ -51,8 +51,8 @@ impl Interpreter {
         // CREATE is a built-in method on all types
         if method_name == "CREATE" {
             return Some(Value::Routine {
-                package: "Mu".to_string(),
-                name: "CREATE".to_string(),
+                package: Symbol::intern("Mu"),
+                name: Symbol::intern("CREATE"),
                 is_regex: false,
             });
         }
@@ -307,7 +307,7 @@ impl Interpreter {
             "candidates" if !args.is_empty() => {
                 let base_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
-                    Value::ParametricRole { base_name, .. } => base_name.clone(),
+                    Value::ParametricRole { base_name, .. } => base_name.resolve(),
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other
                         .to_string_value()
@@ -425,9 +425,7 @@ impl Interpreter {
             "curried_role" if !args.is_empty() => {
                 // For a parameterized role like R[Int], return the base role R
                 match &args[0] {
-                    Value::ParametricRole { base_name, .. } => {
-                        Ok(Value::Package(Symbol::intern(base_name)))
-                    }
+                    Value::ParametricRole { base_name, .. } => Ok(Value::Package(*base_name)),
                     Value::Package(name) => {
                         let resolved = name.resolve();
                         let base = resolved

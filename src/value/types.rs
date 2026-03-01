@@ -215,7 +215,9 @@ impl Value {
             | Value::GenericRange { .. } => "Range",
             Value::Nil => "Nil",
             Value::Instance { .. } | Value::Package(_) => owned_name.as_deref().unwrap(),
-            Value::Enum { enum_type, .. } => enum_type.as_str(),
+            Value::Enum { enum_type, .. } => {
+                return enum_type.resolve() == type_name;
+            }
             Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                 Some(Value::Str(kind)) if kind == "Method" => "Method",
                 Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
@@ -256,9 +258,15 @@ impl Value {
                 return mixins.contains_key(type_name);
             }
             Value::Proxy { .. } => "Proxy",
-            Value::ParametricRole { base_name, .. } => base_name.as_str(),
-            Value::CustomType { name, .. } => name.as_str(),
-            Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
+            Value::ParametricRole { base_name, .. } => {
+                return base_name.resolve() == type_name;
+            }
+            Value::CustomType { name, .. } => {
+                return name.resolve() == type_name;
+            }
+            Value::CustomTypeInstance { type_name: tn, .. } => {
+                return tn.resolve() == type_name;
+            }
         };
         if my_type == type_name {
             return true;
@@ -464,7 +472,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Nil => "Nil".to_string(),
         Value::Instance { class_name, .. } => class_name.resolve(),
         Value::Package(name) => name.resolve(),
-        Value::Enum { enum_type, .. } => enum_type.clone(),
+        Value::Enum { enum_type, .. } => enum_type.resolve(),
         Value::Sub(_) | Value::WeakSub(_) => "Sub".to_string(),
         Value::Routine { .. } => "Sub".to_string(),
         Value::Regex(_) => "Regex".to_string(),

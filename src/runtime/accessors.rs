@@ -389,10 +389,10 @@ impl Interpreter {
         match callable {
             Value::Sub(data) => (data.params.clone(), data.param_defs.clone()),
             Value::Routine { name, .. } => {
-                if let Some(def) = self.resolve_function(name) {
+                if let Some(def) = self.resolve_function(&name.resolve()) {
                     return (def.params, def.param_defs);
                 }
-                if let Some(arity) = Self::inferred_operator_arity(name) {
+                if let Some(arity) = Self::inferred_operator_arity(&name.resolve()) {
                     let params = (0..arity).map(|i| format!("arg{}", i)).collect();
                     return (params, Vec::new());
                 }
@@ -456,8 +456,8 @@ impl Interpreter {
         }
 
         Value::make_sub_with_id(
-            String::new(),
-            "<composed>".to_string(),
+            Symbol::intern(""),
+            Symbol::intern("<composed>"),
             params,
             param_defs,
             Vec::new(),
@@ -511,8 +511,8 @@ impl Interpreter {
             && name.ends_with('>')
         {
             return Value::Routine {
-                package: "GLOBAL".to_string(),
-                name: name.to_string(),
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern(name),
                 is_regex: false,
             };
         }
@@ -524,8 +524,8 @@ impl Interpreter {
         if bare_name == "?ROUTINE" {
             if let Some((package, routine)) = self.routine_stack.last() {
                 return Value::Routine {
-                    package: package.clone(),
-                    name: routine.clone(),
+                    package: Symbol::intern(package),
+                    name: Symbol::intern(routine),
                     is_regex: false,
                 };
             }
@@ -538,8 +538,8 @@ impl Interpreter {
         // to the builtin directly, bypassing user-defined overrides.
         if has_packages && Self::is_builtin_function(lookup_name) {
             return Value::Routine {
-                package: "GLOBAL".to_string(),
-                name: lookup_name.to_string(),
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern(lookup_name),
                 is_regex: false,
             };
         }
@@ -570,8 +570,8 @@ impl Interpreter {
         if is_multi {
             // Multi subs should resolve via the dispatcher at call time
             Value::Routine {
-                package: self.current_package.clone(),
-                name: lookup_name.to_string(),
+                package: Symbol::intern(&self.current_package),
+                name: Symbol::intern(lookup_name),
                 is_regex: false,
             }
         } else if self.has_proto(lookup_name)
@@ -579,8 +579,8 @@ impl Interpreter {
             || self.has_proto_token(lookup_name)
         {
             Value::Routine {
-                package: self.current_package.clone(),
-                name: lookup_name.to_string(),
+                package: Symbol::intern(&self.current_package),
+                name: Symbol::intern(lookup_name),
                 is_regex: self.resolve_token_defs(lookup_name).is_some()
                     || self.has_proto_token(lookup_name),
             }
@@ -593,8 +593,8 @@ impl Interpreter {
                 );
             }
             Value::make_sub(
-                def.package.resolve(),
-                def.name.resolve(),
+                def.package,
+                def.name,
                 def.params,
                 def.param_defs,
                 def.body,
@@ -603,16 +603,16 @@ impl Interpreter {
             )
         } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {
-                package: "GLOBAL".to_string(),
-                name: lookup_name.to_string(),
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern(lookup_name),
                 is_regex: false,
             }
         } else if bare_name.starts_with('*') {
             // Dynamic code vars (&*foo) can point to routines that are resolved
             // at call time (including builtins not listed in is_builtin_function).
             Value::Routine {
-                package: "GLOBAL".to_string(),
-                name: lookup_name.to_string(),
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern(lookup_name),
                 is_regex: false,
             }
         } else {
@@ -988,8 +988,8 @@ impl Interpreter {
             symbols
                 .entry(format!("&{base}"))
                 .or_insert_with(|| Value::Routine {
-                    package: def.package.resolve(),
-                    name: def.name.resolve(),
+                    package: def.package,
+                    name: def.name,
                     is_regex: false,
                 });
         }

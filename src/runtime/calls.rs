@@ -57,8 +57,8 @@ impl Interpreter {
         };
         // Push Sub value to block_stack so callframe().code works for nested calls
         let sub_val = Value::make_sub(
-            def.package.resolve(),
-            def.name.resolve(),
+            def.package,
+            def.name,
             def.params.clone(),
             def.param_defs.clone(),
             def.body.clone(),
@@ -155,8 +155,8 @@ impl Interpreter {
                             }
                         };
                     let sub_val = Value::make_sub(
-                        def.package.resolve(),
-                        def.name.resolve(),
+                        def.package,
+                        def.name,
                         def.params.clone(),
                         def.param_defs.clone(),
                         def.body.clone(),

@@ -50,8 +50,8 @@ pub enum JunctionKind {
 
 #[derive(Debug, Clone)]
 pub struct SubData {
-    pub package: String,
-    pub name: String,
+    pub package: Symbol,
+    pub name: Symbol,
     pub params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
@@ -148,20 +148,20 @@ pub enum Value {
     Bag(Arc<HashMap<String, i64>>),
     Mix(Arc<HashMap<String, f64>>),
     CompUnitDepSpec {
-        short_name: String,
+        short_name: Symbol,
     },
     Package(Symbol),
     Routine {
-        package: String,
-        name: String,
+        package: Symbol,
+        name: Symbol,
         is_regex: bool,
     },
     Pair(String, Box<Value>),
     /// Pair with a non-string key (preserves the original key type for `.key`)
     ValuePair(Box<Value>, Box<Value>),
     Enum {
-        enum_type: String,
-        key: String,
+        enum_type: Symbol,
+        key: Symbol,
         value: i64,
         index: usize,
     },
@@ -222,7 +222,7 @@ pub enum Value {
     /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
     /// `base_name` is the role name, `type_args` are the type arguments.
     ParametricRole {
-        base_name: String,
+        base_name: Symbol,
         type_args: Vec<Value>,
     },
     /// A type object created by Metamodel::Primitives.create_type.
@@ -230,7 +230,7 @@ pub enum Value {
     CustomType {
         how: Box<Value>,
         repr: String,
-        name: String,
+        name: Symbol,
         id: u64,
     },
     /// An instance of a custom type (created by .CREATE on a CustomType).
@@ -238,7 +238,7 @@ pub enum Value {
         type_id: u64,
         how: Box<Value>,
         repr: String,
-        type_name: String,
+        type_name: Symbol,
         attributes: Arc<HashMap<String, Value>>,
         id: u64,
     },
@@ -763,8 +763,8 @@ impl Value {
 
     /// Create a new Sub value wrapping the given SubData in an Arc.
     pub(crate) fn make_sub(
-        package: String,
-        name: String,
+        package: Symbol,
+        name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
@@ -789,8 +789,8 @@ impl Value {
     /// Create a new Sub value with an explicit id.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_sub_with_id(
-        package: String,
-        name: String,
+        package: Symbol,
+        name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,

@@ -769,17 +769,23 @@ impl Interpreter {
                         matches!(endpoint_kind, Some(EndpointKind::Value(_)));
                     let genfn = generator.as_ref().unwrap();
                     if let Value::Sub(data) = genfn {
-                        if self.sequence_has_registered_routine(&data.package, &data.name) {
-                            let args =
-                                match self.sequence_routine_param_mode(&data.package, &data.name) {
-                                    SequenceRoutineParamMode::Fixed(arity) => {
-                                        Self::collect_sequence_args_fixed(&result, arity)?
-                                    }
-                                    SequenceRoutineParamMode::Slurpy { min_arity } => {
-                                        Self::collect_sequence_args_slurpy(&result, min_arity)
-                                    }
-                                };
-                            let call_name = data.name.strip_prefix('&').unwrap_or(&data.name);
+                        if self.sequence_has_registered_routine(
+                            &data.package.resolve(),
+                            &data.name.resolve(),
+                        ) {
+                            let args = match self.sequence_routine_param_mode(
+                                &data.package.resolve(),
+                                &data.name.resolve(),
+                            ) {
+                                SequenceRoutineParamMode::Fixed(arity) => {
+                                    Self::collect_sequence_args_fixed(&result, arity)?
+                                }
+                                SequenceRoutineParamMode::Slurpy { min_arity } => {
+                                    Self::collect_sequence_args_slurpy(&result, min_arity)
+                                }
+                            };
+                            let name_str = data.name.resolve();
+                            let call_name = name_str.strip_prefix('&').unwrap_or(&name_str);
                             match self.call_function(call_name, args) {
                                 Ok(v) => v,
                                 Err(e) if suppress_generator_error => break 'seq_gen,
@@ -893,7 +899,9 @@ impl Interpreter {
                             Value::Routine { package, .. } => package,
                             _ => unreachable!(),
                         };
-                        let args = match self.sequence_routine_param_mode(package, rname) {
+                        let args = match self
+                            .sequence_routine_param_mode(&package.resolve(), &rname.resolve())
+                        {
                             SequenceRoutineParamMode::Fixed(arity) => {
                                 Self::collect_sequence_args_fixed(&result, arity)?
                             }

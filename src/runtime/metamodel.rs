@@ -1,3 +1,4 @@
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, next_instance_id};
 
 use super::{CustomTypeData, Interpreter};
@@ -57,7 +58,7 @@ impl Interpreter {
         Ok(Value::CustomType {
             how: Box::new(how),
             repr,
-            name: String::new(),
+            name: Symbol::intern(""),
             id,
         })
     }

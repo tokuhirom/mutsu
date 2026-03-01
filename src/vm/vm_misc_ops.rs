@@ -252,7 +252,9 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         if let Some(callable) = callable {
             if let Value::Routine { name, .. } = callable {
-                return self.interpreter.call_user_routine_direct(name, args);
+                return self
+                    .interpreter
+                    .call_user_routine_direct(&name.resolve(), args);
             }
             return self.interpreter.eval_call_on_value(callable.clone(), args);
         }
@@ -860,8 +862,8 @@ impl VM {
     pub(super) fn exec_routine_magic_op(&mut self) -> Result<(), RuntimeError> {
         if let Some((package, name)) = self.interpreter.routine_stack_top() {
             self.stack.push(Value::Routine {
-                package: package.clone(),
-                name: name.clone(),
+                package: Symbol::intern(package),
+                name: Symbol::intern(name),
                 is_regex: false,
             });
         } else {

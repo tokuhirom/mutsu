@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 impl Interpreter {
@@ -730,8 +731,8 @@ impl Interpreter {
                         right: Box::new(Expr::Var(param.clone())),
                     })];
                     return Ok(Value::make_sub(
-                        "GLOBAL".to_string(),
-                        "<whatevercode-x>".to_string(),
+                        Symbol::intern("GLOBAL"),
+                        Symbol::intern("<whatevercode-x>"),
                         vec![param],
                         Vec::new(),
                         body,

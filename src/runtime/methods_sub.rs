@@ -12,9 +12,13 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         match target {
-            Value::Routine { name, package, .. } => {
-                self.dispatch_routine_method(target, name, package, method, args.to_vec())
-            }
+            Value::Routine { name, package, .. } => self.dispatch_routine_method(
+                target,
+                &name.resolve(),
+                &package.resolve(),
+                method,
+                args.to_vec(),
+            ),
             Value::Sub(data) => {
                 let data = data.clone();
                 self.dispatch_sub_method(target, &data, method, args.to_vec())
@@ -39,8 +43,8 @@ impl Interpreter {
         if method == "assuming" {
             // Create a wrapper Sub that delegates to the multi-dispatch routine
             let mut sub_data = crate::value::SubData {
-                package: package.to_string(),
-                name: name.to_string(),
+                package: Symbol::intern(package),
+                name: Symbol::intern(name),
                 params: Vec::new(),
                 param_defs: Vec::new(),
                 body: vec![],
@@ -79,8 +83,8 @@ impl Interpreter {
                 .into_iter()
                 .map(|def| {
                     Value::make_sub(
-                        def.package.resolve(),
-                        def.name.resolve(),
+                        def.package,
+                        def.name,
                         def.params,
                         def.param_defs,
                         def.body,

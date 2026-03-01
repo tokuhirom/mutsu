@@ -903,8 +903,8 @@ impl VM {
 
         // Push Sub value to block_stack for callframe().code
         let sub_val = Value::make_sub(
-            fn_package.to_string(),
-            fn_name.to_string(),
+            Symbol::intern(fn_package),
+            Symbol::intern(fn_name),
             cf.params.clone(),
             cf.param_defs.clone(),
             vec![],

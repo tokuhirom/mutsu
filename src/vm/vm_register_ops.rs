@@ -1,4 +1,5 @@
 use super::*;
+use crate::symbol::Symbol;
 
 impl VM {
     pub(super) fn exec_make_gather_op(
@@ -30,8 +31,8 @@ impl VM {
         if let Stmt::Block(body) = stmt {
             let params = crate::ast::collect_placeholders(body);
             let val = Value::make_sub(
-                self.interpreter.current_package().to_string(),
-                String::new(),
+                Symbol::intern(self.interpreter.current_package()),
+                Symbol::intern(""),
                 params,
                 Vec::new(),
                 body.clone(),
@@ -65,8 +66,8 @@ impl VM {
                 env.insert("__mutsu_return_type".to_string(), Value::Str(rt.clone()));
             }
             let val = Value::make_sub(
-                self.interpreter.current_package().to_string(),
-                String::new(),
+                Symbol::intern(self.interpreter.current_package()),
+                Symbol::intern(""),
                 params.clone(),
                 param_defs.clone(),
                 body.clone(),
@@ -100,8 +101,8 @@ impl VM {
                 env.insert("__mutsu_return_type".to_string(), Value::Str(rt.clone()));
             }
             let val = Value::make_sub(
-                self.interpreter.current_package().to_string(),
-                String::new(),
+                Symbol::intern(self.interpreter.current_package()),
+                Symbol::intern(""),
                 params.clone(),
                 param_defs.clone(),
                 body.clone(),
@@ -123,8 +124,8 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             let val = Value::make_sub(
-                self.interpreter.current_package().to_string(),
-                String::new(),
+                Symbol::intern(self.interpreter.current_package()),
+                Symbol::intern(""),
                 vec![],
                 Vec::new(),
                 body.clone(),
@@ -275,8 +276,8 @@ impl VM {
             {
                 for trait_name in custom_traits {
                     let sub_val = Value::make_sub(
-                        self.interpreter.current_package().to_string(),
-                        name_str.clone(),
+                        Symbol::intern(self.interpreter.current_package()),
+                        Symbol::intern(&name_str),
                         params.clone(),
                         param_defs.clone(),
                         body.clone(),

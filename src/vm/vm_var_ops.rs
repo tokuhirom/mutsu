@@ -347,22 +347,22 @@ impl VM {
             Value::Bool(false)
         } else if name == "Order::Less" {
             Value::Enum {
-                enum_type: "Order".to_string(),
-                key: "Less".to_string(),
+                enum_type: Symbol::intern("Order"),
+                key: Symbol::intern("Less"),
                 value: -1,
                 index: 0,
             }
         } else if name == "Order::Same" {
             Value::Enum {
-                enum_type: "Order".to_string(),
-                key: "Same".to_string(),
+                enum_type: Symbol::intern("Order"),
+                key: Symbol::intern("Same"),
                 value: 0,
                 index: 1,
             }
         } else if name == "Order::More" {
             Value::Enum {
-                enum_type: "Order".to_string(),
-                key: "More".to_string(),
+                enum_type: Symbol::intern("Order"),
+                key: Symbol::intern("More"),
                 value: 1,
                 index: 2,
             }
@@ -372,8 +372,8 @@ impl VM {
             && name.ends_with('>')
         {
             Value::Routine {
-                package: "GLOBAL".to_string(),
-                name: name.to_string(),
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern(name),
                 is_regex: false,
             }
         } else if self.interpreter.is_name_suppressed(name) {
@@ -389,8 +389,8 @@ impl VM {
                 || self.interpreter.has_multi_function(&qualified_name)
             {
                 Value::Routine {
-                    package: pkg.to_string(),
-                    name: qualified_name,
+                    package: Symbol::intern(pkg),
+                    name: Symbol::intern(&qualified_name),
                     is_regex: false,
                 }
             } else {
@@ -902,7 +902,7 @@ impl VM {
                     other => vec![other],
                 };
                 Value::ParametricRole {
-                    base_name: name.resolve(),
+                    base_name: name,
                     type_args,
                 }
             }

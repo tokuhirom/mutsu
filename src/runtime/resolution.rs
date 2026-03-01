@@ -413,13 +413,13 @@ impl Interpreter {
         };
         if let Value::Routine { package, name, .. } = &func {
             // Try fully-qualified name first (e.g. "A::foo"), then bare name
-            if !package.is_empty() && package != "GLOBAL" {
+            if package != "" && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {
                     return self.call_function(&fq, args);
                 }
             }
-            return self.call_function(name, args);
+            return self.call_function(&name.resolve(), args);
         }
         if let Value::Sub(data) = func {
             let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
@@ -528,15 +528,15 @@ impl Interpreter {
                 new_env.insert("_".to_string(), first_positional.clone());
             } else if data.params.is_empty()
                 && sanitized_args.is_empty()
-                && data.name.is_empty()
+                && data.name == ""
                 && let Some(caller_topic) = saved_env.get("_")
             {
                 new_env.insert("_".to_string(), caller_topic.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
-                package: data.package.clone(),
-                name: data.name.clone(),
+                package: data.package,
+                name: data.name,
                 params: data.params.clone(),
                 param_defs: data.param_defs.clone(),
                 body: data.body.clone(),
@@ -552,8 +552,8 @@ impl Interpreter {
                 Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
             );
             let block_sub = Value::make_sub(
-                data.package.clone(),
-                data.name.clone(),
+                data.package,
+                data.name,
                 vec![],
                 Vec::new(),
                 data.body.clone(),
@@ -566,7 +566,7 @@ impl Interpreter {
                 Value::Int(data.id as i64),
             );
             self.routine_stack
-                .push((data.package.clone(), data.name.clone()));
+                .push((data.package.resolve(), data.name.resolve()));
             self.block_stack.push(block_sub);
             let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
                 Value::Str(s) => Some(s.clone()),

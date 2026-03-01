@@ -2118,8 +2118,8 @@ impl Interpreter {
                 name,
                 package,
             } => {
-                let full_name = if package.is_empty() {
-                    name.clone()
+                let full_name = if package == "" {
+                    name.resolve()
                 } else {
                     format!("{}::{}", package, name)
                 };
