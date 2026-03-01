@@ -20,7 +20,5 @@ ok !$primed.can('Failure'),
 
 my @got;
 my @expect = ['x'];
-# TODO: use eqv once @-variable assignment consistently produces Array (mutable=true).
-# Currently (sub { 'x' })() returns a scalar, and coerce_to_array wraps it as List.
-ok !((@got = (sub { 'x' })()) != @expect),
+ok ((@got = (sub { 'x' })()) eqv @expect),
     'array assignment expression returns array value in expression context';

@@ -36,6 +36,7 @@ pub(crate) enum OpCode {
     IntBitNeg,  // +^ prefix: integer bitwise negation
     BoolBitNeg, // ?^ prefix: boolean bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
+    Decont,     // decontainerize: Array(_, true) → Array(_, false) for slurpy flattening
 
     // -- Logic / coercion --
     Not,

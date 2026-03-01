@@ -216,6 +216,9 @@ impl Compiler {
                 || name.starts_with('&')
             {
                 self.compile_expr(arg);
+                if Self::needs_decont(arg) {
+                    self.code.emit(OpCode::Decont);
+                }
             } else {
                 self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
                 self.compile_expr(expr);
@@ -223,6 +226,25 @@ impl Compiler {
             }
         } else {
             self.compile_expr(arg);
+            if Self::needs_decont(arg) {
+                self.code.emit(OpCode::Decont);
+            }
+        }
+    }
+
+    /// Check if an expression produces an array value that needs decontainerization
+    /// for slurpy flattening at call sites.
+    fn needs_decont(expr: &Expr) -> bool {
+        match expr {
+            Expr::ArrayVar(_) => true,
+            // Assignment to @-variable returns an array
+            Expr::AssignExpr { name, .. } => name.starts_with('@'),
+            // VarDecl/Assign in expression position (my @a = ...)
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => name.starts_with('@'),
+                _ => false,
+            },
+            _ => false,
         }
     }
 
@@ -231,6 +253,9 @@ impl Compiler {
     /// parameters (`\x`) can bind as writable aliases.
     pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
         self.compile_expr(arg);
+        if Self::needs_decont(arg) {
+            self.code.emit(OpCode::Decont);
+        }
         let source_name = match arg {
             Expr::Var(n) => Some(n.clone()),
             Expr::ArrayVar(n) => Some(format!("@{}", n)),

@@ -11,7 +11,7 @@ sub abc123 (| ($a,$b,$c,$o,$t,$th)) { $a,$b,$c,$o,$t,$th; }
 my $primed = &abc123.assuming("a", "b", "c");
 my \call = \(1, 2, 3);
 my @got = $primed(|call);
-is @got.raku, '$["a", "b", "c", 1, 2, 3]',
+is @got.raku, '["a", "b", "c", 1, 2, 3]',
   "capture slipping into primed subsignature keeps argument order";
 
 sub foo(::T $a, T @b) { "$a:@b[]" }
