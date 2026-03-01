@@ -39,6 +39,7 @@ mod builtins;
 mod builtins_coerce;
 mod builtins_collection;
 mod builtins_io;
+mod builtins_operators;
 mod builtins_string;
 mod builtins_system;
 mod call_helpers;
