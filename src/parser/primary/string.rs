@@ -493,6 +493,31 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
+    // Count repeated opening brackets (e.g., q[[...]] uses [[ and ]] as delimiters)
+    let repeat_count = input.chars().take_while(|&c| c == open).count();
+    if repeat_count > 1 {
+        // Multi-character delimiter: e.g., q[[...]] uses "[[" / "]]"
+        let open_delim: String = std::iter::repeat(open).take(repeat_count).collect();
+        let close_delim: String = std::iter::repeat(close).take(repeat_count).collect();
+        let rest = &input[open_delim.len()..];
+        let end = rest
+            .find(&close_delim)
+            .ok_or_else(|| PError::expected(&format!("closing '{close_delim}'")))?;
+        let content = &rest[..end];
+        let rest = &rest[end + close_delim.len()..];
+        if is_qq {
+            return Ok((rest, interpolate_string_content(content)));
+        }
+        if q_closure_interp {
+            return Ok((
+                rest,
+                interpolate_string_content_with_modes(content, false, true),
+            ));
+        }
+        let s = content.replace("\\'", "'").replace("\\\\", "\\");
+        return Ok((rest, Expr::Literal(Value::Str(s))));
+    }
+
     let (rest, content) = read_bracketed(input, open, close, true)?;
     if is_qq {
         return Ok((rest, interpolate_string_content(content)));
