@@ -1921,14 +1921,14 @@ impl Interpreter {
                 self.class_trusts
                     .entry(name.to_string())
                     .or_default()
-                    .insert(trusted_class.clone());
+                    .insert(trusted_class.resolve());
             }
         }
         // Detect stub class: `class Foo { ... }` — body is a stub operator call.
         // Register the class but skip body execution.
         let is_stub = body.len() == 1
             && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                if fn_name == "__mutsu_stub_die");
+                if *fn_name == "__mutsu_stub_die");
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         self.classes.insert(name.to_string(), class_def.clone());
@@ -1953,8 +1953,9 @@ impl Interpreter {
                     is_required,
                     sigil,
                 } => {
+                    let attr_name_str = attr_name.resolve();
                     class_def.attributes.push((
-                        attr_name.clone(),
+                        attr_name_str.clone(),
                         *is_public,
                         default.clone(),
                         *is_rw,
@@ -1964,12 +1965,12 @@ impl Interpreter {
                     if let Some(tc) = type_constraint {
                         class_def
                             .attribute_types
-                            .insert(attr_name.clone(), tc.clone());
+                            .insert(attr_name_str.clone(), tc.clone());
                     }
                     let attr_var_name = if *is_public {
-                        format!(".{}", attr_name)
+                        format!(".{}", attr_name_str)
                     } else {
-                        format!("!{}", attr_name)
+                        format!("!{}", attr_name_str)
                     };
                     for handle_name in handles {
                         if handle_name == "*" {
@@ -2014,7 +2015,7 @@ impl Interpreter {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
                     } else {
-                        method_name.clone()
+                        method_name.resolve()
                     };
                     let effective_param_defs =
                         Self::effective_method_param_defs(param_defs, is_hidden);
@@ -2113,22 +2114,22 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
-                    if !self.roles.contains_key(role_name)
+                    let role_name_str = role_name.resolve();
+                    if !self.roles.contains_key(&role_name_str)
                         && matches!(
-                            role_name.as_str(),
+                            role_name_str.as_str(),
                             "Real" | "Numeric" | "Cool" | "Any" | "Mu"
                         )
                     {
-                        if !class_def.parents.iter().any(|p| p == role_name) {
-                            class_def.parents.insert(0, role_name.clone());
+                        if !class_def.parents.iter().any(|p| p == &role_name_str) {
+                            class_def.parents.insert(0, role_name_str.clone());
                             class_def.mro.clear();
                         }
                         continue;
                     }
-                    let role =
-                        self.roles.get(role_name).cloned().ok_or_else(|| {
-                            RuntimeError::new(format!("Unknown role: {}", role_name))
-                        })?;
+                    let role = self.roles.get(&role_name_str).cloned().ok_or_else(|| {
+                        RuntimeError::new(format!("Unknown role: {}", role_name_str))
+                    })?;
                     if role.is_stub_role {
                         return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                     }
@@ -2144,9 +2145,9 @@ impl Interpreter {
                             .or_default()
                             .extend(overloads);
                     }
-                    if !class_def.parents.iter().any(|p| p == role_name) {
+                    if !class_def.parents.iter().any(|p| p == &role_name_str) {
                         // Keep role composition visible in MRO introspection.
-                        class_def.parents.insert(0, role_name.clone());
+                        class_def.parents.insert(0, role_name_str);
                         class_def.mro.clear();
                     }
                 }
@@ -2156,7 +2157,7 @@ impl Interpreter {
                     self.class_trusts
                         .entry(name.to_string())
                         .or_default()
-                        .insert(trusted_class.clone());
+                        .insert(trusted_class.resolve());
                 }
                 // our &baz ::= &bar  — alias a method under a new name
                 Stmt::VarDecl {
@@ -2242,8 +2243,9 @@ impl Interpreter {
                     is_required,
                     sigil,
                 } => {
+                    let attr_name_str = attr_name.resolve();
                     role_def.attributes.push((
-                        attr_name.clone(),
+                        attr_name_str.clone(),
                         *is_public,
                         default.clone(),
                         *is_rw,
@@ -2251,9 +2253,9 @@ impl Interpreter {
                         *sigil,
                     ));
                     let attr_var_name = if *is_public {
-                        format!(".{}", attr_name)
+                        format!(".{}", attr_name_str)
                     } else {
-                        format!("!{}", attr_name)
+                        format!("!{}", attr_name_str)
                     };
                     for handle_name in handles {
                         role_def
@@ -2277,11 +2279,12 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
-                    if role_name == "__mutsu_role_hidden__" {
+                    if *role_name == "__mutsu_role_hidden__" {
                         role_def.is_hidden = true;
                         continue;
                     }
-                    if let Some(hidden_name) = role_name.strip_prefix("__mutsu_role_hides__") {
+                    let role_name_str = role_name.resolve();
+                    if let Some(hidden_name) = role_name_str.strip_prefix("__mutsu_role_hides__") {
                         // Track hidden class relationship for this role
                         self.role_hides
                             .entry(name.to_string())
@@ -2289,17 +2292,17 @@ impl Interpreter {
                             .push(hidden_name.to_string());
                         continue;
                     }
-                    if self.classes.contains_key(role_name) {
+                    if self.classes.contains_key(&role_name_str) {
                         self.role_parents
                             .entry(name.to_string())
                             .or_default()
-                            .push(role_name.clone());
+                            .push(role_name_str);
                         continue;
                     }
-                    let base_role_name = role_name
+                    let base_role_name = role_name_str
                         .split_once('[')
                         .map(|(b, _)| b)
-                        .unwrap_or(role_name.as_str());
+                        .unwrap_or(role_name_str.as_str());
                     if type_params.iter().any(|tp| tp == base_role_name)
                         || (!self.roles.contains_key(base_role_name)
                             && matches!(base_role_name, "Real" | "Numeric" | "Cool" | "Any" | "Mu"))
@@ -2307,25 +2310,25 @@ impl Interpreter {
                         self.role_parents
                             .entry(name.to_string())
                             .or_default()
-                            .push(role_name.clone());
+                            .push(role_name_str);
                         continue;
                     }
-                    let role =
-                        self.roles.get(base_role_name).cloned().ok_or_else(|| {
-                            RuntimeError::new(format!("Unknown role: {}", role_name))
-                        })?;
+                    let role = self.roles.get(base_role_name).cloned().ok_or_else(|| {
+                        RuntimeError::new(format!("Unknown role: {}", role_name_str))
+                    })?;
                     if role.is_stub_role {
                         return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                     }
                     self.role_parents
                         .entry(name.to_string())
                         .or_default()
-                        .push(role_name.clone());
+                        .push(role_name_str.clone());
                     let type_subs: Vec<(String, String)> = if let Some(parent_type_params) =
                         self.role_type_params.get(base_role_name)
                     {
-                        if let Some(bracket_start) = role_name.find('[') {
-                            let args_str = &role_name[bracket_start + 1..role_name.len() - 1];
+                        if let Some(bracket_start) = role_name_str.find('[') {
+                            let args_str =
+                                &role_name_str[bracket_start + 1..role_name_str.len() - 1];
                             let type_args = parse_role_type_args(args_str);
                             parent_type_params
                                 .iter()
@@ -2382,7 +2385,7 @@ impl Interpreter {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
                     } else {
-                        method_name.clone()
+                        method_name.resolve()
                     };
                     let def = MethodDef {
                         params: params.clone(),

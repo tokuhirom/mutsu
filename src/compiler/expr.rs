@@ -1522,23 +1522,23 @@ impl Compiler {
                         self.compile_expr(expr);
                         self.code.emit(OpCode::IndirectTypeLookup);
                     } else {
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
                 }
                 Stmt::RoleDecl { name, .. } => {
                     // Register the role and return the role type object.
                     self.compile_stmt(stmt);
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
                 Stmt::Package { name, .. } => {
                     // Register the package and return the type object.
                     self.compile_stmt(stmt);
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
-                Stmt::EnumDecl { name, .. } if name.is_empty() => {
+                Stmt::EnumDecl { name, .. } if name.resolve().is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);
                 }
@@ -1614,7 +1614,7 @@ impl Compiler {
             Expr::AnonSub { body, is_rw } => {
                 if *is_rw {
                     let idx = self.code.add_stmt(Stmt::SubDecl {
-                        name: String::new(),
+                        name: Symbol::intern(""),
                         name_expr: None,
                         params: Vec::new(),
                         param_defs: Vec::new(),
@@ -1651,7 +1651,7 @@ impl Compiler {
                     return;
                 }
                 let idx = self.code.add_stmt(Stmt::SubDecl {
-                    name: String::new(),
+                    name: Symbol::intern(""),
                     name_expr: None,
                     params: params.clone(),
                     param_defs: param_defs.clone(),
@@ -1671,7 +1671,7 @@ impl Compiler {
             }
             Expr::Lambda { param, body } => {
                 let idx = self.code.add_stmt(Stmt::SubDecl {
-                    name: String::new(),
+                    name: Symbol::intern(""),
                     name_expr: None,
                     params: if param.is_empty() {
                         Vec::new()

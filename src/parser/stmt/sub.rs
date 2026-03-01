@@ -4,6 +4,7 @@ use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use crate::token_kind::{TokenKind, lookup_unicode_char_by_name};
 
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::add_parse_warning;
@@ -527,7 +528,7 @@ pub(super) fn sub_decl_body(
             return Ok((
                 rest,
                 Stmt::SubDecl {
-                    name,
+                    name: Symbol::intern(&name),
                     name_expr,
                     params,
                     param_defs,
@@ -566,7 +567,7 @@ pub(super) fn sub_decl_body(
         return Ok((
             rest,
             Stmt::SubDecl {
-                name,
+                name: Symbol::intern(&name),
                 name_expr,
                 params,
                 param_defs,
@@ -607,7 +608,7 @@ pub(super) fn sub_decl_body(
     Ok((
         rest,
         Stmt::SubDecl {
-            name,
+            name: Symbol::intern(&name),
             name_expr,
             params,
             param_defs,
@@ -2315,7 +2316,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResul
     Ok((
         rest,
         Stmt::MethodDecl {
-            name,
+            name: Symbol::intern(&name),
             name_expr,
             params,
             param_defs,

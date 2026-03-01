@@ -495,7 +495,7 @@ impl Compiler {
                         .collect();
                     let method_call = Expr::MethodCall {
                         target: Box::new(invocant_expr),
-                        name: Symbol::intern(name),
+                        name: *name,
                         args: method_args,
                         modifier: None,
                         quoted: false,
@@ -505,14 +505,15 @@ impl Compiler {
                     return;
                 }
 
-                let rewritten_args = Self::rewrite_stmt_call_args(name, args);
+                let name_str = name.resolve();
+                let rewritten_args = Self::rewrite_stmt_call_args(&name_str, args);
                 let positional_only = rewritten_args
                     .iter()
                     .all(|arg| matches!(arg, CallArg::Positional(_)));
 
                 // Normalize mutating/structural call statements through Expr::Call
                 // so they reuse call rewrites and method-based mutation paths.
-                if positional_only && Self::is_normalized_stmt_call_name(name) {
+                if positional_only && Self::is_normalized_stmt_call_name(&name_str) {
                     let expr_args: Vec<Expr> = rewritten_args
                         .iter()
                         .filter_map(|arg| match arg {
@@ -521,7 +522,7 @@ impl Compiler {
                         })
                         .collect();
                     let call_expr = Expr::Call {
-                        name: Symbol::intern(name),
+                        name: *name,
                         args: expr_args,
                     };
                     self.compile_expr(&call_expr);
@@ -550,7 +551,7 @@ impl Compiler {
                             self.compile_call_arg(expr);
                         }
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                     self.code.emit(OpCode::ExecCall {
                         name_idx,
                         arity,
@@ -599,7 +600,7 @@ impl Compiler {
                             self.compile_expr(expr);
                         }
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                     self.code.emit(OpCode::ExecCallSlip {
                         name_idx,
                         regular_arity: regular_count,
@@ -629,7 +630,7 @@ impl Compiler {
                         CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                     }
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                 self.code.emit(OpCode::ExecCallPairs {
                     name_idx,
                     arity: rewritten_args.len() as u32,
@@ -804,7 +805,7 @@ impl Compiler {
 
             // --- Package scope ---
             Stmt::Package { name, body } => {
-                let qualified_name = self.qualify_package_name(name);
+                let qualified_name = self.qualify_package_name(&name.resolve());
                 if body.is_empty() {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
@@ -892,8 +893,9 @@ impl Compiler {
                 } else {
                     None
                 };
+                let name_str = name.resolve();
                 self.compile_sub_body(
-                    name,
+                    &name_str,
                     params,
                     param_defs,
                     return_type.as_ref(),
@@ -903,7 +905,7 @@ impl Compiler {
                 );
                 for (alt_params, alt_param_defs) in signature_alternates {
                     self.compile_sub_body(
-                        name,
+                        &name_str,
                         alt_params,
                         alt_param_defs,
                         return_type.as_ref(),
@@ -927,7 +929,7 @@ impl Compiler {
                 // Top-level/package method declarations should still produce callable
                 // code objects (&name), so lower them through sub registration.
                 let lowered = Stmt::SubDecl {
-                    name: name.clone(),
+                    name: *name,
                     name_expr: name_expr.clone(),
                     params: params.clone(),
                     param_defs: param_defs.clone(),
@@ -947,7 +949,7 @@ impl Compiler {
                 self.code.emit(OpCode::RegisterSub(idx));
                 if name_expr.is_none() {
                     self.compile_sub_body(
-                        name,
+                        &name.resolve(),
                         params,
                         param_defs,
                         return_type.as_ref(),

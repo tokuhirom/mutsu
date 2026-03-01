@@ -345,7 +345,7 @@ pub(crate) enum Stmt {
         op: AssignOp,
     },
     SubDecl {
-        name: String,
+        name: Symbol,
         name_expr: Option<Expr>,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
@@ -363,14 +363,14 @@ pub(crate) enum Stmt {
         custom_traits: Vec<String>,
     },
     TokenDecl {
-        name: String,
+        name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         multi: bool,
     },
     RuleDecl {
-        name: String,
+        name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
@@ -378,10 +378,10 @@ pub(crate) enum Stmt {
     },
     #[allow(dead_code)]
     ProtoToken {
-        name: String,
+        name: Symbol,
     },
     Package {
-        name: String,
+        name: Symbol,
         body: Vec<Stmt>,
     },
     Return(Expr),
@@ -398,7 +398,7 @@ pub(crate) enum Stmt {
     Print(Vec<Expr>),
     Note(Vec<Expr>),
     Call {
-        name: String,
+        name: Symbol,
         args: Vec<CallArg>,
     },
     Use {
@@ -480,12 +480,12 @@ pub(crate) enum Stmt {
         stmt: Box<Stmt>,
     },
     EnumDecl {
-        name: String,
+        name: Symbol,
         variants: Vec<(String, Option<Expr>)>,
         is_export: bool,
     },
     ClassDecl {
-        name: String,
+        name: Symbol,
         name_expr: Option<Expr>,
         parents: Vec<String>,
         is_hidden: bool,
@@ -495,7 +495,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
     },
     HasDecl {
-        name: String,
+        name: Symbol,
         is_public: bool,
         default: Option<Expr>,
         handles: Vec<String>,
@@ -509,7 +509,7 @@ pub(crate) enum Stmt {
         sigil: char,
     },
     MethodDecl {
-        name: String,
+        name: Symbol,
         name_expr: Option<Expr>,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
@@ -521,19 +521,19 @@ pub(crate) enum Stmt {
         return_type: Option<String>,
     },
     RoleDecl {
-        name: String,
+        name: Symbol,
         type_params: Vec<String>,
         type_param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
     },
     DoesDecl {
-        name: String,
+        name: Symbol,
     },
     TrustsDecl {
-        name: String,
+        name: Symbol,
     },
     SubsetDecl {
-        name: String,
+        name: Symbol,
         base: String,
         predicate: Option<Expr>,
     },
@@ -542,7 +542,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
     },
     ProtoDecl {
-        name: String,
+        name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,

@@ -1508,7 +1508,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::HasDecl {
-            name,
+            name: Symbol::intern(&name),
             is_public,
             default,
             handles,
@@ -1593,7 +1593,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::EnumDecl {
-            name: String::new(),
+            name: Symbol::intern(""),
             variants,
             is_export: false,
         },
@@ -1623,7 +1623,8 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
 }
 
 pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, name) = ident(input)?;
+    let (rest, name_str) = ident(input)?;
+    let name = Symbol::intern(&name_str);
     let (rest, _) = ws(rest)?;
 
     // Parse `is <trait>` clauses (e.g., `is export`)
@@ -1843,7 +1844,7 @@ pub(super) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::SubsetDecl {
-            name,
+            name: Symbol::intern(&name),
             base,
             predicate,
         },

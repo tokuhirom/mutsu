@@ -724,7 +724,7 @@ impl Compiler {
                     main_leaves_value = true;
                     continue;
                 } else if let Stmt::Call { name, args } = stmt {
-                    let rewritten_args = Self::rewrite_stmt_call_args(name, args);
+                    let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
                     let positional_only = rewritten_args
                         .iter()
                         .all(|arg| matches!(arg, CallArg::Positional(_)));
@@ -738,7 +738,7 @@ impl Compiler {
                             })
                             .collect();
                         self.compile_expr(&Expr::Call {
-                            name: Symbol::intern(name),
+                            name: *name,
                             args: expr_args,
                         });
                         main_leaves_value = true;
@@ -782,7 +782,7 @@ impl Compiler {
                                 self.compile_expr(expr);
                             }
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                         self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
@@ -811,7 +811,7 @@ impl Compiler {
                             CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                         }
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
                     let arg_sources_idx = rewritten_args
                         .iter()
                         .map(|arg| match arg {

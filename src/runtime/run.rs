@@ -63,8 +63,9 @@ impl Interpreter {
                 if !forward_sigs.contains(&sig_key) {
                     continue;
                 }
+                let name_str = name.resolve();
                 self.register_sub_decl(
-                    name,
+                    &name_str,
                     params,
                     param_defs,
                     return_type.as_ref(),
@@ -78,7 +79,7 @@ impl Interpreter {
                 )?;
                 if *is_export {
                     self.register_sub_decl_as_global(
-                        name,
+                        &name_str,
                         params,
                         param_defs,
                         return_type.as_ref(),
@@ -117,7 +118,7 @@ impl Interpreter {
             {
                 let body: Vec<Stmt> = stmts[idx + 1..].to_vec();
                 result.push(Stmt::ClassDecl {
-                    name: name.clone(),
+                    name: *name,
                     name_expr: name_expr.clone(),
                     parents: parents.clone(),
                     is_hidden: *is_hidden,
