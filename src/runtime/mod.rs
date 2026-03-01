@@ -61,6 +61,8 @@ mod methods_sub;
 mod methods_trans;
 mod native_io;
 mod native_methods;
+mod native_proc_async;
+mod native_supply_methods;
 pub(crate) mod native_types;
 mod ops;
 mod regex;
