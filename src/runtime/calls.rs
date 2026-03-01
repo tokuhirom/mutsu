@@ -44,7 +44,7 @@ impl Interpreter {
             self.env.insert("?LINE".to_string(), Value::Int(line));
         }
         self.push_caller_env();
-        let return_spec = self.routine_return_spec_by_name(&def.name);
+        let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
         {
             Ok(bindings) => bindings,
@@ -57,8 +57,8 @@ impl Interpreter {
         };
         // Push Sub value to block_stack so callframe().code works for nested calls
         let sub_val = Value::make_sub(
-            def.package.clone(),
-            def.name.clone(),
+            def.package.resolve(),
+            def.name.resolve(),
             def.params.clone(),
             def.param_defs.clone(),
             def.body.clone(),
@@ -68,7 +68,7 @@ impl Interpreter {
         self.block_stack.push(sub_val);
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
         self.routine_stack
-            .push((def.package.clone(), def.name.clone()));
+            .push((def.package.resolve(), def.name.resolve()));
         self.prepare_definite_return_slot(return_spec.as_deref());
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
@@ -143,7 +143,7 @@ impl Interpreter {
                         self.env.insert("?LINE".to_string(), Value::Int(line));
                     }
                     self.push_caller_env();
-                    let return_spec = self.routine_return_spec_by_name(&def.name);
+                    let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
                     let rw_bindings =
                         match self.bind_function_args_values(&def.param_defs, &def.params, &args) {
                             Ok(bindings) => bindings,
@@ -155,8 +155,8 @@ impl Interpreter {
                             }
                         };
                     let sub_val = Value::make_sub(
-                        def.package.clone(),
-                        def.name.clone(),
+                        def.package.resolve(),
+                        def.name.resolve(),
                         def.params.clone(),
                         def.param_defs.clone(),
                         def.body.clone(),
@@ -166,7 +166,7 @@ impl Interpreter {
                     self.block_stack.push(sub_val);
                     let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
                     self.routine_stack
-                        .push((def.package.clone(), def.name.clone()));
+                        .push((def.package.resolve(), def.name.resolve()));
                     self.prepare_definite_return_slot(return_spec.as_deref());
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();

@@ -78,8 +78,8 @@ impl Interpreter {
                 .into_iter()
                 .map(|def| {
                     Value::make_sub(
-                        def.package,
-                        def.name,
+                        def.package.resolve(),
+                        def.name.resolve(),
                         def.params,
                         def.param_defs,
                         def.body,

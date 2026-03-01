@@ -474,8 +474,8 @@ impl Interpreter {
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if seen.insert(fp) {
                     out.push(Value::make_sub(
-                        def.package.clone(),
-                        def.name.clone(),
+                        def.package.resolve(),
+                        def.name.resolve(),
                         def.params.clone(),
                         def.param_defs.clone(),
                         def.body.clone(),

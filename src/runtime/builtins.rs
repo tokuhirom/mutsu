@@ -1471,8 +1471,8 @@ impl Interpreter {
         self.multi_dispatch_stack[stack_len - 1] = (remaining, Vec::new());
         // Return as a callable Sub value
         Ok(Value::make_sub(
-            next_def.package.clone(),
-            next_def.name.clone(),
+            next_def.package.resolve(),
+            next_def.name.resolve(),
             next_def.params.clone(),
             next_def.param_defs.clone(),
             next_def.body.clone(),

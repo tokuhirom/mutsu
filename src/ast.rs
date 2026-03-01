@@ -34,8 +34,8 @@ pub(crate) struct ParamDef {
 
 #[derive(Debug, Clone)]
 pub(crate) struct FunctionDef {
-    pub(crate) package: String,
-    pub(crate) name: String,
+    pub(crate) package: Symbol,
+    pub(crate) name: Symbol,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,

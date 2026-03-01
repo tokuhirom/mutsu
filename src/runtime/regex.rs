@@ -31,7 +31,7 @@ impl Interpreter {
     }
 
     fn instantiate_token_pattern(def: &FunctionDef, pattern: &str) -> String {
-        let Some(sym) = Self::extract_sym_adverb(&def.name) else {
+        let Some(sym) = Self::extract_sym_adverb(&def.name.resolve()) else {
             return pattern.to_string();
         };
         let escaped = Self::regex_escape_literal(&sym);
@@ -64,7 +64,7 @@ impl Interpreter {
             if let Some(defs) = self.token_defs.get(name) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.clone()));
+                        out.push((p, def.package.resolve()));
                     }
                 }
             }
@@ -79,7 +79,7 @@ impl Interpreter {
                 if let Some(defs) = self.token_defs.get(key) {
                     for def in defs {
                         if let Some(p) = Self::token_pattern_from_def(def) {
-                            out.push((p, def.package.clone()));
+                            out.push((p, def.package.resolve()));
                         }
                     }
                 }
@@ -91,7 +91,7 @@ impl Interpreter {
             if let Some(defs) = self.token_defs.get(&local) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.clone()));
+                        out.push((p, def.package.resolve()));
                     }
                 }
             }
@@ -106,7 +106,7 @@ impl Interpreter {
                 if let Some(defs) = self.token_defs.get(key) {
                     for def in defs {
                         if let Some(p) = Self::token_pattern_from_def(def) {
-                            out.push((p, def.package.clone()));
+                            out.push((p, def.package.resolve()));
                         }
                     }
                 }
@@ -116,7 +116,7 @@ impl Interpreter {
         if let Some(defs) = self.token_defs.get(&global) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
-                    out.push((p, def.package.clone()));
+                    out.push((p, def.package.resolve()));
                 }
             }
         }
@@ -131,7 +131,7 @@ impl Interpreter {
             if let Some(defs) = self.token_defs.get(key) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.clone()));
+                        out.push((p, def.package.resolve()));
                     }
                 }
             }
@@ -394,7 +394,7 @@ impl Interpreter {
                 functions: self.functions.clone(),
                 proto_functions: self.proto_functions.clone(),
                 token_defs: self.token_defs.clone(),
-                current_package: def.package.clone(),
+                current_package: def.package.resolve(),
                 ..Default::default()
             };
             let saved_env = interp.env.clone();
@@ -404,7 +404,7 @@ impl Interpreter {
             {
                 interp
                     .routine_stack
-                    .push((def.package.clone(), def.name.clone()));
+                    .push((def.package.resolve(), def.name.resolve()));
                 let result = interp.eval_block_value(&def.body);
                 interp.routine_stack.pop();
                 let value = match result {
@@ -420,7 +420,7 @@ impl Interpreter {
                         other => other.to_string_value(),
                     };
                     if let Ok(instantiated) = interp.interpolate_regex_scalars(&pattern) {
-                        out.push((instantiated, def.package.clone()));
+                        out.push((instantiated, def.package.resolve()));
                     }
                 }
             }

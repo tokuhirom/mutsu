@@ -157,7 +157,7 @@ impl Interpreter {
                 return Err(Self::reject_args_for_empty_sig(args));
             }
             let routine_is_rw = true;
-            let return_spec = self.routine_return_spec_by_name(&def.name);
+            let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             if let Some(line) = self.test_pending_callsite_line {
@@ -175,8 +175,8 @@ impl Interpreter {
                     }
                 };
             let sub_val = Value::make_sub(
-                def.package.clone(),
-                def.name.clone(),
+                def.package.resolve(),
+                def.name.resolve(),
                 def.params.clone(),
                 def.param_defs.clone(),
                 def.body.clone(),
@@ -186,7 +186,7 @@ impl Interpreter {
             self.block_stack.push(sub_val);
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
-                .push((def.package.clone(), def.name.clone()));
+                .push((def.package.resolve(), def.name.resolve()));
             self.prepare_definite_return_slot(return_spec.as_deref());
             let result = self.eval_block_value(&def.body);
             self.routine_stack.pop();

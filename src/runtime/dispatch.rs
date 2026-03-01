@@ -346,7 +346,7 @@ impl Interpreter {
                 }
             };
         self.routine_stack
-            .push((def.package.clone(), def.name.clone()));
+            .push((def.package.resolve(), def.name.resolve()));
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
         let mut restored_env = saved_env;
@@ -440,7 +440,7 @@ impl Interpreter {
             }
         };
         self.routine_stack
-            .push((def.package.clone(), def.name.clone()));
+            .push((def.package.resolve(), def.name.resolve()));
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec()));
         let result = if def.body.is_empty() {
@@ -502,7 +502,7 @@ impl Interpreter {
             }
         };
         self.routine_stack
-            .push((def.package.clone(), def.name.clone()));
+            .push((def.package.resolve(), def.name.resolve()));
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
