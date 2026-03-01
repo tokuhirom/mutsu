@@ -740,7 +740,7 @@ impl VM {
     pub(super) fn try_native_method(
         &mut self,
         target: &Value,
-        method: &str,
+        method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         fn collection_contains_instance(value: &Value) -> bool {
@@ -753,24 +753,25 @@ impl VM {
                 _ => false,
             }
         }
-        let bypass_supply_extrema_fastpath = matches!(method, "max" | "min" | "lines")
-            && args.len() <= 1
-            && (matches!(
-                target,
-                Value::Instance { class_name, .. } if class_name == "Supply"
-            ) || matches!(target, Value::Package(name) if name == "Supply"));
-        let bypass_supplier_supply_fastpath = method == "Supply"
+        let bypass_supply_extrema_fastpath =
+            (method_sym == "max" || method_sym == "min" || method_sym == "lines")
+                && args.len() <= 1
+                && (matches!(
+                    target,
+                    Value::Instance { class_name, .. } if class_name == "Supply"
+                ) || matches!(target, Value::Package(name) if name == "Supply"));
+        let bypass_supplier_supply_fastpath = method_sym == "Supply"
             && args.is_empty()
             && matches!(
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supplier"
             );
         let bypass_gist_fastpath =
-            method == "gist" && args.is_empty() && collection_contains_instance(target);
-        let bypass_pickroll_type_fastpath = matches!(method, "pick" | "roll")
+            method_sym == "gist" && args.is_empty() && collection_contains_instance(target);
+        let bypass_pickroll_type_fastpath = (method_sym == "pick" || method_sym == "roll")
             && args.len() <= 1
             && matches!(target, Value::Package(_) | Value::Str(_));
-        let bypass_squish_fastpath = method == "squish";
+        let bypass_squish_fastpath = method_sym == "squish";
         let bypass_numeric_bridge_instance_fastpath = matches!(target, Value::Instance { .. })
             && (self.interpreter.type_matches_value("Real", target)
                 || self.interpreter.type_matches_value("Numeric", target)
@@ -786,26 +787,26 @@ impl VM {
             return None;
         }
         if args.len() == 2 {
-            return crate::builtins::native_method_2arg(target, method, &args[0], &args[1]);
+            return crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1]);
         }
         if args.len() == 1 {
-            return crate::builtins::native_method_1arg(target, method, &args[0]);
+            return crate::builtins::native_method_1arg(target, method_sym, &args[0]);
         }
         if !args.is_empty() {
             return None;
         }
-        crate::builtins::native_method_0arg(target, method)
+        crate::builtins::native_method_0arg(target, method_sym)
     }
 
     pub(super) fn try_native_function(
         &mut self,
-        name: &str,
+        name_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
             return None;
         }
-        crate::builtins::native_function(name, args)
+        crate::builtins::native_function(name_sym, args)
     }
 
     pub(super) fn find_compiled_function<'a>(

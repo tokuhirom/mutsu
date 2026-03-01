@@ -1777,7 +1777,9 @@ impl Interpreter {
     }
 
     fn value_raku_repr(val: &Value) -> String {
-        if let Some(Ok(Value::Str(s))) = crate::builtins::native_method_0arg(val, "raku") {
+        if let Some(Ok(Value::Str(s))) =
+            crate::builtins::native_method_0arg(val, crate::symbol::Symbol::intern("raku"))
+        {
             s
         } else {
             val.to_string_value()

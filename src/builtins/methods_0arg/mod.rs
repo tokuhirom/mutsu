@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::Arc;
@@ -97,8 +98,10 @@ fn value_raku_repr(val: &Value) -> String {
 /// Returns `Some(Ok(..))` / `Some(Err(..))` when handled, `None` to fall through.
 pub(crate) fn native_method_0arg(
     target: &Value,
-    method: &str,
+    method_sym: Symbol,
 ) -> Option<Result<Value, RuntimeError>> {
+    let method = method_sym.resolve();
+    let method = method.as_str();
     // For Mixin values, handle Bool method specially, then delegate to inner
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
@@ -106,7 +109,7 @@ pub(crate) fn native_method_0arg(
         {
             return Some(Ok(bool_val.clone()));
         }
-        return native_method_0arg(inner, method);
+        return native_method_0arg(inner, method_sym);
     }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.)
     if runtime::native_types::is_native_int_type(method) {
@@ -467,19 +470,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         match method {
             "to" | "pos" => {
                 if let Some(last) = arr.last() {
-                    return native_method_0arg(last, method);
+                    return native_method_0arg(last, Symbol::intern(method));
                 }
                 return Some(Ok(Value::Int(0)));
             }
             "from" => {
                 if let Some(first) = arr.first() {
-                    return native_method_0arg(first, method);
+                    return native_method_0arg(first, Symbol::intern(method));
                 }
                 return Some(Ok(Value::Int(0)));
             }
             "ast" => {
                 if let Some(last) = arr.last() {
-                    return native_method_0arg(last, "ast");
+                    return native_method_0arg(last, Symbol::intern("ast"));
                 }
                 return Some(Ok(Value::Nil));
             }
@@ -546,7 +549,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => {
                 // Delegate unknown methods to string representation
                 let str_val = Value::Str(target.to_string_value());
-                return native_method_0arg(&str_val, method);
+                return native_method_0arg(&str_val, Symbol::intern(method));
             }
         }
     }

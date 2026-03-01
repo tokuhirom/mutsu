@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -87,9 +88,11 @@ fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
 /// Try to dispatch a 1-argument method call on a Value.
 pub(crate) fn native_method_1arg(
     target: &Value,
-    method: &str,
+    method_sym: Symbol,
     arg: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    let method = method_sym.resolve();
+    let method = method.as_str();
     match method {
         "chop" => {
             // Type objects (Package) should throw
@@ -1027,10 +1030,12 @@ fn read_f64_endian(bytes: &[u8], endian_val: i64) -> f64 {
 /// Try to dispatch a 2-argument method call on a Value.
 pub(crate) fn native_method_2arg(
     target: &Value,
-    method: &str,
+    method_sym: Symbol,
     arg1: &Value,
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    let method = method_sym.resolve();
+    let method = method.as_str();
     if method == "flat" {
         let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
             (Some(depth), is_hammer_pair(arg2))

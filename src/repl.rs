@@ -91,7 +91,9 @@ fn process_line(
                 && let Some(value) = interpreter.last_value.take()
                 && !matches!(value, Value::Nil)
             {
-                let text = if let Some(Ok(gist)) = native_method_0arg(&value, "gist") {
+                let text = if let Some(Ok(gist)) =
+                    native_method_0arg(&value, crate::symbol::Symbol::intern("gist"))
+                {
                     format!("{}\n", gist.to_string_value())
                 } else {
                     format!("{}\n", value.to_string_value())

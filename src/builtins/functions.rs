@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -50,7 +51,12 @@ fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
 
 // ── Built-in function dispatch ───────────────────────────────────────
 /// Try to dispatch a built-in function call.
-pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn native_function(
+    name_sym: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let name = name_sym.resolve();
+    let name = name.as_str();
     // Always-variadic functions: route regardless of arity.
     // zip:with needs interpreter access (for calling the combiner), so return None
     // when a :with Pair is present to fall through to the interpreter.
@@ -622,7 +628,7 @@ fn native_function_2arg(
                 }
             };
             // Dispatch based on $k type (Int or Range)
-            super::native_method_1arg(&Value::array(items), "combinations", arg2)
+            super::native_method_1arg(&Value::array(items), Symbol::intern("combinations"), arg2)
         }
         "roll" => {
             let count = match arg1 {
