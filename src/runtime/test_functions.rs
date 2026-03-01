@@ -455,8 +455,12 @@ impl Interpreter {
                 {
                     Self::eqv_with_junctions(left, right).truthy()
                 } else {
-                    // Convert Seq to List for comparison (per Raku spec:
-                    // Seq:D arguments to is-deeply get converted to Lists).
+                    // Per raku-doc (Type/Test.rakudoc): is-deeply should use eqv semantics.
+                    // Seq:D arguments get converted to Lists by calling .cache
+                    // (see raku-doc note on historical reasons).
+                    // TODO: switch to eqv once my @a returns Array (mutable=true)
+                    // instead of List. Currently many internal operations use
+                    // Value::array() which creates List, causing false negatives.
                     self.seq_to_list(left) == self.seq_to_list(right)
                 }
             }

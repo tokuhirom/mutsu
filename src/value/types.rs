@@ -13,14 +13,21 @@ impl Value {
         }
     }
 
-    /// Type-strict value equivalence (Raku `eqv` operator).
-    /// Unlike PartialEq (used for `==`), this does NOT allow cross-type comparisons.
-    /// Two values are eqv only if they are the same type AND have the same value.
+    /// Type-strict structural equivalence (Raku `eqv` operator).
+    /// See raku-doc: Language/operators.rakudoc "infix eqv"
+    ///
+    /// Returns True if two arguments are structurally the same, i.e. from the
+    /// same type and (recursively) contain equivalent values.
+    /// Unlike PartialEq (used for `==`), this does NOT allow cross-type comparisons:
+    ///   1 eqv 1.0  → False  (Int vs Num)
+    ///   [1,2] eqv (1,2)  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
         match (self, other) {
-            // Arrays: recursively use eqv for elements
-            (Value::Array(a, ..), Value::Array(b, ..)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+            // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
+            (Value::Array(a, a_mut), Value::Array(b, b_mut)) => {
+                a_mut == b_mut
+                    && a.len() == b.len()
+                    && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
             // Hashes: recursively use eqv for values
             (Value::Hash(a), Value::Hash(b)) => {
