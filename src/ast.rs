@@ -501,6 +501,11 @@ pub(crate) enum Stmt {
         #[allow(dead_code)]
         is_rw: bool,
         type_constraint: Option<String>,
+        /// `is required` trait: None = not required, Some(None) = required,
+        /// Some(Some(reason)) = required with reason string
+        is_required: Option<Option<String>>,
+        /// Sigil of the attribute: '$', '@', or '%'
+        sigil: char,
     },
     MethodDecl {
         name: String,

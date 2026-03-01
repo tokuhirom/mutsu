@@ -1581,6 +1581,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         } else {
             let mut p = make_param("self".to_string());
             p.type_constraint = Some(tc);
+            p.is_invocant = true;
+            p.traits.push("invocant".to_string());
             return Ok((r, p));
         }
     }

@@ -1381,11 +1381,51 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // `is` traits (may have multiple: `is rw is required`)
     // Traits come before default value: `has $.x is rw = 42`
     let mut is_rw = false;
+    let mut is_required: Option<Option<String>> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
         if trait_name == "rw" {
             is_rw = true;
+        } else if trait_name == "required" {
+            // Check for optional reason: `is required("reason")`
+            let (r_ws, _) = ws(r)?;
+            if let Some(inner) = r_ws.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                // Parse string literal for the reason
+                if let Some(double_quoted) = inner.strip_prefix('"') {
+                    let end = double_quoted
+                        .find('"')
+                        .ok_or_else(|| PError::expected("closing quote in is required reason"))?;
+                    let reason = double_quoted[..end].to_string();
+                    let after = &double_quoted[end + 1..];
+                    let (after, _) = ws(after)?;
+                    let after = after
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is required"))?;
+                    is_required = Some(Some(reason));
+                    rest = after;
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
+                } else if let Some(single_quoted) = inner.strip_prefix('\'') {
+                    let end = single_quoted
+                        .find('\'')
+                        .ok_or_else(|| PError::expected("closing quote in is required reason"))?;
+                    let reason = single_quoted[..end].to_string();
+                    let after = &single_quoted[end + 1..];
+                    let (after, _) = ws(after)?;
+                    let after = after
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is required"))?;
+                    is_required = Some(Some(reason));
+                    rest = after;
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
+                }
+            }
+            is_required = Some(None);
         }
         let (r, _) = ws(r)?;
         rest = r;
@@ -1428,7 +1468,21 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
-        (rest, Some(expr))
+        // For @ and % sigils, parse comma-separated list of expressions
+        if (sigil == b'@' || sigil == b'%') && rest.starts_with(',') {
+            let mut items = vec![expr];
+            let mut r = rest;
+            while r.starts_with(',') {
+                r = &r[1..];
+                let (r2, _) = ws(r)?;
+                let (r2, next_expr) = expression(r2)?;
+                items.push(next_expr);
+                r = r2;
+            }
+            (r, Some(Expr::ArrayLiteral(items)))
+        } else {
+            (rest, Some(expr))
+        }
     } else if let Some(tc) = &type_constraint {
         // Typed attribute with no explicit default → use type object as default
         (rest, Some(Expr::BareWord(tc.clone())))
@@ -1459,6 +1513,8 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             handles,
             is_rw,
             type_constraint,
+            is_required,
+            sigil: sigil as char,
         },
     ))
 }

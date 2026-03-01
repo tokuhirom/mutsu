@@ -83,12 +83,22 @@ pub(crate) use utils::*;
 
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
+pub(super) type ClassAttributeDef = (
+    String,
+    bool,
+    Option<Expr>,
+    bool,
+    Option<Option<String>>,
+    char,
+);
+
 #[derive(Clone, Default)]
 struct ClassDef {
     parents: Vec<String>,
-    attributes: Vec<(String, bool, Option<Expr>, bool)>, // (name, is_public, default, is_rw)
-    attribute_types: HashMap<String, String>,            // attr_name -> type constraint
-    methods: HashMap<String, Vec<MethodDef>>,            // name -> overloads
+    // (name, is_public, default, is_rw, is_required, sigil)
+    attributes: Vec<ClassAttributeDef>,
+    attribute_types: HashMap<String, String>, // attr_name -> type constraint
+    methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
     native_methods: HashSet<String>,
     mro: Vec<String>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
@@ -97,7 +107,7 @@ struct ClassDef {
 
 #[derive(Debug, Clone)]
 struct RoleDef {
-    attributes: Vec<(String, bool, Option<Expr>, bool)>,
+    attributes: Vec<ClassAttributeDef>,
     methods: HashMap<String, Vec<MethodDef>>,
     is_stub_role: bool,
     is_hidden: bool,
