@@ -103,8 +103,8 @@ impl Interpreter {
         })?;
         let stmts = Self::merge_unit_class(stmts);
         let saved_package = self.current_package.clone();
-        let before_function_keys: std::collections::HashSet<String> =
-            self.functions.keys().cloned().collect();
+        let before_function_keys: std::collections::HashSet<Symbol> =
+            self.functions.keys().copied().collect();
         let before_env_keys: std::collections::HashSet<String> = self.env.keys().cloned().collect();
         let before_class_keys: std::collections::HashSet<String> =
             self.classes.keys().cloned().collect();
@@ -120,18 +120,20 @@ impl Interpreter {
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
-            let mut fn_aliases: Vec<(String, FunctionDef)> = Vec::new();
+            let mut fn_aliases: Vec<(Symbol, FunctionDef)> = Vec::new();
             for (name, def) in &self.functions {
                 if before_function_keys.contains(name) {
                     continue;
                 }
-                let tail = name.rsplit_once("::").map(|(_, t)| t).unwrap_or(name);
+                let name_s = name.resolve();
+                let tail = name_s.rsplit_once("::").map(|(_, t)| t).unwrap_or(&name_s);
                 if tail.contains('/') || tail.contains(':') {
                     continue;
                 }
                 let alias = format!("{pkg}::{tail}");
-                if !self.functions.contains_key(&alias) {
-                    fn_aliases.push((alias, def.clone()));
+                let alias_sym = Symbol::intern(&alias);
+                if !self.functions.contains_key(&alias_sym) {
+                    fn_aliases.push((alias_sym, def.clone()));
                 }
             }
             for (alias, def) in fn_aliases {
@@ -188,16 +190,20 @@ impl Interpreter {
             let target_single = format!("GLOBAL::{name}");
             let target_prefix = format!("GLOBAL::{name}/");
             let mut found = false;
-            let function_entries: Vec<(String, FunctionDef)> = self
+            let function_entries: Vec<(Symbol, FunctionDef)> = self
                 .functions
                 .iter()
                 .filter_map(|(k, v)| {
-                    if k == &source_single {
+                    let ks = k.resolve();
+                    if ks == source_single {
                         found = true;
-                        Some((target_single.clone(), v.clone()))
-                    } else if k.starts_with(&source_prefix) {
+                        Some((Symbol::intern(&target_single), v.clone()))
+                    } else if ks.starts_with(&source_prefix) {
                         found = true;
-                        Some((k.replacen(&source_prefix, &target_prefix, 1), v.clone()))
+                        Some((
+                            Symbol::intern(&ks.replacen(&source_prefix, &target_prefix, 1)),
+                            v.clone(),
+                        ))
                     } else {
                         None
                     }
@@ -206,7 +212,10 @@ impl Interpreter {
             for (k, v) in function_entries {
                 self.functions.insert(k, v);
             }
-            return found || self.functions.contains_key(&format!("GLOBAL::{name}"));
+            return found
+                || self
+                    .functions
+                    .contains_key(&Symbol::intern(&format!("GLOBAL::{name}")));
         }
 
         if let Some(sigil) = symbol.chars().next()
@@ -250,7 +259,9 @@ impl Interpreter {
             return true;
         }
         if let Some(value) = self.env.get(&source_single).cloned() {
-            if self.functions.contains_key(&source_single) && matches!(value, Value::Int(_)) {
+            if self.functions.contains_key(&Symbol::intern(&source_single))
+                && matches!(value, Value::Int(_))
+            {
                 return false;
             }
             self.env.insert(symbol.to_string(), value);
@@ -352,7 +363,10 @@ impl Interpreter {
             // a previous `require` happened inside a block that has since exited).
             let prefix = format!("{module}::");
             if self.loaded_modules.contains(module)
-                && !self.functions.keys().any(|k| k.starts_with(&prefix))
+                && !self
+                    .functions
+                    .keys()
+                    .any(|k| k.resolve().starts_with(&prefix))
             {
                 self.loaded_modules.remove(module);
             }

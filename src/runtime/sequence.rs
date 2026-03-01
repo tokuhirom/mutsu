@@ -76,8 +76,12 @@ impl Interpreter {
         let mut slurpy_min: Option<usize> = None;
 
         for (key, def) in &self.functions {
-            let loose_match = key.contains(&format!("::{name}/"));
-            if !key.starts_with(&local_prefix) && !key.starts_with(&global_prefix) && !loose_match {
+            let key_s = key.resolve();
+            let loose_match = key_s.contains(&format!("::{name}/"));
+            if !key_s.starts_with(&local_prefix)
+                && !key_s.starts_with(&global_prefix)
+                && !loose_match
+            {
                 continue;
             }
 
@@ -122,9 +126,10 @@ impl Interpreter {
         let local_prefix = format!("{package}::{name}/");
         let global_prefix = format!("GLOBAL::{name}/");
         self.functions.keys().any(|key| {
-            key.starts_with(&local_prefix)
-                || key.starts_with(&global_prefix)
-                || key.contains(&format!("::{name}/"))
+            let ks = key.resolve();
+            ks.starts_with(&local_prefix)
+                || ks.starts_with(&global_prefix)
+                || ks.contains(&format!("::{name}/"))
         })
     }
 

@@ -325,10 +325,10 @@ pub struct Interpreter {
     /// skips the buffer).
     output_emitted: bool,
     bailed_out: bool,
-    functions: HashMap<String, FunctionDef>,
+    functions: HashMap<Symbol, FunctionDef>,
     operator_assoc: HashMap<String, String>,
-    proto_functions: HashMap<String, FunctionDef>,
-    token_defs: HashMap<String, Vec<FunctionDef>>,
+    proto_functions: HashMap<Symbol, FunctionDef>,
+    token_defs: HashMap<Symbol, Vec<FunctionDef>>,
     lib_paths: Vec<String>,
     handles: HashMap<usize, IoHandleState>,
     next_handle_id: usize,
@@ -378,7 +378,7 @@ pub struct Interpreter {
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode) before a block with `use`.
-    import_scope_stack: Vec<(HashSet<String>, HashSet<String>, NewlineMode, bool)>,
+    import_scope_stack: Vec<(HashSet<Symbol>, HashSet<String>, NewlineMode, bool)>,
     pub(crate) strict_mode: bool,
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
@@ -484,9 +484,9 @@ pub(crate) struct SubtestContext {
 }
 
 pub(crate) type RoutineRegistrySnapshot = (
-    HashMap<String, FunctionDef>,
-    HashMap<String, FunctionDef>,
-    HashMap<String, Vec<FunctionDef>>,
+    HashMap<Symbol, FunctionDef>,
+    HashMap<Symbol, FunctionDef>,
+    HashMap<Symbol, Vec<FunctionDef>>,
     HashSet<String>,
     HashSet<String>,
 );
@@ -1516,7 +1516,7 @@ impl Interpreter {
 
     /// Save current function/class keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
-        let func_keys: HashSet<String> = self.functions.keys().cloned().collect();
+        let func_keys: HashSet<Symbol> = self.functions.keys().copied().collect();
         let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
         self.import_scope_stack
             .push((func_keys, class_keys, self.newline_mode, self.strict_mode));
@@ -1669,14 +1669,18 @@ impl Interpreter {
             let target_single = format!("GLOBAL::{name}");
             let target_prefix = format!("GLOBAL::{name}/");
 
-            let function_entries: Vec<(String, FunctionDef)> = self
+            let function_entries: Vec<(Symbol, FunctionDef)> = self
                 .functions
                 .iter()
                 .filter_map(|(k, v)| {
-                    if k == &source_single {
-                        Some((target_single.clone(), v.clone()))
-                    } else if k.starts_with(&source_prefix) {
-                        Some((k.replacen(&source_prefix, &target_prefix, 1), v.clone()))
+                    let ks = k.resolve();
+                    if ks == source_single {
+                        Some((Symbol::intern(&target_single), v.clone()))
+                    } else if ks.starts_with(&source_prefix) {
+                        Some((
+                            Symbol::intern(&ks.replacen(&source_prefix, &target_prefix, 1)),
+                            v.clone(),
+                        ))
                     } else {
                         None
                     }
@@ -1686,12 +1690,12 @@ impl Interpreter {
                 self.functions.insert(k, v);
             }
 
-            let proto_entries: Vec<(String, FunctionDef)> = self
+            let proto_entries: Vec<(Symbol, FunctionDef)> = self
                 .proto_functions
                 .iter()
                 .filter_map(|(k, v)| {
-                    if k == &source_single {
-                        Some((target_single.clone(), v.clone()))
+                    if *k == *source_single {
+                        Some((Symbol::intern(&target_single), v.clone()))
                     } else {
                         None
                     }
