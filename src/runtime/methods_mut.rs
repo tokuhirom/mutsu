@@ -905,7 +905,8 @@ impl Interpreter {
                         other => vec![other],
                     };
                     if self.in_lvalue_assignment {
-                        self.env.insert(key, Value::real_array(squished_items.clone()));
+                        self.env
+                            .insert(key, Value::real_array(squished_items.clone()));
                     }
                     return Ok(Value::real_array(squished_items));
                 }
