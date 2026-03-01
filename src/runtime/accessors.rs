@@ -592,8 +592,8 @@ impl Interpreter {
                 );
             }
             Value::make_sub(
-                def.package,
-                def.name,
+                def.package.resolve(),
+                def.name.resolve(),
                 def.params,
                 def.param_defs,
                 def.body,
@@ -982,8 +982,8 @@ impl Interpreter {
             symbols
                 .entry(format!("&{base}"))
                 .or_insert_with(|| Value::Routine {
-                    package: def.package.clone(),
-                    name: def.name.clone(),
+                    package: def.package.resolve(),
+                    name: def.name.resolve(),
                     is_regex: false,
                 });
         }

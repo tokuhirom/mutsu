@@ -421,7 +421,7 @@ impl VM {
             && let Some(def) = self.interpreter.resolve_function_with_types(name, &[])
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
-                let pkg = def.package.clone();
+                let pkg = def.package.resolve();
                 let result =
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
                 self.sync_locals_from_env(code);

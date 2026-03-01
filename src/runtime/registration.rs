@@ -708,8 +708,8 @@ impl Interpreter {
             (param_defs.to_vec(), false)
         };
         let new_def = FunctionDef {
-            package: self.current_package.clone(),
-            name: name.to_string(),
+            package: Symbol::intern(&self.current_package),
+            name: Symbol::intern(name),
             params: params.to_vec(),
             param_defs: effective_param_defs,
             body: body.to_vec(),
@@ -916,8 +916,8 @@ impl Interpreter {
         multi: bool,
     ) {
         let def = FunctionDef {
-            package: self.current_package.clone(),
-            name: name.to_string(),
+            package: Symbol::intern(&self.current_package),
+            name: Symbol::intern(name),
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
@@ -955,8 +955,8 @@ impl Interpreter {
         self.proto_functions.insert(
             fq,
             FunctionDef {
-                package: self.current_package.clone(),
-                name: name.to_string(),
+                package: Symbol::intern(&self.current_package),
+                name: Symbol::intern(name),
                 params: params.to_vec(),
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
@@ -1047,8 +1047,8 @@ impl Interpreter {
             (param_defs.to_vec(), false)
         };
         let def = FunctionDef {
-            package: "GLOBAL".to_string(),
-            name: name.to_string(),
+            package: Symbol::intern("GLOBAL"),
+            name: Symbol::intern(name),
             params: params.to_vec(),
             param_defs: effective_param_defs,
             body: body.to_vec(),
@@ -1186,8 +1186,8 @@ impl Interpreter {
         self.proto_functions.insert(
             key,
             FunctionDef {
-                package: "GLOBAL".to_string(),
-                name: name.to_string(),
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern(name),
                 params: params.to_vec(),
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
@@ -2098,8 +2098,8 @@ impl Interpreter {
                             (our_params, our_param_defs)
                         };
                         let func_def = crate::ast::FunctionDef {
-                            package: name.to_string(),
-                            name: resolved_method_name.clone(),
+                            package: Symbol::intern(name),
+                            name: Symbol::intern(&resolved_method_name),
                             params: our_params,
                             param_defs: our_param_defs,
                             body: method_body.clone(),
