@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fmt;
 use std::sync::{OnceLock, RwLock};
 
@@ -8,7 +8,7 @@ use std::sync::{OnceLock, RwLock};
 pub struct Symbol(u32);
 
 struct SymbolTable {
-    str_to_id: HashMap<String, Symbol>,
+    str_to_id: FxHashMap<String, Symbol>,
     id_to_str: Vec<String>,
 }
 
@@ -17,7 +17,7 @@ static GLOBAL_TABLE: OnceLock<RwLock<SymbolTable>> = OnceLock::new();
 fn global_table() -> &'static RwLock<SymbolTable> {
     GLOBAL_TABLE.get_or_init(|| {
         RwLock::new(SymbolTable {
-            str_to_id: HashMap::new(),
+            str_to_id: FxHashMap::default(),
             id_to_str: Vec::new(),
         })
     })
@@ -64,7 +64,11 @@ impl Symbol {
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let table = global_table().read().unwrap();
-        write!(f, "Symbol({}: {:?})", self.0, &table.id_to_str[self.0 as usize])
+        write!(
+            f,
+            "Symbol({}: {:?})",
+            self.0, &table.id_to_str[self.0 as usize]
+        )
     }
 }
 
@@ -90,6 +94,7 @@ impl fmt::Display for SymbolStr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn intern_is_idempotent() {
