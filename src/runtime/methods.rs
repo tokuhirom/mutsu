@@ -452,7 +452,9 @@ impl Interpreter {
             Value::WeakSub(weak) => weak
                 .upgrade()
                 .is_some_and(|strong| self.method_args_match(args, &strong.param_defs)),
-            Value::Routine { name, .. } => self.resolve_function_with_types(name, args).is_some(),
+            Value::Routine { name, .. } => self
+                .resolve_function_with_types(&name.resolve(), args)
+                .is_some(),
             _ => false,
         }
     }
@@ -474,8 +476,8 @@ impl Interpreter {
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if seen.insert(fp) {
                     out.push(Value::make_sub(
-                        def.package.resolve(),
-                        def.name.resolve(),
+                        def.package,
+                        def.name,
                         def.params.clone(),
                         def.param_defs.clone(),
                         def.body.clone(),
@@ -1019,10 +1021,10 @@ impl Interpreter {
                 }
                 for mixin_val in mixins.values() {
                     if let Value::Enum { enum_type, key, .. } = mixin_val {
-                        if method == key {
+                        if method == key.resolve() {
                             return Ok(Value::Bool(true));
                         }
-                        if let Some(variants) = self.enum_types.get(enum_type)
+                        if let Some(variants) = self.enum_types.get(&enum_type.resolve())
                             && variants.iter().any(|(variant, _)| variant == method)
                         {
                             return Ok(Value::Bool(false));
@@ -1130,7 +1132,7 @@ impl Interpreter {
                         key: probe_key,
                         ..
                     } => matches!(
-                        mixins.get(enum_type),
+                        mixins.get(&enum_type.resolve()),
                         Some(Value::Enum { key, .. }) if key == probe_key
                     ),
                     Value::Package(name) => {
@@ -1166,7 +1168,7 @@ impl Interpreter {
                     return self.call_method_with_values(instance, method, args);
                 }
             } else if let Value::ParametricRole { base_name, .. } = &target
-                && let Some(role) = self.roles.get(base_name)
+                && let Some(role) = self.roles.get(&base_name.resolve())
             {
                 let is_public_attr_accessor = args.is_empty()
                     && role
@@ -1187,8 +1189,10 @@ impl Interpreter {
                 Some(type_name.clone())
             }
             Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
-                Value::Enum { enum_type, .. } if self.enum_types.contains_key(enum_type) => {
-                    Some(enum_type.clone())
+                Value::Enum { enum_type, .. }
+                    if self.enum_types.contains_key(&enum_type.resolve()) =>
+                {
+                    Some(enum_type.resolve())
                 }
                 _ => None,
             }),
@@ -1206,8 +1210,8 @@ impl Interpreter {
                         .iter()
                         .enumerate()
                         .map(|(index, (key, value))| Value::Enum {
-                            enum_type: type_name.clone(),
-                            key: key.clone(),
+                            enum_type: Symbol::intern(&type_name),
+                            key: Symbol::intern(key),
                             value: *value,
                             index,
                         })
@@ -1533,7 +1537,7 @@ impl Interpreter {
                         type_id: *id,
                         how: how.clone(),
                         repr: repr.clone(),
-                        type_name: name.clone(),
+                        type_name: *name,
                         attributes: std::sync::Arc::new(HashMap::new()),
                         id: crate::value::next_instance_id(),
                     });
@@ -1983,7 +1987,9 @@ impl Interpreter {
                     Value::Bag(_) => "Bag",
                     Value::Mix(_) => "Mix",
                     Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
-                    Value::Enum { enum_type, .. } => enum_type.as_str(),
+                    Value::Enum { enum_type, .. } => {
+                        return Ok(Value::Package(Symbol::intern(&enum_type.resolve())));
+                    }
                     Value::Nil => "Any",
                     Value::Package(name) => {
                         let resolved = name.resolve();
@@ -2028,9 +2034,11 @@ impl Interpreter {
                     }
                     Value::Proxy { .. } => "Proxy",
                     Value::CustomType { name, .. } => {
-                        return Ok(Value::Package(Symbol::intern(name)));
+                        return Ok(Value::Package(*name));
                     }
-                    Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
+                    Value::CustomTypeInstance { type_name: tn, .. } => {
+                        return Ok(Value::Package(*tn));
+                    }
                     Value::ParametricRole {
                         base_name,
                         type_args,
@@ -2172,11 +2180,11 @@ impl Interpreter {
                     Value::Instance { class_name, .. } => vec![class_name.resolve()],
                     Value::Sub(sub_data) => {
                         let mut k = Vec::new();
-                        if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
+                        if sub_data.package != "" && sub_data.name != "" {
                             k.push(format!("{}::{}", sub_data.package, sub_data.name));
                         }
-                        if !sub_data.name.is_empty() {
-                            k.push(sub_data.name.clone());
+                        if sub_data.name != "" {
+                            k.push(sub_data.name.resolve());
                         }
                         k
                     }
@@ -3087,21 +3095,21 @@ impl Interpreter {
         } = &target
         {
             match method {
-                "key" => return Ok(Value::Str(key.clone())),
+                "key" => return Ok(Value::Str(key.resolve())),
                 "value" | "Int" | "Numeric" => return Ok(Value::Int(*value)),
-                "WHAT" => return Ok(Value::Package(Symbol::intern(enum_type))),
+                "WHAT" => return Ok(Value::Package(*enum_type)),
                 "raku" | "perl" => {
                     return Ok(Value::Str(format!("{}::{}", enum_type, key)));
                 }
-                "gist" | "Str" => return Ok(Value::Str(key.clone())),
+                "gist" | "Str" => return Ok(Value::Str(key.resolve())),
                 "kv" => {
                     return Ok(Value::array(vec![
-                        Value::Str(key.clone()),
+                        Value::Str(key.resolve()),
                         Value::Int(*value),
                     ]));
                 }
                 "pair" => {
-                    return Ok(Value::Pair(key.clone(), Box::new(Value::Int(*value))));
+                    return Ok(Value::Pair(key.resolve(), Box::new(Value::Int(*value))));
                 }
                 "ACCEPTS" => {
                     if args.is_empty() {
@@ -3121,12 +3129,12 @@ impl Interpreter {
                     if *index == 0 {
                         return Ok(Value::Nil);
                     }
-                    if let Some(variants) = self.enum_types.get(enum_type)
+                    if let Some(variants) = self.enum_types.get(&enum_type.resolve())
                         && let Some((prev_key, prev_val)) = variants.get(index - 1)
                     {
                         return Ok(Value::Enum {
-                            enum_type: enum_type.clone(),
-                            key: prev_key.clone(),
+                            enum_type: *enum_type,
+                            key: Symbol::intern(prev_key),
                             value: *prev_val,
                             index: index - 1,
                         });
@@ -3134,12 +3142,12 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 }
                 "succ" => {
-                    if let Some(variants) = self.enum_types.get(enum_type)
+                    if let Some(variants) = self.enum_types.get(&enum_type.resolve())
                         && let Some((next_key, next_val)) = variants.get(index + 1)
                     {
                         return Ok(Value::Enum {
-                            enum_type: enum_type.clone(),
-                            key: next_key.clone(),
+                            enum_type: *enum_type,
+                            key: Symbol::intern(next_key),
                             value: *next_val,
                             index: index + 1,
                         });
@@ -3310,7 +3318,7 @@ impl Interpreter {
                     }
                     "need" => {
                         let short_name = match args.first() {
-                            Some(Value::CompUnitDepSpec { short_name }) => short_name.clone(),
+                            Some(Value::CompUnitDepSpec { short_name }) => *short_name,
                             _ => return Ok(Value::Nil),
                         };
                         let prefix = attributes
@@ -3326,7 +3334,7 @@ impl Interpreter {
                         if let Some(existing) = self.env.get(&cache_key).cloned() {
                             return Ok(existing);
                         }
-                        let relative = short_name.replace("::", "/");
+                        let relative = short_name.resolve().replace("::", "/");
                         let mut found = None;
                         for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
                             let candidate = std::path::Path::new(&canonical_prefix)
@@ -3341,7 +3349,7 @@ impl Interpreter {
                         }
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::Str("Raku".to_string()));
-                        attrs.insert("short-name".to_string(), Value::Str(short_name));
+                        attrs.insert("short-name".to_string(), Value::Str(short_name.resolve()));
                         attrs.insert("precompiled".to_string(), Value::Bool(false));
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
@@ -3801,10 +3809,10 @@ impl Interpreter {
                 other => Ok(Value::Str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {
-                Value::Routine { name, .. } => Ok(Value::Str(name)),
+                Value::Routine { name, .. } => Ok(Value::Str(name.resolve())),
                 Value::Package(name) => Ok(Value::Str(name.resolve())),
                 Value::Str(name) => Ok(Value::Str(name)),
-                Value::Sub(data) => Ok(Value::Str(data.name.clone())),
+                Value::Sub(data) => Ok(Value::Str(data.name.resolve())),
                 _ => Ok(Value::Nil),
             },
             "REPR" if args.is_empty() => match target {
@@ -3911,8 +3919,8 @@ impl Interpreter {
                     })];
                     let id = COMPOSE_METHOD_ID.fetch_add(1, Ordering::Relaxed);
                     return Ok(Value::make_sub_with_id(
-                        String::new(),
-                        format!("<composed-method:{}>", method),
+                        Symbol::intern(""),
+                        Symbol::intern(&format!("<composed-method:{}>", method)),
                         params,
                         Vec::new(),
                         body,

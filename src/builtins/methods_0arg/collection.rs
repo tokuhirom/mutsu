@@ -257,7 +257,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array(kv)))
                 }
                 Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
-                    Value::Str(key.clone()),
+                    Value::Str(key.resolve()),
                     Value::Int(*value),
                 ])))),
                 Value::Package(_) => Some(Ok(Value::array(Vec::new()))),

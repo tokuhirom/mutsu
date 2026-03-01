@@ -181,8 +181,8 @@ impl Interpreter {
                     }
                 };
             let sub_val = Value::make_sub(
-                def.package.resolve(),
-                def.name.resolve(),
+                def.package,
+                def.name,
                 def.params.clone(),
                 def.param_defs.clone(),
                 def.body.clone(),
@@ -739,8 +739,8 @@ impl Interpreter {
             right: Box::new(Expr::Var(param.clone())),
         })];
         Value::make_sub(
-            self.current_package.clone(),
-            "<whatevercode-x>".to_string(),
+            Symbol::intern(&self.current_package),
+            Symbol::intern("<whatevercode-x>"),
             vec![param],
             Vec::new(),
             body,

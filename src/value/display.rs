@@ -409,7 +409,7 @@ impl Value {
             Value::ValuePair(k, v) => {
                 format!("{}\t{}", k.to_string_value(), v.to_string_value())
             }
-            Value::Enum { key, .. } => key.clone(),
+            Value::Enum { key, .. } => key.resolve(),
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
@@ -428,9 +428,9 @@ impl Value {
                 format!("({}[{}])", base_name, args.join(","))
             }
             Value::Routine { package, name, .. } => format!("{}::{}", package, name),
-            Value::Sub(data) => data.name.clone(),
+            Value::Sub(data) => data.name.resolve(),
             Value::WeakSub(weak) => match weak.upgrade() {
-                Some(data) => data.name.clone(),
+                Some(data) => data.name.resolve(),
                 None => String::new(),
             },
             Value::Instance {
@@ -615,7 +615,7 @@ impl Value {
             }
             Value::Proxy { .. } => "Proxy".to_string(),
             Value::CustomType { name, .. } => {
-                if name.is_empty() {
+                if *name == "" {
                     "(CustomType)".to_string()
                 } else {
                     format!("({})", name)

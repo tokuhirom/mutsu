@@ -869,8 +869,8 @@ impl Interpreter {
         );
         if is_method_value_decl {
             let sub_val = Value::make_sub(
-                self.current_package.clone(),
-                name.to_string(),
+                Symbol::intern(&self.current_package),
+                Symbol::intern(name),
                 params.to_vec(),
                 param_defs.to_vec(),
                 body.to_vec(),
@@ -887,8 +887,8 @@ impl Interpreter {
         {
             for trait_name in custom_traits {
                 let sub_val = Value::make_sub(
-                    self.current_package.clone(),
-                    name.to_string(),
+                    Symbol::intern(&self.current_package),
+                    Symbol::intern(name),
                     params.to_vec(),
                     param_defs.to_vec(),
                     body.to_vec(),
@@ -1270,8 +1270,8 @@ impl Interpreter {
         }
         for (index, (key, val)) in enum_variants.iter().enumerate() {
             let enum_val = Value::Enum {
-                enum_type: enum_type_name.to_string(),
-                key: key.clone(),
+                enum_type: Symbol::intern(enum_type_name),
+                key: Symbol::intern(key),
                 value: *val,
                 index,
             };

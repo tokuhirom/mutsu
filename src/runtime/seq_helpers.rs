@@ -1036,7 +1036,7 @@ impl Interpreter {
                 let qualified = format!("{}::{}", package, name);
                 if let Some(pat) = self
                     .extract_token_regex_pattern(&qualified)
-                    .or_else(|| self.extract_token_regex_pattern(name))
+                    .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
                 {
                     let text = left.to_string_value();
                     if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
@@ -1368,10 +1368,10 @@ impl Interpreter {
                 let comparable_lhs_args: Vec<Value> = if lhs_base == rhs_base {
                     lhs_args.to_vec()
                 } else if let Some(parent_args) =
-                    self.role_parent_args_for(lhs_base, lhs_args, rhs_base)
+                    self.role_parent_args_for(&lhs_base.resolve(), lhs_args, &rhs_base.resolve())
                 {
                     parent_args
-                } else if self.role_is_subtype(lhs_base, rhs_base) {
+                } else if self.role_is_subtype(&lhs_base.resolve(), &rhs_base.resolve()) {
                     lhs_args.to_vec()
                 } else {
                     return false;
@@ -1395,11 +1395,11 @@ impl Interpreter {
                 Value::Package(rhs_name),
             ) => {
                 let rhs_resolved = rhs_name.resolve();
-                lhs_base == &rhs_resolved
+                lhs_base.resolve() == rhs_resolved
                     || self
-                        .role_parent_args_for(lhs_base, lhs_args, &rhs_resolved)
+                        .role_parent_args_for(&lhs_base.resolve(), lhs_args, &rhs_resolved)
                         .is_some()
-                    || self.role_is_subtype(lhs_base, &rhs_resolved)
+                    || self.role_is_subtype(&lhs_base.resolve(), &rhs_resolved)
             }
             // Value instance/mixin ~~ parametric role: check composed role + type arguments.
             (
@@ -1422,7 +1422,7 @@ impl Interpreter {
                     let full_name = format!("{}[{}]", rhs_base, args_str);
                     return self.type_matches_value(&full_name, left_value);
                 }
-                if !left_value.does_check(rhs_base) {
+                if !left_value.does_check(&rhs_base.resolve()) {
                     return false;
                 }
                 let lhs_args = if let Value::Mixin(_, mixins) = left_value {
@@ -1512,7 +1512,7 @@ impl Interpreter {
             }
             // Backward-compatibility: enum type objects may still arrive as Str values.
             (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name) => {
-                matches!(left, Value::Enum { enum_type, .. } if enum_type == type_name)
+                matches!(left, Value::Enum { enum_type, .. } if enum_type.resolve() == *type_name)
             }
             // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).
             (

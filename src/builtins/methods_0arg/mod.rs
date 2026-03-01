@@ -151,11 +151,11 @@ pub(crate) fn native_method_0arg(
     // CompUnit::DependencySpecification methods
     if let Value::CompUnitDepSpec { short_name } = target {
         return match method {
-            "short-name" => Some(Ok(Value::Str(short_name.clone()))),
+            "short-name" => Some(Ok(Value::Str(short_name.resolve()))),
             "version-matcher" => Some(Ok(Value::Bool(true))),
             "auth-matcher" => Some(Ok(Value::Bool(true))),
             "api-matcher" => Some(Ok(Value::Bool(true))),
-            "Str" | "gist" => Some(Ok(Value::Str(short_name.clone()))),
+            "Str" | "gist" => Some(Ok(Value::Str(short_name.resolve()))),
             _ => None,
         };
     }
@@ -639,13 +639,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         && method == "endian"
     {
         return Some(Ok(Value::Enum {
-            enum_type: "Endian".to_string(),
-            key: if cfg!(target_endian = "little") {
+            enum_type: Symbol::intern("Endian"),
+            key: Symbol::intern(if cfg!(target_endian = "little") {
                 "LittleEndian"
             } else {
                 "BigEndian"
-            }
-            .to_string(),
+            }),
             value: if cfg!(target_endian = "little") { 1 } else { 2 },
             index: if cfg!(target_endian = "little") { 1 } else { 2 },
         }));

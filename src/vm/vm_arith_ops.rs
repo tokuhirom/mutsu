@@ -423,7 +423,7 @@ impl VM {
             Value::Num(_) => "Num".to_string(),
             Value::Str(_) => "Str".to_string(),
             Value::Package(name) => name.resolve(),
-            Value::Enum { enum_type, .. } => enum_type.clone(),
+            Value::Enum { enum_type, .. } => enum_type.resolve(),
             _ => "Any".to_string(),
         };
         // If left is already a Mixin, add to existing mixins

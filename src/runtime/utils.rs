@@ -215,20 +215,20 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     match ord {
         std::cmp::Ordering::Less => Value::Enum {
-            enum_type: "Order".to_string(),
-            key: "Less".to_string(),
+            enum_type: Symbol::intern("Order"),
+            key: Symbol::intern("Less"),
             value: -1,
             index: 0,
         },
         std::cmp::Ordering::Equal => Value::Enum {
-            enum_type: "Order".to_string(),
-            key: "Same".to_string(),
+            enum_type: Symbol::intern("Order"),
+            key: Symbol::intern("Same"),
             value: 0,
             index: 1,
         },
         std::cmp::Ordering::Greater => Value::Enum {
-            enum_type: "Order".to_string(),
-            key: "More".to_string(),
+            enum_type: Symbol::intern("Order"),
+            key: Symbol::intern("More"),
             value: 1,
             index: 2,
         },

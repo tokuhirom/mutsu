@@ -323,8 +323,8 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let callback = Value::make_sub(
-            self.current_package.clone(),
-            String::new(),
+            Symbol::intern(&self.current_package),
+            Symbol::intern(""),
             param.iter().cloned().collect(),
             Vec::new(),
             body.to_vec(),

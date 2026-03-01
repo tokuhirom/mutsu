@@ -323,7 +323,7 @@ fn callable_signature_info(
         Value::Sub(data) => {
             let return_type = interpreter
                 .callable_return_type(&callable)
-                .or_else(|| interpreter.routine_return_spec_by_name(&data.name));
+                .or_else(|| interpreter.routine_return_spec_by_name(&data.name.resolve()));
             Some(param_defs_to_sig_info(&data.param_defs, return_type))
         }
         Value::Routine { name, .. } => {
@@ -355,7 +355,7 @@ fn callable_signature_info(
                     })
                     .collect::<Vec<_>>()
             };
-            let return_type = interpreter.routine_return_spec_by_name(name);
+            let return_type = interpreter.routine_return_spec_by_name(&name.resolve());
             Some(param_defs_to_sig_info(&defs, return_type))
         }
         _ => {
@@ -632,8 +632,8 @@ impl Interpreter {
             .insert("Endian".to_string(), Value::Str("Endian".to_string()));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
-                enum_type: "Endian".to_string(),
-                key: key.clone(),
+                enum_type: Symbol::intern("Endian"),
+                key: Symbol::intern(key),
                 value: *val,
                 index,
             };
@@ -656,8 +656,8 @@ impl Interpreter {
             .insert("Order".to_string(), Value::Str("Order".to_string()));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
-                enum_type: "Order".to_string(),
-                key: key.clone(),
+                enum_type: Symbol::intern("Order"),
+                key: Symbol::intern(key),
                 value: *val,
                 index,
             };
@@ -695,8 +695,8 @@ impl Interpreter {
             .insert("Signal".to_string(), Value::Str("Signal".to_string()));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
-                enum_type: "Signal".to_string(),
-                key: key.clone(),
+                enum_type: Symbol::intern("Signal"),
+                key: Symbol::intern(key),
                 value: *val,
                 index,
             };
@@ -961,7 +961,9 @@ impl Interpreter {
             Value::ParametricRole {
                 base_name,
                 type_args,
-            } if self.roles.contains_key(base_name) => Some((base_name.clone(), type_args.clone())),
+            } if self.roles.contains_key(&base_name.resolve()) => {
+                Some((base_name.resolve(), type_args.clone()))
+            }
             Value::Pair(name, boxed) if self.roles.contains_key(name) => {
                 if let Value::Array(args, ..) = boxed.as_ref() {
                     Some((name.clone(), args.as_ref().clone()))
@@ -1166,10 +1168,10 @@ impl Interpreter {
             base_name,
             type_args,
         } = value
-            && (base_name == constraint
-                || self.role_is_subtype(base_name, constraint)
+            && (base_name.resolve() == constraint
+                || self.role_is_subtype(&base_name.resolve(), constraint)
                 || self
-                    .role_parent_args_for(base_name, type_args, constraint)
+                    .role_parent_args_for(&base_name.resolve(), type_args, constraint)
                     .is_some())
         {
             return true;

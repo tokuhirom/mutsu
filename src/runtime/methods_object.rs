@@ -26,13 +26,14 @@ impl Interpreter {
             type_args,
         } = &target
         {
-            let mut selected_role = self.roles.get(base_name).cloned();
+            let base_name_str = base_name.resolve();
+            let mut selected_role = self.roles.get(&base_name_str).cloned();
             let mut selected_param_names = self
                 .role_type_params
-                .get(base_name)
+                .get(&base_name_str)
                 .cloned()
                 .unwrap_or_default();
-            if let Some(candidates) = self.role_candidates.get(base_name).cloned() {
+            if let Some(candidates) = self.role_candidates.get(&base_name_str).cloned() {
                 let mut matching: Vec<(super::RoleCandidateDef, i32, usize)> = candidates
                     .into_iter()
                     .enumerate()
@@ -154,10 +155,7 @@ impl Interpreter {
                 }
                 self.env = saved_role_param_env;
                 return Ok(Value::Mixin(
-                    Box::new(Value::make_instance(
-                        Symbol::intern(base_name),
-                        HashMap::new(),
-                    )),
+                    Box::new(Value::make_instance(*base_name, HashMap::new())),
                     mixins,
                 ));
             }
@@ -437,7 +435,9 @@ impl Interpreter {
                             "CompUnit::DependencySpecification.new: :short-name is required",
                         )
                     })?;
-                    return Ok(Value::CompUnitDepSpec { short_name });
+                    return Ok(Value::CompUnitDepSpec {
+                        short_name: Symbol::intern(&short_name),
+                    });
                 }
                 "CompUnit::Repository::FileSystem" => {
                     let mut prefix = ".".to_string();
