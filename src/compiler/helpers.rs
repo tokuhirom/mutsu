@@ -539,6 +539,67 @@ impl Compiler {
         self.compiled_functions.insert(key, cf);
     }
 
+    /// Compile a closure body to a `CompiledCode` (not stored in compiled_functions).
+    /// Used for Lambda, AnonSub, AnonSubParams, and BlockClosure.
+    pub(super) fn compile_closure_body(
+        &mut self,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+    ) -> CompiledCode {
+        let mut sub_compiler = Compiler::new();
+        sub_compiler.set_current_package(self.current_package.clone());
+        // Pre-allocate locals for parameters
+        for param in params {
+            sub_compiler.alloc_local(param);
+        }
+        for pd in param_defs {
+            if !pd.name.is_empty() {
+                sub_compiler.alloc_local(&pd.name);
+            }
+        }
+        // Hoist sub declarations within the closure body
+        sub_compiler.hoist_sub_decls(body);
+        // If body contains CATCH/CONTROL, wrap in implicit try
+        if Self::has_catch_or_control(body) {
+            sub_compiler.compile_try(body, &None);
+            sub_compiler.code.emit(OpCode::Pop);
+        } else {
+            // Compile body; last Stmt::Expr leaves value on stack (implicit return)
+            for (i, stmt) in body.iter().enumerate() {
+                let is_last = i == body.len() - 1;
+                if is_last {
+                    match stmt {
+                        Stmt::Expr(expr) => {
+                            sub_compiler.compile_expr(expr);
+                            continue;
+                        }
+                        Stmt::If {
+                            cond,
+                            then_branch,
+                            else_branch,
+                            ..
+                        } => {
+                            sub_compiler.compile_if_value(cond, then_branch, else_branch);
+                            continue;
+                        }
+                        Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
+                            sub_compiler.compile_block_inline(stmts);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                sub_compiler.compile_stmt(stmt);
+            }
+        }
+        // Transfer any compiled functions from the closure to the parent
+        for (k, v) in sub_compiler.compiled_functions {
+            self.compiled_functions.insert(k, v);
+        }
+        sub_compiler.code
+    }
+
     /// Check if the body uses @_ or %_ legacy argument variables.
     fn body_uses_legacy_args(body: &[Stmt]) -> bool {
         let body_str = format!("{:?}", body);

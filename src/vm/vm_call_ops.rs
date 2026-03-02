@@ -644,6 +644,7 @@ impl VM {
         code: &CompiledCode,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        _compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -665,6 +666,23 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallOnValue target".to_string())
         })?;
+
+        // Upgrade WeakSub (e.g., &?BLOCK) to strong Sub before dispatch
+        let target = if let Value::WeakSub(ref weak) = target {
+            match weak.upgrade() {
+                Some(strong) => Value::Sub(strong),
+                None => Value::Nil,
+            }
+        } else {
+            target
+        };
+
+        // TODO: Fast path for compiled closures is disabled for now due to
+        // subtle behavioral differences with the tree-walker (leave targeting,
+        // bare-block immediate execution, named param binding).  The compiled
+        // bytecode is stored in SubData for future use.  Re-enable once
+        // call_compiled_closure fully replicates call_sub_value semantics.
+
         self.interpreter.set_pending_call_arg_sources(arg_sources);
         let result = self.interpreter.eval_call_on_value(target, args);
         self.interpreter.set_pending_call_arg_sources(None);
@@ -680,6 +698,7 @@ impl VM {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        _compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -699,6 +718,7 @@ impl VM {
         // resolve_code_var handles pseudo-package stripping internally
         let target = self.interpreter.resolve_code_var(&name);
         let result = if !matches!(target, Value::Nil) {
+            // TODO: Fast path for compiled closures disabled (see CallOnValue comment above)
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.interpreter.eval_call_on_value(target, args);

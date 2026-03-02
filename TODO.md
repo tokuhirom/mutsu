@@ -133,7 +133,8 @@ variable read. `WeakSub` for `&?BLOCK` self-reference only.
 ### P2. Interpreter bridge elimination
 
 Remove remaining tree-walker fallbacks in the VM:
-- [ ] Closure compilation (Lambda, AnonSub, Gather — currently delegate to interpreter)
+- [x] Closure compilation infrastructure (Lambda, AnonSub, AnonSubParams, BlockClosure bodies compiled to bytecode and stored in `SubData.compiled_code`)
+- [ ] Closure execution fast path (compiled closures still execute via tree-walker; `call_compiled_closure` exists but is disabled due to behavioral differences with `call_sub_value`: leave targeting across loop labels, bare-block immediate execution in sub bodies, named param binding with sigiled twigils like `@:f`)
 - [ ] Class/role declaration compilation
 - [ ] Full method dispatch compilation
 - [ ] Remove `InterpretExpr` / `InterpretStmt` opcodes entirely

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
+use crate::opcode::CompiledCode;
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
@@ -62,6 +63,8 @@ pub struct SubData {
     pub id: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
+    /// Pre-compiled bytecode for this closure (if compiled).
+    pub(crate) compiled_code: Option<Arc<CompiledCode>>,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -828,6 +831,7 @@ impl Value {
             assumed_named: HashMap::new(),
             id: next_instance_id(),
             empty_sig: false,
+            compiled_code: None,
         }))
     }
 
@@ -855,6 +859,7 @@ impl Value {
             assumed_named: HashMap::new(),
             id,
             empty_sig: false,
+            compiled_code: None,
         }))
     }
 

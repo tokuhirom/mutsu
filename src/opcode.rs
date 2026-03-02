@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::ast::{ParamDef, Stmt};
 use crate::value::Value;
 
@@ -271,10 +273,10 @@ pub(crate) enum OpCode {
         arity: u32,
         arg_sources_idx: Option<u32>,
     },
-    MakeAnonSub(u32),
-    MakeAnonSubParams(u32),
-    MakeLambda(u32),
-    MakeBlockClosure(u32),
+    MakeAnonSub(u32, Option<u32>),
+    MakeAnonSubParams(u32, Option<u32>),
+    MakeLambda(u32, Option<u32>),
+    MakeBlockClosure(u32, Option<u32>),
     // -- Indexing --
     Index,
     DeleteIndexNamed(u32),
@@ -630,6 +632,8 @@ pub(crate) struct CompiledCode {
     pub(crate) locals: Vec<String>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, String)>,
+    /// Pre-compiled closure bodies embedded in this code chunk.
+    pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
 }
 
 impl CompiledCode {
@@ -640,7 +644,15 @@ impl CompiledCode {
             stmt_pool: Vec::new(),
             locals: Vec::new(),
             state_locals: Vec::new(),
+            closure_compiled_codes: Vec::new(),
         }
+    }
+
+    /// Store a compiled closure body and return its index.
+    pub(crate) fn add_closure_code(&mut self, code: CompiledCode) -> u32 {
+        let idx = self.closure_compiled_codes.len() as u32;
+        self.closure_compiled_codes.push(Arc::new(code));
+        idx
     }
 
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {

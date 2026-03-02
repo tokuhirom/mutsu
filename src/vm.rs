@@ -1056,7 +1056,7 @@ impl VM {
                 arity,
                 arg_sources_idx,
             } => {
-                self.exec_call_on_value_op(code, *arity, *arg_sources_idx)?;
+                self.exec_call_on_value_op(code, *arity, *arg_sources_idx, compiled_fns)?;
                 *ip += 1;
             }
             OpCode::CallOnCodeVar {
@@ -1064,7 +1064,13 @@ impl VM {
                 arity,
                 arg_sources_idx,
             } => {
-                self.exec_call_on_code_var_op(code, *name_idx, *arity, *arg_sources_idx)?;
+                self.exec_call_on_code_var_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *arg_sources_idx,
+                    compiled_fns,
+                )?;
                 *ip += 1;
             }
             OpCode::ExecCall {
@@ -1538,24 +1544,24 @@ impl VM {
                 self.exec_make_gather_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::MakeAnonSub(idx) => {
-                self.exec_make_anon_sub_op(code, *idx)?;
+            OpCode::MakeAnonSub(idx, cc_idx) => {
+                self.exec_make_anon_sub_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
-            OpCode::MakeAnonSubParams(idx) => {
-                self.exec_make_anon_sub_params_op(code, *idx)?;
+            OpCode::MakeAnonSubParams(idx, cc_idx) => {
+                self.exec_make_anon_sub_params_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
-            OpCode::MakeLambda(idx) => {
-                self.exec_make_lambda_op(code, *idx)?;
+            OpCode::MakeLambda(idx, cc_idx) => {
+                self.exec_make_lambda_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignGeneric => {
                 self.exec_index_assign_generic_op()?;
                 *ip += 1;
             }
-            OpCode::MakeBlockClosure(idx) => {
-                self.exec_make_block_closure_op(code, *idx)?;
+            OpCode::MakeBlockClosure(idx, cc_idx) => {
+                self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
             OpCode::RegisterSub(idx) => {

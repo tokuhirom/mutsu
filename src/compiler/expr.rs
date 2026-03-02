@@ -1613,6 +1613,8 @@ impl Compiler {
             }
             Expr::AnonSub { body, is_rw } => {
                 if *is_rw {
+                    let compiled = self.compile_closure_body(&[], &[], body);
+                    let cc_idx = self.code.add_closure_code(compiled);
                     let idx = self.code.add_stmt(Stmt::SubDecl {
                         name: Symbol::intern(""),
                         name_expr: None,
@@ -1630,10 +1632,13 @@ impl Compiler {
                         supersede: false,
                         custom_traits: Vec::new(),
                     });
-                    self.code.emit(OpCode::MakeAnonSubParams(idx));
+                    self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
                 } else {
+                    let placeholders = crate::ast::collect_placeholders(body);
+                    let compiled = self.compile_closure_body(&placeholders, &[], body);
+                    let cc_idx = self.code.add_closure_code(compiled);
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
-                    self.code.emit(OpCode::MakeAnonSub(idx));
+                    self.code.emit(OpCode::MakeAnonSub(idx, Some(cc_idx)));
                 }
             }
             Expr::AnonSubParams {
@@ -1650,6 +1655,8 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                let compiled = self.compile_closure_body(params, param_defs, body);
+                let cc_idx = self.code.add_closure_code(compiled);
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: Symbol::intern(""),
                     name_expr: None,
@@ -1667,17 +1674,20 @@ impl Compiler {
                     supersede: false,
                     custom_traits: Vec::new(),
                 });
-                self.code.emit(OpCode::MakeAnonSubParams(idx));
+                self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
             }
             Expr::Lambda { param, body } => {
+                let params: Vec<String> = if param.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![param.clone()]
+                };
+                let compiled = self.compile_closure_body(&params, &[], body);
+                let cc_idx = self.code.add_closure_code(compiled);
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: Symbol::intern(""),
                     name_expr: None,
-                    params: if param.is_empty() {
-                        Vec::new()
-                    } else {
-                        vec![param.clone()]
-                    },
+                    params: params.clone(),
                     param_defs: Vec::new(),
                     return_type: None,
                     associativity: None,
@@ -1691,7 +1701,7 @@ impl Compiler {
                     supersede: false,
                     custom_traits: Vec::new(),
                 });
-                self.code.emit(OpCode::MakeLambda(idx));
+                self.code.emit(OpCode::MakeLambda(idx, Some(cc_idx)));
             }
             Expr::IndexAssign {
                 target,
@@ -1745,8 +1755,11 @@ impl Compiler {
             // Block inlining: compile inline if no placeholders
             Expr::Block(stmts) => {
                 if Self::has_block_placeholders(stmts) {
+                    let placeholders = crate::ast::collect_placeholders(stmts);
+                    let compiled = self.compile_closure_body(&placeholders, &[], stmts);
+                    let cc_idx = self.code.add_closure_code(compiled);
                     let idx = self.code.add_stmt(Stmt::Block(stmts.clone()));
-                    self.code.emit(OpCode::MakeBlockClosure(idx));
+                    self.code.emit(OpCode::MakeBlockClosure(idx, Some(cc_idx)));
                 } else {
                     self.compile_block_inline(stmts);
                 }
