@@ -34,11 +34,11 @@ Priority order reflects dependency and impact.
 
 The single largest blocker. Many S06 tests require features beyond basic positional/named params.
 
-- [ ] `where` clauses on parameters (`Int $x where * > 0`)
-- [ ] Destructuring signatures (`sub foo([$a, $b]) { }`)
-- [ ] Capture parameters (`|c`)
-- [ ] `is copy` / `is rw` parameter traits
-- [ ] Sub-signatures (`sub foo(Int :x($val)) { }`)
+- [x] `where` clauses on parameters (`Int $x where * > 0`)
+- [x] Destructuring signatures (`sub foo([$a, $b]) { }`, `@a [$x, *@rest]`)
+- [x] Capture parameters (`|c`)
+- [x] `is copy` / `is rw` parameter traits
+- [x] Sub-signatures (`sub foo(Int :x($val)) { }`)
 - [ ] Proper `Signature` / `Parameter` introspection objects
 - [ ] `callframe` / `caller` / `callwith` / `nextsame` / `nextwith`
 - [ ] `wrap` / `unwrap`

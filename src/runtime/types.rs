@@ -240,6 +240,15 @@ fn bind_sub_signature_from_value(
                         .env
                         .insert(sub_pd.name.clone(), Value::hash(named));
                 }
+            } else if sub_pd.name.starts_with('@') || sub_pd.name.starts_with('$') || !sub_pd.name.is_empty() {
+                // Slurpy *@rest or *$rest: collect remaining positional values
+                let remaining: Vec<Value> = positional[nested_positional_idx..].to_vec();
+                nested_positional_idx = positional.len();
+                if !sub_pd.name.is_empty() {
+                    interpreter
+                        .env
+                        .insert(sub_pd.name.clone(), Value::array(remaining));
+                }
             }
             continue;
         }
@@ -258,6 +267,12 @@ fn bind_sub_signature_from_value(
             candidate = Some(interpreter.eval_block_value(&[Stmt::Expr(default_expr.clone())])?);
         }
         let Some(mut candidate) = candidate else {
+            // If the param is required (not optional, no default), error
+            if !sub_pd.optional_marker && sub_pd.default.is_none() {
+                return Err(RuntimeError::new(
+                    "Too few positional arguments in sub-signature binding".to_string(),
+                ));
+            }
             continue;
         };
         if let Some(constraint) = &sub_pd.type_constraint {
@@ -291,6 +306,13 @@ fn bind_sub_signature_from_value(
         if let Some(nested) = &sub_pd.sub_signature {
             bind_sub_signature_from_value(interpreter, nested, &candidate)?;
         }
+    }
+    // If there are unconsumed positional elements and no slurpy param, error
+    let has_slurpy = sub_params.iter().any(|p| p.slurpy);
+    if !has_slurpy && nested_positional_idx < positional.len() {
+        return Err(RuntimeError::new(
+            "Too many positional arguments in sub-signature binding".to_string(),
+        ));
     }
     Ok(())
 }

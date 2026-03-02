@@ -624,6 +624,14 @@ pub(super) fn parse_for_params(
             let (r, _) = parse_char(r, ')')?;
             first_def.sub_signature = Some(sub_params);
             (r, ())
+        } else if r.starts_with('[') {
+            let (r, _) = parse_char(r, '[')?;
+            let (r, _) = ws(r)?;
+            let (r, sub_params) = super::parse_param_list_pub(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ']')?;
+            first_def.sub_signature = Some(sub_params);
+            (r, ())
         } else {
             (r, ())
         };
