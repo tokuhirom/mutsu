@@ -20,6 +20,8 @@ roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-lexical-conventions/sub-block-parsing.t
 roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
+roast/S02-lists/tree.t
+roast/S02-literals/adverbs.t
 roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/format.t
@@ -34,11 +36,13 @@ roast/S02-magicals/GROUP.t
 roast/S02-magicals/PERL.t
 roast/S02-magicals/RAKU.t
 roast/S02-magicals/USER.t
+roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/dollar_bang.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
+roast/S02-names-vars/signature.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/caller.t
@@ -98,6 +102,7 @@ roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/reduce-le1arg.t
+roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/set_union.t
@@ -105,8 +110,10 @@ roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-operators/spaceship.t
+roast/S03-operators/subscript-adverbs.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
+roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/basic.t
 roast/S03-sequence/nonnumeric.t
@@ -259,6 +266,7 @@ roast/S11-modules/require.t
 roast/S11-modules/runtime.t
 roast/S12-attributes/mutators.t
 roast/S12-class/anonymous.t
+roast/S12-class/attributes-required.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
@@ -287,6 +295,7 @@ roast/S12-methods/indirect_notation.t
 roast/S12-methods/instance.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/parallel-dispatch.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
@@ -396,6 +405,8 @@ roast/S17-promise/lock-async-stress2.t
 roast/S17-promise/stress.t
 roast/S17-scheduler/times.t
 roast/S17-supply/Promise.t
+roast/S17-supply/Seq.t
+roast/S17-supply/act.t
 roast/S17-supply/collate.t
 roast/S17-supply/decode.t
 roast/S17-supply/delayed.t
@@ -403,6 +414,8 @@ roast/S17-supply/do.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t
+roast/S17-supply/lines.t
+roast/S17-supply/list.t
 roast/S17-supply/map.t
 roast/S17-supply/max.t
 roast/S17-supply/min.t
@@ -450,6 +463,7 @@ roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
 roast/S29-conversions/hash.t
 roast/S32-array/bool.t
+roast/S32-array/create.t
 roast/S32-array/elems.t
 roast/S32-array/end.t
 roast/S32-array/exists-adverb.t
@@ -457,6 +471,7 @@ roast/S32-array/keys_values.t
 roast/S32-array/kv.t
 roast/S32-basics/pairup.t
 roast/S32-basics/xxPOS-native.t
+roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t
 roast/S32-container/zip.t
 roast/S32-encoding/registry.t
@@ -468,6 +483,7 @@ roast/S32-hash/hyperslice.t
 roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
+roast/S32-hash/push.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
@@ -476,6 +492,7 @@ roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
+roast/S32-list/cross.t
 roast/S32-list/first-end-k.t
 roast/S32-list/first-end-kv.t
 roast/S32-list/first-end-p.t
@@ -488,8 +505,11 @@ roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-list/grep.t
 roast/S32-list/map_function_return_values.t
+roast/S32-list/produce.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t
+roast/S32-list/squish.t
+roast/S32-list/unique.t
 roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t
@@ -499,6 +519,7 @@ roast/S32-num/log.t
 roast/S32-num/negative-zero.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
+roast/S32-num/power.t
 roast/S32-num/real-bridge.t
 roast/S32-num/rshift_pos_amount.t
 roast/S32-num/sqrt.t

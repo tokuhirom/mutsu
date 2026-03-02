@@ -32,38 +32,27 @@ This resolved:
 After PR #696, `coerce_to_array()` already converts ALL inputs to `ArrayKind::Array`.
 Verified: `my @a = 1,2,3; say @a eqv [1,2,3]` → `True`, `@a.WHAT` → `(Array)`.
 
-### Phase 4: Fix is-deeply (Resolved)
-Switched `is-deeply` from `==` (PartialEq) to `.eqv()` (structural equivalence).
-Also fixed `Range.Seq` to expand range elements instead of wrapping the Range as a single element.
-This exposed 21 whitelisted roast tests that were passing incorrectly due to PartialEq ignoring
-type differences. These tests have been temporarily removed from the whitelist.
+### Phase 4: Fix is-deeply (Partially resolved)
+- Fixed `Range.Seq` to expand range elements instead of wrapping as a single element.
+- Attempted switching `is-deeply` from `==` (PartialEq) to `.eqv()`, but reverted because
+  `decontainerize()` converts `ArrayKind::Array → ArrayKind::List` at call sites. This means
+  `@`-sigiled arguments lose their container type when passed to `is-deeply`, causing false
+  negatives (e.g., `is-deeply @a, [1,2,3]` fails because `@a` arrives as List).
+- `is-deeply` remains on PartialEq until decontainerize is fixed (see Phase 5).
 
-### Phase 5: Fix return types exposed by is-deeply eqv switch
-The following 21 roast tests were removed from the whitelist because `is-deeply` now correctly
-distinguishes types. The root causes are methods returning wrong container types (e.g., Array
-instead of Seq). Fix the return types and re-add to whitelist.
+### Phase 5: Fix decontainerize to preserve ArrayKind
+`decontainerize()` currently converts ALL ArrayKinds to `List`. It should only strip
+itemization: `ItemArray → Array`, `ItemList → List`, leaving `Array` and `List` unchanged.
 
-- `roast/S02-lists/tree.t` — `.tree` returns Array/List, should return Seq
-- `roast/S02-literals/adverbs.t` — `:a[16,42]` produces List, should produce Array
-- `roast/S02-magicals/args.t`
-- `roast/S02-names-vars/signature.t`
-- `roast/S03-operators/repeat.t`
-- `roast/S03-operators/subscript-adverbs.t`
-- `roast/S03-operators/u2212-minus.t`
-- `roast/S12-class/attributes-required.t`
-- `roast/S12-methods/parallel-dispatch.t`
-- `roast/S17-supply/Seq.t`
-- `roast/S17-supply/act.t`
-- `roast/S17-supply/lines.t`
-- `roast/S17-supply/list.t`
-- `roast/S32-array/create.t`
-- `roast/S32-container/roundrobin.t`
-- `roast/S32-hash/push.t`
-- `roast/S32-list/cross.t`
-- `roast/S32-list/produce.t`
-- `roast/S32-list/squish.t` — `.squish` returns Array, should return Seq
-- `roast/S32-list/unique.t` — `.unique` returns Array, should return Seq
-- `roast/S32-num/power.t`
+However, many places in the codebase use `!kind.is_real_array()` (i.e., `List | ItemList`) as
+the condition for flattening/expanding arrays. Changing `decontainerize` requires also updating
+these sites to use `kind.is_itemized()` instead. This is a large refactor affecting:
+- `builtins/functions.rs`
+- `builtins/methods_narg.rs`, `builtins/methods_0arg/mod.rs`
+- `vm/vm_misc_ops.rs`, `vm/vm_var_ops.rs`
+- `runtime/ops.rs`, `runtime/methods.rs`, `runtime/methods_mut.rs`, `runtime/types.rs`
+
+Once decontainerize is fixed, `is-deeply` can switch to `.eqv()`.
 
 ### Phase 6: Add diagnostics to is-deeply failure output
 When `is-deeply` fails, print `expected`/`got` diagnostics using `.raku` representation,

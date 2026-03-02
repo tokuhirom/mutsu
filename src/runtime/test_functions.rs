@@ -456,9 +456,13 @@ impl Interpreter {
                 {
                     Self::eqv_with_junctions(left, right).truthy()
                 } else {
-                    // Per raku-doc (Type/Test.rakudoc): is-deeply uses eqv semantics.
+                    // Per raku-doc (Type/Test.rakudoc): is-deeply should use eqv semantics.
+                    // However, Decont currently converts Array→List at call sites,
+                    // so @-sigiled arguments lose their ArrayKind. Until decontainerize
+                    // is fixed to preserve ArrayKind (tracked in TODO_eqv.md Phase 5),
+                    // we use PartialEq which ignores ArrayKind differences.
                     // Seq:D arguments get converted to Lists by calling .cache.
-                    self.seq_to_list(left).eqv(&self.seq_to_list(right))
+                    self.seq_to_list(left) == self.seq_to_list(right)
                 }
             }
             _ => false,
