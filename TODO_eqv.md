@@ -79,12 +79,11 @@ Also removed `roast/S17-supply/map.t` (pre-existing failure, unrelated to this c
 - **BigInt .raku** output shows trailing `.0` (e.g., `244140625000000000000.0` instead of
   `244140625000000000000`)
 
-## Remaining work
+## Resolved: Phase 6 (is-deeply failure diagnostics)
 
-### Phase 6: Add diagnostics to is-deeply failure output
-When `is-deeply` fails, print `expected`/`got` diagnostics using `.raku` representation,
+When `is-deeply` fails, now prints `expected`/`got` diagnostics using `.raku` representation,
 matching Raku's output format:
 ```
-# expected: $(1, 2, 3)
-#      got: $[1, 2, 3]
+# expected: (1, 2, 3)
+#      got: [1, 2, 3]
 ```

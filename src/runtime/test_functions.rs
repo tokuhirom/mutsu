@@ -464,6 +464,14 @@ impl Interpreter {
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
+        if !ok {
+            let got_raku = left.map(Self::value_raku_repr).unwrap_or_default();
+            let expected_raku = right.map(Self::value_raku_repr).unwrap_or_default();
+            self.emit_output(&format!(
+                "# expected: {}\n#      got: {}\n",
+                expected_raku, got_raku
+            ));
+        }
         Ok(Value::Bool(ok))
     }
 
