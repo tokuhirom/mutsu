@@ -905,9 +905,9 @@ impl Interpreter {
             });
         }
 
-        // Early check: private method call on non-Instance values
+        // Early check: private method call on non-Instance, non-Package values
         if let Some(private_rest) = method.strip_prefix('!')
-            && !matches!(&target, Value::Instance { .. })
+            && !matches!(&target, Value::Instance { .. } | Value::Package(_))
         {
             // Owner-qualified: !Owner::method
             if let Some((owner_class, private_name)) = private_rest.split_once("::") {
