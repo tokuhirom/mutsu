@@ -364,6 +364,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 ## Conventions
 
+- **Always run `cargo fmt` and `cargo clippy -- -D warnings` before committing.** These checks run as pre-commit hooks, but you must ensure your code passes them before creating a commit. Never commit unformatted code.
 - Keep each Rust source file under 500 lines. When a file exceeds 500 lines, split it into smaller modules immediately — do not defer.
 - Write feature tests using prove (`t/*.t`).
 - Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.
