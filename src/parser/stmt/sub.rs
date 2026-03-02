@@ -2179,6 +2179,55 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Sub-signature with brackets after variable: @a [$x, $y] or $a [$x, $y]
+    if rest.starts_with('[') {
+        let (r, _) = parse_char(rest, '[')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
+        let (r, _) = ws(r)?;
+        // Handle optional (?) / required (!) suffix after sub-signature
+        let (r, post_required, post_opt_marker) = parse_required_suffix(r);
+        let (r, _) = ws(r)?;
+        let mut param_traits = Vec::new();
+        let (mut r, _) = ws(r)?;
+        while let Some(r2) = keyword("is", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            validate_param_trait(&trait_name, &param_traits, r2)?;
+            param_traits.push(trait_name);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        let param_name = if slurpy {
+            match slurpy_sigil {
+                Some('%') => format!("%{}", name),
+                Some('@') => format!("@{}", name),
+                _ => name,
+            }
+        } else if named && original_sigil == b'&' {
+            name
+        } else {
+            match original_sigil {
+                b'@' => format!("@{}", name),
+                b'%' => format!("%{}", name),
+                b'&' => format!("&{}", name),
+                _ => name,
+            }
+        };
+        let mut p = make_param(param_name);
+        p.required = required || post_required;
+        p.optional_marker = opt_marker || post_opt_marker;
+        p.named = named;
+        p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
+        p.type_constraint = type_constraint;
+        p.sub_signature = Some(sub_params);
+        p.traits = param_traits;
+        return Ok((r, p));
+    }
+
     // Default value
     let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
