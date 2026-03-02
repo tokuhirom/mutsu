@@ -1083,7 +1083,8 @@ impl Interpreter {
             Value::Int(0) => Ok(target),
             // .tree(n) — tree to n levels
             Value::Int(n) if *n > 0 => Ok(Value::array(self.tree_depth(&items, *n as usize)?)),
-            // .tree(*) — full depth (same as .tree()); * compiles to Inf
+            // .tree(*) or .tree(Inf) — full depth (same as .tree())
+            Value::Whatever => Ok(Value::array(self.tree_depth(&items, usize::MAX)?)),
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                 Ok(Value::array(self.tree_depth(&items, usize::MAX)?))
             }

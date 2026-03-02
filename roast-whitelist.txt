@@ -20,6 +20,8 @@ roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-lexical-conventions/sub-block-parsing.t
 roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
+roast/S02-lists/tree.t
+roast/S02-literals/adverbs.t
 roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/format.t
@@ -34,6 +36,7 @@ roast/S02-magicals/GROUP.t
 roast/S02-magicals/PERL.t
 roast/S02-magicals/RAKU.t
 roast/S02-magicals/USER.t
+roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/dollar_bang.t
 roast/S02-magicals/file_line.t
@@ -61,6 +64,7 @@ roast/S02-types/nan.t
 roast/S02-types/nested_pairs.t
 roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
+roast/S02-types/range-iterator.t
 roast/S02-types/resolved-in-setting.t
 roast/S02-types/sigils-and-types.t
 roast/S02-types/stash.t

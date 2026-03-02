@@ -507,7 +507,7 @@ impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(current_process_id()));
-        env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
+        env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         env.insert(
             "*SCHEDULER".to_string(),
@@ -1505,7 +1505,8 @@ impl Interpreter {
     }
 
     pub fn set_args(&mut self, args: Vec<Value>) {
-        self.env.insert("@*ARGS".to_string(), Value::array(args));
+        self.env
+            .insert("@*ARGS".to_string(), Value::real_array(args));
     }
 
     pub fn add_lib_path(&mut self, path: String) {
