@@ -124,10 +124,10 @@ impl Interpreter {
             }
         }
         let typed_global = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
-        if let Some(def) = self.functions.get(&Symbol::intern(&typed_global)) {
-            if def.param_defs.iter().all(|p| p.where_constraint.is_none()) {
-                return Some(def.clone());
-            }
+        if let Some(def) = self.functions.get(&Symbol::intern(&typed_global))
+            && def.param_defs.iter().all(|p| p.where_constraint.is_none())
+        {
+            return Some(def.clone());
         }
         // Try matching against all typed candidates for this name/arity
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
@@ -577,10 +577,10 @@ impl Interpreter {
                 .map(|v| super::value_type_name(v))
                 .collect();
             let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
-            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
-                if def.param_defs.iter().all(|p| p.where_constraint.is_none()) {
-                    return Some(def.clone());
-                }
+            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key))
+                && def.param_defs.iter().all(|p| p.where_constraint.is_none())
+            {
+                return Some(def.clone());
             }
             let prefix = format!("{}/{arity}:", name);
             let mut candidates: Vec<(String, FunctionDef)> = self
