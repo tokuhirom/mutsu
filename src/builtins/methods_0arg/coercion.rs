@@ -280,8 +280,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 };
                 Some(Ok(Value::array(bytes)))
             }
-            Value::Array(items, is_array) => {
-                if method == "Array" && !*is_array {
+            Value::Array(items, kind) => {
+                if method == "Array" && !kind.is_real_array() {
                     Some(Ok(Value::real_array(items.to_vec())))
                 } else {
                     Some(Ok(target.clone()))

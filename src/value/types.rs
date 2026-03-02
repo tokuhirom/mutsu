@@ -24,8 +24,9 @@ impl Value {
     pub(crate) fn eqv(&self, other: &Self) -> bool {
         match (self, other) {
             // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
-            (Value::Array(a, a_mut), Value::Array(b, b_mut)) => {
-                a_mut == b_mut
+            // eqv ignores Scalar wrapping — only Array vs List distinction matters
+            (Value::Array(a, a_kind), Value::Array(b, b_kind)) => {
+                a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()
                     && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }

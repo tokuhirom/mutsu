@@ -599,8 +599,8 @@ impl Interpreter {
                 && !target_var.starts_with('&')
                 && !has_sigilless_meta);
         if scalar_like_target
-            && let Value::Array(_, is_array) = &target
-            && !*is_array
+            && let Value::Array(_, kind) = &target
+            && !kind.is_real_array()
             && matches!(
                 method,
                 "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
@@ -640,7 +640,7 @@ impl Interpreter {
                 self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
             if has_sigilless_meta {
                 let readonly = matches!(self.env.get(&readonly_key), Some(Value::Bool(true)));
-                let itemized_array = matches!(target, Value::Array(_, true));
+                let itemized_array = matches!(target, Value::Array(_, kind) if kind.is_real_array());
                 if readonly && !itemized_array {
                     return Ok(target);
                 }
@@ -809,7 +809,7 @@ impl Interpreter {
                     };
                     for arg in args {
                         match arg {
-                            Value::Array(vals, is_array) if is_array => {
+                            Value::Array(vals, kind) if kind.is_real_array() => {
                                 items.extend(vals.iter().cloned())
                             }
                             other => items.push(other),
@@ -950,10 +950,10 @@ impl Interpreter {
         if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
             let key = target_var.to_string();
             let array_flag = match self.env.get(&key) {
-                Some(Value::Array(_, is_array)) => *is_array,
+                Some(Value::Array(_, kind)) => *kind,
                 _ => match &target {
-                    Value::Array(_, is_array) => *is_array,
-                    _ => false,
+                    Value::Array(_, kind) => *kind,
+                    _ => ArrayKind::List,
                 },
             };
             match method {
@@ -965,7 +965,7 @@ impl Interpreter {
                     if method == "append" {
                         for arg in &args {
                             match arg {
-                                Value::Array(inner, is_array) if *is_array => {
+                                Value::Array(inner, kind) if kind.is_real_array() => {
                                     items.extend(inner.iter().cloned())
                                 }
                                 other => items.push(other.clone()),
@@ -1160,12 +1160,12 @@ impl Interpreter {
                                 collected.push(next);
                             }
                             if !collected.is_empty()
-                                && let Some(Value::Array(existing, is_array)) = args.first()
+                                && let Some(Value::Array(existing, arr_kind)) = args.first()
                             {
                                 let mut next = existing.to_vec();
                                 next.extend(collected);
                                 let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *is_array);
+                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             Value::Str("IterationEnd".to_string())
@@ -1221,12 +1221,12 @@ impl Interpreter {
                                 collected.push(next);
                             }
                             if !collected.is_empty()
-                                && let Some(Value::Array(existing, is_array)) = args.first()
+                                && let Some(Value::Array(existing, arr_kind)) = args.first()
                             {
                                 let mut next = existing.to_vec();
                                 next.extend(collected.clone());
                                 let updated_array =
-                                    Value::Array(std::sync::Arc::new(next), *is_array);
+                                    Value::Array(std::sync::Arc::new(next), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
                             if collected.len() >= want {
@@ -1305,10 +1305,10 @@ impl Interpreter {
                     if vals.is_empty() {
                         return;
                     }
-                    if let Some(Value::Array(existing, is_array)) = args.first() {
+                    if let Some(Value::Array(existing, arr_kind)) = args.first() {
                         let mut next = existing.to_vec();
                         next.extend(vals.iter().cloned());
-                        let updated_array = Value::Array(std::sync::Arc::new(next), *is_array);
+                        let updated_array = Value::Array(std::sync::Arc::new(next), *arr_kind);
                         self.overwrite_array_bindings_by_identity(existing, updated_array);
                     }
                 };

@@ -19,7 +19,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::opcode::{CompiledCode, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
-    JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
+    ArrayKind, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
 };
 use num_traits::Signed;
 
@@ -2295,7 +2295,7 @@ impl Interpreter {
         // Ensure @-variables always store Array(true) (real Arrays)
         let value = if key.starts_with('@') {
             match value {
-                Value::Array(items, false) => Value::Array(items, true),
+                Value::Array(items, kind) if !kind.is_real_array() => Value::Array(items, ArrayKind::Array),
                 other => other,
             }
         } else {

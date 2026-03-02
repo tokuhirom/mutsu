@@ -289,7 +289,7 @@ impl Interpreter {
                 } else {
                     items_mut.sort_by(|a, b| compare_values(a, b).cmp(&0));
                 }
-                Ok(Value::Array(items, false))
+                Ok(Value::Array(items, ArrayKind::List))
             }
             Value::Hash(map) => {
                 // Convert hash to list of pairs, then sort
@@ -828,13 +828,13 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            Value::Array(items, is_array) => {
+            Value::Array(items, arr_kind) => {
                 let (filtered, mutated_items) =
                     self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
                 let updated_source = std::sync::Arc::new(mutated_items);
                 self.overwrite_array_bindings_by_identity(
                     &items,
-                    Value::Array(updated_source.clone(), is_array),
+                    Value::Array(updated_source.clone(), arr_kind),
                 );
                 if let Value::Array(filtered_items, ..) = &filtered {
                     let mut indices = Vec::new();
@@ -854,7 +854,7 @@ impl Interpreter {
                             filtered_items,
                             &updated_source,
                             indices,
-                            is_array,
+                            arr_kind,
                         );
                     }
                 }
@@ -1141,11 +1141,11 @@ impl Interpreter {
                     {
                         processed.push(self.call_sub_value(
                             closure.clone(),
-                            vec![Value::Array(inner.clone(), false)],
+                            vec![Value::Array(inner.clone(), ArrayKind::List)],
                             false,
                         )?);
                     } else {
-                        processed.push(Value::Array(inner.clone(), false)); // already Arc-wrapped
+                        processed.push(Value::Array(inner.clone(), ArrayKind::List)); // already Arc-wrapped
                     }
                 }
                 other => processed.push(other.clone()),

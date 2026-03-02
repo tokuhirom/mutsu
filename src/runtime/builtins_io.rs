@@ -282,7 +282,7 @@ impl Interpreter {
             }
             changed.push(path_value.clone());
         }
-        Ok(Value::Array(changed.into(), false))
+        Ok(Value::Array(changed.into(), ArrayKind::List))
     }
 
     pub(super) fn builtin_mkdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {

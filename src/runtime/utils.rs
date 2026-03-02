@@ -2,12 +2,12 @@ use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::value::{JunctionKind, RuntimeError, Value};
+use crate::value::{ArrayKind, JunctionKind, RuntimeError, Value};
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
-type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, bool);
+type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, ArrayKind);
 type GrepViewMap = HashMap<usize, GrepViewBinding>;
 
 fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
@@ -32,7 +32,7 @@ pub(crate) fn register_grep_view_binding(
     filtered: &Arc<Vec<Value>>,
     source: &Arc<Vec<Value>>,
     source_indices: Vec<usize>,
-    source_is_array: bool,
+    source_is_array: ArrayKind,
 ) {
     if let Ok(mut bindings) = grep_view_bindings().lock() {
         bindings.insert(
@@ -44,7 +44,7 @@ pub(crate) fn register_grep_view_binding(
 
 pub(crate) fn get_grep_view_binding(
     filtered: &Arc<Vec<Value>>,
-) -> Option<(Arc<Vec<Value>>, Vec<usize>, bool)> {
+) -> Option<(Arc<Vec<Value>>, Vec<usize>, ArrayKind)> {
     let bindings = grep_view_bindings().lock().ok()?;
     bindings.get(&grep_view_key(filtered)).cloned()
 }
@@ -395,7 +395,7 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     match value {
-        Value::Array(items, _) => Value::Array(items, true),
+        Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
         Value::Nil => Value::real_array(Vec::new()),
         Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::Range(a, b) => Value::real_array((a..=b).map(Value::Int).collect()),
@@ -411,7 +411,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             Value::real_array(value_to_list(&value))
         }
         Value::GenericRange { .. } => value,
-        Value::Slip(items) | Value::Seq(items) => Value::Array(items, true),
+        Value::Slip(items) | Value::Seq(items) => Value::Array(items, ArrayKind::Array),
         Value::LazyList(_) => value,
         other => Value::real_array(vec![other]),
     }
@@ -497,8 +497,8 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Num(_) => "Num",
         Value::Str(_) => "Str",
         Value::Bool(_) => "Bool",
-        Value::Array(_, true) => "Array",
-        Value::Array(_, false) => "List",
+        Value::Array(_, kind) if kind.is_real_array() => "Array",
+        Value::Array(_, _) => "List",
         Value::LazyList(_) => "Array",
         Value::Hash(_) => "Hash",
         Value::Range(_, _)
@@ -634,7 +634,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         // Set operators: empty set
         "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         // Comma/zip: empty list
-        "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), false),
+        "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), ArrayKind::List),
         _ => Value::Nil,
     }
 }

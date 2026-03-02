@@ -705,7 +705,7 @@ impl VM {
         if list.len() == 1 {
             let only = list.remove(0);
             list = match only {
-                Value::Array(items, is_real) if !is_real => items.iter().cloned().collect(),
+                Value::Array(items, kind) if !kind.is_real_array() => items.iter().cloned().collect(),
                 Value::Seq(items) => items.iter().cloned().collect(),
                 Value::LazyList(ll) => {
                     if let Ok(items) = self.interpreter.force_lazy_list_bridge(&ll) {

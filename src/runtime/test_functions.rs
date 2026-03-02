@@ -515,9 +515,9 @@ impl Interpreter {
     /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
     fn seq_to_list(&mut self, v: &Value) -> Value {
         match v {
-            Value::Seq(items) => Value::Array(items.clone(), false),
+            Value::Seq(items) => Value::Array(items.clone(), ArrayKind::List),
             Value::LazyList(list) => match self.force_lazy_list(list) {
-                Ok(items) => Value::Array(std::sync::Arc::new(items), false),
+                Ok(items) => Value::Array(std::sync::Arc::new(items), ArrayKind::List),
                 Err(_) => v.clone(),
             },
             _ => v.clone(),

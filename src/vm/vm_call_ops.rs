@@ -857,13 +857,13 @@ impl VM {
                 }
             }
         }
-        if let Value::Array(existing, is_array) = &target {
+        if let Value::Array(existing, kind) = &target {
             self.interpreter.overwrite_array_items_by_identity_for_vm(
                 existing,
                 items.clone(),
-                *is_array,
+                *kind,
             );
-            if let Some((source, indices, source_is_array)) =
+            if let Some((source, indices, source_kind)) =
                 crate::runtime::utils::get_grep_view_binding(existing)
             {
                 let mut source_items = source.to_vec();
@@ -875,7 +875,7 @@ impl VM {
                 self.interpreter.overwrite_array_items_by_identity_for_vm(
                     &source,
                     source_items,
-                    source_is_array,
+                    source_kind,
                 );
             }
             self.sync_locals_from_env(code);
@@ -1023,11 +1023,11 @@ impl VM {
                 }
             }
         }
-        if let Value::Array(existing, is_array) = &target {
+        if let Value::Array(existing, kind) = &target {
             self.interpreter.overwrite_array_items_by_identity_for_vm(
                 existing,
                 items.clone(),
-                *is_array,
+                *kind,
             );
             self.sync_locals_from_env(code);
         }

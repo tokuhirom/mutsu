@@ -2,7 +2,7 @@
 
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{ArrayKind, RuntimeError, Value};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::{builtin_rand, builtin_srand, builtin_srand_auto};
@@ -31,13 +31,13 @@ fn is_infinite_range(value: &Value) -> bool {
 fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
     match v {
         // Lists (not true Arrays), Seqs, and Slips are flattened recursively
-        Value::Array(items, false) | Value::Seq(items) | Value::Slip(items) => {
+        Value::Array(items, ArrayKind::List) | Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flat_val_deep(item, out);
             }
         }
-        // True Arrays (is_array=true) are itemized containers — don't descend
-        Value::Array(_, true) => out.push(v.clone()),
+        // True Arrays are itemized containers — don't descend
+        Value::Array(_, kind) if kind.is_real_array() => out.push(v.clone()),
         Value::Range(..)
         | Value::RangeExcl(..)
         | Value::RangeExclStart(..)
