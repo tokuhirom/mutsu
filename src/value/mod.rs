@@ -153,12 +153,11 @@ impl ArrayKind {
     }
 
     /// Remove Scalar wrapper (decontainerize).
+    /// Decont strips everything down to List — this matches the old behavior
+    /// where `Decont` converted all arrays (`true`/`false`) to `false` (List).
+    /// `Array → List`, `ItemArray → List`, `ItemList → List`, `List → List`.
     pub fn decontainerize(self) -> Self {
-        match self {
-            ArrayKind::ItemList => ArrayKind::List,
-            ArrayKind::ItemArray => ArrayKind::Array,
-            other => other,
-        }
+        ArrayKind::List
     }
 }
 
