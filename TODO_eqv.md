@@ -28,10 +28,9 @@ This resolved:
 
 ## Remaining work
 
-### Phase 2: Fix coerce_to_array
-`coerce_to_array()` still produces `ArrayKind::List` for non-array values. Ideally `my @a = 1,2,3`
-should produce `ArrayKind::Array`. This hasn't caused test failures yet but is technically incorrect
-per Raku semantics.
+### Phase 2: coerce_to_array (Resolved)
+After PR #696, `coerce_to_array()` already converts ALL inputs to `ArrayKind::Array`.
+Verified: `my @a = 1,2,3; say @a eqv [1,2,3]` → `True`, `@a.WHAT` → `(Array)`.
 
 ### Phase 4: Fix is-deeply
 Switch `is-deeply` from `==` (PartialEq) to `eqv` (structural equivalence).
