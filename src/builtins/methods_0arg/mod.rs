@@ -718,7 +718,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
-            Value::Array(items, ArrayKind::List) if items.iter().all(|v| matches!(v, Value::Int(_))) => {
+            Value::Array(items, ArrayKind::List)
+                if items.iter().all(|v| matches!(v, Value::Int(_))) =>
+            {
                 // Uni-like list: convert codepoints to a string
                 let s: String = items
                     .iter()

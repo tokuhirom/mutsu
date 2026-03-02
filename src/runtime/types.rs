@@ -1306,7 +1306,8 @@ impl Interpreter {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &arg
-                                && !kind.is_real_array() && !kind.is_itemized()
+                                && !kind.is_real_array()
+                                && !kind.is_itemized()
                             {
                                 items.extend(arr.iter().cloned());
                                 continue;

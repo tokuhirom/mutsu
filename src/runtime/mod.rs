@@ -2295,7 +2295,9 @@ impl Interpreter {
         // Ensure @-variables always store Array(true) (real Arrays)
         let value = if key.starts_with('@') {
             match value {
-                Value::Array(items, kind) if !kind.is_real_array() => Value::Array(items, ArrayKind::Array),
+                Value::Array(items, kind) if !kind.is_real_array() => {
+                    Value::Array(items, ArrayKind::Array)
+                }
                 other => other,
             }
         } else {
