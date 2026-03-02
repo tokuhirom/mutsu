@@ -2499,6 +2499,14 @@ impl Interpreter {
                         let items = Self::value_to_list(&Value::LazyList(ll));
                         Value::Seq(std::sync::Arc::new(items))
                     }
+                    other @ (Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. }) => {
+                        let items = Self::value_to_list(&other);
+                        Value::Seq(std::sync::Arc::new(items))
+                    }
                     other => Value::Seq(std::sync::Arc::new(vec![other])),
                 });
             }
