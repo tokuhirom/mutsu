@@ -22,23 +22,37 @@ impl VM {
         }
     }
 
+    fn resolve_closure_code(
+        code: &CompiledCode,
+        cc_idx: Option<u32>,
+    ) -> Option<std::sync::Arc<CompiledCode>> {
+        cc_idx.map(|i| code.closure_compiled_codes[i as usize].clone())
+    }
+
     pub(super) fn exec_make_anon_sub_op(
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             let params = crate::ast::collect_placeholders(body);
-            let val = Value::make_sub(
-                Symbol::intern(self.interpreter.current_package()),
-                Symbol::intern(""),
+            let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
+                package: Symbol::intern(self.interpreter.current_package()),
+                name: Symbol::intern(""),
                 params,
-                Vec::new(),
-                body.clone(),
-                false,
-                self.interpreter.env().clone(),
-            );
+                param_defs: Vec::new(),
+                body: body.clone(),
+                is_rw: false,
+                env: self.interpreter.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+                compiled_code,
+            }));
             self.stack.push(val);
             Ok(())
         } else {
@@ -50,6 +64,7 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
@@ -65,15 +80,21 @@ impl VM {
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::Str(rt.clone()));
             }
-            let val = Value::make_sub(
-                Symbol::intern(self.interpreter.current_package()),
-                Symbol::intern(""),
-                params.clone(),
-                param_defs.clone(),
-                body.clone(),
-                *is_rw,
+            let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
+                package: Symbol::intern(self.interpreter.current_package()),
+                name: Symbol::intern(""),
+                params: params.clone(),
+                param_defs: param_defs.clone(),
+                body: body.clone(),
+                is_rw: *is_rw,
                 env,
-            );
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+                compiled_code,
+            }));
             self.stack.push(val);
             Ok(())
         } else {
@@ -85,6 +106,7 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
@@ -100,15 +122,21 @@ impl VM {
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::Str(rt.clone()));
             }
-            let val = Value::make_sub(
-                Symbol::intern(self.interpreter.current_package()),
-                Symbol::intern(""),
-                params.clone(),
-                param_defs.clone(),
-                body.clone(),
-                *is_rw,
+            let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
+                package: Symbol::intern(self.interpreter.current_package()),
+                name: Symbol::intern(""),
+                params: params.clone(),
+                param_defs: param_defs.clone(),
+                body: body.clone(),
+                is_rw: *is_rw,
                 env,
-            );
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+                compiled_code,
+            }));
             self.stack.push(val);
             Ok(())
         } else {
@@ -120,18 +148,25 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            let val = Value::make_sub(
-                Symbol::intern(self.interpreter.current_package()),
-                Symbol::intern(""),
-                vec![],
-                Vec::new(),
-                body.clone(),
-                false,
-                self.interpreter.env().clone(),
-            );
+            let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
+                package: Symbol::intern(self.interpreter.current_package()),
+                name: Symbol::intern(""),
+                params: vec![],
+                param_defs: Vec::new(),
+                body: body.clone(),
+                is_rw: false,
+                env: self.interpreter.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+                compiled_code,
+            }));
             self.stack.push(val);
             Ok(())
         } else {

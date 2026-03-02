@@ -552,6 +552,7 @@ impl Interpreter {
                 assumed_named: data.assumed_named.clone(),
                 id: crate::value::next_instance_id(),
                 empty_sig: data.empty_sig,
+                compiled_code: data.compiled_code.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
