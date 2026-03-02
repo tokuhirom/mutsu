@@ -234,11 +234,18 @@ Per-type method documentation — consult when implementing methods on specific 
 
 The `main` branch is protected by GitHub branch protection rules — only PRs that pass CI (`make test` + `make roast`) can be merged. **Do NOT waste time checking whether a failing test also fails on `main`.** If a test fails on your feature branch, the problem is in your changes, not in `main`. Checking out `main` or running tests against it to "verify" is pointless and wastes AI resources.
 
-## Checking `make roast` results
+## Checking `make test` / `make roast` results
+
+`make test` and `make roast` automatically save their full output to log files via `tee`:
+- `make test` → `tmp/make-test.log`
+- `make roast` → `tmp/make-roast.log`
+
+**After running `make test` or `make roast`, always use the Grep tool on the log file instead of re-running the command.** Do NOT re-run `make test` or `make roast` just to grep the output — use the saved log file.
 
 ```
-make roast 2>&1 | grep -E "(FAILED|Failed)" | head -20
-make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
+# Use the Grep tool on these files:
+# tmp/make-test.log
+# tmp/make-roast.log
 ```
 
 ## Running mutsu safely
