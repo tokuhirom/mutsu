@@ -9,5 +9,5 @@ is roundrobin(<a b c>, $(1, 2)), (('a', $(1, 2)), ('b',), ('c',)),
     'roundrobin keeps itemized arguments in non-leading position';
 
 my %h = %(:a);
-is-deeply roundrobin(%h<>:v.map: *.flat), ((True,),),
+is-deeply roundrobin(%h<>:v.map: *.flat), (True.Seq,),
     'roundrobin handles zen-angle values map with whatever flat';

@@ -272,7 +272,7 @@ fn is_value_lazy(value: &Value) -> bool {
 
 fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match value {
-        Value::Array(items, kind) if !kind.is_real_array() || flatten_arrays => {
+        Value::Array(items, kind) if *kind == ArrayKind::List || flatten_arrays => {
             for item in items.iter() {
                 flatten_deep_value(item, out, flatten_arrays);
             }

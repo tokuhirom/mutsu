@@ -76,6 +76,11 @@ impl Value {
                 ar.to_bits() == br.to_bits() && ai.to_bits() == bi.to_bits()
             }
             // Same-type scalar comparisons delegate to PartialEq
+            // BigInt: both sides BigInt — use PartialEq
+            (Value::BigInt(_), Value::BigInt(_)) => self == other,
+            // Cross-representation Int/BigInt: compare numerically
+            (Value::Int(a), Value::BigInt(b)) => NumBigInt::from(*a) == *b,
+            (Value::BigInt(a), Value::Int(b)) => *a == NumBigInt::from(*b),
             (Value::Int(_), Value::Int(_))
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
