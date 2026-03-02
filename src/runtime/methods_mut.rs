@@ -902,15 +902,14 @@ impl Interpreter {
                 "squish" => {
                     let current = self.env.get(&key).cloned().unwrap_or(target.clone());
                     let squished = self.dispatch_squish(current, &args)?;
-                    let squished_items = match squished {
-                        Value::Array(items, ..) | Value::Seq(items) => items.to_vec(),
-                        other => vec![other],
-                    };
                     if self.in_lvalue_assignment {
-                        self.env
-                            .insert(key, Value::real_array(squished_items.clone()));
+                        let squished_items = match &squished {
+                            Value::Array(items, ..) | Value::Seq(items) => items.to_vec(),
+                            other => vec![other.clone()],
+                        };
+                        self.env.insert(key, Value::real_array(squished_items));
                     }
-                    return Ok(Value::real_array(squished_items));
+                    return Ok(squished);
                 }
                 _ => {}
             }
@@ -1643,12 +1642,12 @@ impl Interpreter {
                             other => items.push(other),
                         }
                     }
-                    Value::array(items)
+                    Value::real_array(items)
                 }
                 _ => {
                     // First duplicate: create array [existing, new]
                     if is_push {
-                        Value::array(vec![existing.clone(), value])
+                        Value::real_array(vec![existing.clone(), value])
                     } else {
                         // append: flatten arrays
                         let mut items = vec![existing.clone()];
@@ -1658,7 +1657,7 @@ impl Interpreter {
                             }
                             other => items.push(other),
                         }
-                        Value::array(items)
+                        Value::real_array(items)
                     }
                 }
             };

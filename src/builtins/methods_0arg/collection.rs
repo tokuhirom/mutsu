@@ -449,7 +449,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         result.push(item.clone());
                     }
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(std::sync::Arc::new(result))))
             }
             _ => None,
         },
