@@ -148,10 +148,8 @@ impl Interpreter {
             b_has_where
                 .cmp(&a_has_where)
                 .then_with(|| {
-                    let a_has_subsig =
-                        a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
-                    let b_has_subsig =
-                        b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                    let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                    let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
                     b_has_subsig.cmp(&a_has_subsig)
                 })
                 .then(a.0.cmp(&b.0))
