@@ -36,8 +36,8 @@ fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
                 flat_val_deep(item, out);
             }
         }
-        // True Arrays are itemized containers — don't descend
-        Value::Array(_, kind) if kind.is_real_array() => out.push(v.clone()),
+        // Itemized containers — don't descend
+        Value::Array(_, kind) if kind.is_itemized() => out.push(v.clone()),
         Value::Range(..)
         | Value::RangeExcl(..)
         | Value::RangeExclStart(..)

@@ -810,7 +810,7 @@ impl Interpreter {
                     };
                     for arg in args {
                         match arg {
-                            Value::Array(vals, kind) if kind.is_real_array() => {
+                            Value::Array(vals, kind) if !kind.is_itemized() => {
                                 items.extend(vals.iter().cloned())
                             }
                             other => items.push(other),

@@ -2698,7 +2698,7 @@ impl Interpreter {
                     let mut values = Vec::new();
                     for arg in &args {
                         match arg {
-                            Value::Array(items, ArrayKind::List) => {
+                            Value::Array(items, kind) if !kind.is_itemized() => {
                                 values.extend(items.iter().cloned());
                             }
                             Value::Range(..)
@@ -3692,7 +3692,7 @@ impl Interpreter {
             let class_name = crate::runtime::utils::value_type_name(&target);
             let dispatch_class = if self.has_user_method(class_name, method) {
                 Some(class_name)
-            } else if matches!(target, Value::Array(_, kind) if !kind.is_real_array())
+            } else if matches!(target, Value::Array(_, kind) if !kind.is_itemized())
                 && self.has_user_method("Array", method)
             {
                 // @-sigiled values are list-like internally, but augmenting Array methods

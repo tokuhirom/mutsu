@@ -1306,7 +1306,6 @@ impl Interpreter {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &arg
-                                && !kind.is_real_array()
                                 && !kind.is_itemized()
                             {
                                 items.extend(arr.iter().cloned());
@@ -1732,7 +1731,7 @@ impl Interpreter {
                                 // Named arg — leave for *%_ slurpy or post-loop check
                             }
                             Value::Array(arr, kind) => {
-                                if kind.is_real_array() || kind.is_itemized() {
+                                if kind.is_itemized() {
                                     items.push(Value::Array(arr.clone(), kind));
                                 } else {
                                     items.extend(arr.iter().cloned());

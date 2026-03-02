@@ -2,7 +2,7 @@
 
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{ArrayKind, RuntimeError, Value};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ fn flatten_with_depth(
         return;
     }
     match value {
-        Value::Array(items, kind) if !kind.is_real_array() || flatten_arrays => {
+        Value::Array(items, kind) if *kind == ArrayKind::List || flatten_arrays => {
             let next_depth = depth.map(|d| d.saturating_sub(1));
             for item in items.iter() {
                 flatten_with_depth(item, next_depth, out, flatten_arrays);

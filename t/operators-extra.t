@@ -8,9 +8,9 @@ is ?"hello", True, '?"hello" is True';
 is ?"", False, '?"" is False';
 
 # ^ upto operator
-is-deeply (^5).list, [0, 1, 2, 3, 4], '^5 produces 0..^5';
+is-deeply (^5).list, (0, 1, 2, 3, 4), '^5 produces 0..^5';
 my @vals = <a b c>;
-is-deeply (^@vals.elems).list, [0, 1, 2], '^@array.elems parses and evaluates as 0..^N';
+is-deeply (^@vals.elems).list, (0, 1, 2), '^@array.elems parses and evaluates as 0..^N';
 my $sum = 0;
 for ^@vals.elems -> $i { $sum = $sum + $i; }
 is $sum, 3, '^@array.elems works as for-loop iterable';

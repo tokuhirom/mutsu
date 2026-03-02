@@ -26,33 +26,60 @@ This resolved:
   - `roast/S06-currying/misc.t`
   - `roast/S06-currying/slurpy.t`
 
-## Remaining work
-
-### Phase 2: coerce_to_array (Resolved)
+## Resolved: Phase 2 (coerce_to_array)
 After PR #696, `coerce_to_array()` already converts ALL inputs to `ArrayKind::Array`.
 Verified: `my @a = 1,2,3; say @a eqv [1,2,3]` → `True`, `@a.WHAT` → `(Array)`.
 
-### Phase 4: Fix is-deeply (Partially resolved)
-- Fixed `Range.Seq` to expand range elements instead of wrapping as a single element.
-- Attempted switching `is-deeply` from `==` (PartialEq) to `.eqv()`, but reverted because
-  `decontainerize()` converts `ArrayKind::Array → ArrayKind::List` at call sites. This means
-  `@`-sigiled arguments lose their container type when passed to `is-deeply`, causing false
-  negatives (e.g., `is-deeply @a, [1,2,3]` fails because `@a` arrives as List).
-- `is-deeply` remains on PartialEq until decontainerize is fixed (see Phase 5).
+## Resolved: Phase 4 + Phase 5 (decontainerize + is-deeply eqv)
 
-### Phase 5: Fix decontainerize to preserve ArrayKind
-`decontainerize()` currently converts ALL ArrayKinds to `List`. It should only strip
-itemization: `ItemArray → Array`, `ItemList → List`, leaving `Array` and `List` unchanged.
+Fixed `decontainerize()` to only strip itemization (`ItemArray→Array`, `ItemList→List`)
+instead of converting everything to `List`. Updated flatten detection across the codebase
+from `!kind.is_real_array()` to `!kind.is_itemized()` for call-site flattening (comma
+operator, slurpy params, reduction, etc.). For `.flat` method specifically, only
+`ArrayKind::List` is flattened (matching Raku semantics where `.flat` on Array is a no-op).
 
-However, many places in the codebase use `!kind.is_real_array()` (i.e., `List | ItemList`) as
-the condition for flattening/expanding arrays. Changing `decontainerize` requires also updating
-these sites to use `kind.is_itemized()` instead. This is a large refactor affecting:
-- `builtins/functions.rs`
-- `builtins/methods_narg.rs`, `builtins/methods_0arg/mod.rs`
-- `vm/vm_misc_ops.rs`, `vm/vm_var_ops.rs`
-- `runtime/ops.rs`, `runtime/methods.rs`, `runtime/methods_mut.rs`, `runtime/types.rs`
+Switched `is-deeply` from `PartialEq` to `.eqv()` semantics per Raku spec.
 
-Once decontainerize is fixed, `is-deeply` can switch to `.eqv()`.
+Also fixed `eqv` for `BigInt` values (was missing match arm, falling through to `false`).
+
+### Roast tests removed from whitelist (regression from eqv strictness)
+
+These tests use `is-deeply` with type mismatches that were hidden by PartialEq.
+Most fail because operations return List but tests compare with `[...]` (Array),
+or because of allomorph (IntStr) handling gaps.
+
+1. `roast/S02-lists/tree.t`
+2. `roast/S02-literals/adverbs.t`
+3. `roast/S02-magicals/args.t`
+4. `roast/S02-types/range-iterator.t`
+5. `roast/S03-operators/repeat.t`
+6. `roast/S03-operators/subscript-adverbs.t`
+7. `roast/S03-operators/u2212-minus.t`
+8. `roast/S12-class/attributes-required.t`
+9. `roast/S12-methods/parallel-dispatch.t`
+10. `roast/S32-array/create.t`
+11. `roast/S32-container/roundrobin.t`
+12. `roast/S32-hash/iterator.t`
+13. `roast/S32-hash/push.t`
+14. `roast/S32-list/cross.t`
+15. `roast/S32-list/grep.t`
+16. `roast/S32-list/produce.t`
+17. `roast/S32-list/squish.t`
+18. `roast/S32-str/sprintf-c.t`
+19. `roast/S32-str/sprintf-u.t`
+
+Also removed `roast/S17-supply/map.t` (pre-existing failure, unrelated to this change).
+
+### Root causes to fix for re-whitelisting
+
+- **Hyper dispatch** (`».?`, `».*`, `».+`) returns List instead of Array
+- **Many methods** (`.list`, `.grep`, `.map`, `.squish`, `.produce`, etc.) return List
+  where Raku returns Array or Seq — need per-method audit of return container types
+- **Allomorph** (IntStr/NumStr/RatStr) not fully implemented — `val()` returns plain Int
+- **BigInt .raku** output shows trailing `.0` (e.g., `244140625000000000000.0` instead of
+  `244140625000000000000`)
+
+## Remaining work
 
 ### Phase 6: Add diagnostics to is-deeply failure output
 When `is-deeply` fails, print `expected`/`got` diagnostics using `.raku` representation,

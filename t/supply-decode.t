@@ -20,10 +20,10 @@ my @utf16 =
 ;
 my @str = <<do gjump sover "\r\nth" elaz yfo x>>;
 
-is-deeply Supply.from-list(@utf8).decode.list, @str,
+is-deeply Supply.from-list(@utf8).decode.list, @str.List,
   "Supply.decode handles utf8 chunks with grapheme carry";
 
-is-deeply Supply.from-list(@utf16).decode("utf16").list, @str,
+is-deeply Supply.from-list(@utf16).decode("utf16").list, @str.List,
   "Supply.decode handles utf16 chunks with grapheme carry";
 
 is Supply.from-list(utf8.new(13),utf8.new(10)).decode.Seq[0].chars, 1,
