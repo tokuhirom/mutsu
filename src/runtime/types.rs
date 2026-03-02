@@ -1313,7 +1313,7 @@ impl Interpreter {
                             }
                             items.push(arg);
                         }
-                        Some(Value::array(items))
+                        Some(Value::real_array(items))
                     }
                 } else if is_subsig_capture {
                     Some(sub_signature_target_from_remaining_args(
@@ -1743,7 +1743,7 @@ impl Interpreter {
                         }
                         positional_idx += 1;
                     }
-                    let slurpy_value = Value::array(items);
+                    let slurpy_value = Value::real_array(items);
                     if !pd.name.is_empty() {
                         let key = if pd.name.starts_with('@') {
                             pd.name.clone()
