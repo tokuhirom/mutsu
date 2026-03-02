@@ -102,6 +102,7 @@ roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/reduce-le1arg.t
+roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/set_union.t
@@ -109,8 +110,10 @@ roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-operators/spaceship.t
+roast/S03-operators/subscript-adverbs.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
+roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/basic.t
 roast/S03-sequence/nonnumeric.t
