@@ -110,6 +110,8 @@ impl Value {
             | (Value::Promise(_), Value::Promise(_))
             | (Value::Channel(_), Value::Channel(_))
             | (Value::Uni { .. }, Value::Uni { .. }) => self == other,
+            // Mixin (allomorphs): compare base values with eqv
+            (Value::Mixin(a, _), Value::Mixin(b, _)) => a.eqv(b),
             // Cross-type comparisons always return false for eqv
             _ => false,
         }

@@ -722,6 +722,8 @@ impl Interpreter {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
                 self.eval_call_on_value(left.clone(), Vec::new())
             }
+            // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
+            Value::Seq(items) => Ok(Value::array(items.as_ref().clone())),
             _ => Ok(left.clone()),
         }
     }

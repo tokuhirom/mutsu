@@ -659,7 +659,16 @@ fn parse_quote_word_list<'a>(
             .collect()
     };
     if exprs.len() == 1 {
-        Ok((rest, exprs.into_iter().next().unwrap()))
+        let expr = exprs.into_iter().next().unwrap();
+        // Single-word angle brackets: <7+8i> produces plain Complex, not ComplexStr
+        // (Raku has no ComplexStr allomorph for single-element < >)
+        let expr = match expr {
+            Expr::Literal(Value::Mixin(inner, _)) if matches!(*inner, Value::Complex(..)) => {
+                Expr::Literal(*inner)
+            }
+            other => other,
+        };
+        Ok((rest, expr))
     } else {
         Ok((rest, Expr::ArrayLiteral(exprs)))
     }

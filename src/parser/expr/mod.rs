@@ -1688,11 +1688,8 @@ mod tests {
                 op: TokenKind::Minus,
                 expr,
             } => {
-                assert!(matches!(
-                    *expr,
-                    Expr::Literal(Value::Mixin(inner, _))
-                        if matches!(*inner, Value::Complex(42.0, 2.0))
-                ));
+                // Single-element <42+2i> produces plain Complex (not ComplexStr allomorph)
+                assert!(matches!(*expr, Expr::Literal(Value::Complex(42.0, 2.0))));
             }
             _ => panic!("expected unary minus expression"),
         }
