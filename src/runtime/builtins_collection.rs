@@ -655,7 +655,7 @@ impl Interpreter {
         Ok(match val {
             Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).reverse();
-                Value::Array(items, false)
+                Value::Array(items, ArrayKind::List)
             }
             Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
             _ => Value::Nil,
@@ -694,7 +694,7 @@ impl Interpreter {
             }
             Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).sort_by_key(|a| a.to_string_value());
-                Value::Array(items, false)
+                Value::Array(items, ArrayKind::List)
             }
             _ => Value::Nil,
         })

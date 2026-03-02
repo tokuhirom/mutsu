@@ -18,7 +18,7 @@ fn flatten_with_depth(
         return;
     }
     match value {
-        Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+        Value::Array(items, kind) if !kind.is_real_array() || flatten_arrays => {
             let next_depth = depth.map(|d| d.saturating_sub(1));
             for item in items.iter() {
                 flatten_with_depth(item, next_depth, out, flatten_arrays);

@@ -791,12 +791,12 @@ impl Interpreter {
             }
             "," => {
                 let mut items = match left {
-                    Value::Array(values, is_itemized) if !*is_itemized => values.to_vec(),
+                    Value::Array(values, kind) if !kind.is_real_array() => values.to_vec(),
                     Value::Seq(values) | Value::Slip(values) => values.to_vec(),
                     other => vec![other.clone()],
                 };
                 match right {
-                    Value::Array(values, is_itemized) if !*is_itemized => {
+                    Value::Array(values, kind) if !kind.is_real_array() => {
                         items.extend(values.iter().cloned());
                     }
                     Value::Seq(values) | Value::Slip(values) => {

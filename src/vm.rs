@@ -6,7 +6,7 @@ use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat};
+use crate::value::{ArrayKind, JunctionKind, LazyList, RuntimeError, Value, make_rat};
 use num_traits::{Signed, Zero};
 
 mod vm_arith_ops;

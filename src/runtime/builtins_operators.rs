@@ -425,9 +425,9 @@ impl Interpreter {
                 if exclude_start {
                     // Remove the first element
                     match &result {
-                        Value::Array(items, is_real) if !items.is_empty() => {
+                        Value::Array(items, kind) if !items.is_empty() => {
                             let new_items = items[1..].to_vec();
-                            result = if *is_real {
+                            result = if kind.is_real_array() {
                                 Value::real_array(new_items)
                             } else {
                                 Value::array(new_items)

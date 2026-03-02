@@ -2,7 +2,7 @@
 
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
+use crate::value::{ArrayKind, RuntimeError, Value, make_big_rat, make_rat};
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
@@ -272,7 +272,7 @@ fn is_value_lazy(value: &Value) -> bool {
 
 fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match value {
-        Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+        Value::Array(items, kind) if !kind.is_real_array() || flatten_arrays => {
             for item in items.iter() {
                 flatten_deep_value(item, out, flatten_arrays);
             }
@@ -296,37 +296,48 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
     matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
 }
 
+fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
+    match kind {
+        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::List => format!("({})", inner),
+        ArrayKind::ItemArray => format!("$[{}]", inner),
+        ArrayKind::ItemList => format!("$({})", inner),
+    }
+}
+
+fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
+    match kind {
+        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::List => format!("({})", inner),
+        ArrayKind::ItemArray => format!("$[{}]", inner),
+        ArrayKind::ItemList => format!("$({})", inner),
+    }
+}
+
 fn raku_value(v: &Value) -> String {
     match v {
-        Value::Array(items, is_array) => {
-            let snapshot = || {
-                items
+        Value::Array(items, kind) => {
+            let snapshot = |k: ArrayKind| {
+                let inner = items
                     .iter()
                     .filter(|item| !is_self_array_ref_marker(item))
                     .map(raku_value)
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join(", ");
+                raku_array_wrap(&inner, k)
             };
             let inner = items
                 .iter()
                 .map(|item| {
                     if is_self_array_ref_marker(item) {
-                        if *is_array {
-                            format!("[{}]", snapshot())
-                        } else {
-                            format!("$[{}]", snapshot())
-                        }
+                        snapshot(*kind)
                     } else {
                         raku_value(item)
                     }
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            if *is_array {
-                format!("[{}]", inner)
-            } else {
-                format!("$[{}]", inner)
-            }
+            raku_array_wrap(&inner, *kind)
         }
         Value::Seq(items) => {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
@@ -654,8 +665,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "clone" => {
             match target {
                 Value::Package(_) | Value::Nil => Some(Ok(target.clone())),
-                Value::Array(items, is_array) => {
-                    Some(Ok(Value::Array(Arc::new(items.to_vec()), *is_array)))
+                Value::Array(items, kind) => {
+                    Some(Ok(Value::Array(Arc::new(items.to_vec()), *kind)))
                 }
                 Value::Hash(map) => Some(Ok(Value::Hash(Arc::new((**map).clone())))),
                 _ => None, // fall through to slow path for instances etc.
@@ -707,7 +718,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
-            Value::Array(items, false) if items.iter().all(|v| matches!(v, Value::Int(_))) => {
+            Value::Array(items, ArrayKind::List)
+                if items.iter().all(|v| matches!(v, Value::Int(_))) =>
+            {
                 // Uni-like list: convert codepoints to a string
                 let s: String = items
                     .iter()
@@ -1122,10 +1135,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => None,
         },
         "reverse" => match target {
-            Value::Array(items, is_array) => {
+            Value::Array(items, kind) => {
                 let mut reversed = (**items).clone();
                 reversed.reverse();
-                Some(Ok(Value::Array(std::sync::Arc::new(reversed), *is_array)))
+                Some(Ok(Value::Array(std::sync::Arc::new(reversed), *kind)))
             }
             Value::Range(a, b)
             | Value::RangeExcl(a, b)
@@ -1461,17 +1474,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Seq(_) if method == "raku" || method == "perl" => {
                 Some(Ok(Value::Str(raku_value(target))))
             }
-            Value::Array(items, is_array) if method == "gist" => {
+            Value::Array(items, kind) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
                     match v {
                         Value::Nil => "Nil".to_string(),
-                        Value::Array(inner, is_array) => {
+                        Value::Array(inner, kind) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                            if *is_array {
-                                format!("[{}]", elems)
-                            } else {
-                                format!("({})", elems)
-                            }
+                            gist_array_wrap(&elems, *kind)
                         }
                         Value::Seq(inner) | Value::Slip(inner) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
@@ -1490,23 +1499,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 }
                 let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                if *is_array {
-                    Some(Ok(Value::Str(format!("[{}]", inner))))
-                } else {
-                    Some(Ok(Value::Str(format!("({})", inner))))
-                }
+                Some(Ok(Value::Str(gist_array_wrap(&inner, *kind))))
             }
             Value::Seq(items) | Value::Slip(items) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
                     match v {
                         Value::Nil => "Nil".to_string(),
-                        Value::Array(inner, is_array) => {
+                        Value::Array(inner, kind) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                            if *is_array {
-                                format!("[{}]", elems)
-                            } else {
-                                format!("({})", elems)
-                            }
+                            gist_array_wrap(&elems, *kind)
                         }
                         Value::Seq(inner) | Value::Slip(inner) => {
                             let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
@@ -1954,7 +1955,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             _ => Some(Ok(Value::Nil)),
         },
-        "item" => Some(Ok(target.clone())),
+        "item" => match target {
+            Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
+            other => Some(Ok(other.clone())),
+        },
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array
             let items = runtime::value_to_list(target);

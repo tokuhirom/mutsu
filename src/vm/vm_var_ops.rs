@@ -32,13 +32,13 @@ impl VM {
 
     fn resolve_array_entry(
         items: &Arc<Vec<Value>>,
-        is_arr: bool,
+        kind: ArrayKind,
         idx: usize,
         default: Value,
     ) -> Value {
         match items.get(idx) {
             Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
-                Value::Array(items.clone(), is_arr)
+                Value::Array(items.clone(), kind)
             }
             Some(value) => value.clone(),
             None => default,
@@ -541,7 +541,7 @@ impl VM {
                 let depth = Self::array_depth(&target);
                 if depth <= 1 && indices.len() > 1 {
                     // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
-                    let Value::Array(items, is_arr) = &target else {
+                    let Value::Array(items, kind) = &target else {
                         unreachable!()
                     };
                     let mut out = Vec::with_capacity(indices.len());
@@ -549,7 +549,7 @@ impl VM {
                         if let Some(i) = Self::index_to_usize(idx) {
                             out.push(Self::resolve_array_entry(
                                 items,
-                                *is_arr,
+                                *kind,
                                 i,
                                 self.typed_container_default(&target),
                             ));
@@ -569,7 +569,7 @@ impl VM {
                     }
                 }
             }
-            (Value::Array(items, is_arr), Value::Range(a, b)) => {
+            (Value::Array(items, kind), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
                 let slice = if start >= items.len() {
@@ -578,13 +578,13 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                if is_arr {
+                if kind.is_real_array() {
                     Value::array(slice)
                 } else {
                     Value::Seq(Arc::new(slice))
                 }
             }
-            (Value::Array(items, is_arr), Value::RangeExcl(a, b)) => {
+            (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
                 let slice = if start >= items.len() {
@@ -597,7 +597,7 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                if is_arr {
+                if kind.is_real_array() {
                     Value::array(slice)
                 } else {
                     Value::Seq(Arc::new(slice))

@@ -11,11 +11,11 @@ impl Interpreter {
                 Value::Array(..) => val,
                 Value::Range(start, end) => {
                     let items: Vec<Value> = (*start..=*end).map(Value::Int).collect();
-                    Value::Array(std::sync::Arc::new(items), false)
+                    Value::Array(std::sync::Arc::new(items), ArrayKind::List)
                 }
                 Value::RangeExcl(start, end) => {
                     let items: Vec<Value> = (*start..*end).map(Value::Int).collect();
-                    Value::Array(std::sync::Arc::new(items), false)
+                    Value::Array(std::sync::Arc::new(items), ArrayKind::List)
                 }
                 _ => val,
             },
@@ -831,11 +831,11 @@ impl Interpreter {
         &mut self,
         needle: &std::sync::Arc<Vec<Value>>,
         updated_items: Vec<Value>,
-        is_array: bool,
+        kind: ArrayKind,
     ) {
         self.overwrite_array_bindings_by_identity(
             needle,
-            Value::Array(std::sync::Arc::new(updated_items), is_array),
+            Value::Array(std::sync::Arc::new(updated_items), kind),
         );
     }
 
@@ -947,7 +947,7 @@ impl Interpreter {
         {
             return Ok(target);
         }
-        if let Value::Array(items, is_array) = &target {
+        if let Value::Array(items, arr_kind) = &target {
             match (method, args.as_slice()) {
                 ("EXISTS-POS", [idx]) => {
                     let index = match idx {
@@ -995,7 +995,7 @@ impl Interpreter {
                     updated[index] = value.clone();
                     self.overwrite_array_bindings_by_identity(
                         items,
-                        Value::Array(std::sync::Arc::new(updated), *is_array),
+                        Value::Array(std::sync::Arc::new(updated), *arr_kind),
                     );
                     return Ok(value.clone());
                 }
@@ -1009,7 +1009,7 @@ impl Interpreter {
                 }
                 ("clone", _) => {
                     let cloned = items.to_vec();
-                    return Ok(Value::Array(Arc::new(cloned), *is_array));
+                    return Ok(Value::Array(Arc::new(cloned), *arr_kind));
                 }
                 _ => {}
             }
@@ -1976,8 +1976,8 @@ impl Interpreter {
                     | Value::RangeExclStart(_, _)
                     | Value::RangeExclBoth(_, _)
                     | Value::GenericRange { .. } => "Range",
-                    Value::Array(_, true) => "Array",
-                    Value::Array(_, false) => "List",
+                    Value::Array(_, kind) if kind.is_real_array() => "Array",
+                    Value::Array(_, _) => "List",
                     Value::LazyList(_) => "Seq",
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
@@ -2128,8 +2128,8 @@ impl Interpreter {
                             Value::Str(_) => "Str",
                             Value::Bool(_) => "Bool",
                             Value::Hash(_) => "Hash",
-                            Value::Array(_, true) => "Array",
-                            Value::Array(_, false) => "List",
+                            Value::Array(_, kind) if kind.is_real_array() => "Array",
+                            Value::Array(_, _) => "List",
                             Value::Nil => "Any",
                             _ => "Mu",
                         };
@@ -2690,7 +2690,7 @@ impl Interpreter {
                     let mut values = Vec::new();
                     for arg in &args {
                         match arg {
-                            Value::Array(items, false) => {
+                            Value::Array(items, ArrayKind::List) => {
                                 values.extend(items.iter().cloned());
                             }
                             Value::Range(..)
@@ -3684,7 +3684,7 @@ impl Interpreter {
             let class_name = crate::runtime::utils::value_type_name(&target);
             let dispatch_class = if self.has_user_method(class_name, method) {
                 Some(class_name)
-            } else if matches!(target, Value::Array(_, false))
+            } else if matches!(target, Value::Array(_, kind) if !kind.is_real_array())
                 && self.has_user_method("Array", method)
             {
                 // @-sigiled values are list-like internally, but augmenting Array methods

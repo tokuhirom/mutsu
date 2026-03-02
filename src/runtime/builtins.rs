@@ -1290,12 +1290,12 @@ impl Interpreter {
             value: Value,
         ) -> Result<Value, RuntimeError> {
             match value {
-                Value::Array(items, is_array) => {
+                Value::Array(items, kind) => {
                     let mut mapped = Vec::with_capacity(items.len());
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Array(std::sync::Arc::new(mapped), is_array))
+                    Ok(Value::Array(std::sync::Arc::new(mapped), kind))
                 }
                 Value::Seq(items) => {
                     let mut mapped = Vec::with_capacity(items.len());

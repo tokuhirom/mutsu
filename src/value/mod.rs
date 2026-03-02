@@ -119,6 +119,48 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     }
 }
 
+/// Distinguishes the four array/list container kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArrayKind {
+    /// `(1,2,3)` — flattens in slurpy context, `.raku` → `(1, 2, 3)`
+    List,
+    /// `[1,2,3]` — doesn't flatten, `.raku` → `[1, 2, 3]`
+    Array,
+    /// `$(1,2,3)` — Scalar-wrapped list, doesn't flatten, `.raku` → `$(1, 2, 3)`
+    ItemList,
+    /// `$[1,2,3]` — Scalar-wrapped array, doesn't flatten, `.raku` → `$[1, 2, 3]`
+    ItemArray,
+}
+
+impl ArrayKind {
+    /// True for `Array` and `ItemArray` (the `[...]` constructor).
+    pub fn is_real_array(self) -> bool {
+        matches!(self, ArrayKind::Array | ArrayKind::ItemArray)
+    }
+
+    /// True for `ItemList` and `ItemArray` (Scalar-wrapped).
+    pub fn is_itemized(self) -> bool {
+        matches!(self, ArrayKind::ItemList | ArrayKind::ItemArray)
+    }
+
+    /// Wrap in a Scalar container (`.item`).
+    pub fn itemize(self) -> Self {
+        match self {
+            ArrayKind::List => ArrayKind::ItemList,
+            ArrayKind::Array => ArrayKind::ItemArray,
+            other => other,
+        }
+    }
+
+    /// Remove Scalar wrapper (decontainerize).
+    /// Decont strips everything down to List — this matches the old behavior
+    /// where `Decont` converted all arrays (`true`/`false`) to `false` (List).
+    /// `Array → List`, `ItemArray → List`, `ItemList → List`, `List → List`.
+    pub fn decontainerize(self) -> Self {
+        ArrayKind::List
+    }
+}
+
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -137,8 +179,8 @@ pub enum Value {
         excl_start: bool,
         excl_end: bool,
     },
-    /// The bool flag distinguishes Array (`true`, from `[...]`) from List (`false`, from `(,)`).
-    Array(Arc<Vec<Value>>, bool),
+    /// Distinguishes Array, List, and their itemized (Scalar-wrapped) variants.
+    Array(Arc<Vec<Value>>, ArrayKind),
     Hash(Arc<HashMap<String, Value>>),
     Rat(i64, i64),
     FatRat(i64, i64),
@@ -733,11 +775,11 @@ impl PartialEq for Value {
 impl Value {
     // ---- Arc-wrapping convenience constructors ----
     pub fn array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), false)
+        Value::Array(Arc::new(items), ArrayKind::List)
     }
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items), true)
+        Value::Array(Arc::new(items), ArrayKind::Array)
     }
     pub fn hash(map: HashMap<String, Value>) -> Self {
         Value::Hash(Arc::new(map))
