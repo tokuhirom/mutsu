@@ -11,8 +11,8 @@ my @objs = (1..3).map({ PDRegFoo.new(count => $_) });
 @objs».inc;
 is @objs.map({ .count }).join(","), "2,3,4", 'hyper dispatch updates rw public attributes';
 
-# TODO: Raku returns Array with Nil values; mutsu returns List with Any
-is-deeply @objs».?missing, (Any, Any, Any), 'hyper .? returns Any type objects when method is missing';
+# Hyper dispatch on @-variable returns Array (same container type as input)
+is-deeply @objs».?missing, [Any, Any, Any], 'hyper .? returns Any type objects when method is missing';
 
 class PDRegMulti {
     has $.v;
@@ -21,8 +21,8 @@ class PDRegMulti {
 }
 
 my @m = (1..2).map({ PDRegMulti.new(v => $_) });
-# TODO: Raku returns Array of Lists; mutsu returns List of Lists
-is-deeply @m».*mul(2), ((2, 102), (4, 104)), 'hyper .* returns all matching method candidates';
-is-deeply @m».+mul(2), ((2, 102), (4, 104)), 'hyper .+ returns all matching method candidates';
+# Hyper dispatch on @-variable returns Array (same container type as input)
+is-deeply @m».*mul(2), [(2, 102), (4, 104)], 'hyper .* returns all matching method candidates';
+is-deeply @m».+mul(2), [(2, 102), (4, 104)], 'hyper .+ returns all matching method candidates';
 
 is (a => 1, a => 2)>>.<a>, '1 2', 'hyper >>.<key> works on pairs';
