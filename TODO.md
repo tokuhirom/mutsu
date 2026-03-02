@@ -2,400 +2,190 @@
 
 Goal: Build a practical Raku (Perl 6) runtime in Rust that is faster than MoarVM.
 
----
-
-## Phase 1: Language Core (current)
-
-Get minimal Raku programs running. Prioritize feature implementation.
-
-### Type System
-- [x] Int
-- [x] Num (f64)
-- [x] Str
-- [x] Bool
-- [x] Array
-- [x] Hash
-- [x] Range (`..`, `..^`)
-- [x] Pair
-- [x] FatRat
-- [x] Nil
-- [x] Rat (rational number)
-- [x] Complex
-- [x] Set, Bag, Mix
-- [x] Enum
-- [x] Junction
-
-### Literals
-- [x] Integer literals
-- [x] Floating-point literals
-- [x] Single-quoted strings
-- [x] Double-quoted strings + variable interpolation
-- [x] Angle-bracket word list `<a b c>`
-- [x] Underscores in numeric literals (`1_000_000`)
-- [x] Radix notation (`0x`, `0o`, `0b`)
-- [x] Exponential notation (`1e10`)
-- [x] Q/q/qq forms
-- [x] Heredoc (`q:to/END/`)
-- [x] Regex literals
-
-### Variables
-- [x] `$` scalar
-- [x] `@` array
-- [x] `%` hash
-- [x] `$_` topic variable
-- [x] `$!` error variable
-- [x] `$*` dynamic variables (`$*PID`, `$*CWD`, etc.)
-- [x] `&` code variable
-- [x] `$?FILE`, `$?LINE` compile-time variables
-- [x] `$!` (attribute access)
-- [x] `$.` (public attribute)
-- [x] `$^` placeholder variables
-
-### Operators
-- [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `%%`, `**`, `div`, `mod`
-- [x] String: `~`, `x`, `xx`
-- [x] Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- [x] String comparison: `eq`, `ne`, `lt`, `le`, `gt`, `ge`
-- [x] Logical: `&&`, `||`, `!`, `//`, `and`, `or`, `not`
-- [x] Assignment: `=`, `:=`, `+=`, `-=`, `~=`, `*=`
-- [x] Increment: `++`, `--` (prefix/postfix)
-- [x] Ternary: `?? !!`
-- [x] Smartmatch: `~~`
-- [x] Range: `..`, `..^`
-- [x] Pair: `=>`
-- [x] `so` (loose bool coercion)
-- [x] `^..`, `^..^` (range variants)
-- [x] `<=>`, `leg`, `cmp` (comparison returning Order)
-- [x] `eqv` (value equality)
-- [x] `===` (identity equality)
-- [x] `?` (boolean context prefix)
-- [x] `^` (upto: `^10` -> `0..^10`)
-- [x] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
-- [x] Junction operators: `&`, `|`, `^`
-- [x] `[op]` reduction meta operator
-- [x] Meta operators: `R`, `X`, `Z`
-- [x] Meta operators: `op=`
-- [x] Hyper operators: `>>op<<`
-
-### Control Flow
-- [x] `if` / `elsif` / `else`
-- [x] `unless`
-- [x] `while`, `until`
-- [x] `loop` (C-style)
-- [x] `repeat while` / `repeat until`
-- [x] `for`
-- [x] `for` with pointy block (`-> $x`)
-- [x] `given` / `when` / `default`
-- [x] `last`, `next`
-- [x] `return`
-- [x] `die`
-- [x] `try` / `CATCH`
-- [x] `with` / `without`
-- [x] `orwith`
-- [x] `proceed`, `succeed`
-- [x] `redo`
-- [x] Labeled loops
-- [x] `CONTROL { }`
-- [x] `warn`
-- [x] `fail`
-- [x] `do { }` block
-- [x] `gather` / `take`
-- [x] Statement modifiers: `if`, `unless`, `for`, `while`, `until`, `given`, `when`, `with`, `without`
-
-### Subroutines
-- [x] `sub` declaration
-- [x] Multiple parameters
-- [x] Anonymous sub / lambda (`-> $x { }`)
-- [x] `return`
-- [x] Named parameters
-- [x] Default values
-- [x] Type constraints (`Int $x`)
-- [x] Slurpy parameters (`*@args`, `*%opts`)
-- [x] `multi sub`
-- [x] `proto sub`
-- [x] `MAIN` sub
-- [x] Closure (lexical capture)
-
-### Built-in Methods
-- [x] `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`
-- [x] `.elems`, `.chars`, `.uc`, `.lc`
-- [x] `.push`, `.pop`, `.shift`, `.unshift`, `.reverse`, `.sort`
-- [x] `.keys`, `.values`, `.kv`, `.pairs`, `.exists`
-- [x] `.split`, `.join`
-- [x] `.WHAT`, `.perl`, `.gist`
-- [x] `.map`, `.grep`, `.first`
-- [x] `.flat`, `.unique`
-- [x] `.squish`
-- [x] `.min`, `.max`
-- [x] `.minmax`
-- [x] `.sum`, `.pick`, `.roll`
-- [x] `.comb`, `.contains`, `.starts-with`, `.ends-with`
-- [x] `.substr`, `.index`, `.rindex`
-- [x] `.chomp`, `.chop`, `.trim`
-- [x] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
-- [x] `.base`
-- [x] `.parse-base`
-- [x] `.Range` (type range)
-- [ ] `.new` (constructor)
-
-### Test Module
-- [x] `plan`, `done-testing`
-- [x] `ok`, `nok`, `is`, `isnt`
-- [x] `cmp-ok`, `like`, `unlike`
-- [x] `skip`, `skip-rest`, `todo`, `bail-out`
-- [x] `subtest`
-- [x] `lives-ok`, `dies-ok`
-- [x] `eval-lives-ok`
-- [x] `throws-like`
-- [x] `is-deeply`
-- [x] `isa-ok`
-- [x] `does-ok`, `can-ok`
-
-### Miscellaneous
-- [x] `EVAL`
-- [x] `use` (module loading)
-- [x] Comments (`#`, embedded comments, POD)
-- [x] String interpolation
-- [x] Regex (basic)
-- [x] Improve `say` formatting (.gist compliant)
+Current status (2026-03): roast 564/1463 passing (38.5%). Hybrid bytecode VM + tree-walker.
 
 ---
 
-## Phase 2: Object System
+## Completed milestones
 
-Implement Raku OOP.
+Phase 1-4 (language core, OOP, regex/grammar basics, advanced features) are largely done.
+See `docs/vm-compilation-history.md` for detailed VM compilation progress log.
 
-- [x] `class` declaration
-- [x] `has` attributes (`has $.name`, `has $!private`)
-- [x] `method` declaration
-- [x] `self`
-- [x] `new` constructor (auto-generated)
-- [x] Inheritance (`is Parent`)
-- [x] `role` declaration and `does`
-- [x] `multi method`
-- [x] `BUILD` / `TWEAK` submethods
-- [x] Type checking
-- [x] Coercion (`Int(Str)` etc.)
-- [x] `enum`
-- [x] `subset`
-- [x] Method resolution order (MRO, C3)
+Key completed items:
+- All basic types (Int, Num, Str, Bool, Rat, Complex, Array, Hash, Set/Bag/Mix, Enum, Junction, Range, Pair)
+- Full operator set (arithmetic, string, comparison, logical, bitwise, meta, hyper, reduction)
+- Control flow (if/unless/while/for/loop/given/when/gather/take/try/CATCH)
+- OOP (class, role, inheritance with C3 MRO, multi method, BUILD/TWEAK, enum, subset)
+- Basic regex/grammar (rx/m/s, character classes, quantifiers, anchors, named captures, token/rule/grammar, proto token, make/made)
+- Phasers (BEGIN, END, ENTER, LEAVE, FIRST, NEXT, LAST)
+- Concurrency scaffolding (Promise, Supply, Channel, react/whenever, Proc::Async)
+- Bytecode VM with native dispatch for ~50 binary ops, ~40 functions, ~50 methods
+- Scalar container model
+- Symbol table
 
 ---
 
-## Phase 3: Regex and Grammars
+## Architectural milestones (roast grinding alone won't surface these)
 
-Implement Raku regex/grammar.
+These are systemic improvements that unlock large batches of roast tests at once.
+Priority order reflects dependency and impact.
 
-- [x] Basic regex (`/pattern/`)
-- [x] `rx//` form
-- [x] `m//` match operator
-- [x] `s///` substitution operator
-- [x] Character classes, quantifiers, anchors
-- [x] Named captures (`$<name>`)
-- [x] `token`, `rule` declarations
-- [x] `grammar` declaration
-- [x] `proto token` and LTM
-- [ ] Action classes
-- [x] `make` / `made`
+### A1. Signature/parameter system overhaul (S06: 2/94 passing)
+
+The single largest blocker. Many S06 tests require features beyond basic positional/named params.
+
+- [ ] `where` clauses on parameters (`Int $x where * > 0`)
+- [ ] Destructuring signatures (`sub foo([$a, $b]) { }`)
+- [ ] Capture parameters (`|c`)
+- [ ] `is copy` / `is rw` parameter traits
+- [ ] Sub-signatures (`sub foo(Int :x($val)) { }`)
+- [ ] Proper `Signature` / `Parameter` introspection objects
+- [ ] `callframe` / `caller` / `callwith` / `nextsame` / `nextwith`
+- [ ] `wrap` / `unwrap`
+- [ ] Proper `return` as control exception (currently uses Rust panic-like flow)
+- [ ] Tail call optimization (deep recursion crashes)
+
+### A2. Container model completion
+
+Scalar containers are done. Array/Hash container semantics need work.
+
+- [ ] `Proxy` container (for `is rw` accessor return values)
+- [ ] Array auto-vivification (`@a[5] = 42` on empty array)
+- [ ] Hash auto-vivification (`%h<a><b> = 1`)
+- [ ] `temp` / `let` variable save/restore (dynamic scope)
+- [ ] Typed containers (`my Int @a`, `my Str %h`)
+- [ ] Container `.VAR` introspection
+
+### A3. Type system deepening (S02: 27/146 passing)
+
+- [ ] Allomorphic types (`IntStr`, `NumStr`, `RatStr`, `ComplexStr`)
+- [ ] Type objects vs instances (proper undefined-ness: `Int` is a type object)
+- [ ] `where` clauses on `subset` (partially done)
+- [ ] Coercion types (`Int(Str)` as type constraint, not just explicit coercion)
+- [ ] `is` trait on variables (`my $x is default(42)`)
+- [ ] Typed variable assignment enforcement at runtime
+
+### A4. Module/package system (S10: 0/9, S11: 3/22 passing)
+
+- [ ] `export` / `is export` trait with tag support
+- [ ] `import` with selective import (`use Foo :bar`)
+- [ ] `require` at runtime (dynamic module loading)
+- [ ] `unit module` / `unit class` / `unit role`
+- [ ] Proper `EXPORT` sub convention
+- [ ] `CompUnit` / repository API (for `zef` compatibility)
+- [ ] Precompilation (bytecode caching for loaded modules)
+
+### A5. Grammar/regex completion (S05: 10/98 passing)
+
+- [ ] Action classes (method dispatch on grammar rule match)
+- [ ] Grammar inheritance (`is Grammar`)
+- [ ] Full protoregex with longest-token matching
+- [ ] Regex modifiers (`:g`, `:i`, `:ii`, `:s`, `:ss`, `:ratchet`, `:overlap`, `:exhaustive`)
+- [ ] Interpolating closures in regex (`/ { code } /`)
+- [ ] `$/` proper binding after match
+- [ ] Match object full API (`.caps`, `.chunks`, positional captures)
+- [ ] Named capture alias (`$<name>=<rule>`)
+- [ ] Lookbehind (`<!before>`, `<!after>`)
+
+### A6. Class system completion (S12: 5/101 passing)
+
+- [ ] `nextsame` / `nextwith` / `callsame` / `callwith` re-dispatch
+- [ ] Anonymous classes (`class { }`)
+- [ ] Parameterized roles (`role Foo[Type] { }`)
+- [ ] `trusts` declarator
+- [ ] `augment class` (monkey-patching)
+- [ ] Meta-object protocol (`.^methods`, `.^attributes`, `.^mro` etc.)
+- [ ] `FALLBACK` method
+- [ ] Full `handles` delegation (with rename, exclude)
+- [ ] Attribute `is required` / `is built` traits
+
+### A7. Concurrency overhaul (S17: 5/99 passing)
+
+Current implementation uses blocking OS threads. Raku's concurrency model needs:
+
+- [ ] Non-blocking `await` (green threads or async runtime integration)
+- [ ] Scheduler (`Promise.in`, `Promise.at`, `Supply.interval`)
+- [ ] `Lock` / `Lock::Async`
+- [ ] Atomic operations (`cas`, `⚛++`)
+- [ ] `Supply` combinators (`.batch`, `.grep`, `.map`, `.zip`, `.merge`, `.throttle`)
+- [ ] `Supplier` / `Supplier::Preserving`
+- [ ] `hyper` / `race` (parallel iteration)
 
 ---
 
-## Phase 4: Advanced Features
+## Performance roadmap
 
-- [x] Phasers (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
-- [x] `gather` / `take` (lazy lists)
-- [x] Junction (`any`, `all`, `one`, `none`)
-- [x] `Promise`, `Supply`, `Channel` (concurrency)
-- [x] `react` / `whenever`
-- [x] `Proc::Async`
-- [ ] `IO::Path` full implementation
-- [ ] Module system (`unit module`, `export`, `use`)
-- [ ] `MAIN` (command-line argument parsing)
-- [ ] `CATCH` type matching (`when X::AdHoc`)
-- [ ] `use lib`
-- [ ] Precompilation
+### P1. Memory management / GC
 
----
+Current: Arc-based reference counting, no cycle detection. `clone()` on every
+variable read. `WeakSub` for `&?BLOCK` self-reference only.
 
-## Phase 5: Performance and Practicality
+**Current issues:**
+- Every variable read/write clones the `Value`, including `Arc<Vec<Value>>` (cheap ref bump, but interior mutability requires `Arc::make_mut` or explicit swap)
+- Env (HashMap) grows monotonically within a scope
+- Circular object references (e.g. two instances pointing to each other) leak
 
-Aim to exceed MoarVM performance.
+**Roadmap:**
+1. **Scoped call frames** — Replace flat HashMap env with stack of frames. Local variables freed on scope exit. Already partially done with `GetLocal`/`SetLocal` indexed slots, but env HashMap is still the source of truth for interpreter bridge.
+2. **Copy-on-write for containers** — `Arc::make_mut` pattern for arrays/hashes to avoid unnecessary cloning when single-owned.
+3. **Cycle collector** — If/when circular object graphs become a practical issue, add a simple cycle collector (e.g. trial deletion algorithm) on top of Arc. Full tracing GC is overkill if Arc handles 99% of cases.
 
-### Bytecode VM — Compilation Progress
+### P2. Interpreter bridge elimination
 
-Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretStmt`).
+Remove remaining tree-walker fallbacks in the VM:
+- [ ] Closure compilation (Lambda, AnonSub, Gather — currently delegate to interpreter)
+- [ ] Class/role declaration compilation
+- [ ] Full method dispatch compilation
+- [ ] Remove `InterpretExpr` / `InterpretStmt` opcodes entirely
 
-**Phase 1–2 (done):** Literals, `$` variables, arithmetic, comparison (`==`/`!=`/`<`/`>`/`eq`/`ne`), string concat/interpolation, short-circuit operators (`&&`/`||`/`//`/`andthen`/`orelse`), control flow (`if`/`else`, ternary), loops (`while`/`for`/C-style `loop`) with `last`/`next`/`redo`/labeled loops, `say`/`print`, `return`.
+### P3. Optimization pipeline
 
-**Phase 3 (done):** Function calls (`CallFunc`/`ExecCall`), method calls on non-variable targets (`CallMethod`), array/hash indexing (`Index`), string interpolation (`StringConcat`), postfix `++`/`--`, hash literals (`MakeHash`), `AssignExpr`, C-style loop (`CStyleLoop`).
-
-**Phase 4 (done):** `@`/`%` variable access (`GetArrayVar`/`GetHashVar`), bareword resolution (`GetBareWord`), range ops (`MakeRange`/`MakeRangeExcl`/`MakeRangeExclStart`/`MakeRangeExclBoth`), string comparisons (`StrLt`/`StrGt`/`StrLe`/`StrGe`), method calls on variable targets with writeback (`CallMethodMut`), `die`.
-
-**Phase 5 (done):** Unary ops (`+`/`~`/`^`/`so`/prefix `++`/`--`), `CaptureVar`/`CodeVar`, `given`/`when`/`default`, `repeat while`/`repeat until`, `:=` bind assignment, prefix `+` Bool fix.
-
-**Phase 6 (done):** All remaining binary ops (`~~`/`!~~`/`<=>`/`cmp`/`leg`/`===`/`eqv`/`%%`/`div`/`mod`/`gcd`/`lcm`/`x`/`xx`/`=>`/bitwise/set ops/`...`), `proceed`/`succeed`, match-assign (`=~`).
-
-**Phase 7 (done):** Expression compilation: `EnvIndex` (%*ENV<key>), `Exists` (:exists), `Reduction` ([+] @arr), `Subst` (s///), `RoutineMagic`/`BlockMagic`.
-
-**Phase 8 (done):** All remaining statements compiled. No-ops (`Catch`/`Control`/`HasDecl`/`MethodDecl`/`DoesDecl`) emit nothing. `Take` compiled to native opcode. `React`/`Package` body compiled inline. `Phaser` (BEGIN inline, END deferred). Declarations (`SubDecl`/`ClassDecl`/`RoleDecl`/`EnumDecl`/`SubsetDecl`/`TokenDecl`/`RuleDecl`/`ProtoDecl`/`ProtoToken`/`Use`/`Subtest`/`Whenever`) and `Call` with named/Block args delegate to interpreter.
-
-**Phase 9 (done):** All remaining expressions compiled. `HyperOp`/`MetaOp`/`InfixFunc` sub-expressions compiled to bytecode with bridge opcodes. `Block`/`AnonSub`/`Lambda`/`Gather`/`CallOn`/`Try` delegate to interpreter (env capture / complex state).
-
-**Phase 10 (done):** Local variable slots (`GetLocal`/`SetLocal` with indexed O(1) access), compiler `local_map` for `VarDecl`/`Assign`/`Var`/`ForLoop` params, dual-write to env for interpreter bridge compatibility, `sync_locals_from_env` after fallback opcodes. Native method dispatch for 12 zero-arg methods (`.defined`/`.Bool`/`.Str`/`.Int`/`.Numeric`/`.Num`/`.chars`/`.elems`/`.abs`/`.uc`/`.lc`/`.sign`/`.end`) bypassing interpreter bridge.
-
-**Phase 11 (done):** Compiled function bodies — `SubDecl` bodies compiled to `CompiledFunction` bytecode chunks, executed natively in VM via `call_compiled_function_named` with proper `routine_stack` management. `TryCatch` compound opcode for compiled exception handling (CONTROL blocks fall back to interpreter). Block inlining for `Expr::Block` without placeholders. Extended native method dispatch with 17 additional zero-arg methods (`.flat`/`.sort`/`.reverse`/`.unique`/`.keys`/`.values`/`.floor`/`.ceiling`/`.round`/`.sqrt`/`.words`/`.lines`/`.trim`/`.trim-leading`/`.trim-trailing`/`.so`/`.not`).
-
-**Phase 12 (done):** Native binary operations in VM — all ~50 binary ops now execute directly in VM without delegating to `interpreter.eval_binary()`. Arithmetic (Add/Sub/Mul/Div/Mod/Pow) handle Int/Num/Rat/Complex natively. Numeric/string comparison ops include native junction auto-threading via `eval_binary_with_junctions`. Three-way comparisons (Spaceship/Cmp/Leg), identity/equality (StrictEq/Eqv), divisibility, keyword math (div/mod/gcd/lcm), repetition (x/xx), pair construction, bitwise ops, set operations, and range creation all run natively. Only SmartMatch/NotMatch (regex state) and Sequence (value_to_list) remain as interpreter bridges. Removed `binary_op` helper entirely.
-
-**Phase 13 (done):** Eliminate remaining interpreter dependencies — converted 5 interpreter methods (`value_to_list`, `reduction_identity`, `apply_reduction_op`, `eval_hyper_op`, `gist_value`) from instance methods to `pub(crate)` static associated functions, removing `&self` dependency. Inlined Sequence (`...`) and Index operators directly in VM, eliminating `eval_binary` and `eval_expr` bridges. Replaced `list_from_value` calls in ForLoop and Reduction with static `value_to_list` plus LazyList fallback. Removed 4 bridge wrappers (`value_to_list_bridge`, `reduction_identity_value`, `apply_reduction_op_values`, `eval_hyper_op_values`). Added `force_lazy_list_bridge` for LazyList support in VM. ~15 interpreter bridge calls eliminated.
-
-**Phase 14 (done):** Native one-arg method dispatch — extended `try_native_method` to handle methods with one argument via new `try_native_method_1arg` dispatcher. Added 10 one-arg native methods: `.contains`/`.starts-with`/`.ends-with`/`.index`/`.substr`/`.split` (string), `.join`/`.head(n)`/`.tail(n)` (array), `.base` (numeric). Added 7 new zero-arg native methods: `.chomp`/`.chop`/`.comb`/`.gist`/`.raku`/`.perl`/`.head`/`.tail`/`.first`. Converted `format_sprintf` to static associated function, removing `format_sprintf_bridge` wrapper.
-
-**Phase 15 (done):** Native function dispatch, two-arg methods, and bridge elimination — added `try_native_function` dispatcher for ~30 pure built-in functions (`abs`/`sqrt`/`floor`/`ceiling`/`round`/`exp`/`log`/`sin`/`cos`/`tan`/`truncate`/`chr`/`ord`/`uc`/`lc`/`tc`/`chomp`/`chop`/`trim`/`flip`/`words`/`chars`/`defined`/`elems`/`reverse`/`sort`/`join`/`index`/`substr`/`atan2`), wired into `CallFunc` and `ExecCall`. Added `try_native_method_2arg` for two-arg methods (`.substr(start, len)`). Added 3 one-arg native methods (`.rindex`/`.fmt`/`.parse-base`). Converted 3 bridge functions to static (`to_float_value`/`value_type_name`/`char_idx_to_byte` → `pub(crate)`).
-
-**Phase 16 (done):** Remaining pure native dispatch — extended function dispatch with 3-arg and variadic support. Added native functions: `asin`/`acos`/`atan`, `min`/`max` (2-arg and variadic), `flat`, `first`, `ords`, `gist`, `chrs`, `log(x,base)` 2-arg, `round(n,scale)` 2-arg, `substr(s,start,len)` 3-arg. Added 8 zero-arg native methods: `.tclc`/`.succ`/`.pred`/`.log`/`.exp`/`.min`/`.max`/`.Rat`. Added 2 one-arg native methods: `.round(scale)`/`.log(base)`. Enum values correctly fall through to interpreter for `.succ`/`.pred`.
-
-#### Compiled Binary Ops
-- [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
-- [x] String: `~` (concat)
-- [x] Numeric comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- [x] String comparison: `eq`, `ne`, `lt`, `gt`, `le`, `ge`
-- [x] Range: `..`, `..^`, `^..`, `^..^`
-- [x] Smart match: `~~`, `!~~`
-- [x] Three-way: `<=>`, `cmp`, `leg`
-- [x] Identity/value: `===`, `eqv`
-- [x] Divisibility: `%%`
-- [x] Keyword math: `div`, `mod`, `gcd`, `lcm`
-- [x] Repetition: `x`, `xx`
-- [x] Pair: `=>` (FatArrow)
-- [x] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
-- [x] Set ops: `(elem)`, `(cont)`, `(|)`, `(&)`, `(-)`, `(^)`, `(<=)`, `(>=)`, `(<)`, `(>)`
-- [x] Sequence: `...`
-
-#### Compiled Unary Ops
-- [x] `-` (negate), `!` (not), `?` (bool), `+` (numeric), `~` (string), `^` (upto)
-- [x] `so` (bool coerce), prefix `++`/`--`
-
-#### Compiled Expressions
-- [x] `Literal`, `Var`, `ArrayVar`, `HashVar`, `BareWord`
-- [x] `Binary` (with compiled opcodes — others fall back)
-- [x] `Unary` (most ops — rest fall back)
-- [x] `Ternary`, `ArrayLiteral`, `Hash`
-- [x] `Call`, `MethodCall` (both variable and non-variable targets)
-- [x] `Index`, `StringInterpolation`
-- [x] `PostfixOp` (++/-- on Var), `AssignExpr`
-- [x] `CaptureVar`, `CodeVar`
-- [x] `EnvIndex` (%*ENV<key>)
-- [x] `Subst` (s///)
-- [x] `Exists` (:exists)
-- [x] `Reduction` ([+] @arr)
-- [x] `RoutineMagic` / `BlockMagic`
-- [x] `HyperOp` (>>op<< — sub-expressions compiled, operation bridges)
-- [x] `MetaOp` (Rop, Xop, Zop — sub-expressions compiled, operation bridges)
-- [x] `InfixFunc` (atan2, sprintf — sub-expressions compiled, operation bridges)
-- [x] `Block` (inline if no placeholders; delegate if placeholders)
-- [x] `AnonSub` (delegate to interpreter — env capture)
-- [x] `Lambda` (-> $x { } — delegate to interpreter — env capture)
-- [x] `CallOn` (target.() — delegate to interpreter — complex state)
-- [x] `Try` (compiled to `TryCatch` opcode; CONTROL blocks delegate to interpreter)
-- [x] `Gather` (gather { take … } — delegate to interpreter — env capture)
-
-#### Compiled Statements
-- [x] `Expr`, `Block`, `Say`, `Print`, `VarDecl`
-- [x] `Assign` (=, :=, =~), `If`, `While`, `For`, `Loop` (C-style, repeat)
-- [x] `Call` (positional args only), `Last`, `Next`, `Redo`, `Return`, `Die`
-- [x] `Given`, `When`, `Default`, `Proceed`, `Succeed`
-- [x] `Call` with named args / Block / AnonSub args (delegate to interpreter)
-- [x] `SubDecl` (body compiled to `CompiledFunction`; also delegates to interpreter for registration) / `ProtoDecl` (delegate)
-- [x] `ClassDecl` / `RoleDecl` (delegate to interpreter)
-- [x] `HasDecl` / `MethodDecl` / `DoesDecl` (no-op outside class)
-- [x] `EnumDecl` / `SubsetDecl` (delegate to interpreter)
-- [x] `TokenDecl` / `RuleDecl` / `ProtoToken` (delegate to interpreter)
-- [x] `Use` / `Package` (Use delegates; Package compiled inline)
-- [x] `Phaser` (BEGIN inline, END deferred, others delegate)
-- [x] `Catch` / `Control` (no-op, handled by try)
-- [x] `Take` (compiled to Take opcode)
-- [x] `React` (compiled inline) / `Whenever` (delegate to interpreter)
-- [x] `Subtest` (delegate to interpreter)
-
-#### VM Architecture
-- [x] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap lookup)
-- [x] Scope management (dual-write locals + env sync after interpreter bridges)
-- [x] Compiled function bodies (`CompiledFunction` struct, `call_compiled_function_named`)
-  - Sub bodies compiled to bytecode, executed natively with env save/restore and routine_stack
-  - Multi-dispatch lookup by `pkg::name/arity:types` keys
-  - Closures (`Lambda`/`AnonSub`/`Gather`) remain as interpreter fallbacks
-- [x] `TryCatch` compound opcode for exception handling
-- [x] Block inlining (eager blocks without placeholders compiled inline)
-- [x] Native method dispatch in VM (bypass interpreter bridge)
-  - Tier 1: `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`/`.Num`, `.chars`, `.elems`, `.abs`, `.uc`, `.lc`, `.sign`, `.end`
-  - Tier 2: `.flat`, `.sort`, `.reverse`, `.unique`, `.keys`, `.values`, `.floor`, `.ceiling`, `.round`, `.sqrt`, `.words`, `.lines`, `.trim`, `.trim-leading`, `.trim-trailing`, `.so`, `.not`
-  - Tier 3 (zero-arg): `.chomp`, `.chop`, `.comb`, `.gist`/`.raku`/`.perl`, `.head`, `.tail`, `.first`
-  - Tier 4 (one-arg): `.contains`, `.starts-with`, `.ends-with`, `.index`, `.substr`, `.split`, `.join`, `.head(n)`, `.tail(n)`, `.base`, `.rindex`, `.fmt`, `.parse-base`, `.round(scale)`, `.log(base)`
-  - Tier 5 (two-arg): `.substr(start, len)`
-  - Tier 6 (zero-arg): `.tclc`, `.succ`, `.pred`, `.log`, `.exp`, `.min`, `.max`, `.Rat`
-- [x] Native function dispatch in VM (bypass interpreter bridge for pure built-ins)
-  - 1-arg: `abs`, `sqrt`, `floor`, `ceiling`/`ceil`, `round`, `exp`, `log`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `truncate`, `chr`, `ord`, `uc`, `lc`, `tc`, `chomp`, `chop`, `trim`, `flip`, `words`, `chars`, `defined`, `elems`, `reverse`, `sort`, `flat`, `first`, `min`, `max`, `ords`, `gist`
-  - 2-arg: `join`, `index`, `substr`, `atan2`, `log`, `round`, `min`, `max`
-  - 3-arg: `substr`
-  - variadic: `min`, `max`, `chrs`, `flat`
-- [ ] Native dispatch remaining (pure, no interpreter state needed)
-  - Methods (zero-arg): `.Complex`, `.sin`, `.cos`, `.tan`
-  - Methods (one-arg): `.comb(pattern-str)`, `.substr-rw`
-  - Methods (two-arg+): `.split(sep,limit)`, `.index(needle,pos)`, `.rindex(needle,pos)`, `.base(radix,digits)`
-- [ ] Remove fallback opcodes (full native compilation)
-  - Depends on closures + natively compiling all declaration types
-
-### Optimization Pipeline
 - [ ] Constant folding
 - [ ] Dead code elimination
 - [ ] Inlining (small subs)
+- [ ] Native int/num (avoid boxing for hot paths)
+- [ ] String rope / CoW (reduce clone overhead)
 - [ ] Type inference (speculative optimization)
 - [ ] Escape analysis
 - [ ] Register-based VM or native code generation
 
-### Runtime / Memory
-- [ ] GC or memory management strategy (see notes below)
-- [ ] Native int/num (avoid boxing for hot paths)
-- [ ] String rope / CoW (reduce clone overhead)
-- [ ] Small hash optimization (inline ≤4 entries)
-- [ ] Tail call optimization
+---
 
-#### GC Status and Plan
-Currently Rust ownership handles deallocation. All `Value` instances are owned
-(`String`, `Vec`, `HashMap`) and freed when dropped. `Rc<LazyList>` is the only
-reference-counted type. `clone()` is used extensively to pass values across env
-boundaries.
+## Practicality
 
-**Current issues:**
-- Excessive cloning: every variable read/write clones the `Value`, including
-  deep structures like `Array(Vec<Value>)` and `Hash(HashMap<…>)`.
-- Env grows monotonically: variables are never removed from the flat `HashMap`.
-- No cycle detection needed yet (`Value` types cannot form cycles), but user-defined
-  objects with mutual references could in the future.
-
-**Recommended roadmap:**
-1. **Short-term:** Introduce `Rc<Value>` (or `Rc<RefCell<Value>>`) for large values
-   to replace deep clones with reference bumps. Measure impact.
-2. **Medium-term:** Implement scoped environments (stack of frames) so local
-   variables are naturally freed on scope exit. Pairs with `GetLocal`/`SetLocal`.
-3. **Long-term:** If cycles become possible (e.g. closures capturing themselves,
-   circular object graphs), add either tracing GC or weak-ref cycle collector on
-   top of Rc.
-
-### Practicality
 - [ ] REPL
+- [ ] Improved error messages (with source location, suggestions)
 - [ ] Debugger
-- [ ] Improved error messages (with source location)
 - [ ] `zef` package manager compatibility
-- [ ] Inline::Perl5 compatibility layer
 - [ ] Native binary output
 
 ---
 
-## Design Principles
+## Ongoing: Roast test coverage
 
-1. **Gradual migration from tree-walking interpreter to bytecode VM**
-2. **Learn from MoarVM architecture** while leveraging Rust's strengths
-3. **Prioritize startup speed** (a weakness of MoarVM)
-4. **Incremental optimization**: make it correct first, then make it fast
+The primary day-to-day work. Use `pick-next-roast.sh` to select tests.
+Current per-synopsis status (pass/total with known failures):
+
+| Synopsis | Domain                    | Pass | Fail | Notes |
+|----------|---------------------------|------|------|-------|
+| S02      | Literals, types           |   27 |  119 | Allomorphs, type objects |
+| S03      | Operators                 |   16 |  109 | Operator overloading, edge cases |
+| S04      | Control, phasers          |    9 |   68 | `state`, full CATCH, phasers |
+| S05      | Regex, grammar            |   10 |   88 | Action classes, modifiers |
+| S06      | Subs, signatures          |    2 |   92 | Biggest gap — see A1 |
+| S09      | Arrays, subscripts        |    0 |   22 | Subscript adverbs |
+| S10      | Packages                  |    0 |    9 | See A4 |
+| S12      | Classes, roles            |    5 |   96 | See A6 |
+| S15      | Unicode/NFG               |   54 |   27 | Strongest area |
+| S17      | Concurrency               |    5 |   94 | See A7 |
+| S32      | Built-in types            |   16 |  261 | Largest absolute gap |
+
+---
+
+## Design principles
+
+1. **Correctness first, performance second** — pass roast, then optimize
+2. **Gradual migration** from tree-walking interpreter to full bytecode VM
+3. **Learn from MoarVM** while leveraging Rust's ownership model
+4. **Prioritize startup speed** (a weakness of MoarVM)
+5. **No stubs or hacks** — every feature must be a genuine, general-purpose implementation
