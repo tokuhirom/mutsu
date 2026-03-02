@@ -7,17 +7,21 @@ impl Interpreter {
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {
-            '@' => match &val {
-                Value::Array(..) => val,
+            '@' => match val {
+                // @-sigiled attributes always produce Array (not List)
+                Value::Array(items, kind) if kind.is_real_array() => {
+                    Value::Array(items, ArrayKind::Array)
+                }
+                Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
                 Value::Range(start, end) => {
-                    let items: Vec<Value> = (*start..=*end).map(Value::Int).collect();
-                    Value::Array(std::sync::Arc::new(items), ArrayKind::List)
+                    let items: Vec<Value> = (start..=end).map(Value::Int).collect();
+                    Value::real_array(items)
                 }
                 Value::RangeExcl(start, end) => {
-                    let items: Vec<Value> = (*start..*end).map(Value::Int).collect();
-                    Value::Array(std::sync::Arc::new(items), ArrayKind::List)
+                    let items: Vec<Value> = (start..end).map(Value::Int).collect();
+                    Value::real_array(items)
                 }
-                _ => val,
+                other => other,
             },
             '%' => match &val {
                 Value::Hash(_) => val,
