@@ -240,7 +240,10 @@ fn bind_sub_signature_from_value(
                         .env
                         .insert(sub_pd.name.clone(), Value::hash(named));
                 }
-            } else if sub_pd.name.starts_with('@') || sub_pd.name.starts_with('$') || !sub_pd.name.is_empty() {
+            } else if sub_pd.name.starts_with('@')
+                || sub_pd.name.starts_with('$')
+                || !sub_pd.name.is_empty()
+            {
                 // Slurpy *@rest or *$rest: collect remaining positional values
                 let remaining: Vec<Value> = positional[nested_positional_idx..].to_vec();
                 nested_positional_idx = positional.len();
