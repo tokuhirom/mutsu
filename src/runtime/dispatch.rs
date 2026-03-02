@@ -63,16 +63,25 @@ impl Interpreter {
                 .collect();
             let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
             if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
-                return Some(def.clone());
+                // Skip fast-path if candidate has where constraints — need full matching
+                if def.param_defs.iter().all(|p| p.where_constraint.is_none()) {
+                    return Some(def.clone());
+                }
             }
             let prefix = format!("{}/{arity}:", name);
-            let candidates: Vec<FunctionDef> = self
+            let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
                 .filter(|(key, _)| key.resolve().starts_with(&prefix))
-                .map(|(_, def)| def.clone())
+                .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
-            for def in candidates {
+            // Sort: where-constrained candidates first (more specific)
+            candidates.sort_by(|a, b| {
+                let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+                let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+                b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
+            });
+            for (_, def) in candidates {
                 if self.args_match_param_types(arg_values, &def.param_defs) {
                     return Some(def);
                 }
@@ -109,25 +118,43 @@ impl Interpreter {
             type_sig.join(",")
         );
         if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
-            return Some(def.clone());
+            // Skip fast-path if candidate has where constraints — need full matching
+            if def.param_defs.iter().all(|p| p.where_constraint.is_none()) {
+                return Some(def.clone());
+            }
         }
         let typed_global = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
-        if let Some(def) = self.functions.get(&Symbol::intern(&typed_global)) {
+        if let Some(def) = self.functions.get(&Symbol::intern(&typed_global))
+            && def.param_defs.iter().all(|p| p.where_constraint.is_none())
+        {
             return Some(def.clone());
         }
         // Try matching against all typed candidates for this name/arity
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
-        let candidates: Vec<FunctionDef> = self
+        let mut candidates: Vec<(String, FunctionDef)> = self
             .functions
             .iter()
             .filter(|(key, _)| {
                 let ks = key.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
-            .map(|(_, def)| def.clone())
+            .map(|(key, def)| (key.resolve(), def.clone()))
             .collect();
-        for def in candidates {
+        // Sort: where-constrained candidates first (more specific), then sub-signatures
+        candidates.sort_by(|a, b| {
+            let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+            let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+            b_has_where
+                .cmp(&a_has_where)
+                .then_with(|| {
+                    let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                    let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                    b_has_subsig.cmp(&a_has_subsig)
+                })
+                .then(a.0.cmp(&b.0))
+        });
+        for (_, def) in candidates {
             if self.args_match_param_types(arg_values, &def.param_defs) {
                 return Some(def);
             }
@@ -151,12 +178,17 @@ impl Interpreter {
             if candidates.len() > 1 {
                 found_multi_candidates = true;
             }
-            // Sort candidates: those with sub-signatures first (more specific),
+            // Sort candidates: where-constrained first, then sub-signatures (more specific),
             // then by key name for stable ordering
             candidates.sort_by(|a, b| {
+                let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+                let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
                 let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
                 let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
-                b_has_subsig.cmp(&a_has_subsig).then(a.0.cmp(&b.0))
+                b_has_where
+                    .cmp(&a_has_where)
+                    .then(b_has_subsig.cmp(&a_has_subsig))
+                    .then(a.0.cmp(&b.0))
             });
             for (_, def) in candidates {
                 if self.args_match_param_types(arg_values, &def.param_defs) {
@@ -545,17 +577,24 @@ impl Interpreter {
                 .map(|v| super::value_type_name(v))
                 .collect();
             let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
-            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
+            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key))
+                && def.param_defs.iter().all(|p| p.where_constraint.is_none())
+            {
                 return Some(def.clone());
             }
             let prefix = format!("{}/{arity}:", name);
-            let candidates: Vec<FunctionDef> = self
+            let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
                 .filter(|(key, _)| key.resolve().starts_with(&prefix))
-                .map(|(_, def)| def.clone())
+                .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
-            for def in candidates {
+            candidates.sort_by(|a, b| {
+                let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+                let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+                b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
+            });
+            for (_, def) in candidates {
                 if self.args_match_param_types(arg_values, &def.param_defs) {
                     return Some(def);
                 }
