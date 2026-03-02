@@ -1065,6 +1065,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Private method call: target!Type::method(args) / target!method(args)
+        // Also supports quoted names: target!"method"() / target!'method'()
         if rest.starts_with('!') && !rest.starts_with("!=") {
             let after_bang = &rest[1..];
             if let Some((r, name)) = parse_private_method_name(after_bang) {
@@ -1092,6 +1093,36 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     modifier: Some('!'),
                     quoted: false,
                 };
+                rest = r;
+                continue;
+            }
+            // Try quoted method name: self!"method"() / self!'method'()
+            if let Some((r, qname)) = parse_quoted_method_name(after_bang)
+                && r.starts_with('(')
+            {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                match qname {
+                    QuotedMethodName::Static(name) => {
+                        expr = Expr::MethodCall {
+                            target: Box::new(expr),
+                            name: Symbol::intern(&name),
+                            args,
+                            modifier: Some('!'),
+                            quoted: true,
+                        };
+                    }
+                    QuotedMethodName::Dynamic(name_expr) => {
+                        expr = Expr::DynamicMethodCall {
+                            target: Box::new(expr),
+                            name_expr: Box::new(name_expr),
+                            args,
+                        };
+                    }
+                }
                 rest = r;
                 continue;
             }

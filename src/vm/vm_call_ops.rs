@@ -122,7 +122,6 @@ impl VM {
     fn rewrite_method_name(method_raw: &str, modifier: Option<&str>) -> String {
         match modifier {
             Some("^") => format!("^{}", method_raw),
-            Some("!") if method_raw.contains("::") => method_raw.to_string(),
             Some("!") => format!("!{}", method_raw),
             _ => method_raw.to_string(),
         }

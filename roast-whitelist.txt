@@ -26,6 +26,7 @@ roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
+roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
@@ -55,12 +56,14 @@ roast/S02-one-pass-parsing/misc.t
 roast/S02-packages/package-lookup.t
 roast/S02-types/anon_block.t
 roast/S02-types/built-in.t
+roast/S02-types/compact.t
 roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/int-uint.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
+roast/S02-types/nested_arrays.t
 roast/S02-types/nested_pairs.t
 roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
@@ -72,6 +75,7 @@ roast/S02-types/subscripts_and_context.t
 roast/S02-types/undefined-types.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
+roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
@@ -101,6 +105,7 @@ roast/S03-operators/minmax.t
 roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
+roast/S03-operators/numeric-shift.t
 roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
@@ -115,6 +120,7 @@ roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
 roast/S03-operators/u2212-minus.t
 roast/S03-sequence/arity-2-or-more.t
+roast/S03-sequence/arity0.t
 roast/S03-sequence/basic.t
 roast/S03-sequence/nonnumeric.t
 roast/S03-smartmatch/any-any.t
@@ -136,6 +142,7 @@ roast/S03-smartmatch/scalar-hash.t
 roast/S03-smartmatch/signature-signature.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-phasers/end.t
 roast/S04-statement-modifiers/given.t
 roast/S04-statement-modifiers/if.t
 roast/S04-statement-modifiers/unless.t
@@ -175,6 +182,8 @@ roast/S05-mass/properties-contributory.t
 roast/S05-mass/properties-derived.t
 roast/S05-mass/properties-script.t
 roast/S05-match/basics.t
+roast/S05-match/blocks.t
+roast/S05-match/non-capturing.t
 roast/S05-match/raku.t
 roast/S05-metachars/closure.t
 roast/S05-metachars/newline.t
@@ -192,6 +201,8 @@ roast/S05-modifier/Perl_10.t
 roast/S05-modifier/Perl_2.t
 roast/S05-modifier/Perl_5.t
 roast/S05-modifier/Perl_6.t
+roast/S05-modifier/Perl_7.t
+roast/S05-modifier/Perl_8.t
 roast/S05-modifier/exhaustive.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
@@ -222,6 +233,7 @@ roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
+roast/S06-routine-modifiers/native-lvalue-subroutines.t
 roast/S06-signature/arity.t
 roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/closure-parameters.t
@@ -236,6 +248,7 @@ roast/S06-signature/scalar-type.t
 roast/S06-signature/shape.t
 roast/S06-signature/sigilless.t
 roast/S06-signature/slurpy-and-interpolation.t
+roast/S06-signature/slurpy-placeholders.t
 roast/S06-signature/unpack-object.t
 roast/S06-signature/unspecified.t
 roast/S06-traits/as.t
@@ -387,6 +400,7 @@ roast/S16-io/prompt.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
+roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t
@@ -396,6 +410,7 @@ roast/S17-procasync/kill.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-procasync/nonexistent.t
+roast/S17-procasync/print.t
 roast/S17-procasync/stress.t
 roast/S17-procasync/windows-arg-quoting.t
 roast/S17-promise/at.t
@@ -467,6 +482,7 @@ roast/S32-array/end.t
 roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t
+roast/S32-array/pairs.t
 roast/S32-basics/pairup.t
 roast/S32-basics/xxPOS-native.t
 roast/S32-container/stringify.t
@@ -484,12 +500,14 @@ roast/S32-hash/push.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
+roast/S32-io/note.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
 roast/S32-list/cross.t
+roast/S32-list/end.t
 roast/S32-list/first-end-k.t
 roast/S32-list/first-end-kv.t
 roast/S32-list/first-end-p.t
@@ -531,6 +549,7 @@ roast/S32-str/index.t
 roast/S32-str/lc.t
 roast/S32-str/length.t
 roast/S32-str/lines.t
+roast/S32-str/ords.t
 roast/S32-str/pos.t
 roast/S32-str/samemark.t
 roast/S32-str/starts-with.t
