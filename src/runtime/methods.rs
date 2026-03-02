@@ -3,6 +3,44 @@ use crate::ast::CallArg;
 use crate::symbol::Symbol;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
+/// Create a structured X::Method::Private::Permission error.
+fn make_private_permission_error(method_name: &str, class_name: &str) -> RuntimeError {
+    let msg = format!(
+        "Cannot call private method '{}' on package {}",
+        method_name, class_name
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("method".to_string(), Value::Str(method_name.to_string()));
+    attrs.insert(
+        "source-package".to_string(),
+        Value::Str(class_name.to_string()),
+    );
+    attrs.insert("message".to_string(), Value::Str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Method::Private::Permission"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+/// Create a structured X::Method::NotFound error.
+fn make_method_not_found_error(method_name: &str, type_name: &str, private: bool) -> RuntimeError {
+    let msg = format!(
+        "No such {} method '{}' for invocant of type '{}'",
+        if private { "private" } else { "public" },
+        method_name,
+        type_name
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("method".to_string(), Value::Str(method_name.to_string()));
+    attrs.insert("typename".to_string(), Value::Str(type_name.to_string()));
+    attrs.insert("private".to_string(), Value::Bool(private));
+    attrs.insert("message".to_string(), Value::Str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Method::NotFound"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 impl Interpreter {
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
@@ -738,68 +776,60 @@ impl Interpreter {
             id: target_id,
         } = &target
         {
-            if let Some(private_method_name) = method.strip_prefix('!')
-                && let Some((resolved_owner, method_def)) = self.resolve_private_method_any_owner(
-                    &class_name.resolve(),
-                    private_method_name,
-                    &args,
-                )
-            {
-                let (result, updated) = self.run_instance_method_resolved(
-                    &class_name.resolve(),
-                    &resolved_owner,
-                    method_def,
-                    (**attributes).clone(),
-                    args,
-                    Some(target.clone()),
-                )?;
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    *target_id,
-                    updated,
-                );
-                return Ok(vec![result]);
-            }
-
-            if let Some((owner_class, private_method_name)) = method.split_once("::")
-                && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
-                    &class_name.resolve(),
-                    owner_class,
-                    private_method_name,
-                    &args,
-                )
-            {
-                let caller_class = self
-                    .method_class_stack
-                    .last()
-                    .cloned()
-                    .or_else(|| Some(self.current_package().to_string()));
-                let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
-                    || self
-                        .class_trusts
-                        .get(&resolved_owner)
-                        .is_some_and(|trusted| {
-                            caller_class
-                                .as_ref()
-                                .is_some_and(|caller| trusted.contains(caller))
-                        });
-                if !caller_allowed {
-                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+            if let Some(private_rest) = method.strip_prefix('!') {
+                // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
+                let resolved = if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+                    self.resolve_private_method_with_owner(
+                        &class_name.resolve(),
+                        owner_class,
+                        pm_name,
+                        &args,
+                    )
+                    .map(|r| (r, pm_name))
+                } else {
+                    self.resolve_private_method_any_owner(
+                        &class_name.resolve(),
+                        private_rest,
+                        &args,
+                    )
+                    .map(|r| (r, private_rest))
+                };
+                if let Some(((resolved_owner, method_def), pm_name)) = resolved {
+                    let caller_class = self
+                        .method_class_stack
+                        .last()
+                        .cloned()
+                        .or_else(|| Some(self.current_package().to_string()));
+                    let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                        || self
+                            .class_trusts
+                            .get(&resolved_owner)
+                            .is_some_and(|trusted| {
+                                caller_class
+                                    .as_ref()
+                                    .is_some_and(|caller| trusted.contains(caller))
+                            });
+                    if !caller_allowed {
+                        return Err(make_private_permission_error(
+                            pm_name,
+                            &class_name.resolve(),
+                        ));
+                    }
+                    let (result, updated) = self.run_instance_method_resolved(
+                        &class_name.resolve(),
+                        &resolved_owner,
+                        method_def,
+                        (**attributes).clone(),
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        *target_id,
+                        updated,
+                    );
+                    return Ok(vec![result]);
                 }
-                let (result, updated) = self.run_instance_method_resolved(
-                    &class_name.resolve(),
-                    &resolved_owner,
-                    method_def,
-                    (**attributes).clone(),
-                    args,
-                    Some(target.clone()),
-                )?;
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    *target_id,
-                    updated,
-                );
-                return Ok(vec![result]);
             }
 
             let candidates =
@@ -873,6 +903,37 @@ impl Interpreter {
             } else {
                 Self::signature_count_value(&sig_info)
             });
+        }
+
+        // Early check: private method call on non-Instance values
+        if let Some(private_rest) = method.strip_prefix('!')
+            && !matches!(&target, Value::Instance { .. })
+        {
+            // Owner-qualified: !Owner::method
+            if let Some((owner_class, private_name)) = private_rest.split_once("::") {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
+                let caller_allowed = caller_class.as_deref() == Some(owner_class)
+                    || self.class_trusts.get(owner_class).is_some_and(|trusted| {
+                        caller_class
+                            .as_ref()
+                            .is_some_and(|caller| trusted.contains(caller))
+                    });
+                if !caller_allowed {
+                    return Err(make_private_permission_error(private_name, owner_class));
+                }
+            }
+            // Unqualified private method on non-Instance — not found
+            return Err(make_method_not_found_error(
+                private_rest
+                    .split_once("::")
+                    .map_or(private_rest, |(_o, m)| m),
+                "Any",
+                true,
+            ));
         }
 
         if let Value::Instance {
@@ -3198,63 +3259,71 @@ impl Interpreter {
             id: target_id,
         } = &target
         {
-            if let Some(private_method_name) = method.strip_prefix('!')
-                && let Some((resolved_owner, method_def)) = self.resolve_private_method_any_owner(
-                    &class_name.resolve(),
-                    private_method_name,
-                    &args,
-                )
-            {
-                let (result, _updated) = self.run_instance_method_resolved(
-                    &class_name.resolve(),
-                    &resolved_owner,
-                    method_def,
-                    (**attributes).clone(),
-                    args,
-                    Some(target.clone()),
-                )?;
-                return Ok(result);
-            }
-
-            if let Some((owner_class, private_method_name)) = method.split_once("::")
-                && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
-                    &class_name.resolve(),
-                    owner_class,
-                    private_method_name,
-                    &args,
-                )
-            {
-                let caller_class = self
-                    .method_class_stack
-                    .last()
-                    .cloned()
-                    .or_else(|| Some(self.current_package().to_string()));
-                let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
-                    || self
-                        .class_trusts
-                        .get(&resolved_owner)
-                        .is_some_and(|trusted| {
-                            caller_class
-                                .as_ref()
-                                .is_some_and(|caller| trusted.contains(caller))
-                        });
-                if !caller_allowed {
-                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+            if let Some(private_rest) = method.strip_prefix('!') {
+                // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
+                let (pm_name, resolved) =
+                    if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+                        (
+                            pm_name,
+                            self.resolve_private_method_with_owner(
+                                &class_name.resolve(),
+                                owner_class,
+                                pm_name,
+                                &args,
+                            ),
+                        )
+                    } else {
+                        (
+                            private_rest,
+                            self.resolve_private_method_any_owner(
+                                &class_name.resolve(),
+                                private_rest,
+                                &args,
+                            ),
+                        )
+                    };
+                if let Some((resolved_owner, method_def)) = resolved {
+                    let caller_class = self
+                        .method_class_stack
+                        .last()
+                        .cloned()
+                        .or_else(|| Some(self.current_package().to_string()));
+                    let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                        || self
+                            .class_trusts
+                            .get(&resolved_owner)
+                            .is_some_and(|trusted| {
+                                caller_class
+                                    .as_ref()
+                                    .is_some_and(|caller| trusted.contains(caller))
+                            });
+                    if !caller_allowed {
+                        return Err(make_private_permission_error(
+                            pm_name,
+                            &class_name.resolve(),
+                        ));
+                    }
+                    let (result, updated) = self.run_instance_method_resolved(
+                        &class_name.resolve(),
+                        &resolved_owner,
+                        method_def,
+                        (**attributes).clone(),
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        *target_id,
+                        updated,
+                    );
+                    return Ok(result);
                 }
-                let (result, updated) = self.run_instance_method_resolved(
+                // Private method not found
+                return Err(make_method_not_found_error(
+                    pm_name,
                     &class_name.resolve(),
-                    &resolved_owner,
-                    method_def,
-                    (**attributes).clone(),
-                    args,
-                    Some(target.clone()),
-                )?;
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    *target_id,
-                    updated,
-                );
-                return Ok(result);
+                    true,
+                ));
             }
 
             // IO::Spec methods
@@ -3663,23 +3732,54 @@ impl Interpreter {
                 attrs.insert("live".to_string(), Value::Bool(true));
                 return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
             }
-            if let Some(private_method_name) = method.strip_prefix('!')
-                && let Some((resolved_owner, method_def)) = self.resolve_private_method_any_owner(
-                    &name.resolve(),
-                    private_method_name,
-                    &args,
-                )
-            {
-                let attrs = HashMap::new();
-                let (result, _updated) = self.run_instance_method_resolved(
-                    &name.resolve(),
-                    &resolved_owner,
-                    method_def,
-                    attrs,
-                    args,
-                    Some(target.clone()),
-                )?;
-                return Ok(result);
+            if let Some(private_rest) = method.strip_prefix('!') {
+                let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
+                    private_rest.split_once("::")
+                {
+                    (
+                        pm_name,
+                        self.resolve_private_method_with_owner(
+                            &name.resolve(),
+                            owner_class,
+                            pm_name,
+                            &args,
+                        ),
+                    )
+                } else {
+                    (
+                        private_rest,
+                        self.resolve_private_method_any_owner(&name.resolve(), private_rest, &args),
+                    )
+                };
+                if let Some((resolved_owner, method_def)) = resolved {
+                    let caller_class = self
+                        .method_class_stack
+                        .last()
+                        .cloned()
+                        .or_else(|| Some(self.current_package().to_string()));
+                    let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                        || self
+                            .class_trusts
+                            .get(&resolved_owner)
+                            .is_some_and(|trusted| {
+                                caller_class
+                                    .as_ref()
+                                    .is_some_and(|caller| trusted.contains(caller))
+                            });
+                    if !caller_allowed {
+                        return Err(make_private_permission_error(pm_name, &name.resolve()));
+                    }
+                    let attrs = HashMap::new();
+                    let (result, _updated) = self.run_instance_method_resolved(
+                        &name.resolve(),
+                        &resolved_owner,
+                        method_def,
+                        attrs,
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    return Ok(result);
+                }
             }
             // Package (type object) dispatch — check user-defined methods
             if self.has_user_method(&name.resolve(), method) {
