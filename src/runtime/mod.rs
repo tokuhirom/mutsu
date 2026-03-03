@@ -11,7 +11,7 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -415,8 +415,11 @@ pub struct Interpreter {
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
-    /// `@` variables are stored here so both parent and child can see mutations.
-    shared_vars: Arc<Mutex<HashMap<String, Value>>>,
+    /// variables are stored here so both parent and child can see mutations.
+    shared_vars: Arc<RwLock<HashMap<String, Value>>>,
+    /// True when this interpreter participates in cross-thread variable sharing.
+    /// Set by `clone_for_thread` on both parent and child.
+    shared_vars_active: bool,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: Vec<EncodingEntry>,
@@ -1380,7 +1383,8 @@ impl Interpreter {
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
-            shared_vars: Arc::new(Mutex::new(HashMap::new())),
+            shared_vars: Arc::new(RwLock::new(HashMap::new())),
+            shared_vars_active: false,
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
@@ -2205,19 +2209,29 @@ impl Interpreter {
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
-    /// Array (`@`) variables are shared between parent and child via `shared_vars`
-    /// so that mutations (push, pop, etc.) are visible across threads.
+    /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
+    /// so that mutations are visible across threads.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
-        // Copy @ variables into shared_vars so both parent and child see mutations
+        // Copy user variables into shared_vars so both parent and child see mutations.
+        // The compiler stores locals with bare names (no sigil), so we share everything
+        // except internal/special variables that should remain thread-local.
         let shared = Arc::clone(&self.shared_vars);
         {
-            let mut sv = shared.lock().unwrap();
+            let mut sv = shared.write().unwrap();
             for (key, val) in &self.env {
-                if key.starts_with('@') {
-                    sv.insert(key.clone(), val.clone());
+                // Skip internal variables and topic variables
+                if key == "_"
+                    || key == "@_"
+                    || key.starts_with("__mutsu_")
+                    || key.starts_with("&")
+                    || key == "?LINE"
+                {
+                    continue;
                 }
+                sv.insert(key.clone(), val.clone());
             }
         }
+        self.shared_vars_active = true;
         let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
@@ -2292,6 +2306,7 @@ impl Interpreter {
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
+            shared_vars_active: true,
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
@@ -2325,7 +2340,7 @@ impl Interpreter {
         target_fallback: &Value,
     ) -> Value {
         if key.starts_with('@') {
-            let mut sv = self.shared_vars.lock().unwrap();
+            let mut sv = self.shared_vars.write().unwrap();
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
@@ -2348,19 +2363,18 @@ impl Interpreter {
         result
     }
 
-    /// Read a shared array variable. If the variable is in shared_vars, return
+    /// Read a shared variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
-        if key.starts_with('@') {
-            let sv = self.shared_vars.lock().unwrap();
-            sv.get(key).cloned()
-        } else {
-            None
+        if !self.shared_vars_active {
+            return None;
         }
+        let sv = self.shared_vars.read().unwrap();
+        sv.get(key).cloned()
     }
 
-    /// Write a shared array variable. Updates both the local env and shared_vars.
+    /// Write a shared variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
         // Ensure @-variables always store Array(true) (real Arrays)
         let value = if key.starts_with('@') {
@@ -2374,8 +2388,8 @@ impl Interpreter {
             value
         };
         self.env.insert(key.to_string(), value.clone());
-        if key.starts_with('@') {
-            let mut sv = self.shared_vars.lock().unwrap();
+        if self.shared_vars_active {
+            let mut sv = self.shared_vars.write().unwrap();
             if sv.contains_key(key) {
                 sv.insert(key.to_string(), value);
             }
@@ -2385,7 +2399,7 @@ impl Interpreter {
     /// Sync shared variables back from shared_vars into the local env.
     /// Called after await/sleep to pick up mutations from other threads.
     pub(crate) fn sync_shared_vars_to_env(&mut self) {
-        let sv = self.shared_vars.lock().unwrap();
+        let sv = self.shared_vars.read().unwrap();
         for (key, val) in sv.iter() {
             self.env.insert(key.clone(), val.clone());
         }
@@ -2396,7 +2410,7 @@ impl Interpreter {
         let Some(Value::Str(value_key)) = self.env.remove(&name_key) else {
             return;
         };
-        let mut shared = self.shared_vars.lock().unwrap();
+        let mut shared = self.shared_vars.write().unwrap();
         shared.remove(&value_key);
         shared.remove(&name_key);
     }
@@ -2404,7 +2418,7 @@ impl Interpreter {
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
-        let mut shared = self.shared_vars.lock().unwrap();
+        let mut shared = self.shared_vars.write().unwrap();
         if let Some(Value::Str(value_key)) = shared.remove(&name_key) {
             shared.remove(&value_key);
         }

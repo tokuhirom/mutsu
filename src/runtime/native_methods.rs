@@ -843,7 +843,7 @@ impl Interpreter {
                 let me = current_thread_id();
                 acquire_lock(&lock, me)?;
                 let code = args.first().cloned().unwrap_or(Value::Nil);
-                let result = self.call_sub_value(code, Vec::new(), false);
+                let result = self.call_sub_value(code, Vec::new(), true);
                 let _ = release_lock(&lock, me);
                 result
             }

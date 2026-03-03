@@ -69,6 +69,10 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        // Check shared_vars for cross-thread visibility (only when threading is active)
+        if let Some(v) = self.interpreter.get_shared_var(name) {
+            return Some(v);
+        }
         // Follow binding aliases ($CALLER::target := $source)
         if let Some(resolved) = self.interpreter.resolve_binding(name)
             && let Some(val) = self.interpreter.env().get(resolved)
@@ -91,9 +95,7 @@ impl VM {
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
-        self.interpreter
-            .env_mut()
-            .insert(name.to_string(), value.clone());
+        self.interpreter.set_shared_var(name, value.clone());
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
             self.interpreter.env_mut().insert(alias, value.clone());
         }
