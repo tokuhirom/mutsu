@@ -2,6 +2,30 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl VM {
+    /// Save the current env, locals, stack depth, and readonly vars into a new call frame.
+    pub(super) fn push_call_frame(&mut self) {
+        let frame = VmCallFrame {
+            saved_env: self.interpreter.env().clone(),
+            saved_readonly: self.interpreter.save_readonly_vars(),
+            saved_locals: std::mem::take(&mut self.locals),
+            saved_stack_depth: self.stack.len(),
+        };
+        self.call_frames.push(frame);
+    }
+
+    /// Pop the most recent call frame and restore locals and readonly vars.
+    /// Returns the frame so callers can access `saved_env` for site-specific merge logic.
+    pub(super) fn pop_call_frame(&mut self) -> VmCallFrame {
+        let mut frame = self
+            .call_frames
+            .pop()
+            .expect("pop_call_frame: no frame to pop");
+        self.locals = std::mem::take(&mut frame.saved_locals);
+        self.interpreter
+            .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
+        frame
+    }
+
     fn twigil_dynamic_alias(name: &str) -> Option<String> {
         if let Some(rest) = name.strip_prefix("$*") {
             return Some(format!("*{}", rest));
@@ -892,10 +916,8 @@ impl VM {
         if callsite_line.is_some() {
             self.interpreter.set_pending_callsite_line(callsite_line);
         }
-        let saved_env = self.interpreter.env().clone();
-        let saved_readonly = self.interpreter.save_readonly_vars();
-        let saved_locals = std::mem::take(&mut self.locals);
-        let saved_stack_depth = self.stack.len();
+        self.push_call_frame();
+        let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         let return_spec = cf.return_type.clone();
 
         self.interpreter.inject_pending_callsite_line();
@@ -951,7 +973,8 @@ impl VM {
                 .pop_test_assertion_context(pushed_assertion);
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
-            self.locals = saved_locals;
+            let frame = self.pop_call_frame();
+            drop(frame);
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
@@ -969,9 +992,8 @@ impl VM {
                         .pop_test_assertion_context(pushed_assertion);
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
-                    self.locals = saved_locals;
-                    *self.interpreter.env_mut() = saved_env;
-                    self.interpreter.restore_readonly_vars(saved_readonly);
+                    let frame = self.pop_call_frame();
+                    *self.interpreter.env_mut() = frame.saved_env;
                     return Err(e);
                 }
             };
@@ -1086,7 +1108,8 @@ impl VM {
             .pop_test_assertion_context(pushed_assertion);
         self.interpreter.pop_block();
 
-        let mut restored_env = saved_env;
+        let frame = self.pop_call_frame();
+        let mut restored_env = frame.saved_env;
         self.interpreter
             .pop_caller_env_with_writeback(&mut restored_env);
         self.interpreter
@@ -1101,9 +1124,7 @@ impl VM {
                 restored_env.insert(k.clone(), v.clone());
             }
         }
-        self.locals = saved_locals;
         *self.interpreter.env_mut() = restored_env;
-        self.interpreter.restore_readonly_vars(saved_readonly);
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
@@ -1168,10 +1189,8 @@ impl VM {
             args = positional;
         }
 
-        let saved_env = self.interpreter.env().clone();
-        let saved_readonly = self.interpreter.save_readonly_vars();
-        let saved_locals = std::mem::take(&mut self.locals);
-        let saved_stack_depth = self.stack.len();
+        self.push_call_frame();
+        let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
 
         self.interpreter.inject_pending_callsite_line();
 
@@ -1220,9 +1239,8 @@ impl VM {
             self.interpreter.pop_block();
             self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
-            self.locals = saved_locals;
-            *self.interpreter.env_mut() = saved_env;
-            self.interpreter.restore_readonly_vars(saved_readonly);
+            let frame = self.pop_call_frame();
+            *self.interpreter.env_mut() = frame.saved_env;
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
@@ -1238,9 +1256,8 @@ impl VM {
                     self.interpreter.pop_block();
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
-                    self.locals = saved_locals;
-                    *self.interpreter.env_mut() = saved_env;
-                    self.interpreter.restore_readonly_vars(saved_readonly);
+                    let frame = self.pop_call_frame();
+                    *self.interpreter.env_mut() = frame.saved_env;
                     return Err(e);
                 }
             };
@@ -1258,14 +1275,11 @@ impl VM {
                     .env_mut()
                     .insert("_".to_string(), first.clone());
             }
-        } else if data.params.is_empty()
-            && args.is_empty()
-            && data.name == ""
-            && let Some(caller_topic) = saved_env.get("_")
-        {
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), caller_topic.clone());
+        } else if data.params.is_empty() && args.is_empty() && data.name == "" {
+            let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
+            if let Some(topic) = caller_topic {
+                self.interpreter.env_mut().insert("_".to_string(), topic);
+            }
         }
 
         self.locals = vec![Value::Nil; cc.locals.len()];
@@ -1379,7 +1393,8 @@ impl VM {
         }
 
         // Environment writeback: merge changes back to caller
-        let mut restored_env = saved_env;
+        let frame = self.pop_call_frame();
+        let mut restored_env = frame.saved_env;
         self.interpreter
             .pop_caller_env_with_writeback(&mut restored_env);
         self.interpreter
@@ -1405,9 +1420,7 @@ impl VM {
         }
         self.interpreter
             .merge_sigilless_alias_writes(&mut restored_env, self.interpreter.env());
-        self.locals = saved_locals;
         *self.interpreter.env_mut() = restored_env;
-        self.interpreter.restore_readonly_vars(saved_readonly);
 
         let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
             Value::Str(s) => Some(s.clone()),
@@ -1453,10 +1466,8 @@ impl VM {
             )
         };
 
-        let saved_env = self.interpreter.env().clone();
-        let saved_readonly = self.interpreter.save_readonly_vars();
-        let saved_locals = std::mem::take(&mut self.locals);
-        let saved_stack_depth = self.stack.len();
+        self.push_call_frame();
+        let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
 
         self.interpreter.push_method_class(owner_class.to_string());
 
@@ -1559,9 +1570,8 @@ impl VM {
                     } else if !self.interpreter.type_matches_value(constraint, &base) {
                         self.interpreter.pop_method_class();
                         self.stack.truncate(saved_stack_depth);
-                        self.locals = saved_locals;
-                        *self.interpreter.env_mut() = saved_env;
-                        self.interpreter.restore_readonly_vars(saved_readonly);
+                        let frame = self.pop_call_frame();
+                        *self.interpreter.env_mut() = frame.saved_env;
                         return Err(RuntimeError::new(format!(
                             "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
                             param_name,
@@ -1600,9 +1610,8 @@ impl VM {
             Err(e) => {
                 self.interpreter.pop_method_class();
                 self.stack.truncate(saved_stack_depth);
-                self.locals = saved_locals;
-                *self.interpreter.env_mut() = saved_env;
-                self.interpreter.restore_readonly_vars(saved_readonly);
+                let frame = self.pop_call_frame();
+                *self.interpreter.env_mut() = frame.saved_env;
                 return Err(e);
             }
         }
@@ -1740,12 +1749,15 @@ impl VM {
                 method_local_keys.insert(local_name.clone());
             }
         }
-        let merged_env = merge_method_env(&saved_env, self.interpreter.env(), &method_local_keys);
+        let merged_env = merge_method_env(
+            &self.call_frames.last().unwrap().saved_env,
+            self.interpreter.env(),
+            &method_local_keys,
+        );
 
         self.interpreter.pop_method_class();
-        self.locals = saved_locals;
+        let _frame = self.pop_call_frame();
         *self.interpreter.env_mut() = merged_env;
-        self.interpreter.restore_readonly_vars(saved_readonly);
 
         let final_result = match result {
             Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),

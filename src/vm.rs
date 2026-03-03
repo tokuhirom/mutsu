@@ -25,6 +25,14 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     crate::runtime::compare_values(left, right).cmp(&0)
 }
 
+/// Saved state for a compiled function/closure/method call frame.
+pub(super) struct VmCallFrame {
+    pub saved_env: HashMap<String, Value>,
+    pub saved_locals: Vec<Value>,
+    pub saved_stack_depth: usize,
+    pub saved_readonly: HashSet<String>,
+}
+
 pub(crate) struct VM {
     interpreter: Interpreter,
     stack: Vec<Value>,
@@ -36,6 +44,8 @@ pub(crate) struct VM {
     container_ref_var: Option<String>,
     /// Source variable name for topic binding in for loops
     topic_source_var: Option<String>,
+    /// Stack of saved call frames for compiled function/closure/method calls.
+    call_frames: Vec<VmCallFrame>,
 }
 
 impl VM {
@@ -96,6 +106,7 @@ impl VM {
             last_topic_value: None,
             container_ref_var: None,
             topic_source_var: None,
+            call_frames: Vec::new(),
         }
     }
 
