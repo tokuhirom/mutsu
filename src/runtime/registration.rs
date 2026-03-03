@@ -105,6 +105,7 @@ fn substitute_type_params_in_method(
         is_rw: method.is_rw,
         is_private: method.is_private,
         return_type: method.return_type.clone(),
+        compiled_code: method.compiled_code.clone(),
     }
 }
 
@@ -2002,6 +2003,7 @@ impl Interpreter {
                                     is_rw: false,
                                     is_private: false,
                                     return_type: None,
+                                    compiled_code: None,
                                 });
                         }
                     }
@@ -2038,6 +2040,7 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         return_type: return_type.clone(),
+                        compiled_code: None,
                     };
                     if *multi {
                         class_def
@@ -2284,6 +2287,7 @@ impl Interpreter {
                                 is_rw: false,
                                 is_private: false,
                                 return_type: None,
+                                compiled_code: None,
                             });
                     }
                 }
@@ -2403,6 +2407,7 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         return_type: return_type.clone(),
+                        compiled_code: None,
                     };
                     if *multi {
                         role_def

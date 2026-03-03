@@ -491,6 +491,115 @@ impl Interpreter {
         self.roles.contains_key(name)
     }
 
+    pub(crate) fn push_method_class(&mut self, class_name: String) {
+        self.method_class_stack.push(class_name);
+    }
+
+    pub(crate) fn pop_method_class(&mut self) {
+        self.method_class_stack.pop();
+    }
+
+    /// Set up a method dispatch frame for nextsame/callsame support.
+    /// Returns true if a frame was pushed (caller must call pop_method_dispatch).
+    pub(crate) fn push_method_dispatch_frame(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+        invocant: Value,
+    ) -> bool {
+        let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
+        let remaining: Vec<(String, super::MethodDef)> = all_candidates
+            .into_iter()
+            .skip(1)
+            .filter(|(candidate_owner, _)| {
+                !self.should_skip_defer_method_candidate(receiver_class, candidate_owner)
+            })
+            .collect();
+        let pushed = !remaining.is_empty();
+        if pushed {
+            self.method_dispatch_stack.push(super::MethodDispatchFrame {
+                receiver_class: receiver_class.to_string(),
+                invocant,
+                args: args.to_vec(),
+                remaining,
+            });
+        }
+        pushed
+    }
+
+    /// Pop a method dispatch frame (must only be called if push returned true).
+    pub(crate) fn pop_method_dispatch(&mut self) {
+        self.method_dispatch_stack.pop();
+    }
+
+    pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<&Vec<String>> {
+        self.class_composed_roles.get(class_name)
+    }
+
+    pub(crate) fn get_role_def(&self, role_name: &str) -> Option<&super::RoleDef> {
+        self.roles.get(role_name)
+    }
+
+    pub(crate) fn class_role_param_bindings(
+        &self,
+        class_name: &str,
+    ) -> Option<&HashMap<String, Value>> {
+        self.class_role_param_bindings.get(class_name)
+    }
+
+    /// Compile method bodies for a given class using the bytecode compiler.
+    pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
+        let class_def = match self.classes.get(class_name) {
+            Some(c) => c,
+            None => return,
+        };
+        let mut to_compile = Vec::new();
+        for (method_name, overloads) in &class_def.methods {
+            for (idx, def) in overloads.iter().enumerate() {
+                if def.compiled_code.is_none() && !def.body.is_empty() {
+                    let mut compiler = crate::compiler::Compiler::new();
+                    let cc = compiler.compile_closure_body(&def.params, &def.param_defs, &def.body);
+                    to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
+                }
+            }
+        }
+        for (method_name, idx, arc_cc) in to_compile {
+            if let Some(class_def) = self.classes.get_mut(class_name)
+                && let Some(overloads) = class_def.methods.get_mut(&method_name)
+                && let Some(def) = overloads.get_mut(idx)
+            {
+                def.compiled_code = Some(arc_cc);
+            }
+        }
+    }
+
+    /// Compile method bodies for a given role.
+    pub(crate) fn compile_role_methods(&mut self, role_name: &str) {
+        let role_def = match self.roles.get(role_name) {
+            Some(r) => r,
+            None => return,
+        };
+        let mut to_compile = Vec::new();
+        for (method_name, overloads) in &role_def.methods {
+            for (idx, def) in overloads.iter().enumerate() {
+                if def.compiled_code.is_none() && !def.body.is_empty() {
+                    let mut compiler = crate::compiler::Compiler::new();
+                    let cc = compiler.compile_closure_body(&def.params, &def.param_defs, &def.body);
+                    to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
+                }
+            }
+        }
+        for (method_name, idx, arc_cc) in to_compile {
+            if let Some(role_def) = self.roles.get_mut(role_name)
+                && let Some(overloads) = role_def.methods.get_mut(&method_name)
+                && let Some(def) = overloads.get_mut(idx)
+            {
+                def.compiled_code = Some(arc_cc);
+            }
+        }
+    }
+
     pub(crate) fn smart_match_values(&mut self, left: &Value, right: &Value) -> bool {
         self.smart_match(left, right)
     }

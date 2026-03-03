@@ -228,7 +228,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn overwrite_instance_bindings_by_identity(
+    pub(crate) fn overwrite_instance_bindings_by_identity(
         &mut self,
         class_name: &str,
         id: u64,

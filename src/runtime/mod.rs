@@ -110,11 +110,11 @@ struct ClassDef {
 }
 
 #[derive(Debug, Clone)]
-struct RoleDef {
-    attributes: Vec<ClassAttributeDef>,
-    methods: HashMap<String, Vec<MethodDef>>,
-    is_stub_role: bool,
-    is_hidden: bool,
+pub(crate) struct RoleDef {
+    pub(crate) attributes: Vec<ClassAttributeDef>,
+    pub(crate) methods: HashMap<String, Vec<MethodDef>>,
+    pub(crate) is_stub_role: bool,
+    pub(crate) is_hidden: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -131,13 +131,14 @@ struct SubsetDef {
 }
 
 #[derive(Debug, Clone)]
-struct MethodDef {
-    params: Vec<String>,
-    param_defs: Vec<ParamDef>,
-    body: Vec<Stmt>,
-    is_rw: bool,
-    is_private: bool,
-    return_type: Option<String>,
+pub(crate) struct MethodDef {
+    pub(crate) params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) body: Vec<Stmt>,
+    pub(crate) is_rw: bool,
+    pub(crate) is_private: bool,
+    pub(crate) return_type: Option<String>,
+    pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
 }
 
 #[derive(Debug, Clone)]

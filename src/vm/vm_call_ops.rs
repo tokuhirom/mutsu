@@ -423,12 +423,10 @@ impl VM {
             {
                 native_result
             } else {
-                self.interpreter
-                    .call_method_with_values(target, &method, args)
+                self.try_compiled_method_or_interpret(code, target, &method, args)
             }
         } else {
-            self.interpreter
-                .call_method_with_values(target, &method, args)
+            self.try_compiled_method_or_interpret(code, target, &method, args)
         };
         match modifier.as_deref() {
             Some("?") => {
@@ -461,6 +459,76 @@ impl VM {
             }
         }
         Ok(())
+    }
+
+    /// Try compiled method fast path; fall back to interpreter.
+    fn try_compiled_method_or_interpret(
+        &mut self,
+        _code: &CompiledCode,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // Only attempt compiled path for Instance or Package targets
+        let class_name = match &target {
+            Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            Value::Package(name) => Some(name.resolve()),
+            _ => None,
+        };
+        if let Some(cn) = class_name
+            && let Some((owner_class, method_def)) = self
+                .interpreter
+                .resolve_method_with_owner(&cn, method, &args)
+            && let Some(ref cc) = method_def.compiled_code
+        {
+            let cc = cc.clone();
+            let target_id = match &target {
+                Value::Instance { id, .. } => Some(*id),
+                _ => None,
+            };
+            let attributes = match &target {
+                Value::Instance { attributes, .. } => (**attributes).clone(),
+                _ => std::collections::HashMap::new(),
+            };
+            // Set up dispatch frame for nextsame/callsame support
+            let invocant_for_dispatch = if attributes.is_empty() {
+                Value::Package(crate::symbol::Symbol::intern(&cn))
+            } else {
+                target.clone()
+            };
+            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                &cn,
+                method,
+                &args,
+                invocant_for_dispatch,
+            );
+            let invocant = Some(target);
+            // Method bodies are compiled independently; function calls
+            // within them resolve through the interpreter fallback.
+            let empty_fns = HashMap::new();
+            let method_result = self.call_compiled_method(
+                &cn,
+                &owner_class,
+                &method_def,
+                &cc,
+                attributes,
+                args,
+                invocant,
+                &empty_fns,
+            );
+            if pushed_dispatch {
+                self.interpreter.pop_method_dispatch();
+            }
+            let (result, new_attrs) = method_result?;
+            // Propagate attribute mutations to all bindings of this instance
+            if let Some(id) = target_id {
+                self.interpreter
+                    .overwrite_instance_bindings_by_identity(&cn, id, new_attrs);
+            }
+            return Ok(result);
+        }
+        self.interpreter
+            .call_method_with_values(target, method, args)
     }
 
     pub(super) fn exec_call_method_dynamic_op(
