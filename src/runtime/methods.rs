@@ -955,6 +955,17 @@ impl Interpreter {
                 _ => {}
             }
         }
+        // Handle Match.make method — stores value via make() mechanism
+        if let Value::Instance { class_name, .. } = &target
+            && class_name == "Match"
+            && method == "make"
+        {
+            let value = args.first().cloned().unwrap_or(Value::Nil);
+            self.env.insert("made".to_string(), value.clone());
+            self.action_made = Some(value.clone());
+            return Ok(value);
+        }
+
         // Handle Routine::WrapHandle .restore() method
         if let Value::Instance {
             class_name,

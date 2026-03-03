@@ -720,6 +720,25 @@ impl VM {
         if !matches!(value, Value::Instance { .. }) {
             return Ok(value);
         }
+        // Match coerces to Numeric via its matched string
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && class_name == "Match"
+            && let Some(str_val) = attributes.get("str")
+        {
+            let s = str_val.to_string_value();
+            let s = s.trim();
+            if let Ok(i) = s.parse::<i64>() {
+                return Ok(Value::Int(i));
+            }
+            if let Ok(f) = s.parse::<f64>() {
+                return Ok(Value::Num(f));
+            }
+            return Ok(Value::Int(0));
+        }
         if !(self.interpreter.type_matches_value("Real", &value)
             || self.interpreter.type_matches_value("Numeric", &value))
         {

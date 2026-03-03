@@ -458,6 +458,9 @@ pub struct Interpreter {
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// Value set by `make()` inside grammar action methods.
+    /// Persists across env save/restore in method dispatch.
+    pub(crate) action_made: Option<Value>,
     /// Pending error from regex security validation, to be propagated by the caller.
     #[allow(dead_code)]
     pending_regex_error: Option<RuntimeError>,
@@ -1402,6 +1405,7 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            action_made: None,
             pending_regex_error: None,
         };
         interpreter.init_io_environment();
@@ -2340,6 +2344,7 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            action_made: None,
             pending_regex_error: None,
         };
         cloned.init_io_environment();

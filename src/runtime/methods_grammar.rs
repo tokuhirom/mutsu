@@ -11,6 +11,7 @@ impl Interpreter {
         let mut source_arg: Option<String> = None;
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();
+        let mut actions_obj: Option<Value> = None;
         for arg in args {
             if let Value::Pair(key, value) = arg {
                 if key == "rule" || key == "token" {
@@ -31,6 +32,8 @@ impl Interpreter {
                             rule_args = vec![other.clone()];
                         }
                     }
+                } else if key == "actions" {
+                    actions_obj = Some(value.as_ref().clone());
                 }
                 continue;
             }
@@ -139,6 +142,9 @@ impl Interpreter {
                 if let Some(ast) = self.env.get("made").cloned() {
                     attrs.insert("ast".to_string(), ast);
                 }
+                if let Some(ref act) = actions_obj {
+                    attrs.insert("actions".to_string(), act.clone());
+                }
                 Value::make_instance(*class_name, attrs)
             } else {
                 match_obj
@@ -151,6 +157,34 @@ impl Interpreter {
                     self.env.insert(format!("<{}>", k), v.clone());
                 }
             }
+            self.env.insert("/".to_string(), match_obj.clone());
+
+            // Invoke action methods if :actions was provided
+            let match_obj = if let Some(ref mut actions) = actions_obj {
+                let result = self.invoke_grammar_actions(match_obj, actions, &start_rule)?;
+                // Update the actions attribute on the final Match to reflect
+                // any mutations that occurred during action method dispatch.
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    id,
+                    ..
+                } = &result
+                {
+                    let mut attrs = attributes.as_ref().clone();
+                    attrs.insert("actions".to_string(), actions.clone());
+                    Value::Instance {
+                        class_name: *class_name,
+                        attributes: std::sync::Arc::new(attrs),
+                        id: *id,
+                    }
+                } else {
+                    result
+                }
+            } else {
+                match_obj
+            };
+
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)
         })();
@@ -167,6 +201,130 @@ impl Interpreter {
             self.env.remove("made");
         }
         result
+    }
+
+    /// Walk the match tree bottom-up and invoke action methods on the actions object.
+    fn invoke_grammar_actions(
+        &mut self,
+        match_obj: Value,
+        actions: &mut Value,
+        rule_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        let (class_name, attributes) = if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &match_obj
+        {
+            (*class_name, attributes.as_ref().clone())
+        } else {
+            return Ok(match_obj);
+        };
+
+        // First, recursively process child named captures (bottom-up order)
+        let mut updated_attrs = attributes.clone();
+        if let Some(Value::Hash(named_hash)) = attributes.get("named") {
+            let mut updated_named = named_hash.as_ref().clone();
+            // Sort children by their match position (from attribute) to preserve grammar order
+            let mut children: Vec<(String, Value)> = named_hash
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            children.sort_by_key(|(_, v)| {
+                if let Value::Instance { attributes, .. } = v
+                    && let Some(Value::Int(from)) = attributes.get("from")
+                {
+                    return *from;
+                }
+                0
+            });
+            for (child_name, child_match) in children {
+                let updated_child =
+                    self.invoke_grammar_actions(child_match, actions, &child_name)?;
+                updated_named.insert(child_name, updated_child);
+            }
+            updated_attrs.insert("named".to_string(), Value::hash(updated_named));
+        }
+
+        // Rebuild match_obj with updated children
+        let match_obj = Value::make_instance(class_name, updated_attrs.clone());
+
+        // Set $/ to this match and try calling actions.{rule_name}(match)
+        self.env.insert("/".to_string(), match_obj.clone());
+        self.env.remove("made");
+        self.action_made = None;
+        // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
+        if let Some(Value::Hash(named_hash)) = updated_attrs.get("named") {
+            for (k, v) in named_hash.iter() {
+                self.env.insert(format!("<{}>", k), v.clone());
+            }
+        }
+        // Also set $_ to the match (for `.make:` syntax)
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), match_obj.clone());
+
+        let method_result =
+            self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()]);
+
+        // After the method call, if actions is an Instance, its attributes
+        // may have been mutated.  Retrieve the updated version from env so
+        // subsequent child/rule calls see the latest state.
+        if let Value::Instance {
+            class_name: act_cn,
+            id: act_id,
+            ..
+        } = actions
+        {
+            for v in self.env.values() {
+                if let Value::Instance {
+                    class_name: cn,
+                    id,
+                    attributes,
+                    ..
+                } = v
+                    && cn == act_cn
+                    && *id == *act_id
+                {
+                    *actions = Value::Instance {
+                        class_name: *cn,
+                        attributes: attributes.clone(),
+                        id: *id,
+                    };
+                    break;
+                }
+            }
+        }
+
+        // Restore $_
+        if let Some(old_topic) = saved_topic {
+            self.env.insert("_".to_string(), old_topic);
+        } else {
+            self.env.remove("_");
+        }
+
+        match method_result {
+            Ok(_) => {}
+            Err(e) if e.message.contains("X::Method::NotFound") => {
+                // No action method for this rule — silently skip
+            }
+            Err(e) => return Err(e),
+        }
+
+        // If make() was called (via action_made which persists across env restore),
+        // update .ast on match
+        let final_obj = if let Some(ast) = self.action_made.take() {
+            let mut attrs = updated_attrs;
+            attrs.insert("ast".to_string(), ast);
+            // Preserve actions attribute if present
+            if let Some(act_val) = attributes.get("actions") {
+                attrs.insert("actions".to_string(), act_val.clone());
+            }
+            Value::make_instance(class_name, attrs)
+        } else {
+            match_obj
+        };
+
+        Ok(final_obj)
     }
 
     pub(super) fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {
