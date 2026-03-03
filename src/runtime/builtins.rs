@@ -967,17 +967,6 @@ impl Interpreter {
                 "X::Assignment::RO: target is not assignable",
             ));
         };
-        // Pre-populate the env with the STORE closure's captured variables so that
-        // call_sub_value's merge_all writeback will propagate STORE's modifications.
-        // Without this, variables like $value that only exist in the closure's scope
-        // would be lost during env restoration (merge only writes back existing keys).
-        if let Value::Sub(ref data) = *storer {
-            for (k, v) in &data.env {
-                if !self.env.contains_key(k) {
-                    self.env.insert(k.clone(), v.clone());
-                }
-            }
-        }
         let store_result =
             self.call_sub_value(*storer.clone(), vec![proxy.clone(), value.clone()], true);
         if let Err(err) = store_result {
