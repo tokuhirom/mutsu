@@ -216,7 +216,7 @@ struct LockState {
 }
 
 #[derive(Debug, Default)]
-struct LockRuntime {
+pub(crate) struct LockRuntime {
     state: std::sync::Mutex<LockState>,
     lock_cv: std::sync::Condvar,
     condvars: std::sync::Mutex<HashMap<u64, Arc<std::sync::Condvar>>>,
@@ -265,18 +265,21 @@ fn cancellation_state(id: u64) -> Option<Arc<AtomicBool>> {
         .and_then(|map| map.get(&id).cloned())
 }
 
-fn lock_runtime_by_id(id: u64) -> Option<Arc<LockRuntime>> {
+pub(crate) fn lock_runtime_by_id(id: u64) -> Option<Arc<LockRuntime>> {
     lock_state_map()
         .read()
         .ok()
         .and_then(|map| map.get(&id).cloned())
 }
 
-fn current_thread_id() -> std::thread::ThreadId {
+pub(crate) fn current_thread_id() -> std::thread::ThreadId {
     std::thread::current().id()
 }
 
-fn acquire_lock(runtime: &LockRuntime, me: std::thread::ThreadId) -> Result<(), RuntimeError> {
+pub(crate) fn acquire_lock(
+    runtime: &LockRuntime,
+    me: std::thread::ThreadId,
+) -> Result<(), RuntimeError> {
     let mut state = runtime
         .state
         .lock()
@@ -302,7 +305,10 @@ fn acquire_lock(runtime: &LockRuntime, me: std::thread::ThreadId) -> Result<(), 
     }
 }
 
-fn release_lock(runtime: &LockRuntime, me: std::thread::ThreadId) -> Result<(), RuntimeError> {
+pub(crate) fn release_lock(
+    runtime: &LockRuntime,
+    me: std::thread::ThreadId,
+) -> Result<(), RuntimeError> {
     let mut state = runtime
         .state
         .lock()

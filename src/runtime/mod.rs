@@ -62,7 +62,7 @@ mod methods_string;
 mod methods_sub;
 mod methods_trans;
 mod native_io;
-mod native_methods;
+pub(crate) mod native_methods;
 mod native_proc_async;
 mod native_supply_methods;
 pub(crate) mod native_types;
@@ -2228,7 +2228,9 @@ impl Interpreter {
                 {
                     continue;
                 }
-                sv.insert(key.clone(), val.clone());
+                // Only insert if not already present — existing values may have
+                // been updated by earlier threads that are already running.
+                sv.entry(key.clone()).or_insert_with(|| val.clone());
             }
         }
         self.shared_vars_active = true;
@@ -2402,6 +2404,20 @@ impl Interpreter {
         let sv = self.shared_vars.read().unwrap();
         for (key, val) in sv.iter() {
             self.env.insert(key.clone(), val.clone());
+        }
+    }
+
+    /// Sync only the specified keys from shared_vars into env.
+    /// More efficient than full sync when we know which keys the block accesses.
+    pub(crate) fn sync_shared_vars_for_keys<'a>(&mut self, keys: impl Iterator<Item = &'a String>) {
+        if !self.shared_vars_active {
+            return;
+        }
+        let sv = self.shared_vars.read().unwrap();
+        for key in keys {
+            if let Some(val) = sv.get(key) {
+                self.env.insert(key.clone(), val.clone());
+            }
         }
     }
 
