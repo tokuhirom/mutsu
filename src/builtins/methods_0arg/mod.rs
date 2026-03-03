@@ -102,12 +102,41 @@ pub(crate) fn native_method_0arg(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.resolve();
     let method = method.as_str();
-    // For Mixin values, handle Bool method specially, then delegate to inner
+    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
         {
             return Some(Ok(bool_val.clone()));
+        }
+        if (method == "Str" || method == "~")
+            && let Some(str_val) = mixins.get("Str")
+        {
+            return Some(Ok(str_val.clone()));
+        }
+        if method == "WHICH"
+            && let Some(allo_name) = crate::value::types::allomorph_type_name(inner, mixins)
+        {
+            let inner_which = match inner.as_ref() {
+                Value::Int(n) => format!("Int|{}", n),
+                Value::BigInt(n) => format!("Int|{}", n),
+                Value::Num(n) => format!("Num|{}", n),
+                Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
+                Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+                Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+                _ => format!("{:?}", inner),
+            };
+            let str_part = mixins
+                .get("Str")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let which_str = format!("{}|{}|Str|{}", allo_name, inner_which, str_part);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("WHICH".to_string(), Value::Str(which_str));
+            return Some(Ok(Value::make_instance(
+                crate::symbol::Symbol::intern("ObjAt"),
+                attrs,
+            )));
         }
         return native_method_0arg(inner, method_sym);
     }

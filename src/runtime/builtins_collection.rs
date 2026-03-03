@@ -223,26 +223,27 @@ impl Interpreter {
 
 /// Raku `val()` builtin: convert a string into an allomorphic type.
 pub(super) fn builtin_val(args: &[Value]) -> Value {
-    let word = match args.first() {
+    let original = match args.first() {
         Some(v) => v.to_string_value(),
         None => return Value::Nil,
     };
-    let word = word.trim();
+    let word = original.trim();
 
-    fn make_allomorphic(val: Value, word: &str) -> Value {
+    fn make_allomorphic(val: Value, original: &str) -> Value {
         let mut mixins = StdHashMap::new();
-        mixins.insert("Str".to_string(), Value::Str(word.to_string()));
+        // Store the original string (with whitespace) as the Str component
+        mixins.insert("Str".to_string(), Value::Str(original.to_string()));
         Value::Mixin(Box::new(val), mixins)
     }
 
     // Try complex (must end with 'i')
     if let Some(complex) = try_parse_complex(word) {
-        return make_allomorphic(complex, word);
+        return make_allomorphic(complex, &original);
     }
 
     // Try integer
     if let Ok(i) = word.parse::<i64>() {
-        return make_allomorphic(Value::Int(i), word);
+        return make_allomorphic(Value::Int(i), &original);
     }
 
     // Try Num (scientific notation with e/E)
@@ -250,7 +251,21 @@ pub(super) fn builtin_val(args: &[Value]) -> Value {
         // Normalize U+2212 MINUS SIGN to ASCII minus
         let normalized = word.replace('\u{2212}', "-");
         if let Ok(f) = normalized.parse::<f64>() {
-            return make_allomorphic(Value::Num(f), word);
+            return make_allomorphic(Value::Num(f), &original);
+        }
+    }
+
+    // Try Rat (fraction notation like "1/5")
+    if word.contains('/') && !word.contains('.') && !word.contains('e') && !word.contains('E') {
+        let parts: Vec<&str> = word.splitn(2, '/').collect();
+        if parts.len() == 2
+            && let (Ok(n), Ok(d)) = (
+                parts[0].trim().parse::<i64>(),
+                parts[1].trim().parse::<i64>(),
+            )
+            && d != 0
+        {
+            return make_allomorphic(crate::value::make_rat(n, d), &original);
         }
     }
 
@@ -266,12 +281,12 @@ pub(super) fn builtin_val(args: &[Value]) -> Value {
                     .unwrap_or(0) as u32,
             );
             let numer = (f * scale as f64).round() as i64;
-            return make_allomorphic(crate::value::make_rat(numer, scale), word);
+            return make_allomorphic(crate::value::make_rat(numer, scale), &original);
         }
     }
 
     // Plain string
-    Value::Str(word.to_string())
+    Value::Str(original.to_string())
 }
 
 fn try_parse_complex(word: &str) -> Option<Value> {

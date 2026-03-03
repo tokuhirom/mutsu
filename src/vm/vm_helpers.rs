@@ -526,6 +526,11 @@ impl VM {
                 | "byte"
                 | "int"
                 | "uint"
+                | "IntStr"
+                | "NumStr"
+                | "RatStr"
+                | "ComplexStr"
+                | "Allomorph"
         )
     }
 
