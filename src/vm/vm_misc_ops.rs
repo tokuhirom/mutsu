@@ -998,17 +998,6 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_eval_ast_expr_op(
-        &mut self,
-        code: &CompiledCode,
-        stmt_idx: u32,
-    ) -> Result<(), RuntimeError> {
-        let stmt = code.stmt_pool[stmt_idx as usize].clone();
-        let result = self.interpreter.eval_block_value(&[stmt])?;
-        self.stack.push(result);
-        Ok(())
-    }
-
     pub(super) fn exec_indirect_type_lookup_op(&mut self) {
         let name_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = name_val.to_string_value();

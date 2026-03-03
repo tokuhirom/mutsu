@@ -137,7 +137,7 @@ Remove remaining tree-walker fallbacks in the VM:
 - [x] Closure execution fast path (`call_compiled_closure` enabled for VM-internal closure calls; leave targeting fixed, `.assuming()` support added)
 - [x] Class/role declaration compilation
 - [x] Full method dispatch compilation
-- [ ] Remove `InterpretExpr` / `InterpretStmt` opcodes entirely
+- [x] Remove `InterpretExpr` / `InterpretStmt` opcodes entirely
 
 ### P3. Optimization pipeline
 

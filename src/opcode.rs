@@ -550,11 +550,6 @@ pub(crate) enum OpCode {
     /// The u32 is a constant index for the type name string.
     TypeCheck(u32),
 
-    // -- Fallback to interpreter --
-    /// Evaluate an AST expression via the interpreter (for operators not yet compiled).
-    /// The u32 indexes into stmt_pool.
-    EvalAstExpr(u32),
-
     /// State variable initialization.
     /// slot = local slot index, key_idx = constant index for unique state key.
     /// Pops init value from stack.

@@ -219,13 +219,14 @@ impl Compiler {
                     self.code.emit(OpCode::MakeSlip);
                 }
                 _ => {
-                    // Fallback: delegate to interpreter for unsupported prefix operators
-                    let prefix_expr = Expr::Unary {
-                        op: op.clone(),
-                        expr: expr.clone(),
-                    };
-                    let idx = self.code.add_stmt(Stmt::Expr(prefix_expr));
-                    self.code.emit(OpCode::EvalAstExpr(idx));
+                    self.compile_expr(expr);
+                    let op_name = format!("prefix:<{}>", super::helpers::token_kind_to_op_name(op));
+                    let name_idx = self.code.add_constant(Value::Str(op_name));
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx,
+                        arity: 1,
+                        arg_sources_idx: None,
+                    });
                 }
             },
             Expr::Binary { left, op, right } => {
@@ -425,14 +426,15 @@ impl Compiler {
                         modifier_idx: None,
                     });
                 } else {
-                    // Fallback: delegate to interpreter for unsupported operators
-                    let expr = Expr::Binary {
-                        left: left.clone(),
-                        op: op.clone(),
-                        right: right.clone(),
-                    };
-                    let idx = self.code.add_stmt(Stmt::Expr(expr));
-                    self.code.emit(OpCode::EvalAstExpr(idx));
+                    self.compile_expr(left);
+                    self.compile_expr(right);
+                    let op_name = super::helpers::token_kind_to_op_name(op);
+                    let name_idx = self.code.add_constant(Value::Str(op_name));
+                    self.code.emit(OpCode::InfixFunc {
+                        name_idx,
+                        right_arity: 1,
+                        modifier_idx: None,
+                    });
                 }
             }
             Expr::Ternary {
