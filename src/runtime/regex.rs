@@ -1404,13 +1404,13 @@ impl Interpreter {
                                     .or_default()
                                     .push(captured);
                             } else {
-                                // No capture name — merge inner captures flat
+                                // Silent subrule — merge named captures only (not positional).
+                                // Inner positional captures must not leak into the parent's
+                                // positional array, otherwise they consume indices that belong
+                                // to subsequent capturing groups in the outer regex.
                                 let mut inner_caps = inner_caps;
                                 for (k, v) in inner_caps.named.drain() {
                                     new_caps.named.entry(k).or_default().extend(v);
-                                }
-                                for v in inner_caps.positional.drain(..) {
-                                    new_caps.positional.push(v);
                                 }
                                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                             }
