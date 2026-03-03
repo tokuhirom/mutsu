@@ -1318,8 +1318,7 @@ impl Compiler {
                     else_branch,
                     ..
                 } => {
-                    if Self::has_real_let_deep(then_branch)
-                        || Self::has_real_let_deep(else_branch)
+                    if Self::has_real_let_deep(then_branch) || Self::has_real_let_deep(else_branch)
                     {
                         return true;
                     }

@@ -1183,8 +1183,7 @@ impl VM {
                     .cloned()
                     .unwrap_or(Value::Nil);
                 let success = Self::is_let_success(&topic);
-                self.interpreter
-                    .resolve_let_saves_on_success(mark, success);
+                self.interpreter.resolve_let_saves_on_success(mark, success);
                 self.env_dirty = true;
             }
             Err(e) => {
