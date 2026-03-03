@@ -786,12 +786,21 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "append" => {
-                    let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing, ..)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v, ..) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
+                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        for arg in args {
+                            match arg {
+                                Value::Array(vals, kind) if !kind.is_itemized() => {
+                                    items.extend(vals.iter().cloned())
+                                }
+                                other => items.push(other),
+                            }
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    let mut items = match target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
                     };
                     for arg in args {
                         match arg {
@@ -805,12 +814,17 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 }
                 "unshift" | "prepend" => {
-                    let items = match self.env.get(&key) {
-                        Some(Value::Array(existing, ..)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v, ..) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
+                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        for (i, arg) in args.iter().enumerate() {
+                            items.insert(i, arg.clone());
+                        }
+                        let result = Value::Array(Arc::clone(arc_items), *kind);
+                        return Ok(result);
+                    }
+                    let items = match target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
                     };
                     let mut pref = args;
                     pref.extend(items);
@@ -819,24 +833,32 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "pop" => {
-                    let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing, ..)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v, ..) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
+                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        let out = items.pop().unwrap_or(Value::Nil);
+                        return Ok(out);
+                    }
+                    let mut items = match target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
                     self.env.insert(key, Value::real_array(items));
                     return Ok(out);
                 }
                 "shift" => {
-                    let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing, ..)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v, ..) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
+                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        let out = if items.is_empty() {
+                            Value::Nil
+                        } else {
+                            items.remove(0)
+                        };
+                        return Ok(out);
+                    }
+                    let mut items = match target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
                     };
                     let out = if items.is_empty() {
                         Value::Nil
@@ -847,40 +869,46 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "splice" => {
-                    let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing, ..)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v, ..) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
-                    };
-                    let start = args
-                        .first()
-                        .and_then(|v| match v {
-                            Value::Int(i) => Some((*i).max(0) as usize),
-                            _ => None,
-                        })
-                        .unwrap_or(0)
-                        .min(items.len());
-                    let count = args
-                        .get(1)
-                        .and_then(|v| match v {
-                            Value::Int(i) => Some((*i).max(0) as usize),
-                            _ => None,
-                        })
-                        .unwrap_or(items.len().saturating_sub(start));
-                    let end = (start + count).min(items.len());
-                    let removed: Vec<Value> = items.drain(start..end).collect();
-                    if let Some(new_val) = args.get(2) {
-                        match new_val {
-                            Value::Array(new_items, ..) => {
-                                for (i, item) in new_items.iter().enumerate() {
-                                    items.insert(start + i, item.clone());
+                    fn do_splice(items: &mut Vec<Value>, args: &[Value]) -> Vec<Value> {
+                        let start = args
+                            .first()
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some((*i).max(0) as usize),
+                                _ => None,
+                            })
+                            .unwrap_or(0)
+                            .min(items.len());
+                        let count = args
+                            .get(1)
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some((*i).max(0) as usize),
+                                _ => None,
+                            })
+                            .unwrap_or(items.len().saturating_sub(start));
+                        let end = (start + count).min(items.len());
+                        let removed: Vec<Value> = items.drain(start..end).collect();
+                        if let Some(new_val) = args.get(2) {
+                            match new_val {
+                                Value::Array(new_items, ..) => {
+                                    for (i, item) in new_items.iter().enumerate() {
+                                        items.insert(start + i, item.clone());
+                                    }
                                 }
+                                other => items.insert(start, other.clone()),
                             }
-                            other => items.insert(start, other.clone()),
                         }
+                        removed
                     }
+                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        let removed = do_splice(items, &args);
+                        return Ok(Value::real_array(removed));
+                    }
+                    let mut items = match target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let removed = do_splice(&mut items, &args);
                     self.env.insert(key, Value::real_array(items));
                     return Ok(Value::real_array(removed));
                 }
@@ -943,6 +971,22 @@ impl Interpreter {
             };
             match method {
                 "push" | "append" => {
+                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        if method == "append" {
+                            for arg in &args {
+                                match arg {
+                                    Value::Array(inner, k) if k.is_real_array() => {
+                                        items.extend(inner.iter().cloned())
+                                    }
+                                    other => items.push(other.clone()),
+                                }
+                            }
+                        } else {
+                            items.extend(args);
+                        }
+                        return Ok(Value::Array(Arc::clone(arc_items), *kind));
+                    }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
@@ -959,22 +1003,33 @@ impl Interpreter {
                     } else {
                         items.extend(args);
                     }
-                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
-                    self.env
-                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
+                    let result = Value::Array(Arc::new(items), array_flag);
+                    self.env.insert(key, result.clone());
                     return Ok(result);
                 }
                 "pop" => {
+                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        let out = items.pop().unwrap_or(Value::Nil);
+                        return Ok(out);
+                    }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
                     self.env
-                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
+                        .insert(key, Value::Array(Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 "unshift" | "prepend" => {
+                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        for (i, arg) in args.iter().enumerate() {
+                            items.insert(i, arg.clone());
+                        }
+                        return Ok(Value::Array(Arc::clone(arc_items), *kind));
+                    }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
@@ -982,12 +1037,20 @@ impl Interpreter {
                     for (i, arg) in args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
-                    let result = Value::Array(std::sync::Arc::new(items.clone()), array_flag);
-                    self.env
-                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
+                    let result = Value::Array(Arc::new(items), array_flag);
+                    self.env.insert(key, result.clone());
                     return Ok(result);
                 }
                 "shift" => {
+                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        let out = if items.is_empty() {
+                            Value::Nil
+                        } else {
+                            items.remove(0)
+                        };
+                        return Ok(out);
+                    }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
@@ -998,7 +1061,7 @@ impl Interpreter {
                         items.remove(0)
                     };
                     self.env
-                        .insert(key, Value::Array(std::sync::Arc::new(items), array_flag));
+                        .insert(key, Value::Array(Arc::new(items), array_flag));
                     return Ok(out);
                 }
                 _ => {}
