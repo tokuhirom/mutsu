@@ -934,25 +934,28 @@ impl Interpreter {
             match method {
                 "push" | "append" => {
                     let is_push = method == "push";
-                    let mut hash: std::collections::HashMap<String, Value> =
-                        match self.env.get(&key) {
-                            Some(Value::Hash(h, ..)) => (**h).clone(),
-                            _ => match &target {
-                                Value::Hash(h, ..) => (**h).clone(),
-                                _ => std::collections::HashMap::new(),
-                            },
-                        };
 
-                    // Collect key-value pairs from arguments
+                    // Fast path: COW via Arc::make_mut (O(1) when refcount=1)
+                    if let Some(Value::Hash(arc_hash)) = self.env.get_mut(&key) {
+                        let hash = Arc::make_mut(arc_hash);
+                        let pairs = Self::hash_push_collect_pairs(args);
+                        for (k, v) in pairs {
+                            Self::hash_push_insert(hash, k, v, is_push);
+                        }
+                        return Ok(Value::Hash(Arc::clone(arc_hash)));
+                    }
+
+                    // Fallback: create from target value
+                    let mut hash: std::collections::HashMap<String, Value> = match &target {
+                        Value::Hash(h, ..) => (**h).clone(),
+                        _ => std::collections::HashMap::new(),
+                    };
                     let pairs = Self::hash_push_collect_pairs(args);
-
-                    // Push/append each pair into the hash
                     for (k, v) in pairs {
                         Self::hash_push_insert(&mut hash, k, v, is_push);
                     }
-
-                    let result = Value::hash(hash.clone());
-                    self.env.insert(key, Value::hash(hash));
+                    let result = Value::Hash(Arc::new(hash));
+                    self.env.insert(key, result.clone());
                     return Ok(result);
                 }
                 _ => {}
