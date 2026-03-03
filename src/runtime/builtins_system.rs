@@ -947,6 +947,8 @@ impl Interpreter {
                         self.replay_proc_taps(attributes);
                     }
                     results.push(result);
+                    // Sync shared variables after each thread completes
+                    self.sync_shared_vars_to_env();
                 }
                 // Backward compat: Instance-based Promise
                 Value::Instance {

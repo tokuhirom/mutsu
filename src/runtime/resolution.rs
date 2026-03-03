@@ -749,6 +749,36 @@ impl Interpreter {
         result
     }
 
+    /// Fast path for `Lock::Async.protect { ... }` — executes a bare block
+    /// directly in the current env without the full env save/restore overhead
+    /// of `call_sub_value`.  Shared vars must already be synced to env by the
+    /// caller.
+    pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
+        if let Value::Sub(data) = code {
+            // Targeted sync: only refresh variables the closure captures
+            // (much cheaper than syncing ALL shared vars)
+            {
+                let sv = self.shared_vars.read().unwrap();
+                if !sv.is_empty() {
+                    for key in data.env.keys() {
+                        if let Some(val) = sv.get(key) {
+                            self.env.insert(key.clone(), val.clone());
+                        }
+                    }
+                }
+            }
+            if let Some(ref cc) = data.compiled_code {
+                self.run_compiled_block(cc, &std::collections::HashMap::new())
+            } else {
+                let compiler = crate::compiler::Compiler::new();
+                let (compiled, compiled_fns) = compiler.compile(&data.body);
+                self.run_compiled_block(&compiled, &compiled_fns)
+            }
+        } else {
+            self.call_sub_value(code.clone(), Vec::new(), true)
+        }
+    }
+
     /// Run pre-compiled bytecode and return the `$_` topic value.
     fn run_compiled_block(
         &mut self,

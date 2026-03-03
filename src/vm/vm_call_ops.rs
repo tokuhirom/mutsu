@@ -394,6 +394,36 @@ impl VM {
             return Ok(());
         }
 
+        // Fast path for Lock::Async.protect — execute block inline in current VM
+        if method == "protect"
+            && args.len() == 1
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
+        {
+            let lock_id = match attributes.get("lock-id") {
+                Some(Value::Int(id)) if *id > 0 => *id as u64,
+                _ => {
+                    return Err(RuntimeError::new(
+                        "Lock.protect called on Lock without lock-id",
+                    ));
+                }
+            };
+            let lock = crate::runtime::native_methods::lock_runtime_by_id(lock_id)
+                .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
+            let me = crate::runtime::native_methods::current_thread_id();
+            crate::runtime::native_methods::acquire_lock(&lock, me)?;
+            let code_val = args.into_iter().next().unwrap_or(Value::Nil);
+            let result = self.exec_protect_block_inline(code, &code_val);
+            let _ = crate::runtime::native_methods::release_lock(&lock, me);
+            self.stack.push(result?);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
+
         // When the method name was quoted (e.g. ."DEFINITE"()), skip the native
         // pseudo-method fast path so user-defined methods are called instead.
         let mut skip_native = method == "VAR"
@@ -759,6 +789,37 @@ impl VM {
             self.stack.push(junction_result);
             return Ok(());
         }
+
+        // Fast path for Lock::Async.protect — execute block inline in current VM
+        if method == "protect"
+            && args.len() == 1
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
+        {
+            let lock_id = match attributes.get("lock-id") {
+                Some(Value::Int(id)) if *id > 0 => *id as u64,
+                _ => {
+                    return Err(RuntimeError::new(
+                        "Lock.protect called on Lock without lock-id",
+                    ));
+                }
+            };
+            let lock = crate::runtime::native_methods::lock_runtime_by_id(lock_id)
+                .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
+            let me = crate::runtime::native_methods::current_thread_id();
+            crate::runtime::native_methods::acquire_lock(&lock, me)?;
+            let code_val = args.into_iter().next().unwrap_or(Value::Nil);
+            let result = self.exec_protect_block_inline(code, &code_val);
+            let _ = crate::runtime::native_methods::release_lock(&lock, me);
+            self.stack.push(result?);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
+
         let mut skip_native = quoted
             && matches!(
                 method.as_str(),
@@ -1398,5 +1459,74 @@ impl VM {
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.sync_locals_from_env(code);
         Ok(())
+    }
+
+    /// Execute a protect block inline in the current VM, avoiding the overhead
+    /// of creating a new VM.
+    fn exec_protect_block_inline(
+        &mut self,
+        outer_code: &CompiledCode,
+        code_val: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let block_cc = match code_val {
+            Value::Sub(data) => {
+                // Targeted sync: refresh shared vars for keys the closure captures
+                self.interpreter.sync_shared_vars_for_keys(data.env.keys());
+                match &data.compiled_code {
+                    Some(cc) => cc.clone(),
+                    None => {
+                        let compiler = crate::compiler::Compiler::new();
+                        let (compiled, _) = compiler.compile(&data.body);
+                        Arc::new(compiled)
+                    }
+                }
+            }
+            _ => {
+                return self.interpreter.call_protect_block(code_val);
+            }
+        };
+
+        // Save/swap stack and locals for the block
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack = std::mem::take(&mut self.stack);
+
+        // Initialize locals for the block
+        self.locals = vec![Value::Nil; block_cc.locals.len()];
+        for (i, name) in block_cc.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(name) {
+                self.locals[i] = val.clone();
+            }
+        }
+
+        // Execute the block's opcodes inline
+        let empty_fns = HashMap::new();
+        let mut sub_ip = 0;
+        let mut exec_err = None;
+        while sub_ip < block_cc.ops.len() {
+            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &empty_fns) {
+                exec_err = Some(e);
+                break;
+            }
+        }
+
+        // Sync locals back to env
+        for (i, name) in block_cc.locals.iter().enumerate() {
+            self.interpreter
+                .env_mut()
+                .insert(name.clone(), self.locals[i].clone());
+        }
+
+        // Get return value before restoring state
+        let ret_val = self.stack.pop().unwrap_or(Value::Nil);
+
+        // Restore outer state
+        self.locals = saved_locals;
+        self.stack = saved_stack;
+        self.sync_locals_from_env(outer_code);
+
+        match exec_err {
+            Some(e) => Err(e),
+            None => Ok(ret_val),
+        }
     }
 }

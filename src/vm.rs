@@ -433,6 +433,8 @@ impl VM {
                     self.interpreter.env_mut().insert(alias_name, val.clone());
                 }
                 self.set_env_with_main_alias(&name, val.clone());
+                // Sync to shared_vars for cross-thread visibility
+                self.interpreter.set_shared_var(&name, val.clone());
                 if name == "_"
                     && let Some(ref source_var) = self.topic_source_var
                 {
