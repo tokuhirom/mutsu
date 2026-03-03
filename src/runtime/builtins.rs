@@ -1571,6 +1571,7 @@ impl Interpreter {
     fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = args.first().cloned().unwrap_or(Value::Nil);
         self.env.insert("made".to_string(), value.clone());
+        self.action_made = Some(value.clone());
         Ok(value)
     }
 

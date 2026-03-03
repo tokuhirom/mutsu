@@ -126,7 +126,8 @@ impl Interpreter {
                 } else {
                     Self::positional_value_required(&args, 0, "make expects value")?.clone()
                 };
-                self.env.insert("made".to_string(), value);
+                self.env.insert("made".to_string(), value.clone());
+                self.action_made = Some(value);
             }
             "made" => {
                 let _ = self.env.get("made");

@@ -1130,6 +1130,15 @@ impl Value {
             } if class_name == "Instant" => {
                 attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
             }
+            // Match coerces to Numeric via its matched string
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Match" => attributes
+                .get("str")
+                .map(|v| v.to_string_value().trim().parse::<f64>().unwrap_or(0.0))
+                .unwrap_or(0.0),
             _ => 0.0,
         }
     }

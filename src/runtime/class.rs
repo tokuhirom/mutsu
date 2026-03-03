@@ -321,6 +321,31 @@ impl Interpreter {
                 return Err(e);
             }
         }
+        // When the method body is re-compiled by run_block, the compiler
+        // qualifies bare variable names with current_package (e.g. "m" →
+        // "G::m").  Mirror bound params under their qualified names so the
+        // generated GetGlobal lookup succeeds.
+        let pkg = self.current_package.clone();
+        if pkg != "GLOBAL" {
+            for p in &bind_params {
+                if !p.contains("::")
+                    && !p.starts_with('_')
+                    && !p.starts_with('/')
+                    && !p.starts_with('!')
+                    && !p.starts_with('?')
+                    && !p.starts_with('*')
+                    && !p.starts_with('.')
+                    && !p.starts_with('=')
+                    && !p.starts_with('$')
+                    && !p.starts_with('@')
+                    && !p.starts_with('%')
+                    && !p.starts_with('&')
+                    && let Some(v) = self.env.get(p).cloned()
+                {
+                    self.env.insert(format!("{}::{}", pkg, p), v);
+                }
+            }
+        }
         let block_result = self.run_block(&method_def.body);
         let implicit_return = self.env.get("_").cloned();
         let result = match block_result {

@@ -586,6 +586,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "ast" => {
                 return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
             }
+            "actions" => {
+                return Some(Ok(attributes.get("actions").cloned().unwrap_or(Value::Nil)));
+            }
             _ => {
                 // Delegate unknown methods to string representation
                 let str_val = Value::Str(target.to_string_value());
