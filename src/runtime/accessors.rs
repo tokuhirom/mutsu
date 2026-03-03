@@ -548,14 +548,10 @@ impl Interpreter {
         self.class_role_param_bindings.get(class_name)
     }
 
-    /// Compile method bodies for a given class using the bytecode compiler.
-    pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
-        let class_def = match self.classes.get(class_name) {
-            Some(c) => c,
-            None => return,
-        };
+    /// Compile all uncompiled method bodies in a method map.
+    fn compile_methods_for_map(methods: &mut HashMap<String, Vec<super::MethodDef>>) {
         let mut to_compile = Vec::new();
-        for (method_name, overloads) in &class_def.methods {
+        for (method_name, overloads) in methods.iter() {
             for (idx, def) in overloads.iter().enumerate() {
                 if def.compiled_code.is_none() && !def.body.is_empty() {
                     let mut compiler = crate::compiler::Compiler::new();
@@ -565,8 +561,7 @@ impl Interpreter {
             }
         }
         for (method_name, idx, arc_cc) in to_compile {
-            if let Some(class_def) = self.classes.get_mut(class_name)
-                && let Some(overloads) = class_def.methods.get_mut(&method_name)
+            if let Some(overloads) = methods.get_mut(&method_name)
                 && let Some(def) = overloads.get_mut(idx)
             {
                 def.compiled_code = Some(arc_cc);
@@ -574,29 +569,17 @@ impl Interpreter {
         }
     }
 
+    /// Compile method bodies for a given class using the bytecode compiler.
+    pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
+        if let Some(class_def) = self.classes.get_mut(class_name) {
+            Self::compile_methods_for_map(&mut class_def.methods);
+        }
+    }
+
     /// Compile method bodies for a given role.
     pub(crate) fn compile_role_methods(&mut self, role_name: &str) {
-        let role_def = match self.roles.get(role_name) {
-            Some(r) => r,
-            None => return,
-        };
-        let mut to_compile = Vec::new();
-        for (method_name, overloads) in &role_def.methods {
-            for (idx, def) in overloads.iter().enumerate() {
-                if def.compiled_code.is_none() && !def.body.is_empty() {
-                    let mut compiler = crate::compiler::Compiler::new();
-                    let cc = compiler.compile_closure_body(&def.params, &def.param_defs, &def.body);
-                    to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
-                }
-            }
-        }
-        for (method_name, idx, arc_cc) in to_compile {
-            if let Some(role_def) = self.roles.get_mut(role_name)
-                && let Some(overloads) = role_def.methods.get_mut(&method_name)
-                && let Some(def) = overloads.get_mut(idx)
-            {
-                def.compiled_code = Some(arc_cc);
-            }
+        if let Some(role_def) = self.roles.get_mut(role_name) {
+            Self::compile_methods_for_map(&mut role_def.methods);
         }
     }
 

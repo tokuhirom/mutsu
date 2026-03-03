@@ -423,10 +423,10 @@ impl VM {
             {
                 native_result
             } else {
-                self.try_compiled_method_or_interpret(code, target, &method, args)
+                self.try_compiled_method_or_interpret(target, &method, args)
             }
         } else {
-            self.try_compiled_method_or_interpret(code, target, &method, args)
+            self.try_compiled_method_or_interpret(target, &method, args)
         };
         match modifier.as_deref() {
             Some("?") => {
@@ -464,7 +464,6 @@ impl VM {
     /// Try compiled method fast path; fall back to interpreter.
     fn try_compiled_method_or_interpret(
         &mut self,
-        _code: &CompiledCode,
         target: Value,
         method: &str,
         args: Vec<Value>,
@@ -509,6 +508,7 @@ impl VM {
             let method_result = self.call_compiled_method(
                 &cn,
                 &owner_class,
+                method,
                 &method_def,
                 &cc,
                 attributes,

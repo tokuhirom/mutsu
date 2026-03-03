@@ -1433,6 +1433,7 @@ impl VM {
         &mut self,
         receiver_class_name: &str,
         owner_class: &str,
+        method_name: &str,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
         mut attributes: HashMap<String, Value>,
@@ -1628,6 +1629,31 @@ impl VM {
         while ip < cc.ops.len() {
             match self.exec_one(cc, &mut ip, compiled_fns) {
                 Ok(()) => {}
+                Err(mut e) if e.is_leave => {
+                    let routine_key = format!("{}::{}", owner_class, method_name);
+                    let matches_frame = if let Some(_target_id) = e.leave_callable_id {
+                        // Methods don't have callable IDs, so this won't match
+                        false
+                    } else if let Some(target_routine) = e.leave_routine.as_ref() {
+                        target_routine == &routine_key
+                    } else {
+                        e.label.is_none()
+                    };
+                    if matches_frame {
+                        e.is_leave = false;
+                        e.is_last = false;
+                        let ret_val = e.return_value.unwrap_or(Value::Nil);
+                        explicit_return = Some(ret_val.clone());
+                        self.stack.truncate(saved_stack_depth);
+                        self.stack.push(ret_val);
+                        self.interpreter.discard_let_saves(let_mark);
+                        result = Ok(());
+                        break;
+                    }
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
                 Err(e) if e.return_value.is_some() => {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
@@ -1694,42 +1720,8 @@ impl VM {
             }
         }
 
-        // Attribute writeback (same logic as class.rs)
-        for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
-            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
-            let env_key = format!("!{}", attr_name);
-            let public_env_key = format!(".{}", attr_name);
-            let env_private = self.interpreter.env().get(&env_key).cloned();
-            let env_public = self.interpreter.env().get(&public_env_key).cloned();
-            if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
-                if *private_val == original && *public_val != original {
-                    attributes.insert(attr_name, public_val.clone());
-                } else {
-                    attributes.insert(attr_name, private_val.clone());
-                }
-                continue;
-            }
-            if let Some(val) = self.interpreter.env().get(&env_key) {
-                attributes.insert(attr_name, val.clone());
-                continue;
-            }
-            if let Some(val) = self.interpreter.env().get(&public_env_key) {
-                attributes.insert(attr_name, val.clone());
-            }
-        }
-
-        // Env merge (same logic as class.rs)
-        let mut merged_env = saved_env.clone();
-        for (k, v) in self.interpreter.env().iter() {
-            if saved_env.contains_key(k) {
-                merged_env.insert(k.clone(), v.clone());
-            }
-            if (k.starts_with('&') && !k.starts_with("&?"))
-                || k.starts_with("__mutsu_method_value::")
-            {
-                merged_env.insert(k.clone(), v.clone());
-            }
-        }
+        writeback_attributes(self.interpreter.env(), &mut attributes);
+        let merged_env = merge_method_env(&saved_env, self.interpreter.env());
 
         self.interpreter.pop_method_class();
         self.locals = saved_locals;
@@ -1793,4 +1785,53 @@ impl VM {
             .map(Value::Int)
             .unwrap_or_else(|| Value::BigInt(wrapped))
     }
+}
+
+/// Write back attribute values from env after method execution.
+///
+/// Compares original attribute values with private (`!name`) and public (`.name`)
+/// env entries, preferring public when private is unchanged and public differs.
+fn writeback_attributes(env: &HashMap<String, Value>, attributes: &mut HashMap<String, Value>) {
+    for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+        let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
+        let env_key = format!("!{}", attr_name);
+        let public_env_key = format!(".{}", attr_name);
+        let env_private = env.get(&env_key).cloned();
+        let env_public = env.get(&public_env_key).cloned();
+        if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
+            if *private_val == original && *public_val != original {
+                attributes.insert(attr_name, public_val.clone());
+            } else {
+                attributes.insert(attr_name, private_val.clone());
+            }
+            continue;
+        }
+        if let Some(val) = env.get(&env_key) {
+            attributes.insert(attr_name, val.clone());
+            continue;
+        }
+        if let Some(val) = env.get(&public_env_key) {
+            attributes.insert(attr_name, val.clone());
+        }
+    }
+}
+
+/// Merge method env back into the saved (caller) env.
+///
+/// Carries forward values for keys that existed in the saved env, plus any
+/// dynamic/global keys (`&`-prefixed, `__mutsu_method_value::`-prefixed).
+fn merge_method_env(
+    saved: &HashMap<String, Value>,
+    current: &HashMap<String, Value>,
+) -> HashMap<String, Value> {
+    let mut merged = saved.clone();
+    for (k, v) in current.iter() {
+        if saved.contains_key(k) {
+            merged.insert(k.clone(), v.clone());
+        }
+        if (k.starts_with('&') && !k.starts_with("&?")) || k.starts_with("__mutsu_method_value::") {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    merged
 }
