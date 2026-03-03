@@ -2029,8 +2029,45 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
+
+        // Fast path for simple scalar variables — skip all metadata checks
+        if code.simple_locals[idx] {
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let name = &code.locals[idx];
+            if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
+                if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
+                {
+                    return Err(RuntimeError::new(
+                        "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
+                    ));
+                }
+                if !matches!(val, Value::Nil)
+                    && !self.interpreter.type_matches_value(&constraint, &val)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                        name,
+                        constraint,
+                        runtime::utils::value_type_name(&val)
+                    )));
+                }
+                let val = if !matches!(val, Value::Nil) {
+                    self.interpreter
+                        .try_coerce_value_for_constraint(&constraint, val)?
+                } else {
+                    val
+                };
+                self.locals[idx] = val.clone();
+                self.interpreter.set_shared_var(name, val);
+            } else {
+                self.locals[idx] = val.clone();
+                self.interpreter.set_shared_var(name, val);
+            }
+            return Ok(());
+        }
+
+        let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         let val = if name.starts_with('@') {
             if let Value::LazyList(ref list) = val {
@@ -2162,8 +2199,40 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
+
+        // Fast path for simple scalar variables — skip all metadata checks
+        if code.simple_locals[idx] {
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let name = &code.locals[idx];
+            if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
+                let val = if matches!(val, Value::Nil) {
+                    Value::Package(Symbol::intern(&constraint))
+                } else if !self.interpreter.type_matches_value(&constraint, &val) {
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                        name,
+                        constraint,
+                        runtime::utils::value_type_name(&val)
+                    )));
+                } else if !matches!(val, Value::Nil | Value::Package(_)) {
+                    self.interpreter
+                        .try_coerce_value_for_constraint(&constraint, val)?
+                } else {
+                    val
+                };
+                self.locals[idx] = val.clone();
+                self.interpreter.set_shared_var(name, val.clone());
+                self.stack.push(val);
+            } else {
+                self.locals[idx] = val.clone();
+                self.interpreter.set_shared_var(name, val.clone());
+                self.stack.push(val);
+            }
+            return Ok(());
+        }
+
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         self.interpreter.check_readonly_for_modify(name)?;
         let mut val = if name.starts_with('%') {

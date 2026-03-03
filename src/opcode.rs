@@ -627,6 +627,9 @@ pub(crate) struct CompiledCode {
     pub(crate) constants: Vec<Value>,
     pub(crate) stmt_pool: Vec<Stmt>,
     pub(crate) locals: Vec<String>,
+    /// Bitmap: true if local[i] is eligible for SetLocal fast path
+    /// (simple $-prefixed scalar, no twigils, no ::, no _ topic, no ./! attrs).
+    pub(crate) simple_locals: Vec<bool>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, String)>,
     /// Pre-compiled closure bodies embedded in this code chunk.
@@ -640,6 +643,7 @@ impl CompiledCode {
             constants: Vec::new(),
             stmt_pool: Vec::new(),
             locals: Vec::new(),
+            simple_locals: Vec::new(),
             state_locals: Vec::new(),
             closure_compiled_codes: Vec::new(),
         }
