@@ -785,8 +785,8 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = skip_optional_role_args(r2)?;
         r = r2;
     }
-    // Default parent is Grammar if no `is` clause
-    if parents.is_empty() {
+    // Default parent is Grammar if no `is` clause (unless the grammar itself is named Grammar)
+    if parents.is_empty() && name != "Grammar" {
         parents.push("Grammar".to_string());
     }
     let (rest, body) = block(r)?;
