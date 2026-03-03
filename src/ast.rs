@@ -555,6 +555,7 @@ pub(crate) enum Stmt {
         name: String,
         index: Option<Box<Expr>>,
         value: Option<Box<Expr>>,
+        is_temp: bool,
     },
     TempMethodAssign {
         var_name: String,

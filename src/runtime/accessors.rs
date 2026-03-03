@@ -1211,9 +1211,10 @@ impl Interpreter {
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
     }
 
-    /// Push a saved variable value for `let` scope management.
-    pub(crate) fn let_saves_push(&mut self, name: String, value: Value) {
-        self.let_saves.push((name, value));
+    /// Push a saved variable value for `let`/`temp` scope management.
+    /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).
+    pub(crate) fn let_saves_push(&mut self, name: String, value: Value, is_temp: bool) {
+        self.let_saves.push((name, value, is_temp));
     }
 
     /// Current length of let_saves stack (used as a mark).
@@ -1221,11 +1222,24 @@ impl Interpreter {
         self.let_saves.len()
     }
 
-    /// Restore variables from let_saves starting at `mark`, then truncate.
+    /// Restore all variables from let_saves starting at `mark`, then truncate.
     pub(crate) fn restore_let_saves(&mut self, mark: usize) {
         for i in (mark..self.let_saves.len()).rev() {
-            let (name, old_val) = self.let_saves[i].clone();
+            let (name, old_val, _is_temp) = self.let_saves[i].clone();
             self.env.insert(name, old_val);
+        }
+        self.let_saves.truncate(mark);
+    }
+
+    /// On successful block exit: restore `temp` saves, discard `let` saves.
+    /// For `let`, only restore if the block returned an unsuccessful value.
+    pub(crate) fn resolve_let_saves_on_success(&mut self, mark: usize, success: bool) {
+        for i in (mark..self.let_saves.len()).rev() {
+            let (ref name, ref old_val, is_temp) = self.let_saves[i];
+            // temp: always restore; let: restore only if block was unsuccessful
+            if is_temp || !success {
+                self.env.insert(name.clone(), old_val.clone());
+            }
         }
         self.let_saves.truncate(mark);
     }

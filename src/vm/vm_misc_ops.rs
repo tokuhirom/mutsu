@@ -1146,6 +1146,7 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
         index_mode: bool,
+        is_temp: bool,
     ) {
         let name = Self::const_str(code, name_idx).to_string();
         if index_mode {
@@ -1160,7 +1161,7 @@ impl VM {
                     .map(|i| self.locals[i].clone())
             })
             .unwrap_or(Value::Nil);
-        self.interpreter.let_saves_push(name, old_val);
+        self.interpreter.let_saves_push(name, old_val, is_temp);
     }
 
     pub(super) fn exec_let_block_op(
@@ -1181,12 +1182,10 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                if Self::is_let_success(&topic) {
-                    self.interpreter.discard_let_saves(mark);
-                } else {
-                    self.interpreter.restore_let_saves(mark);
-                    self.env_dirty = true;
-                }
+                let success = Self::is_let_success(&topic);
+                self.interpreter
+                    .resolve_let_saves_on_success(mark, success);
+                self.env_dirty = true;
             }
             Err(e) => {
                 self.interpreter.restore_let_saves(mark);

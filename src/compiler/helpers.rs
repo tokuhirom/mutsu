@@ -1263,7 +1263,7 @@ impl Compiler {
         })
     }
 
-    /// Check if a statement list contains `let` statements (not inside sub/lambda bodies).
+    /// Check if a statement list contains `let` or `temp` statements (not inside sub/lambda bodies).
     pub(super) fn has_let_deep(stmts: &[Stmt]) -> bool {
         for s in stmts {
             match s {
@@ -1294,6 +1294,34 @@ impl Compiler {
                         {
                             return true;
                         }
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Check if a statement list contains actual `let` (not `temp`) statements.
+    /// Used to decide whether the block's return value matters for save/restore.
+    pub(super) fn has_real_let_deep(stmts: &[Stmt]) -> bool {
+        for s in stmts {
+            match s {
+                Stmt::Let { is_temp: false, .. } => return true,
+                Stmt::Block(inner) => {
+                    if Self::has_real_let_deep(inner) {
+                        return true;
+                    }
+                }
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    if Self::has_real_let_deep(then_branch)
+                        || Self::has_real_let_deep(else_branch)
+                    {
+                        return true;
                     }
                 }
                 _ => {}

@@ -52,7 +52,7 @@ Scalar containers are done. Array/Hash container semantics need work.
 - [ ] `Proxy` container (for `is rw` accessor return values)
 - [ ] Array auto-vivification (`@a[5] = 42` on empty array)
 - [ ] Hash auto-vivification (`%h<a><b> = 1`)
-- [ ] `temp` / `let` variable save/restore (dynamic scope)
+- [x] `temp` / `let` variable save/restore (dynamic scope)
 - [ ] Typed containers (`my Int @a`, `my Str %h`)
 - [ ] Container `.VAR` introspection
 

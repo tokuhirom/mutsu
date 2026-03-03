@@ -2253,6 +2253,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: full_name,
                     index: Some(Box::new(idx_expr)),
                     value: Some(Box::new(val_expr)),
+                    is_temp: false,
                 },
             );
         }
@@ -2262,6 +2263,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: full_name,
                 index: Some(Box::new(idx_expr)),
                 value: None,
+                is_temp: false,
             },
         );
     }
@@ -2277,6 +2279,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: full_name,
                 index: None,
                 value: Some(Box::new(val_expr)),
+                is_temp: false,
             },
         );
     }
@@ -2288,6 +2291,7 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
             name: full_name,
             index: None,
             value: None,
+            is_temp: false,
         },
     )
 }
@@ -2365,6 +2369,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: full_name,
                 index: None,
                 value: Some(Box::new(val_expr)),
+                is_temp: true,
             },
         );
     }
@@ -2375,6 +2380,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             name: full_name,
             index: None,
             value: None,
+            is_temp: true,
         },
     )
 }
