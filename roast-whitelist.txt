@@ -299,7 +299,6 @@ roast/S12-introspection/WHAT.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/methods.t
 roast/S12-meta/grammarhow.t
-roast/S12-meta/primitives.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/fallback.t

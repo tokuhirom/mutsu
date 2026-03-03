@@ -2,7 +2,7 @@ use Test;
 plan 4;
 
 my $x = 10;
-my $add = -> $n { return $n + $x; };
+my $add = -> $n { $n + $x };
 is $add(5), 15, 'lambda captures outer variable';
 
 my $sum = 0;
@@ -20,7 +20,7 @@ sub outer($x) {
 is outer(5), 15, 'nested sub captures outer param';
 
 sub multiplier($factor) {
-    return -> $n { return $n * $factor; };
+    return -> $n { $n * $factor };
 }
 my $double = multiplier(2);
 is $double(21), 42, 'returned lambda captures enclosing variable';

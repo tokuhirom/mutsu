@@ -512,6 +512,8 @@ pub(crate) enum OpCode {
 
     // -- Functions --
     Return,
+    /// Return used outside a routine — throws X::ControlFlow::Return exception.
+    ReturnFromNonRoutine,
     RegisterSub(u32),
     RegisterToken(u32),
     RegisterProtoSub(u32),

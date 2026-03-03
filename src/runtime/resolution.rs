@@ -724,6 +724,7 @@ impl Interpreter {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         let mut compiler = crate::compiler::Compiler::new();
+        compiler.is_routine = !self.routine_stack.is_empty();
         let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
             format!("{}::&{}", pkg, routine)
         } else {

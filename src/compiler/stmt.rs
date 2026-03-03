@@ -657,7 +657,11 @@ impl Compiler {
             }
             Stmt::Return(expr) => {
                 self.compile_expr(expr);
-                self.code.emit(OpCode::Return);
+                if self.is_routine {
+                    self.code.emit(OpCode::Return);
+                } else {
+                    self.code.emit(OpCode::ReturnFromNonRoutine);
+                }
             }
             Stmt::Die(expr) => {
                 self.compile_expr(expr);

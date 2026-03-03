@@ -1352,6 +1352,19 @@ impl VM {
                     ..RuntimeError::new("")
                 });
             }
+            OpCode::ReturnFromNonRoutine => {
+                let _val = self.stack.pop().unwrap_or(Value::Nil);
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::Str("Attempt to return outside of any Routine".to_string()),
+                );
+                attrs.insert("out-of-dynamic-scope".to_string(), Value::Bool(false));
+                let exc = Value::make_instance(Symbol::intern("X::ControlFlow::Return"), attrs);
+                let mut err = RuntimeError::new("Attempt to return outside of any Routine");
+                err.exception = Some(Box::new(exc));
+                return Err(err);
+            }
 
             // -- Environment variable access --
             OpCode::GetEnvIndex(key_idx) => {

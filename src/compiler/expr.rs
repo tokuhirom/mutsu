@@ -1615,7 +1615,7 @@ impl Compiler {
             }
             Expr::AnonSub { body, is_rw } => {
                 if *is_rw {
-                    let compiled = self.compile_closure_body(&[], &[], body);
+                    let compiled = self.compile_routine_closure_body(&[], &[], body);
                     let cc_idx = self.code.add_closure_code(compiled);
                     let idx = self.code.add_stmt(Stmt::SubDecl {
                         name: Symbol::intern(""),
@@ -1637,7 +1637,7 @@ impl Compiler {
                     self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
                 } else {
                     let placeholders = crate::ast::collect_placeholders(body);
-                    let compiled = self.compile_closure_body(&placeholders, &[], body);
+                    let compiled = self.compile_routine_closure_body(&placeholders, &[], body);
                     let cc_idx = self.code.add_closure_code(compiled);
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
                     self.code.emit(OpCode::MakeAnonSub(idx, Some(cc_idx)));
@@ -1657,7 +1657,7 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
-                let compiled = self.compile_closure_body(params, param_defs, body);
+                let compiled = self.compile_routine_closure_body(params, param_defs, body);
                 let cc_idx = self.code.add_closure_code(compiled);
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: Symbol::intern(""),
