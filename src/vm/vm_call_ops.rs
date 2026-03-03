@@ -251,9 +251,13 @@ impl VM {
         {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
+            let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(&name, &args);
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
+            if pushed_dispatch {
+                self.interpreter.pop_multi_dispatch();
+            }
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.sync_locals_from_env(code);

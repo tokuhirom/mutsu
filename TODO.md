@@ -39,8 +39,8 @@ The single largest blocker. Many S06 tests require features beyond basic positio
 - [x] Capture parameters (`|c`)
 - [x] `is copy` / `is rw` parameter traits
 - [x] Sub-signatures (`sub foo(Int :x($val)) { }`)
-- [ ] Proper `Signature` / `Parameter` introspection objects
-- [ ] `callframe` / `caller` / `callwith` / `nextsame` / `nextwith`
+- [x] Proper `Signature` / `Parameter` introspection objects
+- [x] `callframe` / `caller` / `callwith` / `nextsame` / `nextwith`
 - [ ] `wrap` / `unwrap`
 - [ ] Proper `return` as control exception (currently uses Rust panic-like flow)
 - [ ] Tail call optimization (deep recursion crashes)
@@ -89,7 +89,7 @@ Scalar containers are done. Array/Hash container semantics need work.
 
 ### A6. Class system completion (S12: 5/101 passing)
 
-- [ ] `nextsame` / `nextwith` / `callsame` / `callwith` re-dispatch
+- [x] `nextsame` / `nextwith` / `callsame` / `callwith` re-dispatch
 - [ ] Anonymous classes (`class { }`)
 - [ ] Parameterized roles (`role Foo[Type] { }`)
 - [ ] `trusts` declarator
