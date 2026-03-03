@@ -84,7 +84,14 @@ impl Compiler {
             return slot;
         }
         let slot = self.code.locals.len() as u32;
+        let is_simple = name.starts_with('$')
+            && !name.starts_with("$*")
+            && !name.contains("::")
+            && name != "_"
+            && !name.starts_with('.')
+            && !name.starts_with('!');
         self.code.locals.push(name.to_string());
+        self.code.simple_locals.push(is_simple);
         self.local_map.insert(name.to_string(), slot);
         slot
     }
