@@ -49,12 +49,12 @@ The single largest blocker. Many S06 tests require features beyond basic positio
 
 Scalar containers are done. Array/Hash container semantics need work.
 
-- [ ] `Proxy` container (for `is rw` accessor return values)
-- [ ] Array auto-vivification (`@a[5] = 42` on empty array)
-- [ ] Hash auto-vivification (`%h<a><b> = 1`)
+- [x] `Proxy` container (for `is rw` accessor return values)
+- [x] Array auto-vivification (`@a[5] = 42` on empty array)
+- [x] Hash auto-vivification (`%h<a><b> = 1`)
 - [x] `temp` / `let` variable save/restore (dynamic scope)
-- [ ] Typed containers (`my Int @a`, `my Str %h`)
-- [ ] Container `.VAR` introspection
+- [x] Typed containers (`my Int @a`, `my Str %h`)
+- [x] Container `.VAR` introspection
 
 ### A3. Type system deepening (S02: 27/146 passing)
 
