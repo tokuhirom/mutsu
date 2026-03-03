@@ -1862,7 +1862,7 @@ impl Compiler {
     fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
         matches!(
             expr,
-            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll"
+            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll" || name == "start"
         ) || matches!(
             expr,
             Expr::MethodCall { name, target, .. }
