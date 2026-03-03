@@ -467,6 +467,16 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Pseudo-methods must always go through the interpreter which handles
+        // them specially — never intercept via the compiled fast path.
+        if matches!(
+            method,
+            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+        ) {
+            return self
+                .interpreter
+                .call_method_with_values(target, method, args);
+        }
         // Only attempt compiled path for Instance or Package targets
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -521,8 +531,17 @@ impl VM {
             let (result, new_attrs) = method_result?;
             // Propagate attribute mutations to all bindings of this instance
             if let Some(id) = target_id {
-                self.interpreter
-                    .overwrite_instance_bindings_by_identity(&cn, id, new_attrs);
+                self.interpreter.overwrite_instance_bindings_by_identity(
+                    &cn,
+                    id,
+                    new_attrs.clone(),
+                );
+                // Auto-FETCH if the method returned a Proxy
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self
+                        .interpreter
+                        .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                }
             }
             return Ok(result);
         }
@@ -537,6 +556,14 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if matches!(
+            method,
+            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+        ) {
+            return self
+                .interpreter
+                .call_method_mut_with_values(target_name, target, method, args);
+        }
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
             Value::Package(name) => Some(name.resolve()),
@@ -586,8 +613,16 @@ impl VM {
             }
             let (result, new_attrs) = method_result?;
             if let Some(id) = target_id {
-                self.interpreter
-                    .overwrite_instance_bindings_by_identity(&cn, id, new_attrs);
+                self.interpreter.overwrite_instance_bindings_by_identity(
+                    &cn,
+                    id,
+                    new_attrs.clone(),
+                );
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self
+                        .interpreter
+                        .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                }
             }
             return Ok(result);
         }

@@ -1721,7 +1721,26 @@ impl VM {
         }
 
         writeback_attributes(self.interpreter.env(), &mut attributes);
-        let merged_env = merge_method_env(&saved_env, self.interpreter.env());
+        // Collect keys introduced by the method frame so they don't bleed
+        // back into the caller's env (e.g. method param `$g` vs caller `$g`).
+        let mut method_local_keys: HashSet<String> = HashSet::from_iter([
+            "self".to_string(),
+            "?CLASS".to_string(),
+            "?ROLE".to_string(),
+        ]);
+        for p in &method_def.params {
+            method_local_keys.insert(p.clone());
+        }
+        for attr_name in attributes.keys() {
+            method_local_keys.insert(format!("!{}", attr_name));
+            method_local_keys.insert(format!(".{}", attr_name));
+        }
+        for local_name in &cc.locals {
+            if !local_name.is_empty() {
+                method_local_keys.insert(local_name.clone());
+            }
+        }
+        let merged_env = merge_method_env(&saved_env, self.interpreter.env(), &method_local_keys);
 
         self.interpreter.pop_method_class();
         self.locals = saved_locals;
@@ -1823,9 +1842,15 @@ fn writeback_attributes(env: &HashMap<String, Value>, attributes: &mut HashMap<S
 fn merge_method_env(
     saved: &HashMap<String, Value>,
     current: &HashMap<String, Value>,
+    method_local_keys: &HashSet<String>,
 ) -> HashMap<String, Value> {
     let mut merged = saved.clone();
     for (k, v) in current.iter() {
+        // Skip keys that were introduced by the method frame (params, self,
+        // attributes, locals) — these must not leak back into the caller.
+        if method_local_keys.contains(k) {
+            continue;
+        }
         if saved.contains_key(k) {
             merged.insert(k.clone(), v.clone());
         }
