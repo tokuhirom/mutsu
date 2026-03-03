@@ -90,7 +90,7 @@ Scalar containers are done. Array/Hash container semantics need work.
 ### A6. Class system completion (S12: 5/101 passing)
 
 - [x] `nextsame` / `nextwith` / `callsame` / `callwith` re-dispatch
-- [ ] Anonymous classes (`class { }`)
+- [x] Anonymous classes (`class { }`)
 - [ ] Parameterized roles (`role Foo[Type] { }`)
 - [ ] `trusts` declarator
 - [ ] `augment class` (monkey-patching)
