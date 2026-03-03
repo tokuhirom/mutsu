@@ -1696,6 +1696,25 @@ impl Interpreter {
 
         // Primary method dispatch by name
         match method {
+            "new" if matches!(&target, Value::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
+            {
+                let type_name = if let Value::Package(n) = &target {
+                    n.resolve()
+                } else {
+                    unreachable!()
+                };
+                if args.len() < 2 {
+                    return Err(RuntimeError::new(format!(
+                        "{}.new requires two arguments (numeric, string)",
+                        type_name
+                    )));
+                }
+                let numeric = args[0].clone();
+                let string = args[1].to_string_value();
+                let mut mixins = std::collections::HashMap::new();
+                mixins.insert("Str".to_string(), Value::Str(string));
+                return Ok(Value::Mixin(Box::new(numeric), mixins));
+            }
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(
@@ -2131,7 +2150,11 @@ impl Interpreter {
                     Value::HyperWhatever => "HyperWhatever",
                     Value::Capture { .. } => "Capture",
                     Value::Uni { form, .. } => form.as_str(),
-                    Value::Mixin(inner, _) => {
+                    Value::Mixin(inner, mixins) => {
+                        if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins)
+                        {
+                            return Ok(Value::Package(Symbol::intern(&allo)));
+                        }
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
                     Value::Proxy { .. } => "Proxy",

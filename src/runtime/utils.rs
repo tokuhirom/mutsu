@@ -548,7 +548,19 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             "NFKD" => "NFKD",
             _ => "Uni",
         },
-        Value::Mixin(inner, _) => value_type_name(inner),
+        Value::Mixin(inner, mixins) => {
+            if mixins.contains_key("Str") {
+                match inner.as_ref() {
+                    Value::Int(_) | Value::BigInt(_) => "IntStr",
+                    Value::Num(_) => "NumStr",
+                    Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => "RatStr",
+                    Value::Complex(_, _) => "ComplexStr",
+                    _ => value_type_name(inner),
+                }
+            } else {
+                value_type_name(inner)
+            }
+        }
         Value::Proxy { .. } => "Proxy",
         Value::ParametricRole { .. } => "Package",
         Value::CustomType { .. } => "CustomType",

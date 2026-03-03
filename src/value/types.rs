@@ -259,6 +259,18 @@ impl Value {
             Value::Capture { .. } => "Capture",
             Value::Uni { form, .. } => form.as_str(),
             Value::Mixin(inner, mixins) => {
+                // Check allomorphic type names (IntStr, NumStr, RatStr, ComplexStr, Allomorph)
+                if matches!(
+                    type_name,
+                    "IntStr" | "NumStr" | "RatStr" | "ComplexStr" | "Allomorph"
+                ) {
+                    if let Some(allo_name) = allomorph_type_name(inner, mixins)
+                        && (type_name == "Allomorph" || type_name == allo_name)
+                    {
+                        return true;
+                    }
+                    return false;
+                }
                 if inner.isa_check(type_name) {
                     return true;
                 }
@@ -486,7 +498,27 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Regex(_) => "Regex".to_string(),
         Value::Junction { .. } => "Junction".to_string(),
         Value::Slip(_) => "Slip".to_string(),
-        Value::Mixin(_, _) => "Mixin".to_string(),
+        Value::Mixin(inner, mixins) => {
+            allomorph_type_name(inner, mixins).unwrap_or_else(|| what_type_name(inner))
+        }
         _ => "Any".to_string(),
+    }
+}
+
+/// Return the allomorphic type name for a Mixin value, if it is allomorphic.
+/// An allomorphic Mixin has a "Str" key and a numeric inner value.
+pub(crate) fn allomorph_type_name(
+    inner: &Value,
+    mixins: &std::collections::HashMap<String, Value>,
+) -> Option<String> {
+    if !mixins.contains_key("Str") {
+        return None;
+    }
+    match inner {
+        Value::Int(_) | Value::BigInt(_) => Some("IntStr".to_string()),
+        Value::Num(_) => Some("NumStr".to_string()),
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => Some("RatStr".to_string()),
+        Value::Complex(_, _) => Some("ComplexStr".to_string()),
+        _ => None,
     }
 }
