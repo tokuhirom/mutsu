@@ -274,6 +274,10 @@ impl VM {
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
         } else {
+            // Sync VM locals to env before spawning threads so closures capture them
+            if name == "start" {
+                self.sync_env_from_locals(code);
+            }
             self.interpreter.set_pending_call_arg_sources(arg_sources);
             let result = self.interpreter.call_function(&name, args);
             self.interpreter.set_pending_call_arg_sources(None);
@@ -318,6 +322,10 @@ impl VM {
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
         } else {
+            // Sync VM locals to env before spawning threads so closures capture them
+            if name == "start" {
+                self.sync_env_from_locals(code);
+            }
             let result = self.interpreter.call_function(&name, args)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
@@ -926,6 +934,10 @@ impl VM {
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
         } else {
+            // Sync VM locals to env before spawning threads so closures capture them
+            if name == "start" {
+                self.sync_env_from_locals(code);
+            }
             self.interpreter.set_pending_call_arg_sources(arg_sources);
             let result = self.interpreter.call_function(&name, args);
             self.interpreter.set_pending_call_arg_sources(None);

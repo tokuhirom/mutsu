@@ -1178,7 +1178,7 @@ impl Interpreter {
             return existing.clone();
         }
         let value_key = {
-            let mut shared = self.shared_vars.lock().unwrap();
+            let mut shared = self.shared_vars.write().unwrap();
             if let Some(Value::Str(existing)) = shared.get(&name_key) {
                 existing.clone()
             } else {
@@ -1208,7 +1208,7 @@ impl Interpreter {
     fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let name = Self::atomic_var_name_arg(args)?;
         let value_key = self.atomic_value_key_for_name(&name);
-        let shared = self.shared_vars.lock().unwrap();
+        let shared = self.shared_vars.read().unwrap();
         Ok(self.atomic_current_value(&shared, &name, &value_key))
     }
 
@@ -1223,7 +1223,7 @@ impl Interpreter {
         let value_key = self.atomic_value_key_for_name(&name);
         self.env.insert(name, value.clone());
         self.shared_vars
-            .lock()
+            .write()
             .unwrap()
             .insert(value_key, value.clone());
         Ok(value)
@@ -1239,7 +1239,7 @@ impl Interpreter {
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
-        let mut shared = self.shared_vars.lock().unwrap();
+        let mut shared = self.shared_vars.write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current, delta)?;
         self.env.insert(name.clone(), next.clone());
@@ -1256,7 +1256,7 @@ impl Interpreter {
         let name = Self::atomic_var_name_arg(args)?;
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
-        let mut shared = self.shared_vars.lock().unwrap();
+        let mut shared = self.shared_vars.write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
         self.env.insert(name.clone(), next.clone());
