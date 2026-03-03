@@ -360,8 +360,7 @@ impl VM {
                 {
                     nr?
                 } else {
-                    self.interpreter
-                        .call_method_with_values(v.clone(), &method, args.clone())?
+                    self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
                 };
                 results.push(r);
             }
@@ -468,6 +467,16 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Pseudo-methods must always go through the interpreter which handles
+        // them specially — never intercept via the compiled fast path.
+        if matches!(
+            method,
+            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+        ) {
+            return self
+                .interpreter
+                .call_method_with_values(target, method, args);
+        }
         // Only attempt compiled path for Instance or Package targets
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -522,13 +531,103 @@ impl VM {
             let (result, new_attrs) = method_result?;
             // Propagate attribute mutations to all bindings of this instance
             if let Some(id) = target_id {
-                self.interpreter
-                    .overwrite_instance_bindings_by_identity(&cn, id, new_attrs);
+                self.interpreter.overwrite_instance_bindings_by_identity(
+                    &cn,
+                    id,
+                    new_attrs.clone(),
+                );
+                // Auto-FETCH if the method returned a Proxy
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self
+                        .interpreter
+                        .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                }
             }
             return Ok(result);
         }
         self.interpreter
             .call_method_with_values(target, method, args)
+    }
+
+    fn try_compiled_method_mut_or_interpret(
+        &mut self,
+        target_name: &str,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if matches!(
+            method,
+            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+        ) {
+            return self
+                .interpreter
+                .call_method_mut_with_values(target_name, target, method, args);
+        }
+        let class_name = match &target {
+            Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            Value::Package(name) => Some(name.resolve()),
+            _ => None,
+        };
+        if let Some(cn) = class_name
+            && let Some((owner_class, method_def)) = self
+                .interpreter
+                .resolve_method_with_owner(&cn, method, &args)
+            && let Some(ref cc) = method_def.compiled_code
+        {
+            let cc = cc.clone();
+            let target_id = match &target {
+                Value::Instance { id, .. } => Some(*id),
+                _ => None,
+            };
+            let attributes = match &target {
+                Value::Instance { attributes, .. } => (**attributes).clone(),
+                _ => std::collections::HashMap::new(),
+            };
+            let invocant_for_dispatch = if attributes.is_empty() {
+                Value::Package(crate::symbol::Symbol::intern(&cn))
+            } else {
+                target.clone()
+            };
+            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                &cn,
+                method,
+                &args,
+                invocant_for_dispatch,
+            );
+            let invocant = Some(target);
+            let empty_fns = HashMap::new();
+            let method_result = self.call_compiled_method(
+                &cn,
+                &owner_class,
+                method,
+                &method_def,
+                &cc,
+                attributes,
+                args,
+                invocant,
+                &empty_fns,
+            );
+            if pushed_dispatch {
+                self.interpreter.pop_method_dispatch();
+            }
+            let (result, new_attrs) = method_result?;
+            if let Some(id) = target_id {
+                self.interpreter.overwrite_instance_bindings_by_identity(
+                    &cn,
+                    id,
+                    new_attrs.clone(),
+                );
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self
+                        .interpreter
+                        .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                }
+            }
+            return Ok(result);
+        }
+        self.interpreter
+            .call_method_mut_with_values(target_name, target, method, args)
     }
 
     pub(super) fn exec_call_method_dynamic_op(
@@ -569,8 +668,7 @@ impl VM {
             {
                 native_result
             } else {
-                self.interpreter
-                    .call_method_with_values(target, &method, args)
+                self.try_compiled_method_or_interpret(target, &method, args)
             }
         };
         self.stack.push(call_result?);
@@ -628,8 +726,7 @@ impl VM {
                 {
                     nr?
                 } else {
-                    self.interpreter
-                        .call_method_with_values(v.clone(), &method, args.clone())?
+                    self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
                 };
                 results.push(r);
             }
@@ -679,12 +776,10 @@ impl VM {
             {
                 native_result
             } else {
-                self.interpreter
-                    .call_method_mut_with_values(&target_name, target, &method, args)
+                self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
             }
         } else {
-            self.interpreter
-                .call_method_mut_with_values(&target_name, target, &method, args)
+            self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
         };
         match modifier.as_deref() {
             Some("?") => {
