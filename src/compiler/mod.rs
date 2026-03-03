@@ -22,6 +22,9 @@ pub(crate) struct Compiler {
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     /// Track dynamic variable accesses (names starting with '*') for postdeclaration check
     accessed_dynamic_vars: std::collections::HashSet<String>,
+    /// Whether we are compiling inside a routine (sub/method). `return` outside
+    /// a routine must throw X::ControlFlow::Return instead of normal return.
+    pub(crate) is_routine: bool,
 }
 
 impl Compiler {
@@ -35,6 +38,7 @@ impl Compiler {
             dynamic_scope_all: false,
             dynamic_scope_names: None,
             accessed_dynamic_vars: std::collections::HashSet::new(),
+            is_routine: false,
         }
     }
 

@@ -610,7 +610,11 @@ impl Interpreter {
             for (idx, def) in overloads.iter().enumerate() {
                 if def.compiled_code.is_none() && !def.body.is_empty() {
                     let mut compiler = crate::compiler::Compiler::new();
-                    let cc = compiler.compile_closure_body(&def.params, &def.param_defs, &def.body);
+                    let cc = compiler.compile_routine_closure_body(
+                        &def.params,
+                        &def.param_defs,
+                        &def.body,
+                    );
                     to_compile.push((method_name.clone(), idx, std::sync::Arc::new(cc)));
                 }
             }

@@ -547,6 +547,7 @@ impl Interpreter {
             return Ok(());
         }
         let mut compiler = crate::compiler::Compiler::new();
+        compiler.is_routine = !self.routine_stack.is_empty();
         compiler.set_current_package(self.current_package.clone());
         let (code, compiled_fns) = compiler.compile(stmts);
         let interp = std::mem::take(self);

@@ -479,6 +479,7 @@ impl Compiler {
             .map(|s| Self::is_definite_return_spec(s))
             .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
+        sub_compiler.is_routine = true;
         let arity = param_defs
             .iter()
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
@@ -612,7 +613,27 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
     ) -> CompiledCode {
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, false)
+    }
+
+    pub(crate) fn compile_routine_closure_body(
+        &mut self,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+    ) -> CompiledCode {
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, true)
+    }
+
+    fn compile_closure_body_with_routine_flag(
+        &mut self,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+        is_routine: bool,
+    ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
+        sub_compiler.is_routine = is_routine;
         sub_compiler.set_current_package(self.current_package.clone());
         // Pre-allocate locals for parameters
         for param in params {
