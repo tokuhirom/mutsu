@@ -995,6 +995,10 @@ impl Value {
             if let Some(o) = orig {
                 attrs.insert("orig".to_string(), Value::Str(o.to_string()));
             }
+            // Store :sym<> variant name so action dispatch can find it
+            if let Some(ref sym_val) = caps.sym {
+                attrs.insert("sym_variant".to_string(), Value::Str(sym_val.clone()));
+            }
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
 

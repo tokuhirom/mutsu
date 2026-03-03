@@ -46,12 +46,13 @@ impl Interpreter {
         if let Some(exact) = self.token_defs.get(&Symbol::intern(&exact_key)) {
             defs.extend(exact.clone());
         }
-        let sym_prefix = format!("{scope}::{name}:sym<");
+        let sym_prefix_angle = format!("{scope}::{name}:sym<");
+        let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
         let mut sym_keys: Vec<String> = self
             .token_defs
             .keys()
             .map(|key| key.resolve())
-            .filter(|key| key.starts_with(&sym_prefix))
+            .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
             .collect();
         sym_keys.sort();
         for key in &sym_keys {
@@ -95,12 +96,15 @@ impl Interpreter {
             if let Some(exact) = self.token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
             }
-            let sym_prefix = format!("{name}:sym<");
+            let sym_prefix_angle = format!("{name}:sym<");
+            let sym_prefix_french = format!("{name}:sym\u{ab}");
             let mut sym_keys: Vec<String> = self
                 .token_defs
                 .keys()
                 .map(|key| key.resolve())
-                .filter(|key| key.starts_with(&sym_prefix))
+                .filter(|key| {
+                    key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french)
+                })
                 .collect();
             sym_keys.sort();
             for key in &sym_keys {

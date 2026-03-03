@@ -158,6 +158,43 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
             take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         (rest, base.to_string())
     };
+    // Check for colonpair adverbs like :sym<foo> or :sym«baz»
+    let (rest, base) = {
+        let mut rest = rest;
+        let mut name = base;
+        while rest.starts_with(':') && !rest.starts_with(":<") && !rest.starts_with(":<<") {
+            let r = &rest[1..];
+            if let Ok((r, part)) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                let mut r2 = r;
+                if r2.starts_with('<')
+                    && let Some(end) = r2.find('>')
+                {
+                    name.push(':');
+                    name.push_str(part);
+                    name.push_str(&r2[..=end]);
+                    r2 = &r2[end + 1..];
+                    rest = r2;
+                    continue;
+                } else if r2.starts_with('\u{ab}') {
+                    let after_open = &r2['\u{ab}'.len_utf8()..];
+                    if let Some(end) = after_open.find('\u{bb}') {
+                        name.push(':');
+                        name.push_str(part);
+                        name.push('\u{ab}');
+                        name.push_str(&after_open[..end]);
+                        name.push('\u{bb}');
+                        r2 = &after_open[end + '\u{bb}'.len_utf8()..];
+                        rest = r2;
+                        continue;
+                    }
+                }
+            }
+            break;
+        }
+        (rest, name)
+    };
     // Check for operator category names followed by :<...>
     let is_op_category = matches!(
         base.as_str(),

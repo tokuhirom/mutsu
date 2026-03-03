@@ -339,25 +339,25 @@ impl Interpreter {
             Some(Value::Str(s)) => Some(s.clone()),
             _ => None,
         };
-        let mut best: Option<(usize, String)> = None;
+        // Collect all matching candidates with their declarative prefix match lengths
+        let mut candidates: Vec<(usize, usize, String)> = Vec::new(); // (prefix_match_len, match_len, pattern)
         for def in defs {
             if let Some(pattern) = self.eval_token_def(&def, arg_values)? {
                 if let Some(ref text) = subject {
                     if let Some(len) = self.regex_match_len_at_start(&pattern, text) {
-                        let better = best
-                            .as_ref()
-                            .map(|(best_len, _)| len > *best_len)
-                            .unwrap_or(true);
-                        if better {
-                            best = Some((len, pattern));
-                        }
+                        let prefix_match_len = self
+                            .declarative_prefix_match_len(&pattern, text)
+                            .unwrap_or(len);
+                        candidates.push((prefix_match_len, len, pattern));
                     }
-                } else if best.is_none() {
-                    best = Some((0, pattern));
+                } else {
+                    candidates.push((0, 0, pattern));
                 }
             }
         }
-        if let Some((_, pattern)) = best {
+        // Sort by declarative prefix match length (longest first), then by match length
+        candidates.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+        if let Some((_, _, pattern)) = candidates.into_iter().next() {
             return Ok(Some(pattern));
         }
         if self.has_proto_token(name) {

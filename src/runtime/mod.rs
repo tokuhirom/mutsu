@@ -235,6 +235,8 @@ pub(crate) struct RegexCaptures {
     /// Variables declared via `:my $var = expr;` inside regex.
     /// These are made available to `<{ code }>` closures.
     pub(crate) regex_vars: HashMap<String, Value>,
+    /// The winning :sym<> variant name, if this match was from a protoregex.
+    pub(crate) sym: Option<String>,
 }
 
 #[derive(Clone)]

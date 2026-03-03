@@ -151,6 +151,16 @@ fn parse_token_like_name(input: &str) -> PResult<'_, String> {
         {
             name.push_str(&r2[..=end]);
             r2 = &r2[end + 1..];
+        } else if r2.starts_with('\u{ab}') {
+            // «» (French quotes) — keep as «» internally to avoid
+            // ambiguity when the value contains '>'
+            let after_open = &r2['\u{ab}'.len_utf8()..];
+            if let Some(end) = after_open.find('\u{bb}') {
+                name.push('\u{ab}');
+                name.push_str(&after_open[..end]);
+                name.push('\u{bb}');
+                r2 = &after_open[end + '\u{bb}'.len_utf8()..];
+            }
         }
         rest = r2;
     }
@@ -724,7 +734,7 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     pattern = normalize_token_pattern(&pattern);
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
-        if name.contains(":sym<") {
+        if name.contains(":sym<") || name.contains(":sym\u{ab}") {
             if !pattern.ends_with(' ') {
                 pattern.push(' ');
             }
