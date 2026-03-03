@@ -59,71 +59,22 @@ impl Interpreter {
         }
     }
 
-    fn resolve_token_patterns_static_in_pkg(&self, name: &str, pkg: &str) -> Vec<(String, String)> {
-        let mut out = Vec::new();
-        if name.contains("::") {
-            if let Some(defs) = self.token_defs.get(&Symbol::intern(name)) {
-                for def in defs {
-                    if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.resolve()));
-                    }
-                }
-            }
-            let sym_prefix = format!("{name}:sym<");
-            let mut sym_keys: Vec<String> = self
-                .token_defs
-                .keys()
-                .map(|key| key.resolve())
-                .filter(|key| key.starts_with(&sym_prefix))
-                .collect();
-            sym_keys.sort();
-            for key in &sym_keys {
-                if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
-                    for def in defs {
-                        if let Some(p) = Self::token_pattern_from_def(def) {
-                            out.push((p, def.package.resolve()));
-                        }
-                    }
-                }
-            }
-            return out;
-        }
-        if !pkg.is_empty() {
-            let local = format!("{}::{}", pkg, name);
-            if let Some(defs) = self.token_defs.get(&Symbol::intern(&local)) {
-                for def in defs {
-                    if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.resolve()));
-                    }
-                }
-            }
-            let sym_prefix = format!("{pkg}::{name}:sym<");
-            let mut sym_keys: Vec<String> = self
-                .token_defs
-                .keys()
-                .map(|key| key.resolve())
-                .filter(|key| key.starts_with(&sym_prefix))
-                .collect();
-            sym_keys.sort();
-            for key in &sym_keys {
-                if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
-                    for def in defs {
-                        if let Some(p) = Self::token_pattern_from_def(def) {
-                            out.push((p, def.package.resolve()));
-                        }
-                    }
-                }
-            }
-        }
-        let global = format!("GLOBAL::{}", name);
-        if let Some(defs) = self.token_defs.get(&Symbol::intern(&global)) {
+    /// Collect static token patterns for a given scope.
+    fn collect_token_patterns_for_scope(
+        &self,
+        scope: &str,
+        name: &str,
+        out: &mut Vec<(String, String)>,
+    ) {
+        let exact_key = format!("{scope}::{name}");
+        if let Some(defs) = self.token_defs.get(&Symbol::intern(&exact_key)) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
                     out.push((p, def.package.resolve()));
                 }
             }
         }
-        let sym_prefix = format!("GLOBAL::{name}:sym<");
+        let sym_prefix = format!("{scope}::{name}:sym<");
         let mut sym_keys: Vec<String> = self
             .token_defs
             .keys()
@@ -140,6 +91,44 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn resolve_token_patterns_static_in_pkg(&self, name: &str, pkg: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        if name.contains("::") {
+            self.collect_token_patterns_for_scope(
+                &name[..name.rfind("::").unwrap()],
+                &name[name.rfind("::").unwrap() + 2..],
+                &mut out,
+            );
+            // Walk MRO for qualified names
+            if out.is_empty()
+                && let Some(pos) = name.rfind("::")
+            {
+                let qual_pkg = &name[..pos];
+                let token_name = &name[pos + 2..];
+                for ancestor in self.mro_readonly(qual_pkg) {
+                    if ancestor == qual_pkg {
+                        continue;
+                    }
+                    self.collect_token_patterns_for_scope(&ancestor, token_name, &mut out);
+                    if !out.is_empty() {
+                        break;
+                    }
+                }
+            }
+            return out;
+        }
+        if !pkg.is_empty() {
+            // Walk MRO of pkg
+            for scope in self.mro_readonly(pkg) {
+                self.collect_token_patterns_for_scope(&scope, name, &mut out);
+                if !out.is_empty() {
+                    return out;
+                }
+            }
+        }
+        self.collect_token_patterns_for_scope("GLOBAL", name, &mut out);
         out
     }
 
@@ -344,44 +333,34 @@ impl Interpreter {
                     out.extend(defs.clone());
                 }
             }
+            // Walk MRO for qualified names
+            if out.is_empty()
+                && let Some(pos) = name.rfind("::")
+            {
+                let qual_pkg = &name[..pos];
+                let token_name = &name[pos + 2..];
+                for ancestor in self.mro_readonly(qual_pkg) {
+                    if ancestor == qual_pkg {
+                        continue;
+                    }
+                    self.collect_token_defs_for_scope(&ancestor, token_name, &mut out);
+                    if !out.is_empty() {
+                        break;
+                    }
+                }
+            }
             return out;
         }
         if !pkg.is_empty() {
-            let local = format!("{}::{}", pkg, name);
-            if let Some(defs) = self.token_defs.get(&Symbol::intern(&local)) {
-                out.extend(defs.clone());
-            }
-            let sym_prefix = format!("{pkg}::{name}:sym<");
-            let mut sym_keys: Vec<String> = self
-                .token_defs
-                .keys()
-                .map(|key| key.resolve())
-                .filter(|key| key.starts_with(&sym_prefix))
-                .collect();
-            sym_keys.sort();
-            for key in &sym_keys {
-                if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
-                    out.extend(defs.clone());
+            // Walk MRO of pkg
+            for scope in self.mro_readonly(pkg) {
+                self.collect_token_defs_for_scope(&scope, name, &mut out);
+                if !out.is_empty() {
+                    return out;
                 }
             }
         }
-        let global = format!("GLOBAL::{}", name);
-        if let Some(defs) = self.token_defs.get(&Symbol::intern(&global)) {
-            out.extend(defs.clone());
-        }
-        let sym_prefix = format!("GLOBAL::{name}:sym<");
-        let mut sym_keys: Vec<String> = self
-            .token_defs
-            .keys()
-            .map(|key| key.resolve())
-            .filter(|key| key.starts_with(&sym_prefix))
-            .collect();
-        sym_keys.sort();
-        for key in &sym_keys {
-            if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
-                out.extend(defs.clone());
-            }
-        }
+        self.collect_token_defs_for_scope("GLOBAL", name, &mut out);
         out
     }
 
