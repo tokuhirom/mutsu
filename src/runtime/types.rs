@@ -1633,10 +1633,16 @@ impl Interpreter {
             let mut consumed_named = std::collections::HashSet::new();
             let mut positional_idx = 0usize;
             for param in params.iter() {
-                if let Some(key) = param.strip_prefix(':') {
-                    // Named placeholder: match by Pair key
+                // Named placeholder: $:f, @:f, %:f — match by Pair key
+                let named_key = param
+                    .strip_prefix(':')
+                    .or_else(|| param.strip_prefix("@:"))
+                    .or_else(|| param.strip_prefix("%:"));
+                if let Some(key) = named_key {
                     if let Some((_, val)) = named_args.iter().find(|(k, _)| k == key) {
                         self.bind_param_value(param, val.clone());
+                        // Also bind the bare :key for GetArrayVar/GetHashVar fallback
+                        self.env.insert(format!(":{}", key), val.clone());
                         consumed_named.insert(key.to_string());
                     }
                 } else if positional_idx < positional_args.len() {
@@ -1787,6 +1793,12 @@ impl Interpreter {
                 // Look for a matching named argument (Pair) in args
                 let match_key = if pd.name.starts_with(':') {
                     &pd.name[1..]
+                } else if let Some(rest) = pd
+                    .name
+                    .strip_prefix("@:")
+                    .or_else(|| pd.name.strip_prefix("%:"))
+                {
+                    rest
                 } else {
                     &pd.name
                 };
@@ -2138,9 +2150,12 @@ impl Interpreter {
                 let arg = unwrap_varref_value(arg.clone());
                 if let Value::Pair(key, _) = arg {
                     // Check if this named arg was consumed by a named param or colon placeholder
-                    let consumed = param_defs
-                        .iter()
-                        .any(|pd| (pd.named && pd.name == key) || pd.name == format!(":{}", key));
+                    let consumed = param_defs.iter().any(|pd| {
+                        (pd.named && pd.name == key)
+                            || pd.name == format!(":{}", key)
+                            || pd.name == format!("@:{}", key)
+                            || pd.name == format!("%:{}", key)
+                    });
                     if !consumed {
                         return Err(RuntimeError::new(format!(
                             "Unexpected named argument '{}' passed",
