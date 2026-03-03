@@ -282,10 +282,7 @@ impl Interpreter {
         }
     }
 
-    fn make_regex_eval_env(
-        &self,
-        caps: &RegexCaptures,
-    ) -> std::collections::HashMap<String, Value> {
+    fn make_regex_eval_env(&self, caps: &RegexCaptures) -> Env {
         let mut env = self.env.clone();
         for (i, val) in caps.positional.iter().enumerate() {
             env.insert(i.to_string(), Value::Str(val.clone()));

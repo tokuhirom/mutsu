@@ -753,7 +753,7 @@ pub(crate) fn native_method_1arg(
                 }
                 return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
                     body: vec![],
-                    env: std::collections::HashMap::new(),
+                    env: crate::env::Env::new(),
                     cache: std::sync::Mutex::new(Some(out)),
                 }))));
             }

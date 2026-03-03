@@ -17,7 +17,7 @@ impl Interpreter {
             def.param_defs.clone(),
             def.body.clone(),
             def.is_rw,
-            HashMap::new(),
+            crate::env::Env::new(),
         ))
     }
 

@@ -1343,7 +1343,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList {
                     body: vec![],
-                    env: std::collections::HashMap::new(),
+                    env: crate::env::Env::new(),
                     cache: std::sync::Mutex::new(Some(items)),
                 },
             ))))

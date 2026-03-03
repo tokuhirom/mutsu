@@ -798,11 +798,11 @@ impl Interpreter {
                             }
                         } else {
                             let restore_env_with_side_effects =
-                                |saved: std::collections::HashMap<String, Value>,
-                                 current: &std::collections::HashMap<String, Value>|
-                                 -> std::collections::HashMap<String, Value> {
+                                |saved: crate::env::Env,
+                                 current: &crate::env::Env|
+                                 -> crate::env::Env {
                                     let mut merged = saved;
-                                    for (k, v) in current {
+                                    for (k, v) in current.iter() {
                                         if merged.contains_key(k) {
                                             merged.insert(k.clone(), v.clone());
                                         }
@@ -1258,7 +1258,7 @@ impl Interpreter {
             Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList {
                     body: vec![],
-                    env: std::collections::HashMap::new(),
+                    env: crate::env::Env::new(),
                     cache: std::sync::Mutex::new(Some(result)),
                 },
             )))

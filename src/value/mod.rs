@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
+use crate::env::Env;
 use crate::opcode::CompiledCode;
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
@@ -57,7 +58,7 @@ pub struct SubData {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_rw: bool,
-    pub env: HashMap<String, Value>,
+    pub env: Env,
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: HashMap<String, Value>,
     pub id: u64,
@@ -302,7 +303,7 @@ pub(crate) enum VersionPart {
 #[derive(Debug)]
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
-    pub(crate) env: HashMap<String, Value>,
+    pub(crate) env: Env,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
 }
 
@@ -817,7 +818,7 @@ impl Value {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         is_rw: bool,
-        env: HashMap<String, Value>,
+        env: Env,
     ) -> Self {
         Value::Sub(Arc::new(SubData {
             package,
@@ -844,7 +845,7 @@ impl Value {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         is_rw: bool,
-        env: HashMap<String, Value>,
+        env: Env,
         id: u64,
     ) -> Self {
         Value::Sub(Arc::new(SubData {

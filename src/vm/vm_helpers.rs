@@ -5,7 +5,7 @@ impl VM {
     /// Save the current env, locals, stack depth, and readonly vars into a new call frame.
     pub(super) fn push_call_frame(&mut self) {
         let frame = VmCallFrame {
-            saved_env: self.interpreter.env().clone(),
+            saved_env: self.interpreter.clone_env(),
             saved_readonly: self.interpreter.save_readonly_vars(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
@@ -1858,11 +1858,7 @@ fn writeback_attributes(env: &HashMap<String, Value>, attributes: &mut HashMap<S
 ///
 /// Carries forward values for keys that existed in the saved env, plus any
 /// dynamic/global keys (`&`-prefixed, `__mutsu_method_value::`-prefixed).
-fn merge_method_env(
-    saved: &HashMap<String, Value>,
-    current: &HashMap<String, Value>,
-    method_local_keys: &HashSet<String>,
-) -> HashMap<String, Value> {
+fn merge_method_env(saved: &Env, current: &Env, method_local_keys: &HashSet<String>) -> Env {
     let mut merged = saved.clone();
     for (k, v) in current.iter() {
         // Skip keys that were introduced by the method frame (params, self,

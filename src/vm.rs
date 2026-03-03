@@ -2,6 +2,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
+use crate::env::Env;
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
@@ -27,7 +28,7 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 
 /// Saved state for a compiled function/closure/method call frame.
 pub(super) struct VmCallFrame {
-    pub saved_env: HashMap<String, Value>,
+    pub saved_env: Env,
     pub saved_locals: Vec<Value>,
     pub saved_stack_depth: usize,
     pub saved_readonly: HashSet<String>,
