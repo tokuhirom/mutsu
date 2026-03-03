@@ -24,11 +24,77 @@ impl Interpreter {
     }
 
     fn extract_sym_adverb(name: &str) -> Option<String> {
+        // Try «» delimiters first (handles values containing '>')
+        let french_marker = ":sym\u{ab}";
+        if let Some(start_idx) = name.find(french_marker) {
+            let start = start_idx + french_marker.len();
+            let rest = &name[start..];
+            let end = rest.find('\u{bb}')?;
+            return Some(rest[..end].to_string());
+        }
         let marker = ":sym<";
         let start = name.find(marker)? + marker.len();
         let rest = &name[start..];
         let end = rest.find('>')?;
         Some(rest[..end].to_string())
+    }
+
+    /// Check if a regex pattern has a bare code block `{}` that terminates
+    /// the declarative prefix for LTM purposes.
+    pub(crate) fn has_code_block_in_prefix(&self, pattern: &str) -> bool {
+        let Some(parsed) = self.parse_regex(pattern) else {
+            return false;
+        };
+        parsed.tokens.iter().any(|t| {
+            matches!(
+                &t.atom,
+                RegexAtom::CodeAssertion {
+                    is_assertion: false,
+                    ..
+                }
+            )
+        })
+    }
+
+    /// Compute the declarative prefix match length against actual input text.
+    /// For patterns without code blocks, returns the full match length.
+    /// For patterns with code blocks, returns the length matched by the
+    /// prefix (atoms before the first code block).
+    pub(crate) fn declarative_prefix_match_len(
+        &mut self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<usize> {
+        if !self.has_code_block_in_prefix(pattern) {
+            // No code block — entire pattern is the declarative prefix
+            return self.regex_match_len_at_start(pattern, text);
+        }
+        // Has code block — match only the prefix atoms
+        let parsed = self.parse_regex(pattern)?;
+        let mut prefix_tokens: Vec<RegexToken> = Vec::new();
+        for token in &parsed.tokens {
+            if matches!(
+                &token.atom,
+                RegexAtom::CodeAssertion {
+                    is_assertion: false,
+                    ..
+                }
+            ) {
+                break;
+            }
+            prefix_tokens.push(token.clone());
+        }
+        let prefix_pattern = RegexPattern {
+            tokens: prefix_tokens,
+            anchor_start: parsed.anchor_start,
+            anchor_end: false,
+            ignore_case: parsed.ignore_case,
+            ignore_mark: parsed.ignore_mark,
+        };
+        let chars: Vec<char> = text.chars().collect();
+        let pkg = self.current_package.clone();
+        self.regex_match_end_from_caps_in_pkg(&prefix_pattern, &chars, 0, &pkg)
+            .map(|(end, _)| end)
     }
 
     fn instantiate_token_pattern(def: &FunctionDef, pattern: &str) -> String {
@@ -60,40 +126,47 @@ impl Interpreter {
     }
 
     /// Collect static token patterns for a given scope.
+    /// Returns (pattern, package, sym_key) tuples. sym_key is Some for :sym<> variants.
     fn collect_token_patterns_for_scope(
         &self,
         scope: &str,
         name: &str,
-        out: &mut Vec<(String, String)>,
+        out: &mut Vec<(String, String, Option<String>)>,
     ) {
         let exact_key = format!("{scope}::{name}");
         if let Some(defs) = self.token_defs.get(&Symbol::intern(&exact_key)) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
-                    out.push((p, def.package.resolve()));
+                    out.push((p, def.package.resolve(), None));
                 }
             }
         }
-        let sym_prefix = format!("{scope}::{name}:sym<");
+        let sym_prefix_angle = format!("{scope}::{name}:sym<");
+        let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
         let mut sym_keys: Vec<String> = self
             .token_defs
             .keys()
             .map(|key| key.resolve())
-            .filter(|key| key.starts_with(&sym_prefix))
+            .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
             .collect();
         sym_keys.sort();
         for key in &sym_keys {
+            let sym_val = Self::extract_sym_adverb(key);
             if let Some(defs) = self.token_defs.get(&Symbol::intern(key)) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.resolve()));
+                        out.push((p, def.package.resolve(), sym_val.clone()));
                     }
                 }
             }
         }
     }
 
-    fn resolve_token_patterns_static_in_pkg(&self, name: &str, pkg: &str) -> Vec<(String, String)> {
+    fn resolve_token_patterns_static_in_pkg(
+        &self,
+        name: &str,
+        pkg: &str,
+    ) -> Vec<(String, String, Option<String>)> {
         let mut out = Vec::new();
         if name.contains("::") {
             self.collect_token_patterns_for_scope(
@@ -320,12 +393,15 @@ impl Interpreter {
             if let Some(defs) = self.token_defs.get(&Symbol::intern(name)) {
                 out.extend(defs.clone());
             }
-            let sym_prefix = format!("{name}:sym<");
+            let sym_prefix_angle = format!("{name}:sym<");
+            let sym_prefix_french = format!("{name}:sym\u{ab}");
             let mut sym_keys: Vec<String> = self
                 .token_defs
                 .keys()
                 .map(|key| key.resolve())
-                .filter(|key| key.starts_with(&sym_prefix))
+                .filter(|key| {
+                    key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french)
+                })
                 .collect();
             sym_keys.sort();
             for key in &sym_keys {
@@ -369,7 +445,7 @@ impl Interpreter {
         name: &str,
         pkg: &str,
         arg_values: &[Value],
-    ) -> Vec<(String, String)> {
+    ) -> Vec<(String, String, Option<String>)> {
         let mut out = Vec::new();
         for def in self.resolve_token_defs_in_pkg(name, pkg) {
             let mut interp = Interpreter {
@@ -403,7 +479,8 @@ impl Interpreter {
                         other => other.to_string_value(),
                     };
                     if let Ok(instantiated) = interp.interpolate_regex_scalars(&pattern) {
-                        out.push((instantiated, def.package.resolve()));
+                        let sym_val = Self::extract_sym_adverb(&def.name.resolve());
+                        out.push((instantiated, def.package.resolve(), sym_val));
                     }
                 }
             }
@@ -647,11 +724,19 @@ impl Interpreter {
                 &spec.lookup_name,
                 &self.current_package.clone(),
             );
+            // Use LTM: compute declarative prefix match length for each candidate
+            let filtered: Vec<(String, String, Option<String>)> = candidates
+                .into_iter()
+                .filter(|(sub_pat, _, _)| *sub_pat != pattern)
+                .collect();
+
             let mut best: Option<RegexCaptures> = None;
-            for (sub_pat, sub_pkg) in candidates {
-                if sub_pat == pattern {
-                    continue;
-                }
+            let mut best_sym: Option<String> = None;
+            let mut best_prefix_match: usize = 0;
+            for (sub_pat, sub_pkg, sym_key) in filtered {
+                let prefix_match_len = self
+                    .declarative_prefix_match_len(&sub_pat, text)
+                    .unwrap_or(0);
                 let saved_pkg = self.current_package.clone();
                 self.current_package = sub_pkg;
                 let mut caps = self.regex_match_with_captures(&sub_pat, text);
@@ -666,14 +751,35 @@ impl Interpreter {
                             .or_default()
                             .push(caps.matched.clone());
                     }
-                    let better = best.as_ref().map(|b| caps.to > b.to).unwrap_or(true);
+                    // LTM: prefer longer declarative prefix match;
+                    // if equal, prefer longer overall match
+                    let better = best.is_none()
+                        || prefix_match_len > best_prefix_match
+                        || (prefix_match_len == best_prefix_match
+                            && caps.to > best.as_ref().unwrap().to);
                     if better {
                         best = Some(caps);
+                        best_sym = sym_key;
+                        best_prefix_match = prefix_match_len;
                     }
                 }
             }
-            if best.is_some() {
-                return best;
+            if let Some(mut best) = best {
+                // Store the winning :sym<> variant name
+                if best_sym.is_some() {
+                    best.sym = best_sym.clone();
+                }
+                // Ensure subcapture exists for the subrule so sym_variant
+                // propagates to the child Match object via make_subcap_match
+                if !spec.silent {
+                    let mut subcap = best.clone();
+                    subcap.sym = best_sym;
+                    best.named_subcaps
+                        .entry(spec.lookup_name.clone())
+                        .or_default()
+                        .push(subcap);
+                }
+                return Some(best);
             }
         }
 
@@ -1350,7 +1456,7 @@ impl Interpreter {
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
                 let mut out = Vec::new();
-                for (sub_pat, sub_pkg) in candidates {
+                for (sub_pat, sub_pkg, sym_key) in candidates {
                     if let Some(parsed) = self.parse_regex(&sub_pat) {
                         for (inner_end, inner_caps) in
                             self.regex_match_ends_from_caps_in_pkg(&parsed, &tail, 0, &sub_pkg)
@@ -1368,6 +1474,10 @@ impl Interpreter {
                                 subcap.matched = captured.clone();
                                 subcap.from = pos;
                                 subcap.to = end;
+                                // Store :sym<> variant in subcapture
+                                if sym_key.is_some() {
+                                    subcap.sym = sym_key.clone();
+                                }
                                 new_caps.code_blocks.extend(subcap.code_blocks.clone());
                                 new_caps
                                     .named_subcaps
@@ -1606,7 +1716,7 @@ impl Interpreter {
             if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();
                 let mut best_len: Option<usize> = None;
-                for (sub_pat, sub_pkg) in candidates {
+                for (sub_pat, sub_pkg, _sym_key) in candidates {
                     if let Some(len) =
                         self.regex_match_len_at_start_in_pkg(&sub_pat, &remaining, &sub_pkg)
                     {
@@ -1945,7 +2055,8 @@ impl Interpreter {
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
                 let mut best: Option<(usize, RegexCaptures)> = None;
-                for (sub_pat, sub_pkg) in candidates {
+                let mut best_sym: Option<String> = None;
+                for (sub_pat, sub_pkg, sym_key) in candidates {
                     let tail_text: String = tail.iter().collect();
                     let mut interp = Interpreter {
                         env: self.env.clone(),
@@ -1973,6 +2084,7 @@ impl Interpreter {
                             inner_caps.from = 0;
                             inner_caps.to = inner_end;
                             best = Some((inner_end, inner_caps));
+                            best_sym = sym_key;
                         }
                     }
                 }
@@ -1990,6 +2102,10 @@ impl Interpreter {
                         subcap.matched = captured.clone();
                         subcap.from = pos;
                         subcap.to = end;
+                        // Store :sym<> variant in subcapture
+                        if best_sym.is_some() {
+                            subcap.sym = best_sym;
+                        }
                         new_caps.code_blocks.extend(subcap.code_blocks.clone());
                         new_caps
                             .named_subcaps

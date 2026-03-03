@@ -263,8 +263,30 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), match_obj.clone());
 
-        let method_result =
-            self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()]);
+        // For protoregex :sym<> variants, try dispatching to the specific
+        // action method (e.g., alt:sym<baz>) first.
+        let sym_method_name = if let Some(Value::Str(sym_val)) = updated_attrs.get("sym_variant") {
+            Some(format!("{rule_name}:sym<{sym_val}>"))
+        } else {
+            None
+        };
+        let method_result = if let Some(ref sym_name) = sym_method_name {
+            let result =
+                self.call_method_with_values(actions.clone(), sym_name, vec![match_obj.clone()]);
+            match result {
+                Err(e) if e.message.contains("X::Method::NotFound") => {
+                    // Fall back to plain rule name
+                    self.call_method_with_values(
+                        actions.clone(),
+                        rule_name,
+                        vec![match_obj.clone()],
+                    )
+                }
+                other => other,
+            }
+        } else {
+            self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
+        };
 
         // After the method call, if actions is an Instance, its attributes
         // may have been mutated.  Retrieve the updated version from env so
