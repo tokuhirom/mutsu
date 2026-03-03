@@ -211,7 +211,7 @@ fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
 
 #[derive(Debug, Default)]
 struct LockState {
-    owner: Option<String>,
+    owner: Option<std::thread::ThreadId>,
     recursion: u64,
 }
 
@@ -222,11 +222,11 @@ struct LockRuntime {
     condvars: std::sync::Mutex<HashMap<u64, Arc<std::sync::Condvar>>>,
 }
 
-type LockStateMap = std::sync::Mutex<HashMap<u64, Arc<LockRuntime>>>;
+type LockStateMap = std::sync::RwLock<HashMap<u64, Arc<LockRuntime>>>;
 
 fn lock_state_map() -> &'static LockStateMap {
     static MAP: OnceLock<LockStateMap> = OnceLock::new();
-    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+    MAP.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
 }
 
 pub(super) fn next_supply_id() -> u64 {
@@ -242,7 +242,7 @@ pub(super) fn next_supplier_id() -> u64 {
 pub(super) fn next_lock_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    if let Ok(mut map) = lock_state_map().lock() {
+    if let Ok(mut map) = lock_state_map().write() {
         map.entry(id)
             .or_insert_with(|| Arc::new(LockRuntime::default()));
     }
@@ -267,24 +267,24 @@ fn cancellation_state(id: u64) -> Option<Arc<AtomicBool>> {
 
 fn lock_runtime_by_id(id: u64) -> Option<Arc<LockRuntime>> {
     lock_state_map()
-        .lock()
+        .read()
         .ok()
         .and_then(|map| map.get(&id).cloned())
 }
 
-fn current_thread_key() -> String {
-    format!("{:?}", std::thread::current().id())
+fn current_thread_id() -> std::thread::ThreadId {
+    std::thread::current().id()
 }
 
-fn acquire_lock(runtime: &LockRuntime, me: &str) -> Result<(), RuntimeError> {
+fn acquire_lock(runtime: &LockRuntime, me: std::thread::ThreadId) -> Result<(), RuntimeError> {
     let mut state = runtime
         .state
         .lock()
         .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
     loop {
-        match &state.owner {
+        match state.owner {
             None => {
-                state.owner = Some(me.to_string());
+                state.owner = Some(me);
                 state.recursion = 1;
                 return Ok(());
             }
@@ -302,12 +302,12 @@ fn acquire_lock(runtime: &LockRuntime, me: &str) -> Result<(), RuntimeError> {
     }
 }
 
-fn release_lock(runtime: &LockRuntime, me: &str) -> Result<(), RuntimeError> {
+fn release_lock(runtime: &LockRuntime, me: std::thread::ThreadId) -> Result<(), RuntimeError> {
     let mut state = runtime
         .state
         .lock()
         .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
-    match &state.owner {
+    match state.owner {
         Some(owner) if owner == me => {
             if state.recursion > 1 {
                 state.recursion -= 1;
@@ -840,11 +840,11 @@ impl Interpreter {
                 };
                 let lock = lock_runtime_by_id(lock_id)
                     .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
-                let me = current_thread_key();
-                acquire_lock(&lock, &me)?;
+                let me = current_thread_id();
+                acquire_lock(&lock, me)?;
                 let code = args.first().cloned().unwrap_or(Value::Nil);
                 let result = self.call_sub_value(code, Vec::new(), false);
-                let _ = release_lock(&lock, &me);
+                let _ = release_lock(&lock, me);
                 result
             }
             "lock" => {
@@ -856,8 +856,8 @@ impl Interpreter {
                 };
                 let lock = lock_runtime_by_id(lock_id)
                     .ok_or_else(|| RuntimeError::new("Lock.lock could not find lock state"))?;
-                let me = current_thread_key();
-                acquire_lock(&lock, &me)?;
+                let me = current_thread_id();
+                acquire_lock(&lock, me)?;
                 Ok(Value::Nil)
             }
             "unlock" => {
@@ -869,8 +869,8 @@ impl Interpreter {
                 };
                 let lock = lock_runtime_by_id(lock_id)
                     .ok_or_else(|| RuntimeError::new("Lock.unlock could not find lock state"))?;
-                let me = current_thread_key();
-                release_lock(&lock, &me)?;
+                let me = current_thread_id();
+                release_lock(&lock, me)?;
                 Ok(Value::Nil)
             }
             "condition" => {
@@ -928,13 +928,13 @@ impl Interpreter {
             }
             "wait" => {
                 let maybe_test = args.first().cloned();
-                let me = current_thread_key();
+                let me = current_thread_id();
                 let mut state = lock
                     .state
                     .lock()
                     .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
-                match &state.owner {
-                    Some(owner) if owner == &me => {}
+                match state.owner {
+                    Some(owner) if owner == me => {}
                     _ => {
                         return Err(RuntimeError::new(
                             "Condition.wait requires the current thread to hold the lock",
@@ -954,13 +954,13 @@ impl Interpreter {
                     state = cond
                         .wait(state)
                         .map_err(|_| RuntimeError::new("Condition wait failed"))?;
-                    while state.owner.is_some() && state.owner.as_deref() != Some(&me) {
+                    while state.owner.is_some() && state.owner != Some(me) {
                         state = lock
                             .lock_cv
                             .wait(state)
                             .map_err(|_| RuntimeError::new("Lock reacquire wait failed"))?;
                     }
-                    state.owner = Some(me.clone());
+                    state.owner = Some(me);
                     state.recursion = held_recursion.max(1);
                     drop(state);
 
