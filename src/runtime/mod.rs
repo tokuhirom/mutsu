@@ -2355,6 +2355,10 @@ impl Interpreter {
         if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(key) {
             let items = Arc::make_mut(arc_items);
             items.extend(values);
+            // Normalize @-variables to ArrayKind::Array (matching set_shared_var behavior)
+            if key.starts_with('@') && !kind.is_itemized() {
+                *kind = ArrayKind::Array;
+            }
             return Value::Array(Arc::clone(arc_items), *kind);
         }
         let mut items = match target_fallback {
