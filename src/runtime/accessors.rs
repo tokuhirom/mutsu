@@ -471,6 +471,33 @@ impl Interpreter {
         &mut self.env
     }
 
+    /// Check whether a sub has an active (non-empty) wrap chain.
+    pub(crate) fn has_wrap_chain(&self, sub_id: u64) -> bool {
+        self.wrap_chains.get(&sub_id).is_some_and(|c| !c.is_empty())
+    }
+
+    /// Check whether we're already inside a wrap dispatch for a given sub.
+    pub(crate) fn is_wrap_dispatching(&self, sub_id: u64) -> bool {
+        self.wrap_dispatch_stack.iter().any(|f| f.sub_id == sub_id)
+    }
+
+    /// Find the sub_id and Sub value for a function name that has an active wrap chain.
+    /// Returns the sub_id if a wrap chain exists for the given function name.
+    pub(crate) fn wrap_sub_id_for_name(&self, name: &str) -> Option<u64> {
+        for (sub_id, sub_name) in &self.wrap_sub_names {
+            if sub_name == name && self.has_wrap_chain(*sub_id) {
+                return Some(*sub_id);
+            }
+        }
+        None
+    }
+
+    /// Get the original wrapped Sub value for a function name.
+    /// Returns the Sub value stored when wrap was called, preserving the original sub_id.
+    pub(crate) fn get_wrapped_sub(&self, name: &str) -> Option<Value> {
+        self.wrap_name_to_sub.get(name).cloned()
+    }
+
     pub(crate) fn get_state_var(&self, key: &str) -> Option<&Value> {
         self.state_vars.get(key)
     }

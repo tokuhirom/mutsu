@@ -132,6 +132,15 @@ impl Interpreter {
                 let _ = self.env.get("made");
             }
             _ => {
+                // Check wrap chain for named function calls
+                if let Some(sub_id) = self.wrap_sub_id_for_name(name)
+                    && !self.is_wrap_dispatching(sub_id)
+                    && let Some(sub_val) = self.get_wrapped_sub(name)
+                {
+                    let result = self.call_sub_value(sub_val, args, false)?;
+                    self.env.insert("_".to_string(), result);
+                    return Ok(());
+                }
                 let def_opt = self.resolve_function_with_alias(name, &args);
                 if let Some(def) = def_opt {
                     if def.empty_sig && !args.is_empty() {

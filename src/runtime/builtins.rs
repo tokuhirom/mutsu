@@ -1429,7 +1429,30 @@ impl Interpreter {
         override_args: Option<Vec<Value>>,
         tail_call: bool,
     ) -> Result<Value, RuntimeError> {
-        // Try method dispatch stack first
+        // Try wrap dispatch stack first (wrapper chains)
+        if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+            if let Some(next) = frame.remaining.first().cloned() {
+                frame.remaining.remove(0);
+                let call_args = override_args.unwrap_or_else(|| frame.args.clone());
+                let result = self.call_sub_value(next, call_args, false)?;
+                if tail_call {
+                    return Err(RuntimeError {
+                        return_value: Some(result),
+                        ..RuntimeError::new("")
+                    });
+                }
+                return Ok(result);
+            }
+            // No more wrappers — return Nil
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(Value::Nil),
+                    ..RuntimeError::new("")
+                });
+            }
+            return Ok(Value::Nil);
+        }
+        // Try method dispatch stack
         if !self.method_dispatch_stack.is_empty() {
             let frame_idx = self.method_dispatch_stack.len() - 1;
             let (receiver_class, invocant, call_args, owner_class, method_def) = {

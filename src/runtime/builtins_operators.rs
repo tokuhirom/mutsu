@@ -143,6 +143,13 @@ impl Interpreter {
         if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
+        // Check wrap chain for named function calls
+        if let Some(sub_id) = self.wrap_sub_id_for_name(name)
+            && !self.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.get_wrapped_sub(name)
+        {
+            return self.call_sub_value(sub_val, args.to_vec(), false);
+        }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
             // Collect remaining candidates for callsame/nextcallee
             let all_candidates = self.resolve_all_matching_candidates(name, args);

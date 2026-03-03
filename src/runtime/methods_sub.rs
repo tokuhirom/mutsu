@@ -361,6 +361,104 @@ impl Interpreter {
             }
             return Some(Ok(Value::Int(0)));
         }
+        if method == "wrap" {
+            // .wrap(&wrapper) — add a wrapper to this sub's wrap chain
+            let wrapper = if let Some(w) = args.first() {
+                w.clone()
+            } else {
+                return Some(Err(RuntimeError::new("wrap requires a wrapper argument")));
+            };
+            self.wrap_handle_counter += 1;
+            let handle_id = self.wrap_handle_counter;
+            // Look up original sub_id by name if already wrapped, since &foo creates fresh Sub
+            let func_name = data.name.resolve();
+            let sub_id = if !func_name.is_empty() {
+                self.wrap_sub_names
+                    .iter()
+                    .find(|(_, n)| **n == func_name)
+                    .map(|(id, _)| *id)
+                    .unwrap_or(data.id)
+            } else {
+                data.id
+            };
+            self.wrap_chains
+                .entry(sub_id)
+                .or_default()
+                .push((handle_id, wrapper));
+            // Store mapping from sub_id to function name for named call dispatch
+            if !func_name.is_empty() {
+                self.wrap_sub_names.insert(sub_id, func_name.clone());
+                // Only store the first Sub value for this name (preserves original sub_id)
+                self.wrap_name_to_sub
+                    .entry(func_name)
+                    .or_insert_with(|| target.clone());
+            }
+            // Return a WrapHandle instance
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("sub-id".to_string(), Value::Int(sub_id as i64));
+            attrs.insert("handle-id".to_string(), Value::Int(handle_id as i64));
+            // Store a reference to the wrapped sub for .restore()
+            attrs.insert("wrapped-sub".to_string(), target.clone());
+            return Some(Ok(Value::make_instance(
+                Symbol::intern("Routine::WrapHandle"),
+                attrs,
+            )));
+        }
+        if method == "unwrap" {
+            // Look up original sub_id by name, since &foo creates a fresh Sub each time
+            let func_name = data.name.resolve();
+            let sub_id = self
+                .wrap_sub_names
+                .iter()
+                .find(|(_, n)| **n == func_name)
+                .map(|(id, _)| *id)
+                .unwrap_or(data.id);
+            if args.is_empty() {
+                // unwrap with no args on a never-wrapped sub should error
+                if !self.wrap_chains.contains_key(&sub_id) || self.wrap_chains[&sub_id].is_empty() {
+                    return Some(Err(RuntimeError::new(
+                        "Cannot unwrap a sub that has not been wrapped",
+                    )));
+                }
+                // Pop the outermost wrapper
+                if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {
+                    chain.pop();
+                    if chain.is_empty() {
+                        self.cleanup_wrap_name_entries(sub_id);
+                    }
+                }
+                return Some(Ok(Value::Bool(true)));
+            }
+            // Extract handle-id from the WrapHandle argument
+            let handle = &args[0];
+            let handle_id = self.extract_wrap_handle_id(handle);
+            let Some(handle_id) = handle_id else {
+                return Some(Err(RuntimeError::new(
+                    "unwrap requires a valid WrapHandle argument",
+                )));
+            };
+            let chain = self.wrap_chains.get_mut(&sub_id);
+            if let Some(chain) = chain {
+                let before_len = chain.len();
+                chain.retain(|(hid, _)| *hid != handle_id);
+                if chain.len() == before_len {
+                    return Some(Err(RuntimeError::new(
+                        "Cannot unwrap: handle not found (already unwrapped?)",
+                    )));
+                }
+                if chain.is_empty() {
+                    self.cleanup_wrap_name_entries(sub_id);
+                }
+                return Some(Ok(Value::Bool(true)));
+            }
+            return Some(Err(RuntimeError::new(
+                "Cannot unwrap a sub that has not been wrapped",
+            )));
+        }
+        if method == "callwith" {
+            // &sub.callwith(args) — call the sub directly with provided args
+            return Some(self.call_sub_value(target.clone(), args, false));
+        }
         if method == "can" {
             let method_name = args
                 .first()
@@ -381,9 +479,33 @@ impl Interpreter {
                     | "Str"
                     | "gist"
                     | "can"
+                    | "wrap"
+                    | "unwrap"
+                    | "callwith"
             );
             return Some(Ok(Value::Bool(can)));
         }
         None
+    }
+
+    /// Extract wrap handle ID from a WrapHandle instance.
+    fn extract_wrap_handle_id(&self, handle: &Value) -> Option<u64> {
+        match handle {
+            Value::Instance { attributes, .. } => {
+                if let Some(Value::Int(id)) = attributes.get("handle-id") {
+                    Some(*id as u64)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Clean up wrap_sub_names and wrap_name_to_sub when a sub's wrap chain becomes empty.
+    pub(crate) fn cleanup_wrap_name_entries(&mut self, sub_id: u64) {
+        if let Some(name) = self.wrap_sub_names.remove(&sub_id) {
+            self.wrap_name_to_sub.remove(&name);
+        }
     }
 }

@@ -41,7 +41,7 @@ The single largest blocker. Many S06 tests require features beyond basic positio
 - [x] Sub-signatures (`sub foo(Int :x($val)) { }`)
 - [x] Proper `Signature` / `Parameter` introspection objects
 - [x] `callframe` / `caller` / `callwith` / `nextsame` / `nextwith`
-- [ ] `wrap` / `unwrap`
+- [x] `wrap` / `unwrap`
 - [ ] Proper `return` as control exception (currently uses Rust panic-like flow)
 - [ ] Tail call optimization (deep recursion crashes)
 
