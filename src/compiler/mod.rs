@@ -292,6 +292,17 @@ impl Compiler {
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }
+                        Stmt::VarDecl { name, .. } => {
+                            // VarDecl as last statement: compile normally, then
+                            // load the declared variable back and set as topic
+                            // so that implicit return works correctly.
+                            let var_name = name.clone();
+                            self.compile_stmt(stmt);
+                            let slot = self.alloc_local(&var_name);
+                            self.code.emit(OpCode::GetLocal(slot));
+                            self.code.emit(OpCode::SetTopic);
+                            continue;
+                        }
                         _ => {}
                     }
                 }

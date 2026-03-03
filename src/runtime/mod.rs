@@ -387,7 +387,7 @@ pub struct Interpreter {
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
-    in_lvalue_assignment: bool,
+    pub(crate) in_lvalue_assignment: bool,
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode) before a block with `use`.
@@ -427,6 +427,9 @@ pub struct Interpreter {
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
+    /// Pending Proxy subclass attribute reference for writeback on mutating methods.
+    /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
+    pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,
     /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
     /// Each entry is (remaining_candidates, original_args).
     multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
@@ -1391,6 +1394,7 @@ impl Interpreter {
             shared_vars_active: false,
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
+            pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             wrap_chains: HashMap::new(),
@@ -2330,6 +2334,7 @@ impl Interpreter {
             shared_vars_active: true,
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
+            pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             wrap_chains: self.wrap_chains.clone(),

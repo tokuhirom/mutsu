@@ -936,6 +936,83 @@ impl Interpreter {
             ));
         }
 
+        // Handle qualified method names: Class::method (e.g., $o.Parent::x)
+        // Access the attribute as defined in the specified class, not the most-derived one.
+        if let Some((qualifier, actual_method)) = method.split_once("::")
+            && !method.starts_with('!')
+            && let Value::Instance {
+                class_name: _,
+                attributes,
+                ..
+            } = &target
+            && args.is_empty()
+        {
+            // Read: look up the attribute in the qualifier class's attribute definitions
+            let class_attrs = self.collect_class_attributes(qualifier);
+            for (attr_name, is_public, ..) in &class_attrs {
+                if *is_public && attr_name == actual_method {
+                    return Ok(attributes.get(actual_method).cloned().unwrap_or(Value::Nil));
+                }
+            }
+            // Also try running the actual method on the qualifier class
+            if let Some((_owner, method_def)) =
+                self.resolve_method_with_owner(qualifier, actual_method, &args)
+            {
+                let attrs_map = (**attributes).clone();
+                let (result, _) =
+                    self.run_instance_method(qualifier, attrs_map, actual_method, args, None)?;
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    let _ = method_def;
+                    return self.proxy_fetch(fetcher, None, qualifier, &(**attributes).clone(), 0);
+                }
+                return Ok(result);
+            }
+        }
+
+        // Handle method calls on Proxy subclass values (accessing subclass attributes)
+        if let Value::Proxy {
+            subclass: Some((ref subclass_name, ref subclass_attrs)),
+            ..
+        } = target
+        {
+            {
+                let attrs = subclass_attrs.lock().unwrap();
+                if let Some(val) = attrs.get(method)
+                    && args.is_empty()
+                {
+                    // Store a reference to the subclass attrs and attribute name
+                    // so that subsequent mutating method calls (e.g. .push) can
+                    // write back to the shared storage.
+                    self.pending_proxy_subclass_attr =
+                        Some((subclass_attrs.clone(), method.to_string()));
+                    return Ok(val.clone());
+                }
+            }
+            // Handle .raku on Proxy subclass
+            if method == "raku" || method == "Str" || method == "gist" {
+                return Ok(Value::Str(format!("{}()", subclass_name.resolve())));
+            }
+        }
+
+        // Auto-FETCH Proxy values for most method calls (not .VAR, .WHAT, .WHICH, .raku etc.)
+        // Decontainerized proxies (from .VAR) are never auto-FETCHed.
+        // Auto-FETCH Proxy values for most method calls (not .VAR, .WHAT, .WHICH, .raku etc.)
+        // Decontainerized proxies (from .VAR) are never auto-FETCHed.
+        if let Value::Proxy {
+            ref fetcher,
+            decontainerized,
+            ..
+        } = target
+            && !decontainerized
+            && !matches!(
+                method,
+                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            )
+        {
+            let fetched = self.call_sub_value(*fetcher.clone(), vec![target.clone()], true)?;
+            return self.call_method_with_values(fetched, method, args);
+        }
+
         if let Value::Instance {
             class_name,
             attributes,
@@ -1915,6 +1992,10 @@ impl Interpreter {
                 return self.method_polymod(&target, &args);
             }
             "VAR" if args.is_empty() => {
+                // Proxy .VAR returns a decontainerized copy (no auto-FETCH on subsequent calls).
+                if matches!(&target, Value::Proxy { .. }) {
+                    return Ok(Value::proxy_var_object(target, String::new()));
+                }
                 // Non-container .VAR is identity. Container variables are handled in
                 // call_method_mut_with_values via target variable metadata.
                 return Ok(target);
@@ -2167,6 +2248,12 @@ impl Interpreter {
                             return Ok(Value::Package(Symbol::intern(&allo)));
                         }
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
+                    }
+                    Value::Proxy {
+                        subclass: Some((name, _)),
+                        ..
+                    } => {
+                        return Ok(Value::Package(*name));
                     }
                     Value::Proxy { .. } => "Proxy",
                     Value::CustomType { name, .. } => {
@@ -4128,11 +4215,87 @@ impl Interpreter {
                     ));
                 }
 
+                // Before giving up, check if this is a mutating array method
+                // and we have a pending Proxy subclass attribute reference.
+                if matches!(
+                    method,
+                    "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
+                ) && matches!(&target, Value::Array(..))
+                    && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
+                {
+                    return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
+                }
+
                 Err(RuntimeError::new(format!(
                     "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                     method
                 )))
             }
+        }
+    }
+
+    /// Mutate an array attribute in a Proxy subclass's shared storage.
+    fn proxy_subclass_array_mutate(
+        &mut self,
+        attrs_ref: &Arc<std::sync::Mutex<HashMap<String, Value>>>,
+        attr_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut attrs = attrs_ref.lock().unwrap();
+        let arr = attrs
+            .entry(attr_name.to_string())
+            .or_insert_with(|| Value::real_array(Vec::new()));
+        if let Value::Array(items, _) = arr {
+            let items = Arc::make_mut(items);
+            match method {
+                "push" => {
+                    for arg in args {
+                        items.push(arg.clone());
+                    }
+                }
+                "pop" => {
+                    return Ok(items.pop().unwrap_or(Value::Nil));
+                }
+                "shift" => {
+                    return Ok(if items.is_empty() {
+                        Value::Nil
+                    } else {
+                        items.remove(0)
+                    });
+                }
+                "unshift" => {
+                    for (i, arg) in args.iter().enumerate() {
+                        items.insert(i, arg.clone());
+                    }
+                }
+                "append" => {
+                    for arg in args {
+                        match arg {
+                            Value::Array(vals, _) => items.extend(vals.iter().cloned()),
+                            other => items.push(other.clone()),
+                        }
+                    }
+                }
+                "prepend" => {
+                    let mut new_items: Vec<Value> = Vec::new();
+                    for arg in args {
+                        match arg {
+                            Value::Array(vals, _) => new_items.extend(vals.iter().cloned()),
+                            other => new_items.push(other.clone()),
+                        }
+                    }
+                    new_items.append(items);
+                    *items = new_items;
+                }
+                _ => {}
+            }
+            Ok(Value::real_array(items.clone()))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Cannot call '{}' on non-Array attribute",
+                method
+            )))
         }
     }
 

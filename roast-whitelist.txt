@@ -234,6 +234,7 @@ roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
 roast/S06-routine-modifiers/native-lvalue-subroutines.t
+roast/S06-routine-modifiers/proxy.t
 roast/S06-signature/arity.t
 roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/closure-parameters.t

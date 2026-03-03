@@ -29,7 +29,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
         let normalized_args: Vec<Value> = args.iter().map(Self::unwrap_test_arg_value).collect();
-        let args = normalized_args.as_slice();
+        // Auto-FETCH any Proxy containers in test function arguments
+        let fetched_args: Vec<Value> = normalized_args
+            .into_iter()
+            .map(|v| self.auto_fetch_proxy(&v))
+            .collect::<Result<Vec<_>, _>>()?;
+        let args = fetched_args.as_slice();
         match name {
             "ok" => self.test_fn_ok(args).map(Some),
             "nok" => self.test_fn_nok(args).map(Some),

@@ -317,6 +317,25 @@ fn parse_interpolation_qualified_ident_with_hyphens_or_empty(input: &str) -> (&s
 /// Parse an @array variable reference.
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
+    // Handle `.` twigil: @.attr → self.attr (in list context)
+    if input.starts_with('.')
+        && input.len() > 1
+        && (input.as_bytes()[1].is_ascii_alphabetic() || input.as_bytes()[1] == b'_')
+    {
+        let after_dot = &input[1..];
+        let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
+        // @.attr is equivalent to self.attr in list context
+        return Ok((
+            rest,
+            Expr::MethodCall {
+                target: Box::new(Expr::BareWord("self".to_string())),
+                name: crate::symbol::Symbol::intern(&name),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('!')
@@ -354,6 +373,32 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
 /// Parse a %hash variable reference.
 pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
+    // Handle `.` twigil: %.attr → self.attr (in hash context)
+    if input.starts_with('.')
+        && input.len() > 1
+        && (input.as_bytes()[1].is_ascii_alphabetic() || input.as_bytes()[1] == b'_')
+    {
+        let after_dot = &input[1..];
+        let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
+        // %.attr is equivalent to self.attr in hash context
+        // Wrap in a MethodCall to .hash to coerce to hash context
+        return Ok((
+            rest,
+            Expr::MethodCall {
+                target: Box::new(Expr::MethodCall {
+                    target: Box::new(Expr::BareWord("self".to_string())),
+                    name: crate::symbol::Symbol::intern(&name),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                name: crate::symbol::Symbol::intern("Hash"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('!')

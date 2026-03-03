@@ -412,6 +412,8 @@ impl Interpreter {
                     return Ok(Value::Proxy {
                         fetcher: Box::new(fetcher),
                         storer: Box::new(storer),
+                        subclass: None,
+                        decontainerized: false,
                     });
                 }
                 "CompUnit::DependencySpecification" => {
@@ -911,6 +913,13 @@ impl Interpreter {
                 } else {
                     base_class_name
                 };
+                // Check if this class is a Proxy subclass
+                {
+                    let mro = self.class_mro(class_key);
+                    if mro.iter().any(|c| c == "Proxy") {
+                        return self.construct_proxy_subclass(class_key, &args);
+                    }
+                }
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
@@ -1153,5 +1162,57 @@ impl Interpreter {
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
             )),
         }
+    }
+
+    /// Construct a Proxy subclass instance: extracts FETCH/STORE from args,
+    /// initializes subclass attributes (with defaults), and returns a Proxy
+    /// with shared mutable subclass attrs.
+    fn construct_proxy_subclass(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut fetcher = Value::Nil;
+        let mut storer = Value::Nil;
+        let mut extra_attrs = HashMap::new();
+
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "FETCH" => fetcher = *value.clone(),
+                    "STORE" => storer = *value.clone(),
+                    _ => {
+                        extra_attrs.insert(key.clone(), *value.clone());
+                    }
+                }
+            }
+        }
+
+        // Initialize subclass attributes with defaults
+        let class_attrs_info = self.collect_class_attributes(class_name);
+        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil) in &class_attrs_info
+        {
+            if !extra_attrs.contains_key(attr_name) {
+                let default_val = if let Some(expr) = default_expr {
+                    let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
+                    Self::coerce_attr_value_by_sigil(result, *sigil)
+                } else {
+                    match sigil {
+                        '@' => Value::real_array(Vec::new()),
+                        '%' => Value::hash(HashMap::new()),
+                        _ => Value::Nil,
+                    }
+                };
+                extra_attrs.insert(attr_name.clone(), default_val);
+            }
+        }
+
+        let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
+        Ok(Value::Proxy {
+            fetcher: Box::new(fetcher),
+            storer: Box::new(storer),
+            subclass: Some((Symbol::intern(class_name), subclass_attrs)),
+            decontainerized: false,
+        })
     }
 }

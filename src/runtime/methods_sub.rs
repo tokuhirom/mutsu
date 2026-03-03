@@ -49,6 +49,7 @@ impl Interpreter {
                 param_defs: Vec::new(),
                 body: vec![],
                 is_rw: false,
+                is_raw: false,
                 env: self.env().clone(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),

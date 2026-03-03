@@ -889,7 +889,25 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if let Ok((r, name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
-                let name = Symbol::intern(name);
+                // Check for qualified method name: C::x (e.g., .Parent::x)
+                let (r, name) = if r.starts_with("::") {
+                    let mut qualified = name.to_string();
+                    let mut r = r;
+                    while let Some(after_colons) = r.strip_prefix("::") {
+                        if let Ok((r2, part)) = take_while1(after_colons, |c: char| {
+                            c.is_alphanumeric() || c == '_' || c == '-'
+                        }) {
+                            qualified.push_str("::");
+                            qualified.push_str(part);
+                            r = r2;
+                        } else {
+                            break;
+                        }
+                    }
+                    (r, Symbol::intern(&qualified))
+                } else {
+                    (r, Symbol::intern(name))
+                };
                 // Detect illegal space between method name and parens
                 if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
                     let after_ws = r.trim_start_matches([' ', '\t']);

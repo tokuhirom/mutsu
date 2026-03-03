@@ -325,6 +325,8 @@ impl Interpreter {
         let proxy_val = Value::Proxy {
             fetcher: Box::new(fetcher.clone()),
             storer: Box::new(Value::Nil),
+            subclass: None,
+            decontainerized: false,
         };
         let (result, _updated) = self.call_proxy_callback(fetcher, vec![proxy_val], attributes)?;
         // For FETCH we don't propagate attribute changes (reads shouldn't mutate)
@@ -347,6 +349,8 @@ impl Interpreter {
         let proxy_val = Value::Proxy {
             fetcher: Box::new(Value::Nil),
             storer: Box::new(storer.clone()),
+            subclass: None,
+            decontainerized: false,
         };
         let (result, updated) =
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
@@ -497,6 +501,112 @@ impl Interpreter {
             }
         }
 
+        // Handle assignment to Proxy subclass attributes (e.g., $a.VAR.history = ())
+        if let Value::Proxy {
+            subclass: Some((_, ref subclass_attrs)),
+            ..
+        } = target
+        {
+            let attrs = subclass_attrs.clone();
+            if attrs.lock().unwrap().contains_key(method) {
+                // Coerce to array if the existing attribute is an array
+                let new_val = {
+                    let guard = attrs.lock().unwrap();
+                    if matches!(guard.get(method), Some(Value::Array(..))) {
+                        crate::runtime::coerce_to_array(value.clone())
+                    } else {
+                        value.clone()
+                    }
+                };
+                attrs.lock().unwrap().insert(method.to_string(), new_val);
+                return Ok(value);
+            }
+        }
+
+        // Handle qualified method names early: Class::method (e.g., $o.Parent::x = 5)
+        // Must be before call_method_mut_with_values which can't handle qualified names.
+        if method.contains("::")
+            && !method.starts_with('!')
+            && let Value::Instance {
+                ref class_name,
+                ref attributes,
+                id: target_id,
+            } = target
+            && let Some((qualifier, actual_method)) = method.split_once("::")
+        {
+            // First try explicit method resolution
+            if let Some(method_def) = self.resolve_method(qualifier, actual_method, &method_args) {
+                if !method_def.is_rw {
+                    return Err(RuntimeError::new(format!(
+                        "X::Assignment::RO: method '{}' is not rw",
+                        actual_method
+                    )));
+                }
+                if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
+                    let mut updated = (**attributes).clone();
+                    updated.insert(attr_name, value.clone());
+                    let cn = *class_name;
+                    if let Some(var_name) = target_var {
+                        self.overwrite_instance_bindings_by_identity(
+                            &cn.resolve(),
+                            target_id,
+                            updated.clone(),
+                        );
+                        self.env.insert(
+                            var_name.to_string(),
+                            Value::Instance {
+                                class_name: cn,
+                                attributes: std::sync::Arc::new(updated),
+                                id: target_id,
+                            },
+                        );
+                    }
+                    return Ok(value);
+                }
+            } else {
+                // No explicit method found — try auto-accessor for public `is rw` attributes
+                let class_attrs = self.collect_class_attributes(qualifier);
+                let mut found_rw = false;
+                for (attr_name, is_public, _default, is_rw, ..) in &class_attrs {
+                    if attr_name == actual_method && *is_public {
+                        if !is_rw {
+                            return Err(RuntimeError::new(format!(
+                                "X::Assignment::RO: method '{}' is not rw",
+                                actual_method
+                            )));
+                        }
+                        found_rw = true;
+                        break;
+                    }
+                }
+                if found_rw {
+                    let mut updated = (**attributes).clone();
+                    updated.insert(actual_method.to_string(), value.clone());
+                    let cn = *class_name;
+                    if let Some(var_name) = target_var {
+                        self.overwrite_instance_bindings_by_identity(
+                            &cn.resolve(),
+                            target_id,
+                            updated.clone(),
+                        );
+                        self.env.insert(
+                            var_name.to_string(),
+                            Value::Instance {
+                                class_name: cn,
+                                attributes: std::sync::Arc::new(updated),
+                                id: target_id,
+                            },
+                        );
+                    }
+                    return Ok(value);
+                }
+            }
+            return Err(RuntimeError::new(format!(
+                "X::Assignment::RO: rw method '{}' does not expose an assignable attribute",
+                actual_method
+            )));
+        }
+
         // Preserve existing accessor/setter assignment behavior for concrete variables.
         if let Some(var_name) = target_var {
             match self.call_method_mut_with_values(
@@ -626,6 +736,11 @@ impl Interpreter {
             return Ok(current);
         }
         if method == "VAR" && args.is_empty() {
+            // Proxy (including subclasses): .VAR returns the proxy wrapped as a
+            // ProxyObject so that subsequent method calls don't auto-FETCH.
+            if matches!(&target, Value::Proxy { .. }) {
+                return Ok(Value::proxy_var_object(target, target_var.to_string()));
+            }
             if let Value::Instance { attributes, .. } = &target
                 && matches!(attributes.get("__mutsu_var_target"), Some(Value::Str(_)))
             {
