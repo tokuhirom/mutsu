@@ -533,6 +533,34 @@ impl Interpreter {
         self.method_dispatch_stack.pop();
     }
 
+    /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
+    /// Returns true if a frame was pushed (i.e. there are remaining candidates).
+    pub(crate) fn push_multi_dispatch_frame(&mut self, name: &str, args: &[Value]) -> bool {
+        let all_candidates = self.resolve_all_matching_candidates(name, args);
+        if all_candidates.len() <= 1 {
+            return false;
+        }
+        // The first candidate is the one currently being called; remaining are the rest.
+        let def = &all_candidates[0];
+        let def_fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        let remaining: Vec<super::FunctionDef> = all_candidates
+            .into_iter()
+            .filter(|c| {
+                crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body) != def_fp
+            })
+            .collect();
+        let pushed = !remaining.is_empty();
+        if pushed {
+            self.multi_dispatch_stack.push((remaining, args.to_vec()));
+        }
+        pushed
+    }
+
+    /// Pop a multi dispatch frame (must only be called if push returned true).
+    pub(crate) fn pop_multi_dispatch(&mut self) {
+        self.multi_dispatch_stack.pop();
+    }
+
     pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<&Vec<String>> {
         self.class_composed_roles.get(class_name)
     }

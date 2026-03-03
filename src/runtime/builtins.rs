@@ -172,7 +172,9 @@ impl Interpreter {
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Multi dispatch control flow
             "callsame" => self.builtin_callsame(),
-            "nextsame" => self.builtin_callsame(),
+            "nextsame" => self.builtin_nextsame(),
+            "callwith" => self.builtin_callwith(&args),
+            "nextwith" => self.builtin_nextwith(&args),
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
@@ -1382,19 +1384,65 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    fn no_dispatcher_error(func_name: &str) -> RuntimeError {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(format!(
+                "{func_name} is not in the dynamic scope of a dispatcher"
+            )),
+        );
+        let msg = format!("{func_name} is not in the dynamic scope of a dispatcher");
+        let ex = Value::make_instance(Symbol::intern("X::NoDispatcher"), attrs);
+        RuntimeError {
+            exception: Some(Box::new(ex)),
+            ..RuntimeError::new(msg)
+        }
+    }
+
+    /// Call next method/multi candidate with the original args; returns the result.
     fn builtin_callsame(&mut self) -> Result<Value, RuntimeError> {
+        self.dispatch_next_candidate("callsame", None, false)
+    }
+
+    /// Call next method/multi candidate with the original args; never returns (tail-call).
+    fn builtin_nextsame(&mut self) -> Result<Value, RuntimeError> {
+        self.dispatch_next_candidate("nextsame", None, true)
+    }
+
+    /// Call next method/multi candidate with new args; returns the result.
+    fn builtin_callwith(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.dispatch_next_candidate("callwith", Some(args.to_vec()), false)
+    }
+
+    /// Call next method/multi candidate with new args; never returns (tail-call).
+    fn builtin_nextwith(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.dispatch_next_candidate("nextwith", Some(args.to_vec()), true)
+    }
+
+    /// Shared implementation for callsame/nextsame/callwith/nextwith.
+    /// `override_args`: if Some, use these args instead of the original.
+    /// `tail_call`: if true, raise a return-control exception with the result.
+    fn dispatch_next_candidate(
+        &mut self,
+        func_name: &str,
+        override_args: Option<Vec<Value>>,
+        tail_call: bool,
+    ) -> Result<Value, RuntimeError> {
+        // Try method dispatch stack first
         if !self.method_dispatch_stack.is_empty() {
             let frame_idx = self.method_dispatch_stack.len() - 1;
-            let (receiver_class, invocant, orig_args, owner_class, method_def) = {
+            let (receiver_class, invocant, call_args, owner_class, method_def) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
                     return Ok(Value::Nil);
                 };
                 frame.remaining.remove(0);
+                let call_args = override_args.unwrap_or_else(|| frame.args.clone());
                 (
                     frame.receiver_class.clone(),
                     frame.invocant.clone(),
-                    frame.args.clone(),
+                    call_args,
                     owner_class,
                     method_def,
                 )
@@ -1410,7 +1458,7 @@ impl Interpreter {
                         &owner_class,
                         method_def,
                         (**attributes).clone(),
-                        orig_args,
+                        call_args,
                         Some(invocant.clone()),
                     )?;
                     self.overwrite_instance_bindings_by_identity(
@@ -1433,7 +1481,7 @@ impl Interpreter {
                         &owner_class,
                         method_def,
                         HashMap::new(),
-                        orig_args,
+                        call_args,
                         Some(invocant.clone()),
                     )?;
                     (result, None)
@@ -1444,19 +1492,34 @@ impl Interpreter {
             {
                 frame.invocant = new_invocant;
             }
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(result),
+                    ..RuntimeError::new("")
+                });
+            }
             return Ok(result);
         }
-        let Some((candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() else {
-            return Ok(Value::Nil);
-        };
-        let Some(next_def) = candidates.first().cloned() else {
-            return Ok(Value::Nil);
-        };
-        // Update the stack: remove the candidate we're about to call
-        let remaining = candidates[1..].to_vec();
-        let stack_len = self.multi_dispatch_stack.len();
-        self.multi_dispatch_stack[stack_len - 1] = (remaining, orig_args.clone());
-        self.call_function_def(&next_def, &orig_args)
+        // Try multi dispatch stack
+        if let Some((candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() {
+            let Some(next_def) = candidates.first().cloned() else {
+                return Ok(Value::Nil);
+            };
+            let remaining = candidates[1..].to_vec();
+            let call_args = override_args.unwrap_or(orig_args);
+            let stack_len = self.multi_dispatch_stack.len();
+            self.multi_dispatch_stack[stack_len - 1] = (remaining, call_args.clone());
+            let result = self.call_function_def(&next_def, &call_args)?;
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(result),
+                    ..RuntimeError::new("")
+                });
+            }
+            return Ok(result);
+        }
+        // Not in any dispatch context
+        Err(Self::no_dispatcher_error(func_name))
     }
 
     fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
