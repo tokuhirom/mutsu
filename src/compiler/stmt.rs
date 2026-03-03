@@ -113,17 +113,15 @@ impl Compiler {
                     }
                     self.code.patch_loop_end(idx);
                 } else if Self::has_let_deep(stmts) {
-                    // Block contains `let` — wrap in LetBlock for save/restore
+                    // Block contains `let`/`temp` — wrap in LetBlock for save/restore
                     let idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
+                    let needs_topic = Self::has_real_let_deep(stmts);
                     for (i, s) in stmts.iter().enumerate() {
                         let is_last = i == stmts.len() - 1;
-                        if is_last {
-                            if let Stmt::Expr(expr) = s {
-                                self.compile_expr(expr);
-                                self.code.emit(OpCode::SetTopic);
-                            } else {
-                                self.compile_stmt(s);
-                            }
+                        if is_last && needs_topic {
+                            // For `let` blocks, set topic from the last statement's
+                            // value so we can check success/failure
+                            self.compile_last_stmt_as_topic(s);
                         } else {
                             self.compile_stmt(s);
                         }
@@ -1094,7 +1092,12 @@ impl Compiler {
                     target_var_idx,
                 });
             }
-            Stmt::Let { name, index, value } => {
+            Stmt::Let {
+                name,
+                index,
+                value,
+                is_temp,
+            } => {
                 // Emit LetSave: saves current value of the variable
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 let has_index = index.is_some();
@@ -1104,6 +1107,7 @@ impl Compiler {
                 self.code.emit(OpCode::LetSave {
                     name_idx,
                     index_mode: has_index,
+                    is_temp: *is_temp,
                 });
                 // Compile the assignment if value is provided
                 if let Some(val_expr) = value {
@@ -1139,6 +1143,7 @@ impl Compiler {
                 self.code.emit(OpCode::LetSave {
                     name_idx,
                     index_mode: false,
+                    is_temp: true,
                 });
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
@@ -1152,6 +1157,24 @@ impl Compiler {
                 };
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
+            }
+        }
+    }
+
+    /// Compile the last statement of a `let` block so its result sets the topic.
+    /// This allows `exec_let_block_op` to check the topic for success/failure.
+    fn compile_last_stmt_as_topic(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::Expr(expr) => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::SetTopic);
+            }
+            _ => {
+                // For non-expression statements (calls, assignments, etc.),
+                // compile normally. Any completed statement counts as success.
+                self.compile_stmt(stmt);
+                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                self.code.emit(OpCode::SetTopic);
             }
         }
     }

@@ -415,7 +415,7 @@ pub struct Interpreter {
     hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
-    let_saves: Vec<(String, Value)>,
+    let_saves: Vec<(String, Value, bool)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.

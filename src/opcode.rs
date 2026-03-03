@@ -606,11 +606,13 @@ pub(crate) enum OpCode {
     /// Indirect code lookup: pop package string from stack, resolve &name in that package context.
     IndirectCodeLookup(u32),
 
-    /// Save current variable value for `let` scope management.
+    /// Save current variable value for `let`/`temp` scope management.
     /// Pops the array index (if index_mode is true) from the stack.
+    /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).
     LetSave {
         name_idx: u32,
         index_mode: bool,
+        is_temp: bool,
     },
 
     /// Block with `let` scope management. Executes body, then checks

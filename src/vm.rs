@@ -1744,8 +1744,9 @@ impl VM {
             OpCode::LetSave {
                 name_idx,
                 index_mode,
+                is_temp,
             } => {
-                self.exec_let_save_op(code, *name_idx, *index_mode);
+                self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp);
                 *ip += 1;
             }
             OpCode::LetBlock { body_end } => {
@@ -1756,7 +1757,12 @@ impl VM {
     }
 
     /// Check if a value represents a "successful" block exit for `let` purposes.
-    fn is_let_success(_val: &Value) -> bool {
-        false
+    /// A block is considered successful if it returns a defined, non-empty value.
+    fn is_let_success(val: &Value) -> bool {
+        match val {
+            Value::Nil => false,
+            Value::Array(arr, _) => !arr.is_empty(),
+            _ => true,
+        }
     }
 }
