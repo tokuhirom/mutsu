@@ -2,7 +2,7 @@
 
 Goal: Build a practical Raku (Perl 6) runtime in Rust that is faster than MoarVM.
 
-Current status (2026-03): roast 564/1463 passing (38.5%). Hybrid bytecode VM + tree-walker.
+Current status (2026-03): roast 580/1463 passing (39.6%). Hybrid bytecode VM + tree-walker.
 
 ---
 
@@ -127,7 +127,7 @@ variable read. `WeakSub` for `&?BLOCK` self-reference only.
 
 **Roadmap:**
 1. **Scoped call frames** — Replace flat HashMap env with stack of frames. Local variables freed on scope exit. Already partially done with `GetLocal`/`SetLocal` indexed slots, but env HashMap is still the source of truth for interpreter bridge.
-2. **Copy-on-write for containers** — `Arc::make_mut` pattern for arrays/hashes to avoid unnecessary cloning when single-owned.
+2. ~~**Copy-on-write for containers**~~ — Done. `Arc::make_mut` pattern for arrays (PR #729) and hashes, avoiding unnecessary cloning when single-owned.
 3. **Cycle collector** — If/when circular object graphs become a practical issue, add a simple cycle collector (e.g. trial deletion algorithm) on top of Arc. Full tracing GC is overkill if Arc handles 99% of cases.
 
 ### P2. Interpreter bridge elimination
