@@ -2281,8 +2281,43 @@ impl Interpreter {
         cloned
     }
 
+    /// Push values into a shared array variable in-place, avoiding full-array
+    /// clones on every push.  When the variable lives in `shared_vars` the
+    /// lock is held for the entire read-modify-write so concurrent pushes are
+    /// safe and O(1) amortised instead of O(n).
+    pub(crate) fn push_to_shared_var(
+        &mut self,
+        key: &str,
+        values: Vec<Value>,
+        target_fallback: &Value,
+    ) -> Value {
+        if key.starts_with('@') {
+            let mut sv = self.shared_vars.lock().unwrap();
+            if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
+                let items = Arc::make_mut(arc_items);
+                items.extend(values);
+                let result = Value::Array(Arc::clone(arc_items), *kind);
+                self.env.insert(key.to_string(), result.clone());
+                return result;
+            }
+        }
+        // Fallback for non-shared arrays
+        let mut items = match self.env.get(key) {
+            Some(Value::Array(existing, ..)) => existing.to_vec(),
+            _ => match target_fallback {
+                Value::Array(v, ..) => v.to_vec(),
+                _ => Vec::new(),
+            },
+        };
+        items.extend(values);
+        let result = Value::real_array(items);
+        self.set_shared_var(key, result.clone());
+        result
+    }
+
     /// Read a shared array variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
+    #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
         if key.starts_with('@') {
             let sv = self.shared_vars.lock().unwrap();
