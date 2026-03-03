@@ -2,6 +2,7 @@ mod ast;
 mod builtins;
 mod compiler;
 pub mod doc_mode;
+pub(crate) mod env;
 mod interpreter;
 mod opcode;
 mod parse_dispatch;

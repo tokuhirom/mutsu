@@ -447,7 +447,7 @@ impl Interpreter {
                             }
                             result = Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
                                 body: vec![],
-                                env: std::collections::HashMap::new(),
+                                env: crate::env::Env::new(),
                                 cache: std::sync::Mutex::new(Some(items)),
                             }));
                         }
@@ -719,7 +719,7 @@ impl Interpreter {
     pub(super) fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
         Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
             body: Vec::new(),
-            env: std::collections::HashMap::new(),
+            env: crate::env::Env::new(),
             cache: std::sync::Mutex::new(Some(items)),
         }))
     }
@@ -736,7 +736,7 @@ impl Interpreter {
     }
 
     pub(super) fn make_x_whatevercode(&self, left: Value) -> Value {
-        let mut env = std::collections::HashMap::new();
+        let mut env = crate::env::Env::new();
         env.insert(
             "__mutsu_callable_type".to_string(),
             Value::Str("WhateverCode".to_string()),

@@ -596,10 +596,8 @@ impl Interpreter {
                     .unwrap_or_else(|| exe_path.clone()),
             ),
         );
-        self.env.insert(
-            "*EXECUTABLE-NAME".to_string(),
-            self.env.get("$*EXECUTABLE-NAME").cloned().unwrap(),
-        );
+        let exec_name = self.env.get("$*EXECUTABLE-NAME").cloned().unwrap();
+        self.env.insert("*EXECUTABLE-NAME".to_string(), exec_name);
         let distro = Self::make_distro_instance();
         self.env.insert("*DISTRO".to_string(), distro.clone());
         self.env.insert("?DISTRO".to_string(), distro);

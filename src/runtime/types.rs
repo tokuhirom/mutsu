@@ -551,7 +551,7 @@ impl Interpreter {
     pub(crate) fn apply_rw_bindings_to_env(
         &self,
         rw_bindings: &[(String, String)],
-        target_env: &mut std::collections::HashMap<String, Value>,
+        target_env: &mut crate::env::Env,
     ) {
         for (param_name, source_name) in rw_bindings {
             if let Some(updated) = self.env.get(param_name).cloned() {

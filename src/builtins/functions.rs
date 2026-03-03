@@ -659,7 +659,7 @@ fn native_function_2arg(
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(
                     crate::value::LazyList {
                         body: vec![],
-                        env: std::collections::HashMap::new(),
+                        env: crate::env::Env::new(),
                         cache: std::sync::Mutex::new(Some(out)),
                     },
                 ))));

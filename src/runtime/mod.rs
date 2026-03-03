@@ -16,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
+use crate::env::Env;
 use crate::opcode::{CompiledCode, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
@@ -318,11 +319,11 @@ pub(crate) struct CallFrameEntry {
     pub file: String,
     pub line: i64,
     pub code: Option<Value>,
-    pub env: HashMap<String, Value>,
+    pub env: Env,
 }
 
 pub struct Interpreter {
-    env: HashMap<String, Value>,
+    env: Env,
     output: String,
     stderr_output: String,
     warn_output: String,
@@ -375,7 +376,7 @@ pub struct Interpreter {
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
     proto_dispatch_stack: Vec<(String, Vec<Value>)>,
-    end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
+    end_phasers: Vec<(Vec<Stmt>, Env)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
     module_load_stack: Vec<String>,
@@ -397,7 +398,7 @@ pub struct Interpreter {
     var_dynamic_flags: HashMap<String, bool>,
     /// Stack of caller environments for $CALLER:: / $DYNAMIC:: resolution.
     /// Each entry is a snapshot of the env at the point a sub/function was called.
-    caller_env_stack: Vec<HashMap<String, Value>>,
+    caller_env_stack: Vec<Env>,
     /// Variable binding aliases: maps target name -> source name.
     /// When target is read, the value of source is returned instead.
     /// Set up by $CALLER::target := $source binding.
@@ -1281,7 +1282,7 @@ impl Interpreter {
             },
         );
         let mut interpreter = Self {
-            env,
+            env: Env::from(env),
             output: String::new(),
             stderr_output: String::new(),
             warn_output: String::new(),
@@ -1530,8 +1531,8 @@ impl Interpreter {
 
     pub fn set_program_path(&mut self, path: &str) {
         self.program_path = Some(path.to_string());
-        self.env
-            .insert("*PROGRAM".to_string(), self.make_io_path_instance(path));
+        let io_path = self.make_io_path_instance(path);
+        self.env.insert("*PROGRAM".to_string(), io_path);
         self.env
             .insert("*PROGRAM-NAME".to_string(), Value::Str(path.to_string()));
     }
@@ -1851,12 +1852,29 @@ impl Interpreter {
         self.warn_suppression_depth > 0
     }
 
-    pub(crate) fn env(&self) -> &HashMap<String, Value> {
+    pub(crate) fn env(&self) -> &Env {
         &self.env
     }
 
     pub(crate) fn env_insert(&mut self, key: String, value: Value) {
         self.env.insert(key, value);
+    }
+
+    /// O(1) clone of the env (just Arc::clone).
+    pub(crate) fn clone_env(&self) -> Env {
+        self.env.clone()
+    }
+
+    /// Replace the entire env.
+    #[allow(dead_code)]
+    pub(crate) fn set_env(&mut self, env: Env) {
+        self.env = env;
+    }
+
+    /// Take the env out, replacing it with an empty Env.
+    #[allow(dead_code)]
+    pub(crate) fn take_env(&mut self) -> Env {
+        std::mem::take(&mut self.env)
     }
 
     fn normalize_var_meta_name(name: &str) -> &str {
@@ -2069,10 +2087,7 @@ impl Interpreter {
 
     /// Pop caller env and apply any dynamic variable writes back to the given env.
     /// Use this instead of `pop_caller_env()` at function return sites that restore `saved_env`.
-    pub(crate) fn pop_caller_env_with_writeback(
-        &mut self,
-        restored_env: &mut HashMap<String, Value>,
-    ) {
+    pub(crate) fn pop_caller_env_with_writeback(&mut self, restored_env: &mut Env) {
         if let Some(popped) = self.caller_env_stack.pop() {
             for (key, value) in &popped {
                 if self.is_var_dynamic(key) && restored_env.get(key) != Some(value) {

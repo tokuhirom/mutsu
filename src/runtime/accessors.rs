@@ -448,7 +448,7 @@ impl Interpreter {
         }
 
         let left_return_type = self.callable_return_type(&left);
-        let mut env = std::collections::HashMap::new();
+        let mut env = crate::env::Env::new();
         env.insert("__mutsu_compose_left".to_string(), left);
         env.insert("__mutsu_compose_right".to_string(), right);
         if let Some(rt) = left_return_type {
@@ -467,7 +467,7 @@ impl Interpreter {
         )
     }
 
-    pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
+    pub(crate) fn env_mut(&mut self) -> &mut Env {
         &mut self.env
     }
 
@@ -1122,7 +1122,7 @@ impl Interpreter {
 
         let mut symbols: HashMap<String, Value> = HashMap::new();
 
-        for (key, val) in &self.env {
+        for (key, val) in self.env.iter() {
             if key.starts_with("__mutsu_callable_id::") {
                 continue;
             }

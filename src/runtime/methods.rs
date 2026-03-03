@@ -1360,7 +1360,7 @@ impl Interpreter {
                     return Ok(Value::LazyList(std::sync::Arc::new(
                         crate::value::LazyList {
                             body: vec![],
-                            env: HashMap::new(),
+                            env: crate::env::Env::new(),
                             cache: std::sync::Mutex::new(Some(out)),
                         },
                     )));
@@ -1444,7 +1444,7 @@ impl Interpreter {
                 return Ok(Value::LazyList(std::sync::Arc::new(
                     crate::value::LazyList {
                         body: vec![],
-                        env: HashMap::new(),
+                        env: crate::env::Env::new(),
                         cache: std::sync::Mutex::new(Some(out)),
                     },
                 )));
@@ -4075,7 +4075,7 @@ impl Interpreter {
                         _ => vec!["_".to_string()],
                     };
 
-                    let mut env = HashMap::new();
+                    let mut env = crate::env::Env::new();
                     env.insert("__method_compose_target__".to_string(), callable);
                     let call_args = params.iter().cloned().map(Expr::Var).collect();
                     let method_args = args.into_iter().map(Expr::Literal).collect();

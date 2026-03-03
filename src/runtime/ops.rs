@@ -719,7 +719,7 @@ impl Interpreter {
             "+>" => Ok(Self::shift_right_i64(to_int(left), to_int(right))),
             "x" => {
                 if matches!(right, Value::Whatever) {
-                    let mut env = std::collections::HashMap::new();
+                    let mut env = crate::env::Env::new();
                     env.insert(
                         "__mutsu_callable_type".to_string(),
                         Value::Str("WhateverCode".to_string()),
@@ -781,7 +781,7 @@ impl Interpreter {
                     Ok(Value::LazyList(std::sync::Arc::new(
                         crate::value::LazyList {
                             body: Vec::new(),
-                            env: std::collections::HashMap::new(),
+                            env: crate::env::Env::new(),
                             cache: std::sync::Mutex::new(Some(items)),
                         },
                     )))

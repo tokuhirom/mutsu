@@ -877,11 +877,7 @@ impl Interpreter {
         }
     }
 
-    fn restore_env_preserving_existing(
-        &mut self,
-        saved_env: &std::collections::HashMap<String, Value>,
-        params: &[String],
-    ) {
+    fn restore_env_preserving_existing(&mut self, saved_env: &Env, params: &[String]) {
         let current = self.env.clone();
         let mut restored = saved_env.clone();
         for key in saved_env.keys() {
