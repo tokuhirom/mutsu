@@ -427,7 +427,7 @@ impl VM {
             self.eval_smartmatch_with_junctions(left, right, false)?
         };
         self.stack.push(out);
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         *ip = rhs_end;
         Ok(())
     }

@@ -359,7 +359,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.interpreter.use_module(module)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -383,7 +383,7 @@ impl VM {
             })
             .unwrap_or_default();
         self.interpreter.import_module(module, &tags)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -394,7 +394,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.interpreter.no_module(module)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -405,7 +405,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.interpreter.need_module(module)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -485,7 +485,7 @@ impl VM {
         let named_arg = Value::Pair(trait_name, Box::new(trait_value));
         self.interpreter
             .call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -508,7 +508,7 @@ impl VM {
             if name.resolve().is_empty() {
                 self.stack.push(result);
             }
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterEnum expects EnumDecl"))
@@ -564,7 +564,7 @@ impl VM {
             );
             env.entry(resolved_name.clone())
                 .or_insert(Value::Package(Symbol::intern(&resolved_name)));
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterClass expects ClassDecl"))
@@ -592,7 +592,7 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(Symbol::intern(&name_str)));
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterRole expects RoleDecl"))
@@ -613,7 +613,7 @@ impl VM {
         {
             self.interpreter
                 .register_subset_decl(&name.resolve(), base, predicate.as_ref());
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterSubset expects SubsetDecl"))
@@ -635,7 +635,7 @@ impl VM {
         let run_result = self.run_range(code, body_start, end, compiled_fns);
         self.stack.truncate(saved_depth);
         self.interpreter.finish_subtest(ctx, &label, run_result)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         *ip = end;
         Ok(())
     }
@@ -658,7 +658,7 @@ impl VM {
 
         // Run the react event loop (processes all registered subscriptions)
         let event_result = self.interpreter.run_react_event_loop();
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
 
         *ip = end;
         run_result?;
@@ -679,7 +679,7 @@ impl VM {
         if let Stmt::Block(body) = stmt {
             self.interpreter
                 .run_whenever_with_value(supply_val, target_var, &param, body)?;
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             Ok(())
         } else {
             Err(RuntimeError::new("WheneverScope expects Block body"))
