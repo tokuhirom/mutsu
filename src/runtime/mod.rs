@@ -2351,17 +2351,19 @@ impl Interpreter {
                 return result;
             }
         }
-        // Fallback for non-shared arrays
-        let mut items = match self.env.get(key) {
-            Some(Value::Array(existing, ..)) => existing.to_vec(),
-            _ => match target_fallback {
-                Value::Array(v, ..) => v.to_vec(),
-                _ => Vec::new(),
-            },
+        // Fallback for non-shared arrays: use Arc::make_mut for COW
+        if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(key) {
+            let items = Arc::make_mut(arc_items);
+            items.extend(values);
+            return Value::Array(Arc::clone(arc_items), *kind);
+        }
+        let mut items = match target_fallback {
+            Value::Array(v, ..) => v.to_vec(),
+            _ => Vec::new(),
         };
         items.extend(values);
         let result = Value::real_array(items);
-        self.set_shared_var(key, result.clone());
+        self.env.insert(key.to_string(), result.clone());
         result
     }
 
