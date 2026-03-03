@@ -189,7 +189,7 @@ impl VM {
         } else {
             runtime::value_to_list(&iterable)
         };
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         let body_start = *ip + 1;
         let loop_end = spec.body_end as usize;
 
@@ -529,7 +529,7 @@ impl VM {
             self.interpreter.env_mut().remove("_");
         }
         self.stack.push(last);
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         *ip = end;
         Ok(())
     }
@@ -734,7 +734,7 @@ impl VM {
             Err(e) => {
                 // Exception — restore let saves
                 self.interpreter.restore_let_saves(let_mark);
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 if catch_begin >= control_begin {
                     return Err(e);
                 }

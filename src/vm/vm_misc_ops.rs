@@ -1181,12 +1181,12 @@ impl VM {
                     self.interpreter.discard_let_saves(mark);
                 } else {
                     self.interpreter.restore_let_saves(mark);
-                    self.sync_locals_from_env(code);
+                    self.env_dirty = true;
                 }
             }
             Err(e) => {
                 self.interpreter.restore_let_saves(mark);
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 return Err(e);
             }
         }

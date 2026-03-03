@@ -32,6 +32,7 @@ pub(super) struct VmCallFrame {
     pub saved_locals: Vec<Value>,
     pub saved_stack_depth: usize,
     pub saved_readonly: HashSet<String>,
+    pub saved_env_dirty: bool,
 }
 
 pub(crate) struct VM {
@@ -47,6 +48,9 @@ pub(crate) struct VM {
     topic_source_var: Option<String>,
     /// Stack of saved call frames for compiled function/closure/method calls.
     call_frames: Vec<VmCallFrame>,
+    /// When true, locals may be stale relative to env (interpreter bridge modified env).
+    /// Cleared after sync_locals_from_env or pop_call_frame.
+    env_dirty: bool,
 }
 
 impl VM {
@@ -108,6 +112,7 @@ impl VM {
             container_ref_var: None,
             topic_source_var: None,
             call_frames: Vec::new(),
+            env_dirty: false,
         }
     }
 
@@ -834,7 +839,7 @@ impl VM {
                     .interpreter
                     .eval_sequence_values(left, right, *exclude_end)?;
                 self.stack.push(out);
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 *ip += 1;
             }
 
@@ -956,7 +961,7 @@ impl VM {
                 if let Some(Value::LazyList(list)) = self.stack.pop() {
                     // Sink context must realize lazy gathers for side effects.
                     self.interpreter.force_lazy_list_bridge(&list)?;
-                    self.sync_locals_from_env(code);
+                    self.env_dirty = true;
                 }
                 *ip += 1;
             }
@@ -1009,7 +1014,7 @@ impl VM {
             OpCode::Note(n) => {
                 self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 *ip += 1;
             }
 

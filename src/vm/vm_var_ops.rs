@@ -411,7 +411,7 @@ impl VM {
                 && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
             {
                 let result = self.interpreter.call_function(name, Vec::new())?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
@@ -425,11 +425,11 @@ impl VM {
                 let pkg = def.package.resolve();
                 let result =
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             } else {
                 let result = self.interpreter.call_function_def(&def, &[])?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             }
         } else if self.interpreter.has_class(name)
@@ -445,7 +445,7 @@ impl VM {
             let result = self
                 .interpreter
                 .call_sub_value(sub_val, Vec::new(), false)?;
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             result
         } else if self.interpreter.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
@@ -454,7 +454,7 @@ impl VM {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             } else if let Some(native_result) =
                 self.try_native_function(crate::symbol::Symbol::intern(name), &[])
@@ -462,7 +462,7 @@ impl VM {
                 native_result?
             } else {
                 let result = self.interpreter.call_function(name, Vec::new())?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             }
         } else if self.interpreter.has_multi_function(name) {
@@ -470,11 +470,11 @@ impl VM {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             } else {
                 let result = self.interpreter.call_function(name, Vec::new())?;
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 result
             }
         } else if name == "callsame"
@@ -484,7 +484,7 @@ impl VM {
             || name == "nextcallee"
         {
             let result = self.interpreter.call_function(name, Vec::new())?;
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             result
         } else if name == "NaN" {
             Value::Num(f64::NAN)
@@ -1998,6 +1998,7 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        self.ensure_locals_synced(code);
         let idx = idx as usize;
         // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
         let name = code.locals.get(idx).cloned().unwrap_or_default();
@@ -2255,6 +2256,7 @@ impl VM {
             return;
         }
 
+        self.ensure_locals_synced(code);
         // MY:: pseudo-stash: collect all variable names from current scope.
         let mut entries: HashMap<String, Value> = HashMap::new();
         for (i, var_name) in code.locals.iter().enumerate() {

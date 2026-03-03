@@ -2,18 +2,29 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl VM {
-    /// Save the current env, locals, stack depth, and readonly vars into a new call frame.
+    /// Sync locals from env if the dirty flag is set, then clear the flag.
+    pub(super) fn ensure_locals_synced(&mut self, code: &CompiledCode) {
+        if self.env_dirty {
+            self.sync_locals_from_env(code);
+            self.env_dirty = false;
+        }
+    }
+
+    /// Save the current env, locals, stack depth, readonly vars, and env_dirty flag
+    /// into a new call frame. Resets env_dirty to false for the new frame.
     pub(super) fn push_call_frame(&mut self) {
         let frame = VmCallFrame {
             saved_env: self.interpreter.clone_env(),
             saved_readonly: self.interpreter.save_readonly_vars(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
+            saved_env_dirty: self.env_dirty,
         };
+        self.env_dirty = false;
         self.call_frames.push(frame);
     }
 
-    /// Pop the most recent call frame and restore locals and readonly vars.
+    /// Pop the most recent call frame and restore locals, readonly vars, and env_dirty flag.
     /// Returns the frame so callers can access `saved_env` for site-specific merge logic.
     pub(super) fn pop_call_frame(&mut self) -> VmCallFrame {
         let mut frame = self
@@ -23,6 +34,7 @@ impl VM {
         self.locals = std::mem::take(&mut frame.saved_locals);
         self.interpreter
             .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
+        self.env_dirty = frame.saved_env_dirty;
         frame
     }
 

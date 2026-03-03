@@ -246,7 +246,7 @@ impl VM {
         {
             let result = self.interpreter.call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             return Ok(());
         }
         if let Some(callable) = call_me_override {
@@ -255,7 +255,7 @@ impl VM {
                 .call_method_with_values(callable, "CALL-ME", args);
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         } else if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -270,7 +270,7 @@ impl VM {
             }
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
         } else {
@@ -283,7 +283,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(None);
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         }
         Ok(())
     }
@@ -318,7 +318,7 @@ impl VM {
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
         } else {
@@ -329,7 +329,7 @@ impl VM {
             let result = self.interpreter.call_function(&name, args)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         }
         Ok(())
     }
@@ -420,7 +420,7 @@ impl VM {
             let result = self.exec_protect_block_inline(code, &code_val);
             let _ = crate::runtime::native_methods::release_lock(&lock, me);
             self.stack.push(result?);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             return Ok(());
         }
 
@@ -491,7 +491,7 @@ impl VM {
                     skip_native,
                 )?;
                 self.stack.push(Value::array(vals));
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
             }
             Some("*") => {
                 match self.call_method_all_with_fallback(
@@ -506,7 +506,7 @@ impl VM {
             }
             _ => {
                 self.stack.push(call_result?);
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
             }
         }
         Ok(())
@@ -684,7 +684,7 @@ impl VM {
 
     pub(super) fn exec_call_method_dynamic_op(
         &mut self,
-        code: &CompiledCode,
+        _code: &CompiledCode,
         arity: u32,
     ) -> Result<(), RuntimeError> {
         let arity = arity as usize;
@@ -724,7 +724,7 @@ impl VM {
             }
         };
         self.stack.push(call_result?);
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -816,7 +816,7 @@ impl VM {
             let result = self.exec_protect_block_inline(code, &code_val);
             let _ = crate::runtime::native_methods::release_lock(&lock, me);
             self.stack.push(result?);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             return Ok(());
         }
 
@@ -871,7 +871,7 @@ impl VM {
             Some("+") => {
                 let val = call_result?;
                 self.stack.push(Value::array(vec![val]));
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
             }
             Some("*") => match call_result {
                 Ok(val) => self.stack.push(Value::array(vec![val])),
@@ -879,7 +879,7 @@ impl VM {
             },
             _ => {
                 self.stack.push(call_result?);
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
             }
         }
         Ok(())
@@ -934,7 +934,7 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(None);
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             return Ok(());
         }
 
@@ -943,7 +943,7 @@ impl VM {
         self.interpreter.set_pending_call_arg_sources(None);
         let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
         self.stack.push(result);
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -984,7 +984,7 @@ impl VM {
                 self.interpreter.set_pending_call_arg_sources(None);
                 let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
                 self.stack.push(result);
-                self.sync_locals_from_env(code);
+                self.env_dirty = true;
                 return Ok(());
             }
             self.interpreter
@@ -1006,7 +1006,7 @@ impl VM {
         };
         let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
         self.stack.push(result);
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -1169,7 +1169,7 @@ impl VM {
                     source_kind,
                 );
             }
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         }
         // Preserve the container type of the target: Array→Array, List→List
         let result_kind = match &target {
@@ -1326,7 +1326,7 @@ impl VM {
                 items.clone(),
                 *kind,
             );
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         }
         // Preserve the container type of the target
         let result_kind = match &target {
@@ -1389,7 +1389,7 @@ impl VM {
         {
             let result = self.interpreter.call_sub_value(sub_val, args, false)?;
             self.stack.push(result);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             return Ok(());
         }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
@@ -1400,7 +1400,7 @@ impl VM {
                 self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
             call_result?;
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?;
         } else {
@@ -1408,7 +1408,7 @@ impl VM {
             let exec_result = self.interpreter.exec_call_values(&name, args);
             self.interpreter.set_pending_call_arg_sources(None);
             exec_result?;
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
         }
         Ok(())
     }
@@ -1427,7 +1427,7 @@ impl VM {
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         self.interpreter.exec_call_pairs_values(&name, args)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -1453,11 +1453,11 @@ impl VM {
         // Try native function first (same as non-slip call path)
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
-            self.sync_locals_from_env(code);
+            self.env_dirty = true;
             return Ok(());
         }
         self.interpreter.exec_call_pairs_values(&name, args)?;
-        self.sync_locals_from_env(code);
+        self.env_dirty = true;
         Ok(())
     }
 
@@ -1465,7 +1465,7 @@ impl VM {
     /// of creating a new VM.
     fn exec_protect_block_inline(
         &mut self,
-        outer_code: &CompiledCode,
+        _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
         let block_cc = match code_val {
@@ -1522,7 +1522,7 @@ impl VM {
         // Restore outer state
         self.locals = saved_locals;
         self.stack = saved_stack;
-        self.sync_locals_from_env(outer_code);
+        self.env_dirty = true;
 
         match exec_err {
             Some(e) => Err(e),
