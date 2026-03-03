@@ -584,7 +584,14 @@ impl Compiler {
                             continue;
                         }
                         Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
-                            sub_compiler.compile_block_inline(stmts);
+                            if Self::has_block_placeholders(stmts) {
+                                sub_compiler.compile_stmt(&Stmt::Die(Expr::Literal(Value::Str(
+                                    "Implicit placeholder parameters are not available in bare nested blocks"
+                                        .to_string(),
+                                ))));
+                            } else {
+                                sub_compiler.compile_block_inline(stmts);
+                            }
                             continue;
                         }
                         _ => {}

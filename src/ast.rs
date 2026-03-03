@@ -754,13 +754,13 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 out.push(prefixed);
             }
         }
-        Expr::ArrayVar(name) if name.starts_with('^') => {
+        Expr::ArrayVar(name) if name.starts_with('^') || name.starts_with(':') => {
             let prefixed = format!("@{}", name);
             if !out.contains(&prefixed) {
                 out.push(prefixed);
             }
         }
-        Expr::HashVar(name) if name.starts_with('^') => {
+        Expr::HashVar(name) if name.starts_with('^') || name.starts_with(':') => {
             let prefixed = format!("%{}", name);
             if !out.contains(&prefixed) {
                 out.push(prefixed);
@@ -1027,25 +1027,29 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             params: placeholders.clone(),
             param_defs: placeholders
                 .iter()
-                .map(|name| ParamDef {
-                    name: name.clone(),
-                    default: None,
-                    multi_invocant: true,
-                    required: false,
-                    named: false,
-                    slurpy: false,
-                    sigilless: false,
-                    type_constraint: None,
-                    literal_value: None,
-                    sub_signature: None,
-                    where_constraint: None,
-                    traits: Vec::new(),
-                    double_slurpy: false,
-                    optional_marker: false,
-                    outer_sub_signature: None,
-                    code_signature: None,
-                    is_invocant: false,
-                    shape_constraints: None,
+                .map(|name| {
+                    // Named placeholders use `:` twigil: $:f, @:f, %:f
+                    let is_named = name.contains(':');
+                    ParamDef {
+                        name: name.clone(),
+                        default: None,
+                        multi_invocant: true,
+                        required: false,
+                        named: is_named,
+                        slurpy: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        double_slurpy: false,
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: false,
+                        shape_constraints: None,
+                    }
                 })
                 .collect(),
             return_type: None,

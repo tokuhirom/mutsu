@@ -315,7 +315,12 @@ impl VM {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
                             } else {
-                                self.interpreter.env_mut().insert("_".to_string(), v);
+                                self.interpreter
+                                    .env_mut()
+                                    .insert("_".to_string(), v.clone());
+                                // Push return value on stack so enclosing compiled
+                                // closures can see it as the block result.
+                                self.stack.push(v);
                             }
                         }
                         break 'for_loop;

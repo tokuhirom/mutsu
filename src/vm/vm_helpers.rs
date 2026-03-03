@@ -1123,10 +1123,6 @@ impl VM {
     }
 
     /// Call a compiled closure (Value::Sub with compiled_code).
-    // TODO: Re-enable fast path in exec_call_on_value_op / exec_call_on_code_var_op
-    // once this method fully replicates call_sub_value semantics (leave targeting,
-    // bare-block immediate execution, named param binding with sigiled twigils).
-    #[allow(dead_code)]
     pub(super) fn call_compiled_closure(
         &mut self,
         data: &crate::value::SubData,

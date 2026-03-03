@@ -644,7 +644,7 @@ impl VM {
         code: &CompiledCode,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        _compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -677,11 +677,20 @@ impl VM {
             target
         };
 
-        // TODO: Fast path for compiled closures is disabled for now due to
-        // subtle behavioral differences with the tree-walker (leave targeting,
-        // bare-block immediate execution, named param binding).  The compiled
-        // bytecode is stored in SubData for future use.  Re-enable once
-        // call_compiled_closure fully replicates call_sub_value semantics.
+        // Fast path: if target is a Sub with compiled_code, dispatch to compiled closure
+        if let Value::Sub(ref data) = target
+            && let Some(ref cc) = data.compiled_code
+        {
+            let cc = cc.clone();
+            let data = data.clone();
+            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
+            self.interpreter.set_pending_call_arg_sources(None);
+            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
 
         self.interpreter.set_pending_call_arg_sources(arg_sources);
         let result = self.interpreter.eval_call_on_value(target, args);
@@ -698,7 +707,7 @@ impl VM {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        _compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -718,7 +727,20 @@ impl VM {
         // resolve_code_var handles pseudo-package stripping internally
         let target = self.interpreter.resolve_code_var(&name);
         let result = if !matches!(target, Value::Nil) {
-            // TODO: Fast path for compiled closures disabled (see CallOnValue comment above)
+            // Fast path: compiled closure dispatch
+            if let Value::Sub(ref data) = target
+                && let Some(ref cc) = data.compiled_code
+            {
+                let cc = cc.clone();
+                let data = data.clone();
+                self.interpreter.set_pending_call_arg_sources(arg_sources);
+                let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
+                self.interpreter.set_pending_call_arg_sources(None);
+                let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+                self.stack.push(result);
+                self.sync_locals_from_env(code);
+                return Ok(());
+            }
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.interpreter.eval_call_on_value(target, args);
