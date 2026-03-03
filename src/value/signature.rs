@@ -12,7 +12,10 @@ pub(crate) struct SigParam {
     pub(crate) multi_invocant: bool,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
+    pub(crate) double_slurpy: bool,
     pub(crate) is_capture: bool,
+    pub(crate) is_invocant: bool,
+    pub(crate) sigilless: bool,
     pub(crate) required: bool,
     pub(crate) has_default: bool,
     pub(crate) optional_marker: bool,
@@ -22,6 +25,7 @@ pub(crate) struct SigParam {
     pub(crate) traits: Vec<String>,
     pub(crate) code_signature: Option<Box<SigInfo>>,
     pub(crate) where_constraint: Option<Box<Expr>>,
+    pub(crate) named_names: Vec<String>,
 }
 
 /// Complete signature info stored at runtime.
@@ -54,7 +58,7 @@ pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
 
 /// Convert a ParamDef (from the parser) to a SigParam (for runtime).
 pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
-    let is_capture = p.slurpy && p.name == "_capture";
+    let is_capture = p.slurpy && (p.name == "_capture" || p.sigilless);
 
     let sigil = if p.name.starts_with('@') {
         '@'
@@ -66,7 +70,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
         '$'
     };
 
-    let name = if is_capture
+    let name = if p.name == "_capture"
         || p.name == "__type_only__"
         || p.name.starts_with("__ANON_STATE_")
         || p.name == "__ANON_OPTIONAL__"
@@ -87,13 +91,20 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     let optional_marker =
         is_anon_optional || p.optional_marker || (!p.required && !p.slurpy && p.named);
 
+    // For named params with alias sub-signatures like :x($a) or :x(:y(:z($a))),
+    // extract named_names for introspection.
+    let named_names = collect_named_names(p, &name, is_capture);
+
     SigParam {
         name,
         type_constraint: p.type_constraint.clone(),
         multi_invocant: p.multi_invocant,
         named: p.named,
         slurpy: p.slurpy && !is_capture,
+        double_slurpy: p.double_slurpy,
         is_capture,
+        is_invocant: p.is_invocant,
+        sigilless: p.sigilless,
         required: p.required,
         has_default: p.default.is_some(),
         optional_marker,
@@ -112,6 +123,38 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
             .as_ref()
             .map(|(params, ret)| Box::new(param_defs_to_sig_info(params, ret.clone()))),
         where_constraint: p.where_constraint.clone(),
+        named_names,
+    }
+}
+
+/// For named params with alias sub-signatures (`:x($a)`, `:x(:y(:z($a)))`),
+/// collect the chain of alias names as named_names.
+fn collect_named_names(p: &ParamDef, name: &str, is_capture: bool) -> Vec<String> {
+    if !p.named || is_capture || !matches!(&p.sub_signature, Some(subs) if subs.len() == 1) {
+        return Vec::new();
+    }
+    let subs = p.sub_signature.as_ref().unwrap();
+    let mut names = vec![name.to_string()];
+    collect_named_names_recursive(&subs[0], &mut names);
+    names
+}
+
+/// Recursively collect named alias names from nested `:x(:y(:z($a)))` patterns.
+fn collect_named_names_recursive(pd: &ParamDef, names: &mut Vec<String>) {
+    let inner_name =
+        if pd.name.starts_with('@') || pd.name.starts_with('%') || pd.name.starts_with('&') {
+            pd.name[1..].to_string()
+        } else {
+            pd.name.clone()
+        };
+
+    // If this is a named param with a single sub-signature param, keep recursing
+    if pd.named
+        && let Some(ref subs) = pd.sub_signature
+        && subs.len() == 1
+    {
+        names.push(inner_name);
+        collect_named_names_recursive(&subs[0], names);
     }
 }
 
@@ -150,18 +193,96 @@ fn make_params_value_from_sig_params(params: &[SigParam]) -> Value {
 
 fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     let mut attrs = HashMap::new();
-    attrs.insert("name".to_string(), Value::Str(p.name.clone()));
-    attrs.insert(
-        "type".to_string(),
-        p.type_constraint
-            .as_ref()
-            .map(|t| Value::Str(t.clone()))
-            .unwrap_or(Value::Nil),
-    );
-    attrs.insert("named".to_string(), Value::Bool(p.named));
+    // .name returns the sigiled name (e.g., "$x", "@pos", "%named")
+    // For named params with aliases (:x($a)), resolve the inner variable name
+    let display_name = if !p.named_names.is_empty() {
+        // Has named aliases — get innermost variable name from sub_signature
+        resolve_inner_display_name(p)
+    } else if p.name.is_empty() || p.is_capture || p.sigilless {
+        p.name.clone()
+    } else {
+        format!("{}{}", p.sigil, p.name)
+    };
+    attrs.insert("name".to_string(), Value::Str(display_name));
+
+    // type: resolve to type object (Package) instead of string
+    let type_val = match &p.type_constraint {
+        Some(t) => Value::Package(Symbol::intern(t)),
+        None => Value::Package(Symbol::intern("Any")),
+    };
+    attrs.insert("type".to_string(), type_val);
+
+    // Slurpy hash (*%named) is considered named in Raku
+    let is_named = p.named || (p.slurpy && p.sigil == '%');
+    attrs.insert("named".to_string(), Value::Bool(is_named));
     attrs.insert("slurpy".to_string(), Value::Bool(p.slurpy));
     attrs.insert("sigil".to_string(), Value::Str(p.sigil.to_string()));
     attrs.insert("multi-invocant".to_string(), Value::Bool(p.multi_invocant));
+
+    // readonly: true unless rw/raw/copy/sigilless
+    let is_rw = p.traits.iter().any(|t| t == "rw");
+    let is_raw = p.traits.iter().any(|t| t == "raw") || p.sigilless;
+    let is_copy = p.traits.iter().any(|t| t == "copy");
+    let readonly = !is_rw && !is_raw && !is_copy;
+    attrs.insert("readonly".to_string(), Value::Bool(readonly));
+    attrs.insert("rw".to_string(), Value::Bool(is_rw));
+    attrs.insert("raw".to_string(), Value::Bool(is_raw));
+    attrs.insert("copy".to_string(), Value::Bool(is_copy));
+
+    // optional
+    attrs.insert("optional".to_string(), Value::Bool(p.is_optional()));
+
+    // invocant
+    attrs.insert("invocant".to_string(), Value::Bool(p.is_invocant));
+
+    // positional: not named and not capture
+    attrs.insert(
+        "positional".to_string(),
+        Value::Bool(!p.named && !p.is_capture),
+    );
+
+    // capture
+    attrs.insert("capture".to_string(), Value::Bool(p.is_capture));
+
+    // named_names
+    let named_names_val: Vec<Value> = p
+        .named_names
+        .iter()
+        .map(|n| Value::Str(n.clone()))
+        .collect();
+    attrs.insert("named_names".to_string(), Value::array(named_names_val));
+
+    // prefix: ** for double_slurpy, * for slurpy, else ""
+    let prefix = if p.double_slurpy {
+        "**"
+    } else if p.slurpy {
+        "*"
+    } else {
+        ""
+    };
+    attrs.insert("prefix".to_string(), Value::Str(prefix.to_string()));
+
+    // suffix: ? if optional positional, ! if required named, else ""
+    let suffix = if p.optional_marker && !p.named && !p.slurpy {
+        "?"
+    } else if p.required && p.named {
+        "!"
+    } else {
+        ""
+    };
+    attrs.insert("suffix".to_string(), Value::Str(suffix.to_string()));
+
+    // twigil: extract from name
+    let twigil = extract_twigil(&p.name);
+    attrs.insert("twigil".to_string(), Value::Str(twigil.to_string()));
+
+    // TODO: constraints - needs runtime evaluation support for where clauses
+    // For now, store a marker that allows unconstrained params to smartmatch truely
+    if p.where_constraint.is_none() {
+        // Unconstrained param: .constraints smartmatches truely against anything
+        attrs.insert("constraints".to_string(), Value::Bool(true));
+    }
+
     if let Some(sub) = &p.sub_signature {
         attrs.insert(
             "sub-signature".to_string(),
@@ -169,6 +290,58 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
         );
     }
     Value::make_instance(Symbol::intern("Parameter"), attrs)
+}
+
+/// For named params with aliases (:x($a), :x(:y(:z($a)))),
+/// traverse the sub-signature chain to find the innermost variable name.
+fn resolve_inner_display_name(p: &SigParam) -> String {
+    fn traverse(params: &Option<Vec<SigParam>>) -> Option<String> {
+        let subs = params.as_ref()?;
+        if subs.len() != 1 {
+            return None;
+        }
+        let inner = &subs[0];
+        // If this inner param also has named aliases, recurse deeper
+        if !inner.named_names.is_empty()
+            && let Some(deeper) = traverse(&inner.sub_signature)
+        {
+            return Some(deeper);
+        }
+        // Return the sigiled name of the innermost param
+        if inner.name.is_empty() || inner.is_capture || inner.sigilless {
+            Some(inner.name.clone())
+        } else {
+            Some(format!("{}{}", inner.sigil, inner.name))
+        }
+    }
+    traverse(&p.sub_signature).unwrap_or_else(|| format!("{}{}", p.sigil, p.name))
+}
+
+/// Extract twigil from a parameter name like `$!x` → `!`, `$.x` → `.`, `$*x` → `*`.
+fn extract_twigil(name: &str) -> &str {
+    // Name may start with sigil ($, @, %, &) followed by optional twigil
+    let after_sigil = if name.starts_with('$')
+        || name.starts_with('@')
+        || name.starts_with('%')
+        || name.starts_with('&')
+    {
+        &name[1..]
+    } else {
+        return "";
+    };
+    if after_sigil.starts_with('!') {
+        "!"
+    } else if after_sigil.starts_with('.') {
+        "."
+    } else if after_sigil.starts_with('*') {
+        "*"
+    } else if after_sigil.starts_with('^') {
+        "^"
+    } else if after_sigil.starts_with('?') {
+        "?"
+    } else {
+        ""
+    }
 }
 
 pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {
