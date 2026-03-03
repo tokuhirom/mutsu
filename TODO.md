@@ -135,8 +135,8 @@ variable read. `WeakSub` for `&?BLOCK` self-reference only.
 Remove remaining tree-walker fallbacks in the VM:
 - [x] Closure compilation infrastructure (Lambda, AnonSub, AnonSubParams, BlockClosure bodies compiled to bytecode and stored in `SubData.compiled_code`)
 - [x] Closure execution fast path (`call_compiled_closure` enabled for VM-internal closure calls; leave targeting fixed, `.assuming()` support added)
-- [ ] Class/role declaration compilation
-- [ ] Full method dispatch compilation
+- [x] Class/role declaration compilation
+- [x] Full method dispatch compilation
 - [ ] Remove `InterpretExpr` / `InterpretStmt` opcodes entirely
 
 ### P3. Optimization pipeline
