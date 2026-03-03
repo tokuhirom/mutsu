@@ -1571,6 +1571,7 @@ impl Interpreter {
             "Setty",
             "Baggy",
             "Mixy",
+            "Grammar",
         ];
         for parent in parents {
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")

@@ -715,7 +715,12 @@ impl Interpreter {
         // but the first arg could be a Pair value being tested.
         let (value, type_name, desc) = Self::extract_isa_ok_args(args);
         let todo = Self::named_bool(args, "todo");
-        let ok = value.isa_check(&type_name) || self.type_matches_value(&type_name, value);
+        let mut ok = value.isa_check(&type_name) || self.type_matches_value(&type_name, value);
+        // For Package values, also check full MRO (handles grammar/class inheritance)
+        if !ok && let Value::Package(name) = value {
+            let mro = self.class_mro(&name.resolve());
+            ok = mro.contains(&type_name);
+        }
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
     }

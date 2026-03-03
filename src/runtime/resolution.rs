@@ -35,6 +35,60 @@ impl Interpreter {
         }
     }
 
+    /// Collect token defs for a given scope (exact + :sym<> variants).
+    pub(crate) fn collect_token_defs_for_scope(
+        &self,
+        scope: &str,
+        name: &str,
+        defs: &mut Vec<FunctionDef>,
+    ) {
+        let exact_key = format!("{scope}::{name}");
+        if let Some(exact) = self.token_defs.get(&Symbol::intern(&exact_key)) {
+            defs.extend(exact.clone());
+        }
+        let sym_prefix = format!("{scope}::{name}:sym<");
+        let mut sym_keys: Vec<String> = self
+            .token_defs
+            .keys()
+            .map(|key| key.resolve())
+            .filter(|key| key.starts_with(&sym_prefix))
+            .collect();
+        sym_keys.sort();
+        for key in &sym_keys {
+            if let Some(sym_defs) = self.token_defs.get(&Symbol::intern(key)) {
+                defs.extend(sym_defs.clone());
+            }
+        }
+    }
+
+    /// Get parent class names without requiring &mut self (no MRO caching).
+    pub(crate) fn class_parents_readonly(&self, class_name: &str) -> Vec<String> {
+        if let Some(class_def) = self.classes.get(class_name) {
+            if !class_def.mro.is_empty() {
+                return class_def.mro.clone();
+            }
+            return class_def.parents.clone();
+        }
+        vec![]
+    }
+
+    /// Walk MRO (read-only) collecting ancestor names.
+    pub(crate) fn mro_readonly(&self, class_name: &str) -> Vec<String> {
+        let mut result = vec![class_name.to_string()];
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(class_name.to_string());
+        let mut queue = vec![class_name.to_string()];
+        while let Some(current) = queue.pop() {
+            for parent in self.class_parents_readonly(&current) {
+                if visited.insert(parent.clone()) {
+                    result.push(parent.clone());
+                    queue.push(parent);
+                }
+            }
+        }
+        result
+    }
+
     pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();
@@ -54,38 +108,68 @@ impl Interpreter {
                     defs.extend(sym_defs.clone());
                 }
             }
+            // If not found, try walking MRO of the package part
+            if defs.is_empty()
+                && let Some(pos) = name.rfind("::")
+            {
+                let pkg = &name[..pos];
+                let token_name = &name[pos + 2..];
+                for ancestor in self.mro_readonly(pkg) {
+                    if ancestor == pkg {
+                        continue; // already checked
+                    }
+                    self.collect_token_defs_for_scope(&ancestor, token_name, &mut defs);
+                    if !defs.is_empty() {
+                        break;
+                    }
+                }
+            }
             return if defs.is_empty() { None } else { Some(defs) };
         }
         let mut defs = Vec::new();
-        for scope in [&self.current_package, "GLOBAL"] {
-            let exact_key = format!("{scope}::{name}");
-            if let Some(exact) = self.token_defs.get(&Symbol::intern(&exact_key)) {
-                defs.extend(exact.clone());
+        // Check current package and its MRO
+        let scopes_to_check = self.mro_readonly(&self.current_package);
+        for scope in &scopes_to_check {
+            self.collect_token_defs_for_scope(scope, name, &mut defs);
+            if !defs.is_empty() {
+                break;
             }
-            let sym_prefix = format!("{scope}::{name}:sym<");
-            let mut sym_keys: Vec<String> = self
-                .token_defs
-                .keys()
-                .map(|key| key.resolve())
-                .filter(|key| key.starts_with(&sym_prefix))
-                .collect();
-            sym_keys.sort();
-            for key in &sym_keys {
-                if let Some(sym_defs) = self.token_defs.get(&Symbol::intern(key)) {
-                    defs.extend(sym_defs.clone());
-                }
-            }
+        }
+        // Also check GLOBAL
+        if defs.is_empty() {
+            self.collect_token_defs_for_scope("GLOBAL", name, &mut defs);
         }
         if defs.is_empty() { None } else { Some(defs) }
     }
 
     pub(crate) fn has_proto_token(&self, name: &str) -> bool {
         if name.contains("::") {
-            return self.proto_tokens.contains(name);
+            if self.proto_tokens.contains(name) {
+                return true;
+            }
+            // Walk MRO for qualified names
+            if let Some(pos) = name.rfind("::") {
+                let pkg = &name[..pos];
+                let token_name = &name[pos + 2..];
+                for ancestor in self.mro_readonly(pkg) {
+                    if ancestor == pkg {
+                        continue;
+                    }
+                    if self
+                        .proto_tokens
+                        .contains(&format!("{ancestor}::{token_name}"))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
-        let local = format!("{}::{}", self.current_package, name);
-        if self.proto_tokens.contains(&local) {
-            return true;
+        // Check current package MRO
+        for scope in self.mro_readonly(&self.current_package) {
+            if self.proto_tokens.contains(&format!("{scope}::{name}")) {
+                return true;
+            }
         }
         self.proto_tokens.contains(&format!("GLOBAL::{}", name))
     }

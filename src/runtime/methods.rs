@@ -3998,6 +3998,21 @@ impl Interpreter {
                 Value::Sub(data) => Ok(Value::Str(data.name.resolve())),
                 _ => Ok(Value::Nil),
             },
+            "isa" if args.len() == 1 && matches!(&target, Value::Package(_)) => {
+                let pkg_name = match &target {
+                    Value::Package(name) => name.resolve(),
+                    _ => unreachable!(),
+                };
+                let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name,
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => other.to_string_value(),
+                };
+                Ok(Value::Bool(
+                    self.class_mro(&pkg_name).contains(&target_name),
+                ))
+            }
             "REPR" if args.is_empty() => match target {
                 Value::CustomType { repr, .. } | Value::CustomTypeInstance { repr, .. } => {
                     Ok(Value::Str(repr))

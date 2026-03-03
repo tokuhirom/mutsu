@@ -1404,7 +1404,7 @@ mod tests {
         let (rest, stmts) = program("grammar G does R { rule TOP { ^ <x> } }").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        assert!(matches!(&stmts[0], Stmt::Package { name, .. } if name == "G"));
+        assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "G"));
     }
 
     #[test]

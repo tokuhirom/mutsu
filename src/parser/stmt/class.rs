@@ -768,24 +768,38 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
     let mut r = rest;
+    let mut parents = Vec::new();
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
-        let (r2, _) = qualified_ident(r2)?;
+        let (r2, parent_name) = qualified_ident(r2)?;
+        parents.push(parent_name);
         let (r2, _) = ws(r2)?;
         r = r2;
     }
+    let mut does_parents = Vec::new();
     while let Some(r2) = keyword("does", r) {
         let (r2, _) = ws1(r2)?;
-        let (r2, _) = qualified_ident(r2)?;
+        let (r2, role_name) = qualified_ident(r2)?;
+        does_parents.push(role_name);
         let (r2, _) = ws(r2)?;
         let (r2, _) = skip_optional_role_args(r2)?;
         r = r2;
     }
+    // Default parent is Grammar if no `is` clause (unless the grammar itself is named Grammar)
+    if parents.is_empty() && name != "Grammar" {
+        parents.push("Grammar".to_string());
+    }
     let (rest, body) = block(r)?;
     Ok((
         rest,
-        Stmt::Package {
+        Stmt::ClassDecl {
             name: Symbol::intern(&name),
+            name_expr: None,
+            parents,
+            is_hidden: false,
+            hidden_parents: vec![],
+            does_parents,
+            repr: None,
             body,
         },
     ))
