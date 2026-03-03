@@ -541,7 +541,7 @@ impl Compiler {
 
     /// Compile a closure body to a `CompiledCode` (not stored in compiled_functions).
     /// Used for Lambda, AnonSub, AnonSubParams, and BlockClosure.
-    pub(super) fn compile_closure_body(
+    pub(crate) fn compile_closure_body(
         &mut self,
         params: &[String],
         param_defs: &[crate::ast::ParamDef],

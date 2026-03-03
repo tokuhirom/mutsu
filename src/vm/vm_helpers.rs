@@ -1426,6 +1426,342 @@ impl VM {
         }
     }
 
+    /// Call a compiled method body (MethodDef with compiled_code).
+    /// Mirrors `Interpreter::run_instance_method_resolved` but executes bytecode.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn call_compiled_method(
+        &mut self,
+        receiver_class_name: &str,
+        owner_class: &str,
+        method_def: &crate::runtime::MethodDef,
+        cc: &CompiledCode,
+        mut attributes: HashMap<String, Value>,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        // Build the base (self) value
+        let base = if let Some(inv) = invocant {
+            inv
+        } else if attributes.is_empty() {
+            Value::Package(crate::symbol::Symbol::intern(receiver_class_name))
+        } else {
+            Value::make_instance(
+                crate::symbol::Symbol::intern(receiver_class_name),
+                attributes.clone(),
+            )
+        };
+
+        let saved_env = self.interpreter.env().clone();
+        let saved_readonly = self.interpreter.save_readonly_vars();
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack_depth = self.stack.len();
+
+        self.interpreter.push_method_class(owner_class.to_string());
+
+        // Detect role context (same logic as class.rs)
+        let role_context = if self.interpreter.is_role(owner_class) {
+            Some(owner_class.to_string())
+        } else if let Some(composed) = self.interpreter.class_composed_roles(receiver_class_name) {
+            let target_fp = crate::ast::function_body_fingerprint(
+                &method_def.params,
+                &method_def.param_defs,
+                &method_def.body,
+            );
+            let composed = composed.clone();
+            composed.iter().find_map(|role_name| {
+                let base_role = role_name
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(role_name.as_str());
+                self.interpreter
+                    .get_role_def(base_role)
+                    .and_then(|role_def| {
+                        role_def
+                            .methods
+                            .values()
+                            .flatten()
+                            .any(|candidate| {
+                                crate::ast::function_body_fingerprint(
+                                    &candidate.params,
+                                    &candidate.param_defs,
+                                    &candidate.body,
+                                ) == target_fp
+                            })
+                            .then(|| base_role.to_string())
+                    })
+            })
+        } else {
+            None
+        };
+
+        // Set ::?CLASS / ::?ROLE
+        self.interpreter.env_mut().insert(
+            "?CLASS".to_string(),
+            Value::Package(crate::symbol::Symbol::intern(owner_class)),
+        );
+        if let Some(role_name) = role_context {
+            self.interpreter.env_mut().insert(
+                "?ROLE".to_string(),
+                Value::Package(crate::symbol::Symbol::intern(&role_name)),
+            );
+        } else {
+            self.interpreter.env_mut().remove("?ROLE");
+        }
+
+        // Set self
+        self.interpreter
+            .env_mut()
+            .insert("self".to_string(), base.clone());
+
+        // Role param bindings
+        if let Some(role_bindings) = self
+            .interpreter
+            .class_role_param_bindings(owner_class)
+            .cloned()
+        {
+            for (name, value) in &role_bindings {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), value.clone());
+            }
+        } else if let Some(role_bindings) = self
+            .interpreter
+            .class_role_param_bindings(receiver_class_name)
+            .cloned()
+        {
+            for (name, value) in &role_bindings {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), value.clone());
+            }
+        }
+
+        // Skip invocant param, bind remaining
+        let mut bind_params = Vec::new();
+        let mut bind_param_defs = Vec::new();
+        for (idx, param_name) in method_def.params.iter().enumerate() {
+            let is_invocant = method_def
+                .param_defs
+                .get(idx)
+                .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+                .unwrap_or(false);
+            if is_invocant {
+                if let Some(pd) = method_def.param_defs.get(idx)
+                    && let Some(constraint) = &pd.type_constraint
+                {
+                    if let Some(captured_name) = constraint.strip_prefix("::") {
+                        self.interpreter.env_mut().insert(
+                            captured_name.to_string(),
+                            crate::runtime::Interpreter::captured_type_object(&base),
+                        );
+                    } else if !self.interpreter.type_matches_value(constraint, &base) {
+                        self.interpreter.pop_method_class();
+                        self.stack.truncate(saved_stack_depth);
+                        self.locals = saved_locals;
+                        *self.interpreter.env_mut() = saved_env;
+                        self.interpreter.restore_readonly_vars(saved_readonly);
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                            param_name,
+                            constraint,
+                            crate::runtime::value_type_name(&base)
+                        )));
+                    }
+                }
+                self.interpreter
+                    .env_mut()
+                    .insert(param_name.clone(), base.clone());
+                continue;
+            }
+            bind_params.push(param_name.clone());
+            if let Some(pd) = method_def.param_defs.get(idx) {
+                bind_param_defs.push(pd.clone());
+            }
+        }
+
+        // Bind attributes
+        for (attr_name, attr_val) in &attributes {
+            self.interpreter
+                .env_mut()
+                .insert(format!("!{}", attr_name), attr_val.clone());
+            self.interpreter
+                .env_mut()
+                .insert(format!(".{}", attr_name), attr_val.clone());
+        }
+
+        // Bind method parameters
+        match self
+            .interpreter
+            .bind_function_args_values(&bind_param_defs, &bind_params, &args)
+        {
+            Ok(_) => {}
+            Err(e) => {
+                self.interpreter.pop_method_class();
+                self.stack.truncate(saved_stack_depth);
+                self.locals = saved_locals;
+                *self.interpreter.env_mut() = saved_env;
+                self.interpreter.restore_readonly_vars(saved_readonly);
+                return Err(e);
+            }
+        }
+
+        // Initialize locals from env
+        self.locals = vec![Value::Nil; cc.locals.len()];
+        for (i, local_name) in cc.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(local_name) {
+                self.locals[i] = val.clone();
+            }
+        }
+        // Load persisted state variable values
+        for (slot, key) in &cc.state_locals {
+            if let Some(val) = self.interpreter.get_state_var(key) {
+                self.locals[*slot] = val.clone();
+            }
+        }
+
+        // Execute bytecode
+        let let_mark = self.interpreter.let_saves_len();
+        let mut ip = 0;
+        let mut result = Ok(());
+        let mut explicit_return: Option<Value> = None;
+        while ip < cc.ops.len() {
+            match self.exec_one(cc, &mut ip, compiled_fns) {
+                Ok(()) => {}
+                Err(e) if e.return_value.is_some() => {
+                    let ret_val = e.return_value.unwrap();
+                    explicit_return = Some(ret_val.clone());
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    self.interpreter.discard_let_saves(let_mark);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) if e.is_fail => {
+                    let failure = self.interpreter.fail_error_to_failure_value(&e);
+                    self.interpreter.restore_let_saves(let_mark);
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(failure);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) => {
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        let ret_val = if result.is_ok() {
+            if self.stack.len() > saved_stack_depth {
+                self.stack.pop().unwrap_or(Value::Nil)
+            } else {
+                // Implicit return from env "_"
+                self.interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil)
+            }
+        } else {
+            Value::Nil
+        };
+
+        self.stack.truncate(saved_stack_depth);
+
+        // Sync state variables back
+        for (slot, key) in &cc.state_locals {
+            let local_name = &cc.locals[*slot];
+            let val = self
+                .interpreter
+                .env()
+                .get(local_name)
+                .cloned()
+                .unwrap_or_else(|| self.locals[*slot].clone());
+            self.interpreter.set_state_var(key.clone(), val);
+        }
+
+        // Sync locals back to env
+        for (i, local_name) in cc.locals.iter().enumerate() {
+            if !local_name.is_empty() {
+                self.interpreter
+                    .env_mut()
+                    .insert(local_name.clone(), self.locals[i].clone());
+            }
+        }
+
+        // Attribute writeback (same logic as class.rs)
+        for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+            let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
+            let env_key = format!("!{}", attr_name);
+            let public_env_key = format!(".{}", attr_name);
+            let env_private = self.interpreter.env().get(&env_key).cloned();
+            let env_public = self.interpreter.env().get(&public_env_key).cloned();
+            if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
+                if *private_val == original && *public_val != original {
+                    attributes.insert(attr_name, public_val.clone());
+                } else {
+                    attributes.insert(attr_name, private_val.clone());
+                }
+                continue;
+            }
+            if let Some(val) = self.interpreter.env().get(&env_key) {
+                attributes.insert(attr_name, val.clone());
+                continue;
+            }
+            if let Some(val) = self.interpreter.env().get(&public_env_key) {
+                attributes.insert(attr_name, val.clone());
+            }
+        }
+
+        // Env merge (same logic as class.rs)
+        let mut merged_env = saved_env.clone();
+        for (k, v) in self.interpreter.env().iter() {
+            if saved_env.contains_key(k) {
+                merged_env.insert(k.clone(), v.clone());
+            }
+            if (k.starts_with('&') && !k.starts_with("&?"))
+                || k.starts_with("__mutsu_method_value::")
+            {
+                merged_env.insert(k.clone(), v.clone());
+            }
+        }
+
+        self.interpreter.pop_method_class();
+        self.locals = saved_locals;
+        *self.interpreter.env_mut() = merged_env;
+        self.interpreter.restore_readonly_vars(saved_readonly);
+
+        let final_result = match result {
+            Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),
+            Err(e) => Err(e),
+        };
+
+        // Adjust return value if it's the same instance (update attributes)
+        final_result.map(|v| {
+            let adjusted = match (&base, &v) {
+                (
+                    Value::Instance {
+                        class_name,
+                        id: base_id,
+                        ..
+                    },
+                    Value::Instance { id: ret_id, .. },
+                ) if base_id == ret_id => Value::Instance {
+                    class_name: *class_name,
+                    attributes: std::sync::Arc::new(attributes.clone()),
+                    id: *base_id,
+                },
+                _ => v,
+            };
+            (adjusted, attributes)
+        })
+    }
+
     /// If the variable has a native int type constraint, wrap the value.
     /// Used by increment/decrement to implement overflow/underflow wrapping.
     pub(super) fn maybe_wrap_native_int(

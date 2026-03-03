@@ -100,7 +100,7 @@ impl Interpreter {
             .map(|(_, def)| def)
     }
 
-    pub(super) fn resolve_method_with_owner(
+    pub(crate) fn resolve_method_with_owner(
         &mut self,
         class_name: &str,
         method_name: &str,
@@ -131,7 +131,7 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn resolve_all_methods_with_owner(
+    pub(crate) fn resolve_all_methods_with_owner(
         &mut self,
         class_name: &str,
         method_name: &str,
@@ -159,7 +159,7 @@ impl Interpreter {
         matches
     }
 
-    pub(super) fn should_skip_defer_method_candidate(
+    pub(crate) fn should_skip_defer_method_candidate(
         &self,
         receiver_class: &str,
         candidate_owner: &str,

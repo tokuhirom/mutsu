@@ -547,6 +547,8 @@ impl VM {
                 does_parents,
                 body,
             )?;
+            // Compile method bodies to bytecode for the fast path
+            self.interpreter.compile_class_methods(&resolved_name);
             // Register CUnion repr if present
             if let Some(repr_name) = repr
                 && repr_name == "CUnion"
@@ -585,6 +587,8 @@ impl VM {
             let name_str = name.resolve();
             self.interpreter
                 .register_role_decl(&name_str, type_params, type_param_defs, body)?;
+            // Compile role method bodies to bytecode
+            self.interpreter.compile_role_methods(&name_str);
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(Symbol::intern(&name_str)));
