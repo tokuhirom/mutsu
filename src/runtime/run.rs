@@ -50,6 +50,7 @@ impl Interpreter {
                 body,
                 multi,
                 is_rw,
+                is_raw,
                 is_export,
                 is_test_assertion,
                 supersede,
@@ -73,6 +74,7 @@ impl Interpreter {
                     body,
                     *multi,
                     *is_rw,
+                    *is_raw,
                     *is_test_assertion,
                     *supersede,
                     &[],
@@ -87,6 +89,7 @@ impl Interpreter {
                         body,
                         *multi,
                         *is_rw,
+                        *is_raw,
                         *is_test_assertion,
                         *supersede,
                     )?;

@@ -575,6 +575,9 @@ impl VM {
         right: Value,
         f: fn(&mut VM, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
+        // Auto-FETCH Proxy containers in binary operations
+        let left = self.interpreter.auto_fetch_proxy(&left)?;
+        let right = self.interpreter.auto_fetch_proxy(&right)?;
         if let Value::Junction { kind, values } = left {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
@@ -840,12 +843,19 @@ impl VM {
                 || self.interpreter.type_matches_value("Numeric", target)
                 || matches!(target, Value::Instance { class_name, .. }
                     if self.interpreter.has_user_method(&class_name.resolve(), "Bridge")));
+        // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
+        let bypass_proxy = matches!(target, Value::Proxy { .. })
+            && !matches!(
+                method_sym.resolve().as_ref(),
+                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            );
         if bypass_supply_extrema_fastpath
             || bypass_supplier_supply_fastpath
             || bypass_gist_fastpath
             || bypass_pickroll_type_fastpath
             || bypass_squish_fastpath
             || bypass_numeric_bridge_instance_fastpath
+            || bypass_proxy
         {
             return None;
         }
@@ -1251,6 +1261,7 @@ impl VM {
             param_defs: data.param_defs.clone(),
             body: vec![],
             is_rw: data.is_rw,
+            is_raw: data.is_raw,
             env: data.env.clone(),
             assumed_positional: data.assumed_positional.clone(),
             assumed_named: data.assumed_named.clone(),

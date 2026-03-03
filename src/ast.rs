@@ -41,6 +41,7 @@ pub(crate) struct FunctionDef {
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_test_assertion: bool,
     pub(crate) is_rw: bool,
+    pub(crate) is_raw: bool,
     /// True when this routine represents an `our method` code reference.
     pub(crate) is_method: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
@@ -355,6 +356,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
         is_rw: bool,
+        is_raw: bool,
         is_export: bool,
         export_tags: Vec<String>,
         is_test_assertion: bool,

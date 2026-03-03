@@ -474,6 +474,8 @@ impl Compiler {
         body: &[Stmt],
         multi: bool,
         state_group: Option<&str>,
+        is_rw: bool,
+        is_raw: bool,
     ) {
         let sink_last_expr = return_type
             .map(|s| Self::is_definite_return_spec(s))
@@ -561,6 +563,16 @@ impl Compiler {
                             sub_compiler.compile_block_inline(stmts);
                             continue;
                         }
+                        Stmt::VarDecl { name, .. } => {
+                            sub_compiler.compile_stmt(stmt);
+                            // VarDecl as last statement returns the variable value
+                            if let Some(&slot) = sub_compiler.local_map.get(name) {
+                                sub_compiler.code.emit(OpCode::GetLocal(slot));
+                            } else {
+                                sub_compiler.emit_nil_value();
+                            }
+                            continue;
+                        }
                         _ => {}
                     }
                 }
@@ -601,6 +613,8 @@ impl Compiler {
             empty_sig: params.is_empty()
                 && param_defs.is_empty()
                 && !Self::body_uses_legacy_args(body),
+            is_rw,
+            is_raw,
         };
         self.compiled_functions.insert(key, cf);
     }
@@ -741,6 +755,15 @@ impl Compiler {
                     } => self.compile_if_value(cond, then_branch, else_branch),
                     Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                         self.compile_block_inline(inner)
+                    }
+                    Stmt::VarDecl { name, .. } => {
+                        self.compile_stmt(stmt);
+                        // VarDecl returns the variable value (like Raku)
+                        if let Some(&slot) = self.local_map.get(name) {
+                            self.code.emit(OpCode::GetLocal(slot));
+                        } else {
+                            self.emit_nil_value();
+                        }
                     }
                     _ => {
                         self.compile_stmt(stmt);

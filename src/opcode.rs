@@ -833,4 +833,9 @@ pub(crate) struct CompiledFunction {
     pub(crate) fingerprint: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
+    /// When true, this sub is declared `is rw`.
+    #[allow(dead_code)]
+    pub(crate) is_rw: bool,
+    /// When true, this sub is declared `is raw` and Proxy values should NOT be auto-FETCHed.
+    pub(crate) is_raw: bool,
 }

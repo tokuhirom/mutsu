@@ -72,6 +72,15 @@ impl VM {
         }
     }
 
+    /// Auto-FETCH any Proxy values in function call arguments.
+    fn auto_fetch_proxy_args(&mut self, args: Vec<Value>) -> Result<Vec<Value>, RuntimeError> {
+        let mut out = Vec::with_capacity(args.len());
+        for arg in args {
+            out.push(self.interpreter.auto_fetch_proxy(&arg)?);
+        }
+        Ok(out)
+    }
+
     fn decode_arg_sources(
         &self,
         code: &CompiledCode,
@@ -220,6 +229,17 @@ impl VM {
         };
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        // Don't auto-FETCH Proxy args for control flow builtins that must preserve containers,
+        // or when in lvalue assignment context (e.g. f() = 42 calls f with in_lvalue_assignment=true).
+        let skip_proxy_fetch = matches!(
+            name.as_str(),
+            "return-rw" | "return" | "die" | "fail" | "leave" | "__mutsu_assign_method_lvalue"
+        ) || self.interpreter.in_lvalue_assignment;
+        let args = if skip_proxy_fetch {
+            args
+        } else {
+            self.auto_fetch_proxy_args(args)?
+        };
         self.interpreter.set_pending_callsite_line(callsite_line);
         // Check if there's a CALL-ME override from trait_mod mixin
         let call_me_override = self
@@ -263,12 +283,15 @@ impl VM {
                 .set_pending_call_arg_sources(arg_sources.clone());
             let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(&name, &args);
             let pkg = self.interpreter.current_package().to_string();
+            let cf_auto_fetch = !cf.is_raw;
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
             if pushed_dispatch {
                 self.interpreter.pop_multi_dispatch();
             }
-            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+            let result = self
+                .interpreter
+                .maybe_fetch_rw_proxy(result?, cf_auto_fetch)?;
             self.stack.push(result);
             self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
@@ -314,9 +337,12 @@ impl VM {
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
+            let cf_auto_fetch = !cf.is_raw;
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
-            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
+            let result = self
+                .interpreter
+                .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
             self.stack.push(result);
             self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
@@ -466,6 +492,31 @@ impl VM {
         {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
+        // Auto-FETCH Proxy containers for non-meta method calls
+        // Skip auto-FETCH for Proxy subclass attribute access and decontainerized proxies
+        let target = if let Value::Proxy {
+            subclass,
+            decontainerized,
+            ..
+        } = &target
+            && !decontainerized
+            && !matches!(
+                method.as_str(),
+                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            ) {
+            let has_subclass_attr = if let Some((_, attrs)) = subclass {
+                attrs.lock().unwrap().contains_key(method.as_str())
+            } else {
+                false
+            };
+            if has_subclass_attr {
+                target
+            } else {
+                self.interpreter.auto_fetch_proxy(&target)?
+            }
+        } else {
+            target
+        };
         let target_for_mod = target.clone();
         let args_for_mod = args.clone();
         let call_result = if !skip_native {
@@ -928,20 +979,26 @@ impl VM {
             && let Some(ref cc) = data.compiled_code
         {
             let cc = cc.clone();
+            let sub_is_rw = data.is_rw;
             let data = data.clone();
             self.interpreter.set_pending_call_arg_sources(arg_sources);
             let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
             self.interpreter.set_pending_call_arg_sources(None);
-            let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());
         }
 
+        let sub_is_rw = if let Value::Sub(ref data) = target {
+            data.is_rw
+        } else {
+            false
+        };
         self.interpreter.set_pending_call_arg_sources(arg_sources);
         let result = self.interpreter.eval_call_on_value(target, args);
         self.interpreter.set_pending_call_arg_sources(None);
-        let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+        let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
         self.stack.push(result);
         self.env_dirty = true;
         Ok(())
@@ -978,20 +1035,26 @@ impl VM {
                 && let Some(ref cc) = data.compiled_code
             {
                 let cc = cc.clone();
+                let sub_is_rw = data.is_rw;
                 let data = data.clone();
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
                 self.interpreter.set_pending_call_arg_sources(None);
-                let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
+                let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
                 self.stack.push(result);
                 self.env_dirty = true;
                 return Ok(());
             }
+            let sub_is_rw = if let Value::Sub(ref data) = target {
+                data.is_rw
+            } else {
+                false
+            };
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
             let result = self.interpreter.eval_call_on_value(target, args);
             self.interpreter.set_pending_call_arg_sources(None);
-            result?
+            self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
         } else {
@@ -1381,6 +1444,12 @@ impl VM {
         };
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
+        // Auto-FETCH Proxy args for statement-level calls (same as CallFunc)
+        let args = if self.interpreter.in_lvalue_assignment {
+            args
+        } else {
+            self.auto_fetch_proxy_args(args)?
+        };
         self.interpreter.set_pending_callsite_line(callsite_line);
         // Check wrap chain for named function calls
         if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(&name)
@@ -1426,6 +1495,12 @@ impl VM {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
+        // Auto-FETCH Proxy args
+        let args = if self.interpreter.in_lvalue_assignment {
+            args
+        } else {
+            self.auto_fetch_proxy_args(args)?
+        };
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.env_dirty = true;
         Ok(())

@@ -46,6 +46,7 @@ impl VM {
                 param_defs: Vec::new(),
                 body: body.clone(),
                 is_rw: false,
+                is_raw: false,
                 env: self.interpreter.env().clone(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
@@ -73,6 +74,7 @@ impl VM {
             return_type,
             body,
             is_rw,
+            is_raw,
             ..
         } = stmt
         {
@@ -88,6 +90,7 @@ impl VM {
                 param_defs: param_defs.clone(),
                 body: body.clone(),
                 is_rw: *is_rw,
+                is_raw: *is_raw,
                 env,
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
@@ -115,6 +118,7 @@ impl VM {
             return_type,
             body,
             is_rw,
+            is_raw,
             ..
         } = stmt
         {
@@ -130,6 +134,7 @@ impl VM {
                 param_defs: param_defs.clone(),
                 body: body.clone(),
                 is_rw: *is_rw,
+                is_raw: *is_raw,
                 env,
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
@@ -160,6 +165,7 @@ impl VM {
                 param_defs: Vec::new(),
                 body: body.clone(),
                 is_rw: false,
+                is_raw: false,
                 env: self.interpreter.env().clone(),
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
@@ -191,6 +197,7 @@ impl VM {
             body,
             multi,
             is_rw,
+            is_raw,
             is_export,
             export_tags,
             is_test_assertion,
@@ -214,6 +221,7 @@ impl VM {
                 body,
                 *multi,
                 *is_rw,
+                *is_raw,
                 *is_test_assertion,
                 *supersede,
                 custom_traits,
@@ -235,6 +243,7 @@ impl VM {
                     body,
                     *multi,
                     *is_rw,
+                    *is_raw,
                     *is_test_assertion,
                     *supersede,
                     custom_traits,

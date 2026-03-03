@@ -10,6 +10,9 @@ use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 
+/// Shared mutable attribute storage for Proxy subclasses.
+pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
+
 mod display;
 mod error;
 pub(crate) mod signature;
@@ -58,6 +61,7 @@ pub struct SubData {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_rw: bool,
+    pub(crate) is_raw: bool,
     pub env: Env,
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: HashMap<String, Value>,
@@ -267,6 +271,10 @@ pub enum Value {
     Proxy {
         fetcher: Box<Value>,
         storer: Box<Value>,
+        /// Subclass name and shared mutable attributes (for Proxy subclasses)
+        subclass: Option<(Symbol, ProxySubclassAttrs)>,
+        /// When true, this Proxy has been decontainerized via .VAR and should not auto-FETCH
+        decontainerized: bool,
     },
     /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
     /// `base_name` is the role name, `type_args` are the type arguments.
@@ -780,6 +788,25 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    /// Create a decontainerized Proxy value (result of .VAR on a Proxy).
+    /// This Proxy won't be auto-FETCHed by method dispatch.
+    pub(crate) fn proxy_var_object(proxy: Value, _target_var: String) -> Self {
+        match proxy {
+            Value::Proxy {
+                fetcher,
+                storer,
+                subclass,
+                ..
+            } => Value::Proxy {
+                fetcher,
+                storer,
+                subclass,
+                decontainerized: true,
+            },
+            other => other,
+        }
+    }
+
     // ---- Arc-wrapping convenience constructors ----
     pub fn array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(items), ArrayKind::List)
@@ -827,6 +854,7 @@ impl Value {
             param_defs,
             body,
             is_rw,
+            is_raw: false,
             env,
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),
@@ -855,6 +883,7 @@ impl Value {
             param_defs,
             body,
             is_rw,
+            is_raw: false,
             env,
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),

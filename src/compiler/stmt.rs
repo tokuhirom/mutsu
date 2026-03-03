@@ -868,6 +868,8 @@ impl Compiler {
                 signature_alternates,
                 body,
                 multi,
+                is_rw,
+                is_raw,
                 ..
             } => {
                 // Validate placeholder conflicts for subs with implicit params
@@ -906,6 +908,8 @@ impl Compiler {
                     body,
                     *multi,
                     state_group.as_deref(),
+                    *is_rw,
+                    *is_raw,
                 );
                 for (alt_params, alt_param_defs) in signature_alternates {
                     self.compile_sub_body(
@@ -916,6 +920,8 @@ impl Compiler {
                         body,
                         *multi,
                         state_group.as_deref(),
+                        *is_rw,
+                        *is_raw,
                     );
                 }
             }
@@ -943,6 +949,7 @@ impl Compiler {
                     body: body.clone(),
                     multi: *multi,
                     is_rw: *is_rw,
+                    is_raw: false,
                     is_export: false,
                     export_tags: Vec::new(),
                     is_test_assertion: false,
@@ -960,6 +967,8 @@ impl Compiler {
                         body,
                         *multi,
                         None,
+                        *is_rw,
+                        false,
                     );
                 }
             }

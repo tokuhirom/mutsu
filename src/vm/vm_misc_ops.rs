@@ -385,6 +385,8 @@ impl VM {
 
     pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // Auto-FETCH Proxy containers
+        let val = self.interpreter.auto_fetch_proxy(&val)?;
         if matches!(
             &val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -441,6 +443,8 @@ impl VM {
 
     pub(super) fn exec_str_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // Auto-FETCH Proxy containers
+        let val = self.interpreter.auto_fetch_proxy(&val)?;
         // If the value is an Instance, try calling the Stringy method
         if let Value::Instance { .. } = &val
             && let Ok(result) =

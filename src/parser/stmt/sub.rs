@@ -575,6 +575,7 @@ pub(super) fn sub_decl_body(
                     body: Vec::new(),
                     multi,
                     is_rw: traits.is_rw,
+                    is_raw: traits.is_raw,
                     is_export: traits.is_export,
                     export_tags: traits.export_tags.clone(),
                     is_test_assertion: traits.is_test_assertion,
@@ -614,6 +615,7 @@ pub(super) fn sub_decl_body(
                 body: Vec::new(),
                 multi,
                 is_rw: traits.is_rw,
+                is_raw: traits.is_raw,
                 is_export: traits.is_export,
                 export_tags: traits.export_tags.clone(),
                 is_test_assertion: traits.is_test_assertion,
@@ -655,6 +657,7 @@ pub(super) fn sub_decl_body(
             body,
             multi,
             is_rw: traits.is_rw,
+            is_raw: traits.is_raw,
             is_export: traits.is_export,
             export_tags: traits.export_tags,
             is_test_assertion: traits.is_test_assertion,
@@ -730,6 +733,7 @@ pub(crate) struct SubTraits {
     pub export_tags: Vec<String>,
     pub is_test_assertion: bool,
     pub is_rw: bool,
+    pub is_raw: bool,
     pub return_type: Option<String>,
     pub associativity: Option<String>,
     /// Non-builtin trait names (e.g. `me'd`) for custom `trait_mod:<is>` dispatch.
@@ -747,6 +751,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut export_tags: Vec<String> = Vec::new();
     let mut is_test_assertion = false;
     let mut is_rw = false;
+    let mut is_raw = false;
     let mut return_type = None;
     let mut associativity = None;
     let mut custom_traits: Vec<String> = Vec::new();
@@ -762,6 +767,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     export_tags,
                     is_test_assertion,
                     is_rw,
+                    is_raw,
                     return_type,
                     associativity,
                     custom_traits: custom_traits.clone(),
@@ -800,6 +806,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
                 is_rw = true;
+            } else if trait_name == "raw" {
+                is_raw = true;
             } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
                 associativity = Some(trait_name.to_string());
             } else if trait_name != "assoc"
@@ -807,7 +815,6 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 && trait_name != "tighter"
                 && trait_name != "looser"
                 && trait_name != "readonly"
-                && trait_name != "raw"
                 && trait_name != "hidden-from-backtrace"
                 && trait_name != "implementation-detail"
                 && trait_name != "nodal"
@@ -873,6 +880,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 export_tags,
                 is_test_assertion,
                 is_rw,
+                is_raw,
                 return_type,
                 associativity,
                 custom_traits: custom_traits.clone(),

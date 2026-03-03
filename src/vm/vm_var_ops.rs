@@ -6,6 +6,68 @@ const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
 impl VM {
+    /// When binding a Proxy to a variable, update the captured envs of its
+    /// FETCH/STORE closures to include the Proxy itself under the variable name.
+    /// This simulates capture-by-reference for the common Proxy binding pattern:
+    ///   `my $proxy := Proxy.new(STORE => -> $, \v { $proxy.VAR... })`
+    fn update_proxy_closure_envs(val: Value, var_name: &str) -> Value {
+        if let Value::Proxy {
+            fetcher,
+            storer,
+            subclass,
+            ..
+        } = val
+        {
+            let new_fetcher = *fetcher;
+            let mut new_storer = *storer;
+            let mut storer_updated = false;
+
+            // Only update the STORE closure (not FETCH) — STORE is the one that
+            // typically references the Proxy variable (e.g., $proxy.VAR.history.push(...))
+            if let Value::Sub(ref data) = new_storer
+                && data.env.contains_key(var_name)
+            {
+                storer_updated = true;
+            }
+
+            if !storer_updated {
+                return Value::Proxy {
+                    fetcher: Box::new(new_fetcher),
+                    storer: Box::new(new_storer),
+                    subclass,
+                    decontainerized: false,
+                };
+            }
+
+            // Build the final Proxy value with updated closures.
+            // We need two passes: first update the closures, then create the Proxy
+            // that references the updated closures.
+            if storer_updated {
+                // Build a proxy reference to inject into the STORE closure.
+                // Use the original (unmodified) closures to create a stable reference.
+                let proxy_for_env = Value::Proxy {
+                    fetcher: Box::new(new_fetcher.clone()),
+                    storer: Box::new(new_storer.clone()),
+                    subclass: subclass.clone(),
+                    decontainerized: false,
+                };
+                if let Value::Sub(ref mut data) = new_storer {
+                    let data = Arc::make_mut(data);
+                    data.env.insert(var_name.to_string(), proxy_for_env);
+                }
+            }
+
+            Value::Proxy {
+                fetcher: Box::new(new_fetcher),
+                storer: Box::new(new_storer),
+                subclass,
+                decontainerized: false,
+            }
+        } else {
+            val
+        }
+    }
+
     fn self_hash_ref_marker() -> Value {
         Value::Pair(
             SELF_HASH_REF_SENTINEL.to_string(),
@@ -1590,6 +1652,17 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
+        // If the value is a Proxy, FETCH → increment → STORE
+        if let Value::Proxy { storer, .. } = &raw_val
+            && !matches!(storer.as_ref(), Value::Nil)
+        {
+            let fetched = self.interpreter.auto_fetch_proxy(&raw_val)?;
+            let val = Self::normalize_incdec_source(fetched);
+            let new_val = Self::increment_value(&val);
+            self.interpreter.assign_proxy_lvalue(raw_val, new_val)?;
+            self.stack.push(val);
+            return Ok(());
+        }
         let val = Self::normalize_incdec_source(raw_val);
         let new_val = Self::increment_value(&val);
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
@@ -2084,6 +2157,17 @@ impl VM {
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key(name);
         }
+        // If the current value is a Proxy, invoke STORE instead of overwriting
+        if let Value::Proxy { storer, .. } = &self.locals[idx]
+            && !matches!(storer.as_ref(), Value::Nil)
+        {
+            let proxy_val = self.locals[idx].clone();
+            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            return Ok(());
+        }
+        // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
+        // so they can reference the Proxy by its binding variable name (simulating capture-by-ref).
+        let val = Self::update_proxy_closure_envs(val, name);
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(symbol) = Self::term_symbol_from_name(name) {
@@ -2154,6 +2238,20 @@ impl VM {
         self.interpreter.set_var_type_constraint(name, None);
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key_decl(name);
+        }
+        // Pre-initialize the variable in the env with a default value so that
+        // closures created during the RHS expression can capture it.
+        // This enables capture-by-reference patterns like:
+        //   my $proxy := Proxy.new(STORE => -> $, \v { $proxy.VAR... })
+        if !self.interpreter.env().contains_key(name) {
+            let default = if name.starts_with('@') {
+                Value::real_array(Vec::new())
+            } else if name.starts_with('%') {
+                Value::hash(std::collections::HashMap::new())
+            } else {
+                Value::Package(crate::symbol::Symbol::intern("Any"))
+            };
+            self.interpreter.env_mut().insert(name.to_string(), default);
         }
     }
 

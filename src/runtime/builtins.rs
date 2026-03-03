@@ -897,13 +897,33 @@ impl Interpreter {
         if !is_rw || self.in_lvalue_assignment {
             return Ok(result);
         }
-        if let Value::Proxy { fetcher, .. } = result.clone() {
+        if let Value::Proxy {
+            fetcher,
+            decontainerized,
+            ..
+        } = result.clone()
+        {
+            if decontainerized {
+                return Ok(result);
+            }
             if matches!(fetcher.as_ref(), Value::Nil) {
                 return Ok(Value::Nil);
             }
             return self.call_sub_value(*fetcher, vec![result], true);
         }
         Ok(result)
+    }
+
+    /// Auto-FETCH a Proxy value. If the value is a Proxy, call its FETCH callback.
+    /// Used when a Proxy-bound variable is read in value context.
+    pub(crate) fn auto_fetch_proxy(&mut self, value: &Value) -> Result<Value, RuntimeError> {
+        if let Value::Proxy { fetcher, .. } = value {
+            if matches!(fetcher.as_ref(), Value::Nil) {
+                return Ok(Value::Nil);
+            }
+            return self.call_sub_value(*fetcher.clone(), vec![value.clone()], true);
+        }
+        Ok(value.clone())
     }
 
     fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
@@ -934,8 +954,15 @@ impl Interpreter {
         )
     }
 
-    fn assign_proxy_lvalue(&mut self, proxy: Value, value: Value) -> Result<Value, RuntimeError> {
-        let Value::Proxy { fetcher, storer } = proxy.clone() else {
+    pub(crate) fn assign_proxy_lvalue(
+        &mut self,
+        proxy: Value,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let Value::Proxy {
+            fetcher, storer, ..
+        } = proxy.clone()
+        else {
             return Err(RuntimeError::new(
                 "X::Assignment::RO: target is not assignable",
             ));
@@ -1040,6 +1067,7 @@ impl Interpreter {
             let result = self.call_function(name, call_args);
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
+
             if def.is_rw
                 && let Value::Proxy { .. } = result
             {

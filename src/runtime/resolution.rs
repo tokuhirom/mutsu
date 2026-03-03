@@ -665,6 +665,7 @@ impl Interpreter {
                 param_defs: data.param_defs.clone(),
                 body: data.body.clone(),
                 is_rw: data.is_rw,
+                is_raw: data.is_raw,
                 env: new_env.clone(),
                 assumed_positional: data.assumed_positional.clone(),
                 assumed_named: data.assumed_named.clone(),
@@ -769,7 +770,8 @@ impl Interpreter {
                 other => other,
             };
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
-            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, data.is_rw));
+            let fetch_rw = data.is_rw && !data.is_raw;
+            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, fetch_rw));
         }
         Err(RuntimeError::new("Callable expected"))
     }

@@ -169,7 +169,7 @@ impl Interpreter {
             if def.empty_sig && !args.is_empty() {
                 return Err(Self::reject_args_for_empty_sig(args));
             }
-            let routine_is_rw = true;
+            let routine_is_rw = !def.is_raw;
             let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
@@ -242,7 +242,30 @@ impl Interpreter {
                 self.multi_dispatch_stack.pop();
             }
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
-            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, routine_is_rw));
+            return finalized.and_then(|v| {
+                let v = if def.is_raw {
+                    // Mark Proxy as decontainerized so the VM's auto-FETCH doesn't strip it
+                    if let Value::Proxy {
+                        fetcher,
+                        storer,
+                        subclass,
+                        ..
+                    } = v
+                    {
+                        Value::Proxy {
+                            fetcher,
+                            storer,
+                            subclass,
+                            decontainerized: true,
+                        }
+                    } else {
+                        v
+                    }
+                } else {
+                    v
+                };
+                self.maybe_fetch_rw_proxy(v, routine_is_rw)
+            });
         }
         // Check for callable in env (e.g. &name) before proto dispatch failure.
         // This handles subs with CALL-ME mixed in via trait_mod.
