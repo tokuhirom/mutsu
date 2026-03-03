@@ -1005,7 +1005,8 @@ impl Compiler {
                     || module == "customtrait"
                     || module == "isms"
                     || module == "MONKEY-TYPING"
-                    || module == "nqp" => {}
+                    || module == "nqp"
+                    || module == "soft" => {}
             Stmt::Use { module, arg } if module == "Test::More" => {
                 self.compile_test_more_use(arg);
             }

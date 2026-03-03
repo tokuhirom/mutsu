@@ -239,6 +239,16 @@ impl VM {
                 }
                 None
             });
+        // Check wrap chain for named function calls
+        if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(&name)
+            && !self.interpreter.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
+        {
+            let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
         if let Some(callable) = call_me_override {
             let result = self
                 .interpreter
@@ -1299,6 +1309,16 @@ impl VM {
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
+        // Check wrap chain for named function calls
+        if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(&name)
+            && !self.interpreter.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
+        {
+            let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+            return Ok(());
+        }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());

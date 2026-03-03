@@ -428,6 +428,36 @@ impl Interpreter {
             return self.call_function(&name.resolve(), args);
         }
         if let Value::Sub(data) = func {
+            // Check for wrap chain — if wrappers exist, dispatch through them
+            // Skip if we're already inside a wrap dispatch for this sub
+            let already_dispatching = self.wrap_dispatch_stack.iter().any(|f| f.sub_id == data.id);
+            if !already_dispatching
+                && let Some(chain) = self.wrap_chains.get(&data.id).cloned()
+                && !chain.is_empty()
+            {
+                let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
+                self.test_pending_callsite_line = callsite_line;
+                // Build remaining list: inner wrappers then original sub
+                // chain is ordered inner-to-outer (last = outermost), so:
+                // outermost is last, we call it; remaining = [inner..., original]
+                let outermost = chain.last().unwrap().1.clone();
+                let mut remaining: Vec<Value> = Vec::new();
+                // Add wrappers from second-to-last down to first (inner order)
+                for i in (0..chain.len() - 1).rev() {
+                    remaining.push(chain[i].1.clone());
+                }
+                // Add the original sub at the end
+                remaining.push(Value::Sub(data.clone()));
+                let frame = super::WrapDispatchFrame {
+                    sub_id: data.id,
+                    remaining,
+                    args: sanitized_args.clone(),
+                };
+                self.wrap_dispatch_stack.push(frame);
+                let result = self.call_sub_value(outermost, sanitized_args, false);
+                self.wrap_dispatch_stack.pop();
+                return result;
+            }
             let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
             self.test_pending_callsite_line = callsite_line;
             let mut call_args = sanitized_args.clone();

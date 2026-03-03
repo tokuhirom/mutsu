@@ -438,6 +438,15 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(Symbol::intern(name))
+        } else if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(name)
+            && !self.interpreter.is_wrap_dispatching(sub_id)
+            && let Some(sub_val) = self.interpreter.get_wrapped_sub(name)
+        {
+            let result = self
+                .interpreter
+                .call_sub_value(sub_val, Vec::new(), false)?;
+            self.sync_locals_from_env(code);
+            result
         } else if self.interpreter.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
         {

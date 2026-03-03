@@ -955,6 +955,42 @@ impl Interpreter {
                 _ => {}
             }
         }
+        // Handle Routine::WrapHandle .restore() method
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Routine::WrapHandle"
+            && method == "restore"
+        {
+            let sub_id = attributes.get("sub-id").and_then(|v| {
+                if let Value::Int(i) = v {
+                    Some(*i as u64)
+                } else {
+                    None
+                }
+            });
+            let handle_id = attributes.get("handle-id").and_then(|v| {
+                if let Value::Int(i) = v {
+                    Some(*i as u64)
+                } else {
+                    None
+                }
+            });
+            if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
+                if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {
+                    chain.retain(|(hid, _)| *hid != handle_id);
+                    if chain.is_empty() {
+                        self.cleanup_wrap_name_entries(sub_id);
+                    }
+                }
+                return Ok(Value::Bool(true));
+            }
+            return Err(RuntimeError::new(
+                "Invalid WrapHandle: missing sub-id or handle-id",
+            ));
+        }
         if method == "gist" && args.is_empty() {
             fn collection_contains_instance(value: &Value) -> bool {
                 match value {

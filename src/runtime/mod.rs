@@ -149,6 +149,17 @@ struct MethodDispatchFrame {
     remaining: Vec<(String, MethodDef)>,
 }
 
+/// Frame for navigating through wrapper chain during callsame/callwith.
+#[derive(Debug, Clone)]
+struct WrapDispatchFrame {
+    /// The sub id being wrapped (to prevent re-entrant wrap dispatch).
+    sub_id: u64,
+    /// Remaining callables: inner wrappers then original sub. Next to call is first.
+    remaining: Vec<Value>,
+    /// Original call arguments.
+    args: Vec<Value>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SquishIteratorMeta {
     pub(crate) source_items: Vec<Value>,
@@ -416,6 +427,17 @@ pub struct Interpreter {
     /// Each entry is (remaining_candidates, original_args).
     multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
+    /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
+    wrap_chains: HashMap<u64, Vec<(u64, Value)>>,
+    /// Maps sub_id to function name for named call wrap chain lookup.
+    wrap_sub_names: HashMap<u64, String>,
+    /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
+    /// when dispatching named function calls through the wrap chain.
+    wrap_name_to_sub: HashMap<String, Value>,
+    /// Counter for generating unique wrap handle IDs.
+    wrap_handle_counter: u64,
+    /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
+    wrap_dispatch_stack: Vec<WrapDispatchFrame>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
     /// Last expression value from VM execution, used by REPL for auto-display.
@@ -1363,6 +1385,11 @@ impl Interpreter {
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            wrap_chains: HashMap::new(),
+            wrap_sub_names: HashMap::new(),
+            wrap_name_to_sub: HashMap::new(),
+            wrap_handle_counter: 0,
+            wrap_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
             last_value: None,
             pending_local_updates: Vec::new(),
@@ -1568,6 +1595,7 @@ impl Interpreter {
                     | "nqp"
                     | "MONKEY"
                     | "newline"
+                    | "soft"
             ) {
             Ok(())
         } else if module == "Test::Tap" {
@@ -2268,6 +2296,11 @@ impl Interpreter {
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            wrap_chains: self.wrap_chains.clone(),
+            wrap_sub_names: self.wrap_sub_names.clone(),
+            wrap_name_to_sub: self.wrap_name_to_sub.clone(),
+            wrap_handle_counter: self.wrap_handle_counter,
+            wrap_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
