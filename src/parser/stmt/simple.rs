@@ -1417,7 +1417,7 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, expr) = expression(rest)?;
+    let (rest, expr) = parse_comma_or_expr(rest)?;
     parse_statement_modifier(rest, Stmt::Take(expr))
 }
 
