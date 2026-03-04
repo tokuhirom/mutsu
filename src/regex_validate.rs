@@ -139,6 +139,15 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     }
                 }
             }
+            // << and >> are word boundaries, not angle bracket pairs
+            '<' if chars.peek() == Some(&'<') => {
+                prev_was_quantifier = false;
+                chars.next(); // consume second <
+            }
+            '>' if chars.peek() == Some(&'>') => {
+                prev_was_quantifier = false;
+                chars.next(); // consume second >
+            }
             // Assertions/named rules — skip balanced <...>
             '<' => {
                 prev_was_quantifier = false;

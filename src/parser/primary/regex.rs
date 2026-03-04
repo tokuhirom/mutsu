@@ -408,6 +408,12 @@ fn scan_to_delim_inner(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
+        } else if !p5_mode && c == '<' && input[i + 1..].starts_with('<') {
+            // << is a left word boundary assertion — skip both chars
+            chars.next(); // consume second <
+        } else if !p5_mode && c == '>' && input[i + 1..].starts_with('>') {
+            // >> is a right word boundary assertion — skip both chars
+            chars.next(); // consume second >
         } else if !p5_mode && c == '<' && input[i + 1..].starts_with('[') {
             // Skip character class <[...]> content without interpreting quotes
             // Handles <['"]>, <[\s]>, etc.

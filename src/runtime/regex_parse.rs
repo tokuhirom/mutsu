@@ -145,11 +145,25 @@ impl Interpreter {
                     current.push(ch);
                 }
                 '<' => {
+                    if chars.peek() == Some(&'<') {
+                        // << is a word boundary, not an angle bracket pair
+                        current.push(ch);
+                        current.push(chars.next().unwrap());
+                        continue;
+                    }
                     depth_angle += 1;
                     current.push(ch);
                 }
                 '>' => {
-                    depth_angle -= 1;
+                    if chars.peek() == Some(&'>') {
+                        // >> is a word boundary, not an angle bracket pair
+                        current.push(ch);
+                        current.push(chars.next().unwrap());
+                        continue;
+                    }
+                    if depth_angle > 0 {
+                        depth_angle -= 1;
+                    }
                     current.push(ch);
                 }
                 '|' if depth_paren == 0
@@ -454,14 +468,6 @@ impl Interpreter {
         if sigspace && source.contains('\n') {
             source = source.trim_end();
         }
-        // Quote-word delimiters in regex patterns (e.g., «word») represent
-        // literal text content, not literal guillemet characters.
-        if let Some(inner) = source.strip_prefix('«').and_then(|s| s.strip_suffix('»')) {
-            source = inner.trim();
-        } else if let Some(inner) = source.strip_prefix("<<").and_then(|s| s.strip_suffix(">>")) {
-            source = inner.trim();
-        }
-
         // Handle top-level alternation (| or ||)
         let top_alts = Self::split_top_level_alternation(source);
         if top_alts.len() > 1 {
@@ -838,6 +844,24 @@ impl Interpreter {
                     }
                     regex_single_quote_atom(literal, ignore_case)
                 }
+                '\u{00AB}' => {
+                    // « — left word boundary
+                    RegexAtom::LeftWordBoundary
+                }
+                '\u{00BB}' => {
+                    // » — right word boundary
+                    RegexAtom::RightWordBoundary
+                }
+                '<' if chars.peek() == Some(&'<') => {
+                    // << — left word boundary
+                    chars.next();
+                    RegexAtom::LeftWordBoundary
+                }
+                '>' if chars.peek() == Some(&'>') => {
+                    // >> — right word boundary
+                    chars.next();
+                    RegexAtom::RightWordBoundary
+                }
                 '<' => {
                     if chars.peek() == Some(&'(') {
                         chars.next();
@@ -1098,16 +1122,27 @@ impl Interpreter {
                                     }
                                     RegexAtom::Alternation(alt_patterns)
                                 } else {
+                                    // Strip dot prefix for non-capturing named calls
+                                    // <.alpha> is the same as <alpha> but without named capture
+                                    let (class_name, is_dot_call) =
+                                        if let Some(stripped) = trimmed.strip_prefix('.') {
+                                            (stripped, true)
+                                        } else {
+                                            (trimmed, false)
+                                        };
                                     // Check for named character classes
-                                    match trimmed {
+                                    match class_name {
                                         "alpha" | "upper" | "lower" | "digit" | "xdigit"
                                         | "space" | "alnum" | "blank" | "cntrl" | "punct" => {
                                             // Set builtin named capture so $<alpha>, $<digit>, etc. work
-                                            pending_builtin_named_capture =
-                                                Some(trimmed.to_string());
+                                            // (only for non-dot calls)
+                                            if !is_dot_call {
+                                                pending_builtin_named_capture =
+                                                    Some(class_name.to_string());
+                                            }
                                             RegexAtom::CharClass(CharClass {
                                                 items: vec![ClassItem::NamedBuiltin(
-                                                    trimmed.to_string(),
+                                                    class_name.to_string(),
                                                 )],
                                                 negated: false,
                                             })
