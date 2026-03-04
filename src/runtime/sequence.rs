@@ -258,7 +258,7 @@ impl Interpreter {
                     ),
                     Value::Regex(pat) => (
                         Some(first.clone()),
-                        Some(EndpointKind::Regex(pat.clone())),
+                        Some(EndpointKind::Regex(pat.to_string())),
                         rest,
                     ),
                     _ => (
@@ -289,7 +289,7 @@ impl Interpreter {
             ),
             Value::Regex(pat) => (
                 Some(right.clone()),
-                Some(EndpointKind::Regex(pat.clone())),
+                Some(EndpointKind::Regex(pat.to_string())),
                 vec![],
             ),
             other => (

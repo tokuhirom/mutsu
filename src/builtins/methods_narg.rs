@@ -990,7 +990,7 @@ fn bigint_to_value(value: BigInt) -> Value {
     if let Some(i) = value.to_i64() {
         Value::Int(i)
     } else {
-        Value::BigInt(value)
+        Value::bigint(value)
     }
 }
 

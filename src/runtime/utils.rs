@@ -787,7 +787,7 @@ pub(crate) use super::sprintf::format_sprintf;
 
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
-        Value::Mixin(inner, _) => coerce_to_numeric(*inner),
+        Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         Value::Int(_)
         | Value::Num(_)
         | Value::Rat(_, _)
@@ -1206,7 +1206,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
 /// Unwrap a Mixin (allomorphic type) to its inner value.
 pub(crate) fn unwrap_mixin(val: Value) -> Value {
     match val {
-        Value::Mixin(inner, _) => *inner,
+        Value::Mixin(inner, _) => inner.as_ref().clone(),
         other => other,
     }
 }
@@ -1372,15 +1372,16 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             version_cmp_parts(ap, bp) as i32
         }
         (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
-        (Value::BigInt(a), Value::BigInt(b)) => a.cmp(b) as i32,
-        (Value::BigInt(a), Value::Int(b)) => a.cmp(&num_bigint::BigInt::from(*b)) as i32,
-        (Value::Int(a), Value::BigInt(b)) => num_bigint::BigInt::from(*a).cmp(b) as i32,
+        (Value::BigInt(a), Value::BigInt(b)) => a.as_ref().cmp(b.as_ref()) as i32,
+        (Value::BigInt(a), Value::Int(b)) => a.as_ref().cmp(&num_bigint::BigInt::from(*b)) as i32,
+        (Value::Int(a), Value::BigInt(b)) => num_bigint::BigInt::from(*a).cmp(b.as_ref()) as i32,
         (Value::Num(a), Value::Num(b)) => {
             a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
         }
         (Value::BigInt(a), Value::Num(b)) => {
-            a.to_f64()
-                .unwrap_or(if a.is_positive() {
+            a.as_ref()
+                .to_f64()
+                .unwrap_or(if a.as_ref().is_positive() {
                     f64::INFINITY
                 } else {
                     f64::NEG_INFINITY
@@ -1389,7 +1390,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 .unwrap_or(std::cmp::Ordering::Equal) as i32
         }
         (Value::Num(a), Value::BigInt(b)) => {
-            a.partial_cmp(&b.to_f64().unwrap_or(if b.is_positive() {
+            a.partial_cmp(&b.as_ref().to_f64().unwrap_or(if b.as_ref().is_positive() {
                 f64::INFINITY
             } else {
                 f64::NEG_INFINITY
@@ -1431,8 +1432,9 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         Value::Int(i) => *i,
         Value::BigInt(n) => {
             use num_traits::ToPrimitive;
-            n.to_i64()
-                .unwrap_or(if *n > num_bigint::BigInt::from(0i64) {
+            n.as_ref()
+                .to_i64()
+                .unwrap_or(if **n > num_bigint::BigInt::from(0i64) {
                     i64::MAX
                 } else {
                     i64::MIN

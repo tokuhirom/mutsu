@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 use crate::symbol::Symbol;
 
@@ -285,33 +287,33 @@ impl VM {
                 Value::Range(i64::MIN, *b)
             }
             (Value::Str(a), Value::Str(b)) => Value::GenericRange {
-                start: Box::new(Value::Str(a.clone())),
-                end: Box::new(Value::Str(b.clone())),
+                start: Arc::new(Value::Str(a.clone())),
+                end: Arc::new(Value::Str(b.clone())),
                 excl_start: false,
                 excl_end: false,
             },
             (l, r) if l.is_numeric() && r.is_numeric() => Value::GenericRange {
-                start: Box::new(l.clone()),
-                end: Box::new(r.clone()),
+                start: Arc::new(l.clone()),
+                end: Arc::new(r.clone()),
                 excl_start: false,
                 excl_end: false,
             },
             (Value::Str(a), r) if r.is_numeric() => Value::GenericRange {
-                start: Box::new(Value::Str(a.clone())),
-                end: Box::new(r.clone()),
+                start: Arc::new(Value::Str(a.clone())),
+                end: Arc::new(r.clone()),
                 excl_start: false,
                 excl_end: false,
             },
             (l, Value::Str(b)) if l.is_numeric() => Value::GenericRange {
-                start: Box::new(l.clone()),
-                end: Box::new(Value::Str(b.clone())),
+                start: Arc::new(l.clone()),
+                end: Arc::new(Value::Str(b.clone())),
                 excl_start: false,
                 excl_end: false,
             },
             // WhateverCode endpoint: e.g. 0..*-2
             (_, Value::Sub(_)) | (Value::Sub(_), _) => Value::GenericRange {
-                start: Box::new(left),
-                end: Box::new(right),
+                start: Arc::new(left),
+                end: Arc::new(right),
                 excl_start: false,
                 excl_end: false,
             },
@@ -326,14 +328,14 @@ impl VM {
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExcl(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
-                start: Box::new(left.clone()),
-                end: Box::new(right.clone()),
+                start: Arc::new(left.clone()),
+                end: Arc::new(right.clone()),
                 excl_start: false,
                 excl_end: true,
             },
             _ => Value::GenericRange {
-                start: Box::new(left),
-                end: Box::new(right),
+                start: Arc::new(left),
+                end: Arc::new(right),
                 excl_start: false,
                 excl_end: true,
             },
@@ -347,14 +349,14 @@ impl VM {
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
-                start: Box::new(left.clone()),
-                end: Box::new(right.clone()),
+                start: Arc::new(left.clone()),
+                end: Arc::new(right.clone()),
                 excl_start: true,
                 excl_end: false,
             },
             _ => Value::GenericRange {
-                start: Box::new(left),
-                end: Box::new(right),
+                start: Arc::new(left),
+                end: Arc::new(right),
                 excl_start: true,
                 excl_end: false,
             },
@@ -368,14 +370,14 @@ impl VM {
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
-                start: Box::new(left.clone()),
-                end: Box::new(right.clone()),
+                start: Arc::new(left.clone()),
+                end: Arc::new(right.clone()),
                 excl_start: true,
                 excl_end: true,
             },
             _ => Value::GenericRange {
-                start: Box::new(left),
-                end: Box::new(right),
+                start: Arc::new(left),
+                end: Arc::new(right),
                 excl_start: true,
                 excl_end: true,
             },
@@ -1244,7 +1246,7 @@ impl VM {
         // Convert value to BigInt for range checking
         let big_val = match value {
             Value::Int(n) => NumBigInt::from(*n),
-            Value::BigInt(n) => n.clone(),
+            Value::BigInt(n) => (**n).clone(),
             Value::Num(n) => NumBigInt::from(*n as i64),
             Value::Rat(n, d) => {
                 if *d == 0 {
@@ -1273,7 +1275,7 @@ impl VM {
         // Coerce to Int on the stack
         let int_val = big_val.to_i64().map(Value::Int).unwrap_or_else(|| {
             // For uint64 values that don't fit in i64, store as BigInt
-            Value::BigInt(big_val)
+            Value::bigint(big_val)
         });
         *self.stack.last_mut().unwrap() = int_val;
         Ok(())

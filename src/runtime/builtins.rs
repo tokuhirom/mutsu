@@ -126,8 +126,10 @@ impl Interpreter {
             }
             // Otherwise, delegate to the inner callable
             match inner.as_ref() {
-                Value::Sub(_) => return self.call_sub_value(*inner.clone(), args, true),
-                Value::Routine { .. } => return self.call_sub_value(*inner.clone(), args, false),
+                Value::Sub(_) => return self.call_sub_value(inner.as_ref().clone(), args, true),
+                Value::Routine { .. } => {
+                    return self.call_sub_value(inner.as_ref().clone(), args, false);
+                }
                 _ => {}
             }
         }

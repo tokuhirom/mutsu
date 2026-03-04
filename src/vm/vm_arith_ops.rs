@@ -222,16 +222,16 @@ impl VM {
                 (Value::Int(_), Value::Int(_)) => {
                     return Err(RuntimeError::numeric_divide_by_zero());
                 }
-                (Value::BigInt(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
-                    Value::from_bigint(num_integer::Integer::div_floor(a, b))
+                (Value::BigInt(a), Value::BigInt(b)) if **b != num_bigint::BigInt::from(0i64) => {
+                    Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), b.as_ref()))
                 }
                 (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
                     let bb = num_bigint::BigInt::from(*b);
-                    Value::from_bigint(num_integer::Integer::div_floor(a, &bb))
+                    Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), &bb))
                 }
-                (Value::Int(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
+                (Value::Int(a), Value::BigInt(b)) if **b != num_bigint::BigInt::from(0i64) => {
                     let aa = num_bigint::BigInt::from(*a);
-                    Value::from_bigint(num_integer::Integer::div_floor(&aa, b))
+                    Value::from_bigint(num_integer::Integer::div_floor(&aa, b.as_ref()))
                 }
                 _ => {
                     let a = runtime::to_int(&l);
@@ -428,14 +428,15 @@ impl VM {
         };
         // If left is already a Mixin, add to existing mixins
         let result = match left {
-            Value::Mixin(inner, mut mixins) => {
+            Value::Mixin(inner, existing_mixins) => {
+                let mut mixins = (*existing_mixins).clone();
                 mixins.insert(mixin_type.clone(), right);
-                Value::Mixin(inner, mixins)
+                Value::mixin((*inner).clone(), mixins)
             }
             other => {
                 let mut mixins = std::collections::HashMap::new();
                 mixins.insert(mixin_type, right);
-                Value::Mixin(Box::new(other), mixins)
+                Value::mixin(other, mixins)
             }
         };
         self.stack.push(result);
@@ -498,12 +499,12 @@ impl VM {
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a & b),
+            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(&*a & &*b),
             (Value::BigInt(a), Value::Int(b)) => {
-                Value::from_bigint(a & num_bigint::BigInt::from(b))
+                Value::from_bigint(&*a & &num_bigint::BigInt::from(b))
             }
             (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(num_bigint::BigInt::from(a) & b)
+                Value::from_bigint(&num_bigint::BigInt::from(a) & &*b)
             }
             _ => Value::Int(0),
         };
@@ -516,12 +517,12 @@ impl VM {
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a | b),
+            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(&*a | &*b),
             (Value::BigInt(a), Value::Int(b)) => {
-                Value::from_bigint(a | num_bigint::BigInt::from(b))
+                Value::from_bigint(&*a | &num_bigint::BigInt::from(b))
             }
             (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(num_bigint::BigInt::from(a) | b)
+                Value::from_bigint(&num_bigint::BigInt::from(a) | &*b)
             }
             _ => Value::Int(0),
         };
@@ -534,12 +535,12 @@ impl VM {
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a ^ b),
+            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(&*a ^ &*b),
             (Value::BigInt(a), Value::Int(b)) => {
-                Value::from_bigint(a ^ num_bigint::BigInt::from(b))
+                Value::from_bigint(&*a ^ &num_bigint::BigInt::from(b))
             }
             (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(num_bigint::BigInt::from(a) ^ b)
+                Value::from_bigint(&num_bigint::BigInt::from(a) ^ &*b)
             }
             _ => Value::Int(0),
         };

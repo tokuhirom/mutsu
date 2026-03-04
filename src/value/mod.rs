@@ -176,7 +176,7 @@ impl ArrayKind {
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
-    BigInt(NumBigInt),
+    BigInt(Arc<NumBigInt>),
     Num(f64),
     Str(Arc<String>),
     Bool(bool),
@@ -185,8 +185,8 @@ pub enum Value {
     RangeExclStart(i64, i64),
     RangeExclBoth(i64, i64),
     GenericRange {
-        start: Box<Value>,
-        end: Box<Value>,
+        start: Arc<Value>,
+        end: Arc<Value>,
         excl_start: bool,
         excl_end: bool,
     },
@@ -218,9 +218,9 @@ pub enum Value {
         value: i64,
         index: usize,
     },
-    Regex(String),
+    Regex(Arc<String>),
     RegexWithAdverbs {
-        pattern: String,
+        pattern: Arc<String>,
         exhaustive: bool,
         repeat: Option<usize>,
         perl5: bool,
@@ -254,7 +254,7 @@ pub enum Value {
     HyperWhatever,
     /// A value with mixin overrides from the `but` operator.
     /// Inner value is the original; the HashMap maps type names (e.g. "Bool") to override values.
-    Mixin(Box<Value>, HashMap<String, Value>),
+    Mixin(Arc<Value>, Arc<HashMap<String, Value>>),
     /// A Capture: positional args + named args
     Capture {
         positional: Vec<Value>,
@@ -554,7 +554,7 @@ impl PartialEq for Value {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::BigInt(a), Value::BigInt(b)) => a == b,
             (Value::BigInt(a), Value::Int(b)) | (Value::Int(b), Value::BigInt(a)) => {
-                *a == NumBigInt::from(*b)
+                **a == NumBigInt::from(*b)
             }
             (Value::Num(a), Value::Num(b)) => (a.is_nan() && b.is_nan()) || a == b,
             (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
@@ -808,11 +808,28 @@ impl Value {
     }
 
     // ---- Arc-wrapping convenience constructors ----
+    pub fn bigint(n: NumBigInt) -> Self {
+        Value::BigInt(Arc::new(n))
+    }
     pub fn str(s: String) -> Self {
         Value::Str(Arc::new(s))
     }
     pub fn str_from(s: &str) -> Self {
         Value::Str(Arc::new(s.to_string()))
+    }
+    pub fn regex(s: String) -> Self {
+        Value::Regex(Arc::new(s))
+    }
+    pub fn mixin(inner: Value, overrides: HashMap<String, Value>) -> Self {
+        Value::Mixin(Arc::new(inner), Arc::new(overrides))
+    }
+    pub fn generic_range(start: Value, end: Value, excl_start: bool, excl_end: bool) -> Self {
+        Value::GenericRange {
+            start: Arc::new(start),
+            end: Arc::new(end),
+            excl_start,
+            excl_end,
+        }
     }
     pub fn array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(items), ArrayKind::List)
@@ -1186,7 +1203,7 @@ impl Value {
     pub(crate) fn to_bigint(&self) -> NumBigInt {
         match self {
             Value::Int(i) => NumBigInt::from(*i),
-            Value::BigInt(n) => n.clone(),
+            Value::BigInt(n) => (**n).clone(),
             Value::Num(f) => NumBigInt::from(*f as i64),
             Value::Rat(n, d) => {
                 if *d != 0 {
@@ -1214,7 +1231,7 @@ impl Value {
         if let Some(i) = n.to_i64() {
             Value::Int(i)
         } else {
-            Value::BigInt(n)
+            Value::bigint(n)
         }
     }
 }

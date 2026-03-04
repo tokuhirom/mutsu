@@ -403,7 +403,7 @@ impl Interpreter {
             Err(e) => return Err(e),
         };
         match value {
-            Value::Regex(pat) => Ok(Some(pat)),
+            Value::Regex(pat) => Ok(Some(pat.to_string())),
             Value::Str(s) => Ok(Some(s.to_string())),
             Value::Nil => Ok(None),
             other => Ok(Some(other.to_string_value())),

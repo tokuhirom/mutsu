@@ -611,13 +611,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // For types where bounds don't fit in i64 (e.g. uint64)
             let min_val = min_i64
                 .map(Value::Int)
-                .unwrap_or_else(|| Value::BigInt(min_big));
+                .unwrap_or_else(|| Value::bigint(min_big));
             let max_val = max_i64
                 .map(Value::Int)
-                .unwrap_or_else(|| Value::BigInt(max_big));
+                .unwrap_or_else(|| Value::bigint(max_big));
             return Some(Ok(Value::GenericRange {
-                start: Box::new(min_val),
-                end: Box::new(max_val),
+                start: Arc::new(min_val),
+                end: Arc::new(max_val),
                 excl_start: false,
                 excl_end: false,
             }));
@@ -656,7 +656,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let s = if *excl_start {
                     match start.as_ref() {
                         Value::Int(n) => Value::Int(n + 1),
-                        Value::BigInt(n) => Value::BigInt(n + 1),
+                        Value::BigInt(n) => Value::bigint(n.as_ref() + 1),
                         other => Value::Int(other.to_f64() as i64 + 1),
                     }
                 } else {
@@ -665,7 +665,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let e = if *excl_end {
                     match end.as_ref() {
                         Value::Int(n) => Value::Int(n - 1),
-                        Value::BigInt(n) => Value::BigInt(n - 1),
+                        Value::BigInt(n) => Value::bigint(n.as_ref() - 1),
                         other => Value::Int(other.to_f64() as i64 - 1),
                     }
                 } else {
@@ -1011,7 +1011,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "abs" => {
             let result = match target {
                 Value::Int(i) => Value::Int(i.abs()),
-                Value::BigInt(n) => Value::BigInt(n.abs()),
+                Value::BigInt(n) => Value::bigint(n.as_ref().abs()),
                 Value::Num(f) => Value::Num(f.abs()),
                 Value::Rat(n, d) => Value::Rat(n.abs(), *d),
                 Value::Complex(r, i) => Value::Num((r * r + i * i).sqrt()),
@@ -1942,7 +1942,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Rat(n, d) => Some(Ok(Value::FatRat(*n, *d))),
             Value::BigRat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
-            Value::BigInt(i) => Some(Ok(make_big_rat(i.clone(), num_bigint::BigInt::from(1)))),
+            Value::BigInt(i) => Some(Ok(make_big_rat((**i).clone(), num_bigint::BigInt::from(1)))),
             Value::Num(f) => {
                 let denom = 1_000_000i64;
                 let numer = (f * denom as f64).round() as i64;
@@ -2186,7 +2186,7 @@ fn native_int_coerce_method(target: &Value, type_name: &str) -> Result<Value, Ru
 
     let big_val: NumBigInt = match target {
         Value::Int(i) => NumBigInt::from(*i),
-        Value::BigInt(n) => n.clone(),
+        Value::BigInt(n) => (**n).clone(),
         Value::Num(f) => {
             if f.is_nan() || f.is_infinite() {
                 return Err(RuntimeError::new(format!(
@@ -2232,6 +2232,6 @@ fn native_int_coerce_method(target: &Value, type_name: &str) -> Result<Value, Ru
     if let Some(i) = wrapped.to_i64() {
         Ok(Value::Int(i))
     } else {
-        Ok(Value::BigInt(wrapped))
+        Ok(Value::bigint(wrapped))
     }
 }

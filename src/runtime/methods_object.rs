@@ -154,8 +154,8 @@ impl Interpreter {
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
                 self.env = saved_role_param_env;
-                return Ok(Value::Mixin(
-                    Box::new(Value::make_instance(*base_name, HashMap::new())),
+                return Ok(Value::mixin(
+                    Value::make_instance(*base_name, HashMap::new()),
                     mixins,
                 ));
             }
@@ -892,8 +892,8 @@ impl Interpreter {
                     };
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
-                return Ok(Value::Mixin(
-                    Box::new(Value::make_instance(*class_name, HashMap::new())),
+                return Ok(Value::mixin(
+                    Value::make_instance(*class_name, HashMap::new()),
                     mixins,
                 ));
             }

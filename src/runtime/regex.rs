@@ -473,7 +473,7 @@ impl Interpreter {
                 };
                 if let Some(value) = value {
                     let pattern = match value {
-                        Value::Regex(pat) => pat,
+                        Value::Regex(pat) => pat.to_string(),
                         Value::Str(s) => s.to_string(),
                         Value::Nil => String::new(),
                         other => other.to_string_value(),
@@ -2210,8 +2210,8 @@ impl Interpreter {
             Err(e) => e.return_value?,
         };
         match val {
-            Value::Regex(pat) => Some(pat),
-            Value::RegexWithAdverbs { pattern, .. } => Some(pattern),
+            Value::Regex(pat) => Some(pat.to_string()),
+            Value::RegexWithAdverbs { pattern, .. } => Some(pattern.to_string()),
             Value::Routine {
                 is_regex: true,
                 name,
@@ -2229,8 +2229,8 @@ impl Interpreter {
                 let alts: Vec<String> = elems
                     .iter()
                     .map(|v| match v {
-                        Value::Regex(pat) => pat.clone(),
-                        Value::RegexWithAdverbs { pattern, .. } => pattern.clone(),
+                        Value::Regex(pat) => pat.to_string(),
+                        Value::RegexWithAdverbs { pattern, .. } => pattern.to_string(),
                         other => {
                             let s = other.to_string_value();
                             // Quote as regex literal using single quotes

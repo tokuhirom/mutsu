@@ -1225,7 +1225,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, pat) = parse_raw_braced_regex_body(r)?;
-                return Ok((r, Expr::Literal(Value::Regex(pat))));
+                return Ok((r, Expr::Literal(Value::regex(pat))));
             }
         }
         "gather" => {

@@ -1018,8 +1018,8 @@ impl Interpreter {
         }
 
         let (inner, mut mixins) = match left {
-            Value::Mixin(inner, mixins) => (inner, mixins),
-            other => (Box::new(other), HashMap::new()),
+            Value::Mixin(inner, existing) => (inner.as_ref().clone(), (*existing).clone()),
+            other => (other, HashMap::new()),
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
@@ -1038,7 +1038,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Mixin(inner, mixins))
+        Ok(Value::mixin(inner, mixins))
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {

@@ -285,7 +285,7 @@ impl Interpreter {
                 Value::Num(f) => *f as i64,
                 Value::Str(s) => s.parse::<i64>().unwrap_or(0),
                 Value::BigInt(b) => {
-                    if b > &num_bigint::BigInt::from(i64::MAX) {
+                    if b.as_ref() > &num_bigint::BigInt::from(i64::MAX) {
                         return Err(RuntimeError::new("X::OutOfRange"));
                     }
                     b.to_string().parse::<i64>().unwrap_or(0)
@@ -547,10 +547,10 @@ impl Interpreter {
             }
             Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
             Value::BigInt(b) => {
-                if b > &num_bigint::BigInt::from(i64::MAX)
-                    || b < &num_bigint::BigInt::from(i64::MIN)
+                if b.as_ref() > &num_bigint::BigInt::from(i64::MAX)
+                    || b.as_ref() < &num_bigint::BigInt::from(i64::MIN)
                 {
-                    Err(self.out_of_range_error(Value::BigInt(b.clone())))
+                    Err(self.out_of_range_error(Value::bigint((**b).clone())))
                 } else {
                     Ok(b.to_string().parse::<i64>().unwrap_or(0))
                 }

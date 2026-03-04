@@ -6,7 +6,7 @@ use num_traits::Signed;
 fn value_to_bigint(value: &Value) -> BigInt {
     match value {
         Value::Int(i) => BigInt::from(*i),
-        Value::BigInt(n) => n.clone(),
+        Value::BigInt(n) => (**n).clone(),
         Value::Num(f) => BigInt::from(*f as i64),
         Value::Rat(n, d) | Value::FatRat(n, d) => {
             if *d == 0 {
@@ -66,7 +66,7 @@ impl Interpreter {
                 .checked_add(1)
                 .map(Value::Int)
                 .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
-            Value::BigInt(n) => Value::from_bigint(n + 1),
+            Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
             Value::Str(s) => Value::str(Self::string_succ(s)),
@@ -80,7 +80,7 @@ impl Interpreter {
                 .checked_sub(1)
                 .map(Value::Int)
                 .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
-            Value::BigInt(n) => Value::from_bigint(n - 1),
+            Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => match Self::string_pred(s) {
@@ -95,7 +95,7 @@ impl Interpreter {
         match value {
             Value::Int(i) => Some(*i),
             Value::Num(f) => Some(*f as i64),
-            Value::BigInt(i) => num_traits::ToPrimitive::to_i64(i),
+            Value::BigInt(i) => num_traits::ToPrimitive::to_i64(i.as_ref()),
             _ => None,
         }
     }
@@ -820,7 +820,7 @@ impl Interpreter {
                             .map(|v| match v {
                                 Value::Int(i) => (*i).clamp(0, 255) as u8,
                                 Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
-                                Value::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi)
+                                Value::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi.as_ref())
                                     .unwrap_or(0)
                                     .clamp(0, 255)
                                     as u8,

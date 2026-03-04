@@ -1802,7 +1802,7 @@ impl Interpreter {
                 let string = args[1].to_string_value();
                 let mut mixins = std::collections::HashMap::new();
                 mixins.insert("Str".to_string(), Value::str(string));
-                return Ok(Value::Mixin(Box::new(numeric), mixins));
+                return Ok(Value::mixin(numeric, mixins));
             }
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
                 let mut attrs = std::collections::HashMap::new();
@@ -2248,7 +2248,11 @@ impl Interpreter {
                         {
                             return Ok(Value::Package(Symbol::intern(&allo)));
                         }
-                        return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
+                        return self.call_method_with_values(
+                            inner.as_ref().clone(),
+                            "WHAT",
+                            args.clone(),
+                        );
                     }
                     Value::Proxy {
                         subclass: Some((name, _)),
@@ -2501,7 +2505,7 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 };
                 let pat: String = match &pattern {
-                    Value::Regex(p) => p.clone(),
+                    Value::Regex(p) => p.to_string(),
                     Value::Str(p) => p.to_string(),
                     _ => return Ok(Value::Nil),
                 };
@@ -3407,7 +3411,7 @@ impl Interpreter {
                     return Ok(value.clone());
                 }
             }
-            return self.call_method_with_values(*inner.clone(), method, args);
+            return self.call_method_with_values(inner.as_ref().clone(), method, args);
         }
 
         // Instance dispatch

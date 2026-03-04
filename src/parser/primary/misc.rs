@@ -519,7 +519,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         })
                         .collect();
                     if let Ok(n) = digit_string.parse::<num_bigint::BigInt>() {
-                        Value::BigInt(n)
+                        Value::bigint(n)
                     } else {
                         Value::Int(0)
                     }

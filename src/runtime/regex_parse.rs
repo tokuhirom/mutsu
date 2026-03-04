@@ -1000,8 +1000,10 @@ impl Interpreter {
                                     let value =
                                         self.env.get(var_name).cloned().unwrap_or(Value::Nil);
                                     let pat_str = match &value {
-                                        Value::Regex(pat) => pat.clone(),
-                                        Value::RegexWithAdverbs { pattern, .. } => pattern.clone(),
+                                        Value::Regex(pat) => pat.to_string(),
+                                        Value::RegexWithAdverbs { pattern, .. } => {
+                                            pattern.to_string()
+                                        }
                                         other => other.to_string_value(),
                                     };
                                     // Check for longname alias first
@@ -1039,9 +1041,9 @@ impl Interpreter {
                                     let mut alt_patterns = Vec::new();
                                     for elt in &elements {
                                         let pat_str = match elt {
-                                            Value::Regex(pat) => pat.clone(),
+                                            Value::Regex(pat) => pat.to_string(),
                                             Value::RegexWithAdverbs { pattern, .. } => {
-                                                pattern.clone()
+                                                pattern.to_string()
                                             }
                                             other => other.to_string_value(),
                                         };
@@ -1551,8 +1553,10 @@ impl Interpreter {
                     let mut alts = Vec::new();
                     for elt in elements.iter() {
                         match elt {
-                            Value::Regex(pat) => alts.push(pat.clone()),
-                            Value::RegexWithAdverbs { pattern, .. } => alts.push(pattern.clone()),
+                            Value::Regex(pat) => alts.push(pat.to_string()),
+                            Value::RegexWithAdverbs { pattern, .. } => {
+                                alts.push(pattern.to_string())
+                            }
                             other => alts
                                 .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
                         }
