@@ -2298,9 +2298,7 @@ impl Interpreter {
                 )));
             }
             // Create a minimal entry for the builtin type
-            self.classes
-                .entry(name.to_string())
-                .or_default();
+            self.classes.entry(name.to_string()).or_default();
         }
 
         let saved_package = self.current_package.clone();
