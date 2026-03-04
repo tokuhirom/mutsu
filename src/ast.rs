@@ -534,6 +534,10 @@ pub(crate) enum Stmt {
     TrustsDecl {
         name: Symbol,
     },
+    AugmentClass {
+        name: Symbol,
+        body: Vec<Stmt>,
+    },
     SubsetDecl {
         name: Symbol,
         base: String,

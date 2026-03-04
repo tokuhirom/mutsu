@@ -2234,6 +2234,190 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Augment an existing class by adding methods (and attributes) from the body.
+    /// This implements `augment class ClassName { ... }` (monkey-patching).
+    pub(crate) fn augment_class(&mut self, name: &str, body: &[Stmt]) -> Result<(), RuntimeError> {
+        // Check if the class exists (user-defined or builtin)
+        let is_builtin = !self.classes.contains_key(name);
+        if is_builtin {
+            // For builtin types, create a minimal class def so we can add methods
+            const BUILTIN_TYPES: &[&str] = &[
+                "Mu",
+                "Any",
+                "Cool",
+                "Int",
+                "Num",
+                "Str",
+                "Bool",
+                "Rat",
+                "FatRat",
+                "Complex",
+                "Array",
+                "Hash",
+                "List",
+                "Map",
+                "Set",
+                "Bag",
+                "Mix",
+                "Range",
+                "Pair",
+                "IO",
+                "IO::Path",
+                "IO::Handle",
+                "Regex",
+                "Match",
+                "Junction",
+                "Exception",
+                "Failure",
+                "Version",
+                "Nil",
+                "Block",
+                "Code",
+                "Routine",
+                "Sub",
+                "Method",
+                "Seq",
+                "Slip",
+                "Whatever",
+                "WhateverCode",
+                "HyperWhatever",
+                "Callable",
+                "Numeric",
+                "Real",
+                "Stringy",
+                "Positional",
+                "Associative",
+                "Order",
+                "Endian",
+                "Proc",
+            ];
+            if !BUILTIN_TYPES.contains(&name) {
+                return Err(RuntimeError::new(format!(
+                    "You tried to augment class {}, but it does not exist",
+                    name
+                )));
+            }
+            // Create a minimal entry for the builtin type
+            self.classes.entry(name.to_string()).or_default();
+        }
+
+        let saved_package = self.current_package.clone();
+        self.current_package = name.to_string();
+
+        // Process body statements and add methods/attributes to the existing class
+        for stmt in body {
+            match stmt {
+                Stmt::MethodDecl {
+                    name: method_name,
+                    name_expr,
+                    param_defs,
+                    body: method_body,
+                    multi,
+                    is_rw,
+                    is_private,
+                    return_type,
+                    ..
+                } => {
+                    let resolved_method_name = if let Some(expr) = name_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                            .to_string_value()
+                    } else {
+                        method_name.resolve()
+                    };
+                    let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                    let effective_params: Vec<String> = effective_param_defs
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
+                    let def = MethodDef {
+                        params: effective_params,
+                        param_defs: effective_param_defs,
+                        body: method_body.clone(),
+                        is_rw: *is_rw,
+                        is_private: *is_private,
+                        return_type: return_type.clone(),
+                        compiled_code: None,
+                    };
+                    if let Some(class_def) = self.classes.get_mut(name) {
+                        if *multi {
+                            class_def
+                                .methods
+                                .entry(resolved_method_name)
+                                .or_default()
+                                .push(def);
+                        } else {
+                            class_def.methods.insert(resolved_method_name, vec![def]);
+                        }
+                    }
+                }
+                Stmt::HasDecl {
+                    name: attr_name,
+                    is_public,
+                    default,
+                    is_rw,
+                    type_constraint,
+                    is_required,
+                    sigil,
+                    handles,
+                } => {
+                    let attr_name_str = attr_name.resolve();
+                    if let Some(class_def) = self.classes.get_mut(name) {
+                        class_def.attributes.push((
+                            attr_name_str.clone(),
+                            *is_public,
+                            default.clone(),
+                            *is_rw,
+                            is_required.clone(),
+                            *sigil,
+                        ));
+                        if let Some(tc) = type_constraint {
+                            class_def
+                                .attribute_types
+                                .insert(attr_name_str.clone(), tc.clone());
+                        }
+                        let attr_var_name = if *is_public {
+                            format!(".{}", attr_name_str)
+                        } else {
+                            format!("!{}", attr_name_str)
+                        };
+                        for handle_name in handles {
+                            if handle_name == "*" {
+                                class_def.wildcard_handles.push(attr_var_name.clone());
+                            } else {
+                                class_def
+                                    .methods
+                                    .entry(handle_name.clone())
+                                    .or_default()
+                                    .push(MethodDef {
+                                        params: Vec::new(),
+                                        param_defs: Vec::new(),
+                                        body: vec![Stmt::Expr(Expr::MethodCall {
+                                            target: Box::new(Expr::Var(attr_var_name.clone())),
+                                            name: Symbol::intern(handle_name),
+                                            args: Vec::new(),
+                                            modifier: None,
+                                            quoted: false,
+                                        })],
+                                        is_rw: false,
+                                        is_private: false,
+                                        return_type: None,
+                                        compiled_code: None,
+                                    });
+                            }
+                        }
+                    }
+                }
+                // Execute other statements in the class body (e.g., sub declarations)
+                other => {
+                    let _ = self.eval_block_value(std::slice::from_ref(other));
+                }
+            }
+        }
+
+        self.current_package = saved_package;
+        Ok(())
+    }
+
     pub(crate) fn register_role_decl(
         &mut self,
         name: &str,

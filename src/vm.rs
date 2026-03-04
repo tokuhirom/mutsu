@@ -1646,6 +1646,10 @@ impl VM {
                 self.exec_register_class_op(code, *idx)?;
                 *ip += 1;
             }
+            OpCode::AugmentClass(idx) => {
+                self.exec_augment_class_op(code, *idx)?;
+                *ip += 1;
+            }
             OpCode::RegisterRole(idx) => {
                 self.exec_register_role_op(code, *idx)?;
                 *ip += 1;

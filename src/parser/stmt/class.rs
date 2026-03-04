@@ -299,6 +299,25 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     class_decl_body(rest)
 }
 
+/// Parse `augment class ClassName { ... }` declaration (monkey-patching).
+pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest =
+        keyword("augment", input).ok_or_else(|| PError::expected("augment class declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let rest = keyword("class", rest).ok_or_else(|| PError::expected("'class' after 'augment'"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, name) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, body) = block(rest)?;
+    Ok((
+        rest,
+        Stmt::AugmentClass {
+            name: Symbol::intern(&name),
+            body,
+        },
+    ))
+}
+
 /// Parse `anon class Name { ... }` declaration.
 /// The class is created but not installed in the lexical scope.
 /// Emits a ClassDecl (registered under the real name) followed by a call to
