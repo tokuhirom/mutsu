@@ -1704,6 +1704,34 @@ impl Interpreter {
                     None
                 };
             }
+            RegexAtom::StartOfLine => {
+                // ^^ — matches at the start of any logical line:
+                // pos == 0 OR the char before pos is \n
+                return if pos == 0 || chars[pos - 1] == '\n' {
+                    Some(pos)
+                } else {
+                    None
+                };
+            }
+            RegexAtom::EndOfLine => {
+                // $$ — matches at the end of any logical line:
+                // pos == chars.len() OR the char at pos is \n
+                // But NOT between \r and \n (i.e., if chars[pos-1] == '\r' and chars[pos] == '\n', no match)
+                if pos == chars.len() {
+                    return Some(pos);
+                }
+                if chars[pos] == '\n' {
+                    // Don't match between \r and \n
+                    if pos > 0 && chars[pos - 1] == '\r' {
+                        return None;
+                    }
+                    return Some(pos);
+                }
+                if chars[pos] == '\r' && (pos + 1 >= chars.len() || chars[pos + 1] != '\n') {
+                    return Some(pos);
+                }
+                return None;
+            }
             RegexAtom::CodeAssertion { .. } => {
                 // In non-capture mode, code assertions always succeed
                 // (we can't evaluate them without capture context)
@@ -1901,7 +1929,9 @@ impl Interpreter {
             | RegexAtom::VarDecl { .. }
             | RegexAtom::ClosureInterpolation { .. }
             | RegexAtom::LeftWordBoundary
-            | RegexAtom::RightWordBoundary => unreachable!(),
+            | RegexAtom::RightWordBoundary
+            | RegexAtom::StartOfLine
+            | RegexAtom::EndOfLine => unreachable!(),
         };
         if matched {
             match atom {
@@ -1969,7 +1999,9 @@ impl Interpreter {
             RegexAtom::ZeroWidth
             | RegexAtom::UnicodePropAssert { .. }
             | RegexAtom::LeftWordBoundary
-            | RegexAtom::RightWordBoundary => {
+            | RegexAtom::RightWordBoundary
+            | RegexAtom::StartOfLine
+            | RegexAtom::EndOfLine => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));

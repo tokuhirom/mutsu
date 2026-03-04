@@ -567,8 +567,31 @@ impl Interpreter {
                 }
                 continue;
             }
-            if c == '^' && tokens.is_empty() {
-                anchor_start = true;
+            if c == '^' {
+                if chars.peek() == Some(&'^') {
+                    // ^^ — start of line anchor (zero-width assertion)
+                    chars.next();
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::StartOfLine,
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        ratchet,
+                    });
+                    continue;
+                } else if tokens.is_empty() {
+                    anchor_start = true;
+                    continue;
+                }
+            }
+            if c == '$' && chars.peek() == Some(&'$') {
+                // $$ — end of line anchor (zero-width assertion)
+                chars.next();
+                tokens.push(RegexToken {
+                    atom: RegexAtom::EndOfLine,
+                    quant: RegexQuant::One,
+                    named_capture: None,
+                    ratchet,
+                });
                 continue;
             }
             if c == '$' && chars.clone().all(|ch| ch.is_whitespace()) {

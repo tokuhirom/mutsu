@@ -330,6 +330,10 @@ enum RegexAtom {
     LeftWordBoundary,
     /// `>>` or `»` — right word boundary assertion (zero-width)
     RightWordBoundary,
+    /// `^^` — start of line assertion (zero-width)
+    StartOfLine,
+    /// `$$` — end of line assertion (zero-width)
+    EndOfLine,
 }
 
 #[derive(Clone)]

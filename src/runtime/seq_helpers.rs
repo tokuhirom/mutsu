@@ -795,7 +795,10 @@ impl Interpreter {
     /// Select non-overlapping matches from all matches (for :g/global).
     /// Takes the longest match at each position, then greedily selects
     /// matches that don't overlap with previously selected ones.
-    fn select_non_overlapping_matches(&self, all: Vec<RegexCaptures>) -> Vec<RegexCaptures> {
+    pub(super) fn select_non_overlapping_matches(
+        &self,
+        all: Vec<RegexCaptures>,
+    ) -> Vec<RegexCaptures> {
         if all.is_empty() {
             return Vec::new();
         }
@@ -1280,9 +1283,11 @@ impl Interpreter {
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env.insert(i.to_string(), Value::str(v.clone()));
                     }
+                    // Clear any previous `made` value before executing code blocks
+                    self.env.remove("made");
                     // Execute code blocks from regex for side effects
                     self.execute_regex_code_blocks(&captures.code_blocks);
-                    let match_obj = Value::make_match_object_full(
+                    let mut match_obj = Value::make_match_object_full(
                         captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
@@ -1291,6 +1296,15 @@ impl Interpreter {
                         &captures.named_subcaps,
                         Some(&text),
                     );
+                    // If `make` was called in a code block, set the ast attribute
+                    if let Some(made_val) = self.env.get("made").cloned()
+                        && let Value::Instance {
+                            ref mut attributes, ..
+                        } = match_obj
+                    {
+                        let attrs = std::sync::Arc::make_mut(attributes);
+                        attrs.insert("ast".to_string(), made_val);
+                    }
                     // Set named capture env vars from the match object's named hash
                     // so subcapture-aware Match objects are used (not plain strings)
                     if let Value::Instance { ref attributes, .. } = match_obj
