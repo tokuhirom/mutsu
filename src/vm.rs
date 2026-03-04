@@ -407,12 +407,9 @@ impl VM {
                     if !matches!(val, Value::Nil)
                         && !self.interpreter.type_matches_value(&constraint, &val)
                     {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                            name,
-                            constraint,
-                            runtime::utils::value_type_name(&val)
-                        )));
+                        return Err(RuntimeError::new(
+                            runtime::utils::type_check_assignment_error(&name, &constraint, &val),
+                        ));
                     }
                     if !matches!(val, Value::Nil) {
                         val = self

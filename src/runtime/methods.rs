@@ -1169,12 +1169,13 @@ impl Interpreter {
                             })
                         && !self.type_matches_value(&constraint, value)
                     {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                            var_name,
-                            constraint,
-                            crate::runtime::utils::value_type_name(value)
-                        )));
+                        return Err(RuntimeError::new(
+                            crate::runtime::utils::type_check_element_error(
+                                &var_name,
+                                &constraint,
+                                value,
+                            ),
+                        ));
                     }
 
                     let mut updated = items.to_vec();

@@ -2061,6 +2061,26 @@ impl Interpreter {
         self.var_type_constraints = snapshot;
     }
 
+    /// Check that all values satisfy the element type constraint for a
+    /// container variable (e.g. `my Int @a`). Returns Ok(()) if no constraint
+    /// exists or all values pass; returns a type-check error otherwise.
+    pub(crate) fn check_container_element_types(
+        &mut self,
+        var_name: &str,
+        values: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if let Some(constraint) = self.var_type_constraint(var_name) {
+            for val in values {
+                if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, val) {
+                    return Err(RuntimeError::new(
+                        crate::runtime::utils::type_check_element_error(var_name, &constraint, val),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         self.var_dynamic_flags
             .get(Self::normalize_var_meta_name(name))
