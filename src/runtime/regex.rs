@@ -1682,6 +1682,30 @@ impl Interpreter {
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
                 return Some(pos);
             }
+            RegexAtom::Lookaround {
+                pattern,
+                negated,
+                is_behind,
+            } => {
+                let matched = if *is_behind {
+                    let mut found = false;
+                    for start in 0..=pos {
+                        if self
+                            .regex_match_end_from_caps_in_pkg(pattern, chars, start, pkg)
+                            .is_some_and(|(end, _)| end == pos)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    found
+                } else {
+                    self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
+                        .is_some()
+                };
+                let pass = if *negated { !matched } else { matched };
+                return if pass { Some(pos) } else { None };
+            }
             RegexAtom::UnicodePropAssert { name, negated } => {
                 // Zero-width assertion: check next char but don't consume
                 if pos >= chars.len() {
@@ -1841,6 +1865,7 @@ impl Interpreter {
             | RegexAtom::ZeroWidth
             | RegexAtom::CodeAssertion { .. }
             | RegexAtom::UnicodePropAssert { .. }
+            | RegexAtom::Lookaround { .. }
             | RegexAtom::CaptureStartMarker
             | RegexAtom::CaptureEndMarker
             | RegexAtom::VarDecl { .. }
@@ -1913,6 +1938,37 @@ impl Interpreter {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));
+            }
+            RegexAtom::Lookaround {
+                pattern,
+                negated,
+                is_behind,
+            } => {
+                let matched = if *is_behind {
+                    // Lookbehind: try matching the pattern at each possible start
+                    // position before current pos, checking if it ends at pos
+                    let mut found = false;
+                    for start in 0..=pos {
+                        if self
+                            .regex_match_end_from_caps_in_pkg(pattern, chars, start, pkg)
+                            .is_some_and(|(end, _)| end == pos)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    found
+                } else {
+                    // Lookahead: try matching the pattern at current position
+                    self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
+                        .is_some()
+                };
+                let pass = if *negated { !matched } else { matched };
+                return if pass {
+                    Some((pos, current_caps.clone()))
+                } else {
+                    None
+                };
             }
             RegexAtom::CaptureGroup(pattern) => {
                 // Match the inner pattern and capture the matched text

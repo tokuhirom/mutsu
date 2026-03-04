@@ -843,13 +843,55 @@ impl Interpreter {
                         chars.next();
                         RegexAtom::CaptureStartMarker
                     } else {
-                        // Check for code assertion: <?{...}> or <!{...}>
-                        // These need special handling because code may contain < and >
+                        // Check for lookaround assertions: <?before ...>, <!before ...>,
+                        // <?after ...>, <!after ...>
                         let peek_str: String = chars.clone().collect();
-                        if peek_str.starts_with("?{")
+                        if peek_str.starts_with("?before ")
+                            || peek_str.starts_with("!before ")
+                            || peek_str.starts_with("?after ")
+                            || peek_str.starts_with("!after ")
+                        {
+                            let negated = peek_str.starts_with('!');
+                            // Skip '?' or '!'
+                            chars.next();
+                            let is_behind = peek_str[1..].starts_with("after ");
+                            let keyword = if is_behind { "after " } else { "before " };
+                            // Skip keyword
+                            for _ in 0..keyword.len() {
+                                chars.next();
+                            }
+                            // Read the inner pattern up to the closing '>'
+                            let mut inner = String::new();
+                            let mut angle_depth = 1usize;
+                            for ch in chars.by_ref() {
+                                if ch == '<' {
+                                    angle_depth += 1;
+                                    inner.push(ch);
+                                } else if ch == '>' {
+                                    angle_depth -= 1;
+                                    if angle_depth == 0 {
+                                        break;
+                                    }
+                                    inner.push(ch);
+                                } else {
+                                    inner.push(ch);
+                                }
+                            }
+                            // Parse the inner pattern as a regex
+                            let Some(inner_pattern) = self.parse_regex(&inner) else {
+                                continue;
+                            };
+                            RegexAtom::Lookaround {
+                                pattern: inner_pattern,
+                                negated,
+                                is_behind,
+                            }
+                        } else if peek_str.starts_with("?{")
                             || peek_str.starts_with("!{")
                             || peek_str.starts_with('{')
                         {
+                            // Check for code assertion: <?{...}> or <!{...}>
+                            // These need special handling because code may contain < and >
                             let is_closure_interp = peek_str.starts_with('{');
                             let negated = !is_closure_interp && peek_str.starts_with('!');
                             if !is_closure_interp {

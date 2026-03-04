@@ -288,6 +288,13 @@ enum RegexAtom {
         positive: Vec<ClassItem>,
         negative: Vec<ClassItem>,
     },
+    /// Lookaround assertion: <?before pattern>, <!before pattern>,
+    /// <?after pattern>, <!after pattern>
+    Lookaround {
+        pattern: RegexPattern,
+        negated: bool,
+        is_behind: bool,
+    },
 }
 
 #[derive(Clone)]
