@@ -897,38 +897,37 @@ impl Interpreter {
             let key = target_var.to_string();
             match method {
                 "push" => {
+                    self.check_container_element_types(&key, &args)?;
                     let result = self.push_to_shared_var(&key, args, &target);
                     return Ok(result);
                 }
                 "append" => {
+                    // Collect all values that will be inserted for type checking
+                    let mut flat_values = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Array(vals, kind) if !kind.is_itemized() => {
+                                flat_values.extend(vals.iter().cloned())
+                            }
+                            other => flat_values.push(other.clone()),
+                        }
+                    }
+                    self.check_container_element_types(&key, &flat_values)?;
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        for arg in args {
-                            match arg {
-                                Value::Array(vals, kind) if !kind.is_itemized() => {
-                                    items.extend(vals.iter().cloned())
-                                }
-                                other => items.push(other),
-                            }
-                        }
+                        items.extend(flat_values);
                         return Ok(Value::Nil);
                     }
                     let mut items = match target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    for arg in args {
-                        match arg {
-                            Value::Array(vals, kind) if !kind.is_itemized() => {
-                                items.extend(vals.iter().cloned())
-                            }
-                            other => items.push(other),
-                        }
-                    }
+                    items.extend(flat_values);
                     self.env.insert(key, Value::real_array(items));
                     return Ok(Value::Nil);
                 }
                 "unshift" | "prepend" => {
+                    self.check_container_element_types(&key, &args)?;
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         for (i, arg) in args.iter().enumerate() {

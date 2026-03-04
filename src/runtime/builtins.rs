@@ -1186,12 +1186,9 @@ impl Interpreter {
             if matches!(value, Value::Nil) {
                 value = Value::Package(Symbol::intern(&constraint));
             } else if !self.type_matches_value(&constraint, &value) {
-                return Err(RuntimeError::new(format!(
-                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                    name,
-                    constraint,
-                    crate::runtime::utils::value_type_name(&value)
-                )));
+                return Err(RuntimeError::new(
+                    crate::runtime::utils::type_check_assignment_error(name, &constraint, &value),
+                ));
             }
             if !matches!(value, Value::Nil | Value::Package(_)) {
                 value = self.try_coerce_value_for_constraint(&constraint, value)?;

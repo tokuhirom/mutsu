@@ -1891,11 +1891,10 @@ impl VM {
                     && !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
                 {
-                    return Err(RuntimeError::new(format!(
-                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                        var_name,
-                        constraint,
-                        runtime::utils::value_type_name(&val)
+                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        &var_name,
+                        &constraint,
+                        &val,
                     )));
                 }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
@@ -2118,12 +2117,9 @@ impl VM {
                 if !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
                 {
-                    return Err(RuntimeError::new(format!(
-                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                        name,
-                        constraint,
-                        runtime::utils::value_type_name(&val)
-                    )));
+                    return Err(RuntimeError::new(
+                        runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                    ));
                 }
                 let val = if !matches!(val, Value::Nil) {
                     self.interpreter
@@ -2169,12 +2165,9 @@ impl VM {
             }
             if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
             {
-                return Err(RuntimeError::new(format!(
-                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                    name,
-                    constraint,
-                    runtime::utils::value_type_name(&val)
-                )));
+                return Err(RuntimeError::new(
+                    runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                ));
             }
             if !matches!(val, Value::Nil) {
                 val = self
@@ -2307,12 +2300,9 @@ impl VM {
                 let val = if matches!(val, Value::Nil) {
                     Value::Package(Symbol::intern(&constraint))
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
-                    return Err(RuntimeError::new(format!(
-                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                        name,
-                        constraint,
-                        runtime::utils::value_type_name(&val)
-                    )));
+                    return Err(RuntimeError::new(
+                        runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                    ));
                 } else if !matches!(val, Value::Nil | Value::Package(_)) {
                     self.interpreter
                         .try_coerce_value_for_constraint(&constraint, val)?
@@ -2348,12 +2338,9 @@ impl VM {
                 // Assigning Nil to a typed variable resets it to the type object
                 val = Value::Package(Symbol::intern(&constraint));
             } else if !self.interpreter.type_matches_value(&constraint, &val) {
-                return Err(RuntimeError::new(format!(
-                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
-                    name,
-                    constraint,
-                    runtime::utils::value_type_name(&val)
-                )));
+                return Err(RuntimeError::new(
+                    runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                ));
             }
             if !matches!(val, Value::Nil | Value::Package(_)) {
                 val = self

@@ -1466,3 +1466,72 @@ fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) 
         other => out.push(other),
     }
 }
+
+/// Format a short representation of a value for type-check error messages,
+/// matching Raku's format: e.g. `("hello")`, `(42)`.
+pub(crate) fn value_short_repr(val: &Value) -> String {
+    match val {
+        Value::Str(s) => format!("(\"{}\")", s),
+        Value::Int(n) => format!("({})", n),
+        Value::BigInt(n) => format!("({})", n),
+        Value::Num(n) => format!("({})", n),
+        Value::Bool(b) => format!("({})", if *b { "True" } else { "False" }),
+        Value::Rat(n, d) => format!("({}/{})", n, d),
+        Value::BigRat(n, d) => format!("({}/{})", n, d),
+        Value::FatRat(n, d) => format!("(FatRat.new({}, {}))", n, d),
+        Value::Nil => "(Nil)".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Format the variable name for error messages, adding `$` sigil for
+/// scalar variables that don't already have a sigil prefix.
+pub(crate) fn format_var_name_for_error(name: &str) -> String {
+    if name.starts_with('$')
+        || name.starts_with('@')
+        || name.starts_with('%')
+        || name.starts_with('&')
+    {
+        name.to_string()
+    } else {
+        format!("${}", name)
+    }
+}
+
+/// Build the standard X::TypeCheck::Assignment error message, matching Raku's format:
+/// `Type check failed in assignment to $x; expected Int but got Str ("hello")`
+pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &Value) -> String {
+    let display_name = format_var_name_for_error(var_name);
+    let got_type = value_type_name(val);
+    let repr = value_short_repr(val);
+    if repr.is_empty() {
+        format!(
+            "X::TypeCheck::Assignment: Type check failed in assignment to {}; expected {} but got {}",
+            display_name, expected, got_type
+        )
+    } else {
+        format!(
+            "X::TypeCheck::Assignment: Type check failed in assignment to {}; expected {} but got {} {}",
+            display_name, expected, got_type, repr
+        )
+    }
+}
+
+/// Build the standard X::TypeCheck::Assignment error for array/hash elements:
+/// `Type check failed for an element of @a; expected Int but got Str ("hi")`
+pub(crate) fn type_check_element_error(var_name: &str, expected: &str, val: &Value) -> String {
+    let display_name = format_var_name_for_error(var_name);
+    let got_type = value_type_name(val);
+    let repr = value_short_repr(val);
+    if repr.is_empty() {
+        format!(
+            "X::TypeCheck::Assignment: Type check failed for an element of {}; expected {} but got {}",
+            display_name, expected, got_type
+        )
+    } else {
+        format!(
+            "X::TypeCheck::Assignment: Type check failed for an element of {}; expected {} but got {} {}",
+            display_name, expected, got_type, repr
+        )
+    }
+}
