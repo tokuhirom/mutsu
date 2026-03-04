@@ -109,7 +109,7 @@ enum SerJunctionKind {
 fn value_to_ser(v: &Value) -> Result<SerValue, String> {
     match v {
         Value::Int(n) => Ok(SerValue::Int(*n)),
-        Value::BigInt(n) => Ok(SerValue::BigInt(n.clone())),
+        Value::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
         Value::Num(n) => Ok(SerValue::Num(*n)),
         Value::Str(s) => Ok(SerValue::Str((**s).clone())),
         Value::Bool(b) => Ok(SerValue::Bool(*b)),
@@ -175,7 +175,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             value: *value,
             index: *index,
         }),
-        Value::Regex(s) => Ok(SerValue::Regex(s.clone())),
+        Value::Regex(s) => Ok(SerValue::Regex((**s).clone())),
         Value::RegexWithAdverbs {
             pattern,
             exhaustive,
@@ -183,7 +183,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             perl5,
             pos,
         } => Ok(SerValue::RegexWithAdverbs {
-            pattern: pattern.clone(),
+            pattern: (**pattern).clone(),
             exhaustive: *exhaustive,
             repeat: *repeat,
             perl5: *perl5,
@@ -286,7 +286,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
 fn ser_to_value(sv: SerValue) -> Value {
     match sv {
         SerValue::Int(n) => Value::Int(n),
-        SerValue::BigInt(n) => Value::BigInt(n),
+        SerValue::BigInt(n) => Value::BigInt(Arc::new(n)),
         SerValue::Num(n) => Value::Num(n),
         SerValue::Str(s) => Value::Str(Arc::new(s)),
         SerValue::Bool(b) => Value::Bool(b),
@@ -300,8 +300,8 @@ fn ser_to_value(sv: SerValue) -> Value {
             excl_start,
             excl_end,
         } => Value::GenericRange {
-            start: Box::new(ser_to_value(*start)),
-            end: Box::new(ser_to_value(*end)),
+            start: Arc::new(ser_to_value(*start)),
+            end: Arc::new(ser_to_value(*end)),
             excl_start,
             excl_end,
         },
@@ -345,7 +345,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             value,
             index,
         },
-        SerValue::Regex(s) => Value::Regex(s),
+        SerValue::Regex(s) => Value::Regex(Arc::new(s)),
         SerValue::RegexWithAdverbs {
             pattern,
             exhaustive,
@@ -353,7 +353,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             perl5,
             pos,
         } => Value::RegexWithAdverbs {
-            pattern,
+            pattern: Arc::new(pattern),
             exhaustive,
             repeat,
             perl5,
@@ -391,11 +391,13 @@ fn ser_to_value(sv: SerValue) -> Value {
             id,
         },
         SerValue::Mixin(inner, overrides) => Value::Mixin(
-            Box::new(ser_to_value(*inner)),
-            overrides
-                .into_iter()
-                .map(|(k, v)| (k, ser_to_value(v)))
-                .collect(),
+            Arc::new(ser_to_value(*inner)),
+            Arc::new(
+                overrides
+                    .into_iter()
+                    .map(|(k, v)| (k, ser_to_value(v)))
+                    .collect(),
+            ),
         ),
         SerValue::Capture { positional, named } => Value::Capture {
             positional: positional.into_iter().map(ser_to_value).collect(),
