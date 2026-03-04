@@ -1147,6 +1147,14 @@ impl Value {
     }
 
     /// Check if this value is a numeric type (Int, Num, Rat, FatRat, BigInt).
+    /// Returns the inner items if this value is an Array, Seq, or Slip.
+    pub(crate) fn as_list_items(&self) -> Option<&Arc<Vec<Value>>> {
+        match self {
+            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => Some(items),
+            _ => None,
+        }
+    }
+
     pub(crate) fn is_numeric(&self) -> bool {
         matches!(
             self,

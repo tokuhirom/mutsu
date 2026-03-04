@@ -214,9 +214,11 @@ impl Interpreter {
             fn collection_contains_instance(value: &Value) -> bool {
                 match value {
                     Value::Instance { .. } => true,
-                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                        items.iter().any(collection_contains_instance)
-                    }
+                    _ if value.as_list_items().is_some() => value
+                        .as_list_items()
+                        .unwrap()
+                        .iter()
+                        .any(collection_contains_instance),
                     Value::Hash(map) => map.values().any(collection_contains_instance),
                     _ => false,
                 }
@@ -224,8 +226,10 @@ impl Interpreter {
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 match value {
                     Value::Nil => "Nil".to_string(),
-                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                        let inner = items
+                    _ if value.as_list_items().is_some() => {
+                        let inner = value
+                            .as_list_items()
+                            .unwrap()
                             .iter()
                             .map(|item| gist_item(interp, item))
                             .collect::<Vec<_>>()
@@ -239,18 +243,15 @@ impl Interpreter {
                     },
                 }
             }
-            match &target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
-                    if items.iter().any(collection_contains_instance) =>
-                {
-                    let inner = items
-                        .iter()
-                        .map(|item| gist_item(self, item))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    return Ok(Value::str(format!("({inner})")));
-                }
-                _ => {}
+            if let Some(items) = target.as_list_items()
+                && items.iter().any(collection_contains_instance)
+            {
+                let inner = items
+                    .iter()
+                    .map(|item| gist_item(self, item))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                return Ok(Value::str(format!("({inner})")));
             }
         }
         if matches!(method, "max" | "min" | "lines" | "delayed")
@@ -2363,12 +2364,12 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-                let is_lazy = match &target {
-                    v if value_is_lazy(v) => true,
-                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                        items.iter().any(value_is_lazy)
-                    }
-                    _ => false,
+                let is_lazy = if value_is_lazy(&target) {
+                    true
+                } else if let Some(items) = target.as_list_items() {
+                    items.iter().any(value_is_lazy)
+                } else {
+                    false
                 };
                 return Ok(Value::Bool(is_lazy));
             }

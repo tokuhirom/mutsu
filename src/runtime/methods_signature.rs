@@ -683,21 +683,24 @@ impl Interpreter {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
             _ => None,
         })?;
-        let dims_vals = match shape_val {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            Value::Int(i) => vec![Value::Int(i)],
-            Value::Package(ref name) => {
-                // Enum type as shape: use the number of enum variants
-                if let Some(variants) = self.enum_types.get(&name.resolve()) {
-                    vec![Value::Int(variants.len() as i64)]
-                } else if name == "Bool" {
-                    // Bool is a builtin enum with 2 values (False, True)
-                    vec![Value::Int(2)]
-                } else {
-                    return None;
+        let dims_vals = if let Some(items) = shape_val.as_list_items() {
+            items.to_vec()
+        } else {
+            match shape_val {
+                Value::Int(i) => vec![Value::Int(i)],
+                Value::Package(ref name) => {
+                    // Enum type as shape: use the number of enum variants
+                    if let Some(variants) = self.enum_types.get(&name.resolve()) {
+                        vec![Value::Int(variants.len() as i64)]
+                    } else if name == "Bool" {
+                        // Bool is a builtin enum with 2 values (False, True)
+                        vec![Value::Int(2)]
+                    } else {
+                        return None;
+                    }
                 }
+                _ => return None,
             }
-            _ => return None,
         };
         let mut dims = Vec::with_capacity(dims_vals.len());
         for dim in &dims_vals {

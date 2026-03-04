@@ -8,11 +8,14 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let items = match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            Value::Capture { positional, .. } => positional,
-            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
-            _ => return Ok(Value::Nil),
+        let items = if let Some(list_items) = target.as_list_items() {
+            list_items.to_vec()
+        } else {
+            match target {
+                Value::Capture { positional, .. } => positional,
+                Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+                _ => return Ok(Value::Nil),
+            }
         };
         if items.is_empty() {
             return Ok(Value::array(Vec::new()));
@@ -323,15 +326,18 @@ impl Interpreter {
             }
         }
 
-        let items: Vec<Value> = match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
-            v @ (Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }) => Self::value_to_list(&v),
-            other => vec![other],
+        let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
+            list_items.to_vec()
+        } else {
+            match target {
+                Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+                v @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => Self::value_to_list(&v),
+                other => vec![other],
+            }
         };
         let mut seen_keys: Vec<Value> = Vec::new();
         let mut unique_items: Vec<Value> = Vec::new();
@@ -399,15 +405,18 @@ impl Interpreter {
             return Ok(target);
         }
 
-        let items: Vec<Value> = match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-            Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
-            v @ (Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }) => Self::value_to_list(&v),
-            other => vec![other],
+        let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
+            list_items.to_vec()
+        } else {
+            match target {
+                Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+                v @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => Self::value_to_list(&v),
+                other => vec![other],
+            }
         };
         let source_items = items.clone();
 

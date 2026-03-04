@@ -49,8 +49,8 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                for item in items.iter() {
+            _ if value.as_list_items().is_some() => {
+                for item in value.as_list_items().unwrap().iter() {
                     Self::union_insert_set_elem(elems, item);
                 }
             }
@@ -96,9 +96,9 @@ impl Interpreter {
                     }
                 })
                 .collect()),
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            _ if value.as_list_items().is_some() => {
                 let mut elems = std::collections::HashSet::new();
-                for item in items.iter() {
+                for item in value.as_list_items().unwrap().iter() {
                     Self::union_insert_set_elem(&mut elems, item);
                 }
                 Ok(elems)

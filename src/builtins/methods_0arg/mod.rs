@@ -1117,10 +1117,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::str(s)))
         }
         "elems" => {
+            if let Some(items) = target.as_list_items() {
+                return Some(Ok(Value::Int(items.len() as i64)));
+            }
             let result = match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                    Value::Int(items.len() as i64)
-                }
                 Value::Hash(items) => Value::Int(items.len() as i64),
                 Value::Set(items) => Value::Int(items.len() as i64),
                 Value::Bag(items) => Value::Int(items.len() as i64),
@@ -1263,29 +1263,31 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
-        "end" => match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                Some(Ok(Value::Int(items.len() as i64 - 1)))
+        "end" => {
+            if let Some(items) = target.as_list_items() {
+                return Some(Ok(Value::Int(items.len() as i64 - 1)));
             }
-            Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-            Value::Set(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-            Value::Bag(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-            Value::Mix(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-            Value::Junction { values, .. } => Some(Ok(Value::Int(values.len() as i64 - 1))),
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Buf" || class_name == "Blob" => {
-                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
-                    Some(Ok(Value::Int(bytes.len() as i64 - 1)))
-                } else {
-                    Some(Ok(Value::Int(-1)))
+            match target {
+                Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Set(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Bag(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Mix(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Junction { values, .. } => Some(Ok(Value::Int(values.len() as i64 - 1))),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Buf" || class_name == "Blob" => {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        Some(Ok(Value::Int(bytes.len() as i64 - 1)))
+                    } else {
+                        Some(Ok(Value::Int(-1)))
+                    }
                 }
+                Value::LazyList(_) => None,
+                _ => Some(Ok(Value::Int(0))),
             }
-            Value::LazyList(_) => None,
-            _ => Some(Ok(Value::Int(0))),
-        },
+        }
         "flat" => match target {
             Value::Array(items, ..) => {
                 let mut result = Vec::new();
@@ -1487,11 +1489,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if is_value_lazy(target) {
                 return Some(Ok(target.clone()));
             }
-            let items = match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                    items.as_ref().clone()
-                }
-                _ => return Some(Ok(target.clone())),
+            let items = if let Some(items) = target.as_list_items() {
+                items.as_ref().clone()
+            } else {
+                return Some(Ok(target.clone()));
             };
             Some(Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList {
@@ -1520,17 +1521,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let parts: Vec<Value> = s.chars().map(|c| Value::str(c.to_string())).collect();
             Some(Ok(Value::array(parts)))
         }
-        "join" => match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+        "join" => {
+            if let Some(items) = target.as_list_items() {
                 let joined = items
                     .iter()
                     .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()
                     .join("");
                 Some(Ok(Value::str(joined)))
+            } else {
+                Some(Ok(Value::str(target.to_string_value())))
             }
-            _ => Some(Ok(Value::str(target.to_string_value()))),
-        },
+        }
         "gist" | "raku" | "perl" => match target {
             Value::Bool(b) => {
                 if method == "gist" {

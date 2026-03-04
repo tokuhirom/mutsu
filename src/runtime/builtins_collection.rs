@@ -495,8 +495,8 @@ impl Interpreter {
                 out.push((**start).clone());
                 out.push((**end).clone());
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                out.extend(items.iter().cloned());
+            _ if value.as_list_items().is_some() => {
+                out.extend(value.as_list_items().unwrap().iter().cloned());
             }
             other => out.push(other.clone()),
         }

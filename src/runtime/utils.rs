@@ -805,9 +805,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::Int(0)
             }
         }
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-            Value::Int(items.len() as i64)
-        }
+        _ if val.as_list_items().is_some() => Value::Int(val.as_list_items().unwrap().len() as i64),
         Value::Hash(items) => Value::Int(items.len() as i64),
         Value::Set(items) => Value::Int(items.len() as i64),
         Value::Bag(items) => Value::Int(items.values().sum()),
@@ -857,8 +855,8 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
                     }
                 }
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                for item in items.iter() {
+            _ if value.as_list_items().is_some() => {
+                for item in value.as_list_items().unwrap().iter() {
                     insert_set_elem(elems, item);
                 }
             }
@@ -900,9 +898,9 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
                 }
             })
             .collect(),
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+        _ if val.as_list_items().is_some() => {
             let mut elems = HashSet::new();
-            for item in items.iter() {
+            for item in val.as_list_items().unwrap().iter() {
                 insert_set_elem(&mut elems, item);
             }
             elems
@@ -941,9 +939,9 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
             }
             Value::set(set)
         }
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+        _ if val.as_list_items().is_some() => {
             let mut set = HashSet::new();
-            for item in items.iter() {
+            for item in val.as_list_items().unwrap().iter() {
                 match item {
                     Value::Pair(k, v) => {
                         if v.truthy() {
@@ -1315,9 +1313,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         Value::Str(s) => s.parse::<f64>().ok(),
         Value::Nil => Some(0.0),
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-            Some(items.len() as f64)
-        }
+        _ if val.as_list_items().is_some() => Some(val.as_list_items().unwrap().len() as f64),
         Value::LazyList(ll) => {
             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
                 Some(cached.len() as f64)
