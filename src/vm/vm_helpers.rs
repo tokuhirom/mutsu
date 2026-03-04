@@ -803,6 +803,17 @@ impl VM {
         }
     }
 
+    pub(super) fn locals_get_by_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
+        self.find_local_slot(code, name)
+            .map(|slot| self.locals[slot].clone())
+    }
+
+    pub(super) fn locals_set_by_name(&mut self, code: &CompiledCode, name: &str, val: Value) {
+        if let Some(slot) = self.find_local_slot(code, name) {
+            self.locals[slot] = val;
+        }
+    }
+
     pub(super) fn try_native_method(
         &mut self,
         target: &Value,

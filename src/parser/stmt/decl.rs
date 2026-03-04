@@ -781,6 +781,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 continue;
             }
             let (r2, _) = ws(r2)?;
+            // "default" is a supported trait but needs to be in custom_traits
+            // for runtime processing via ApplyVarTrait.
+            let include_in_traits = !is_builtin || trait_name == "default";
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
@@ -788,12 +791,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 let (r3, _) = ws(r3)?;
                 let (r3, _) = parse_char(r3, ')')?;
                 let (r3, _) = ws(r3)?;
-                if !is_builtin {
+                if include_in_traits {
                     custom_traits.push((trait_name.clone(), Some(trait_arg)));
                 }
                 r = r3;
             } else {
-                if !is_builtin {
+                if include_in_traits {
                     custom_traits.push((trait_name.clone(), None));
                 }
                 r = r2;
