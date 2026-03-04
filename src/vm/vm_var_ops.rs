@@ -2141,12 +2141,11 @@ impl VM {
                 } else {
                     val
                 };
-                self.locals[idx] = val.clone();
-                self.interpreter.set_shared_var(name, val);
+                self.locals[idx] = val;
             } else {
-                self.locals[idx] = val.clone();
-                self.interpreter.set_shared_var(name, val);
+                self.locals[idx] = val;
             }
+            self.locals_dirty = true;
             return Ok(());
         }
 
@@ -2324,13 +2323,12 @@ impl VM {
                     val
                 };
                 self.locals[idx] = val.clone();
-                self.interpreter.set_shared_var(name, val.clone());
                 self.stack.push(val);
             } else {
                 self.locals[idx] = val.clone();
-                self.interpreter.set_shared_var(name, val.clone());
                 self.stack.push(val);
             }
+            self.locals_dirty = true;
             return Ok(());
         }
 

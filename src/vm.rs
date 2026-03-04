@@ -33,6 +33,7 @@ pub(super) struct VmCallFrame {
     pub saved_stack_depth: usize,
     pub saved_readonly: HashSet<String>,
     pub saved_env_dirty: bool,
+    pub saved_locals_dirty: bool,
 }
 
 pub(crate) struct VM {
@@ -51,6 +52,9 @@ pub(crate) struct VM {
     /// When true, locals may be stale relative to env (interpreter bridge modified env).
     /// Cleared after sync_locals_from_env or pop_call_frame.
     env_dirty: bool,
+    /// When true, env may be stale relative to locals (simple local SetLocal skipped env write).
+    /// Cleared after ensure_env_synced or sync_env_from_locals.
+    locals_dirty: bool,
 }
 
 impl VM {
@@ -113,6 +117,7 @@ impl VM {
             topic_source_var: None,
             call_frames: Vec::new(),
             env_dirty: false,
+            locals_dirty: false,
         }
     }
 
