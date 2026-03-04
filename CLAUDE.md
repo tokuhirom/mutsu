@@ -111,6 +111,7 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
   3. Push and open a PR with `gh pr create`.
   4. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
   5. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
+  6. After creating a PR, watch it with `gh pr checks <pr-number> --watch` until CI completes. If CI fails or a merge conflict occurs, fix the issue on the same branch, push again, and continue watching until the PR merges.
 - If CI fails, fix the issue on the same branch, push again, and wait for CI to pass.
 - Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
