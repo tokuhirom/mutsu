@@ -117,18 +117,32 @@ Current implementation uses blocking OS threads. Raku's concurrency model needs:
 
 ### P1. Memory management / GC
 
-Current: Arc-based reference counting, no cycle detection. `clone()` on every
-variable read. `WeakSub` for `&?BLOCK` self-reference only.
+Design doc: `docs/gc.md`
 
-**Current issues:**
-- Every variable read/write clones the `Value`, including `Arc<Vec<Value>>` (cheap ref bump, but interior mutability requires `Arc::make_mut` or explicit swap)
-- Env (HashMap) grows monotonically within a scope
-- Circular object references (e.g. two instances pointing to each other) leak
+#### Phase 1: Arc-wrap heap types (cheap clone via refcount bump)
 
-**Roadmap:**
-1. **Scoped call frames** — Replace flat HashMap env with stack of frames. Local variables freed on scope exit. Already partially done with `GetLocal`/`SetLocal` indexed slots, but env HashMap is still the source of truth for interpreter bridge.
-2. ~~**Copy-on-write for containers**~~ — Done. `Arc::make_mut` pattern for arrays (PR #729) and hashes, avoiding unnecessary cloning when single-owned.
-3. **Cycle collector** — If/when circular object graphs become a practical issue, add a simple cycle collector (e.g. trial deletion algorithm) on top of Arc. Full tracing GC is overkill if Arc handles 99% of cases.
+- [x] Phase 1a: Env (CoW `Arc<HashMap>` wrapper — `src/env.rs`)
+- [x] Array (`Arc<Vec<Value>>`)
+- [x] Hash (`Arc<HashMap<String, Value>>`)
+- [x] Sub (`Arc<SubData>`)
+- [x] Instance attributes (`Arc<HashMap<String, Value>>`)
+- [x] Set / Bag / Mix (`Arc<HashSet>` / `Arc<HashMap>`)
+- [x] Seq / Slip / Junction values (`Arc<Vec<Value>>`)
+- [x] Str (`Arc<String>`) — PR #748
+- [ ] BigInt (`NumBigInt` → `Arc<NumBigInt>`)
+- [ ] Pair key (`Pair(String, Box<Value>)` → `Pair(Arc<String>, Box<Value>)`)
+- [ ] GenericRange (`Box<Value>` → `Arc<Value>`)
+- [ ] Mixin (`Box<Value>, HashMap` → `Arc<Value>, Arc<HashMap>`)
+- [ ] Regex / RegexWithAdverbs (pattern `String` → `Arc<String>`)
+
+#### Phase 2: WeakSub for cycle-breaking
+
+- [x] `WeakSub(Weak<SubData>)` for `&?BLOCK` self-references
+
+#### Phase 3: Remaining memory issues
+
+- [ ] Scoped call frames — replace flat HashMap env with stack of frames; local variables freed on scope exit (partially done with `GetLocal`/`SetLocal` indexed slots, but env HashMap is still the source of truth for the interpreter bridge)
+- [ ] Cycle collector — for user-created circular object references (e.g. two instances pointing to each other); trial deletion or epoch-based approach on top of Arc
 
 ### P2. Interpreter bridge elimination
 
