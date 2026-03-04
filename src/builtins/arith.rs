@@ -8,6 +8,12 @@ use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 
+/// Check if a value is a Date or Instant instance (temporal operand for arithmetic).
+pub fn is_temporal_operand(value: &Value) -> bool {
+    matches!(value, Value::Instance { class_name, .. }
+        if class_name == "Date" || class_name == "Instant")
+}
+
 fn as_bigint(value: &Value) -> Option<NumBigInt> {
     match value {
         Value::Int(i) => Some(NumBigInt::from(*i)),
@@ -62,6 +68,23 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
             return Ok(Value::RangeExclBoth(a + n, b + n));
         }
         _ => {}
+    }
+    // Date + Int: add days
+    if let Some(days) = instance_days(&left)
+        && let Value::Int(delta) = &right
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let new_days = days + delta;
+        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
+        return Ok(temporal::make_date(y, m, d));
+    }
+    if let Some(days) = instance_days(&right)
+        && let Value::Int(delta) = &left
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let new_days = days + delta;
+        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
+        return Ok(temporal::make_date(y, m, d));
     }
     let (l, r) = runtime::coerce_numeric(left, right);
     Ok(arith_add_coerced(l, r))
@@ -138,9 +161,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     if let Some(days) = instance_days(&left)
         && let Value::Int(delta) = right
     {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("days".to_string(), Value::Int(days - delta));
-        return Value::make_instance(Symbol::intern("Date"), attrs);
+        use crate::builtins::methods_0arg::temporal;
+        let new_days = days - delta;
+        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
+        return temporal::make_date(y, m, d);
     }
     match (&left, &right) {
         (Value::Range(a, b), Value::Int(n)) => return Value::Range(a - n, b - n),

@@ -144,6 +144,13 @@ impl Interpreter {
             return self.call_method_with_values(fetched, method, args);
         }
 
+        // Dispatch temporal n-arg methods (later, earlier, clone, truncated-to, etc.)
+        if let Some(result) =
+            super::methods_temporal::dispatch_temporal_method(&target, method, &args)
+        {
+            return result;
+        }
+
         if let Value::Instance {
             class_name,
             attributes,
@@ -2243,55 +2250,28 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "DateTime"
                 {
+                    use crate::builtins::methods_0arg::temporal;
                     let secs = crate::value::current_time_secs_f64();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("epoch".to_string(), Value::Num(secs));
-                    return Ok(Value::make_instance(Symbol::intern("DateTime"), attrs));
+                    let total_i = secs.floor() as i64;
+                    let frac = secs - total_i as f64;
+                    let day_secs = total_i.rem_euclid(86400);
+                    let epoch_days = (total_i - day_secs) / 86400;
+                    let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                    let h = day_secs / 3600;
+                    let mi = (day_secs % 3600) / 60;
+                    let s = (day_secs % 60) as f64 + frac;
+                    return Ok(temporal::make_datetime(y, m, d, h, mi, s, 0));
                 }
             }
             "today" if args.is_empty() => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Date"
                 {
-                    let secs = crate::value::current_time_secs_f64() as u64;
-                    let days = secs / 86_400;
-                    let mut attrs = HashMap::new();
-                    attrs.insert("days".to_string(), Value::Int(days as i64));
-                    return Ok(Value::make_instance(Symbol::intern("Date"), attrs));
-                }
-            }
-            "DateTime" if args.is_empty() => {
-                if let Value::Instance {
-                    ref class_name,
-                    ref attributes,
-                    ..
-                } = target
-                    && class_name == "Date"
-                    && let Some(Value::Int(days)) = attributes.get("days")
-                {
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "epoch".to_string(),
-                        Value::Num(Self::date_days_to_epoch_with_leap_seconds(*days)),
-                    );
-                    return Ok(Value::make_instance(Symbol::intern("DateTime"), attrs));
-                }
-            }
-            "Instant" if args.is_empty() => {
-                if let Value::Instance {
-                    ref class_name,
-                    ref attributes,
-                    ..
-                } = target
-                    && class_name == "DateTime"
-                {
-                    let epoch = attributes
-                        .get("epoch")
-                        .and_then(to_float_value)
-                        .unwrap_or(0.0);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("value".to_string(), Value::Num(epoch));
-                    return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+                    use crate::builtins::methods_0arg::temporal;
+                    let secs = crate::value::current_time_secs_f64() as i64;
+                    let epoch_days = secs.div_euclid(86400);
+                    let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                    return Ok(temporal::make_date(y, m, d));
                 }
             }
             "grab" => {

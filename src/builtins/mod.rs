@@ -1,8 +1,8 @@
 #![allow(clippy::result_large_err)]
 
-mod arith;
+pub(crate) mod arith;
 mod functions;
-mod methods_0arg;
+pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod primality;
 pub(crate) mod rng;

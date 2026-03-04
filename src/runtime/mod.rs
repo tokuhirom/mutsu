@@ -90,6 +90,7 @@ mod methods_promise;
 mod methods_signature;
 mod methods_string;
 mod methods_sub;
+mod methods_temporal;
 mod methods_trans;
 mod native_io;
 pub(crate) mod native_methods;

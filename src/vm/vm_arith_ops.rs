@@ -34,6 +34,12 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // Handle Date/Instant arithmetic before numeric coercion
+            if crate::builtins::arith::is_temporal_operand(&l)
+                || crate::builtins::arith::is_temporal_operand(&r)
+            {
+                return crate::builtins::arith_add(l, r);
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 Ok(result)
@@ -49,6 +55,12 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // Handle Date/Instant arithmetic before numeric coercion
+            if crate::builtins::arith::is_temporal_operand(&l)
+                || crate::builtins::arith::is_temporal_operand(&r)
+            {
+                return Ok(crate::builtins::arith_sub(l, r));
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 Ok(result)

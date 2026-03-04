@@ -18,6 +18,8 @@ use super::unicode::titlecase_string;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
+pub(crate) mod temporal;
+pub(crate) mod temporal_dispatch;
 
 use std::collections::HashMap;
 
@@ -623,6 +625,29 @@ fn hash_pick_item(key: &str, value: &Value) -> Value {
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    // Date/DateTime 0-arg methods
+    match target {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Date" => {
+            if let Some(result) = temporal_dispatch::date_method_0arg(attributes, method) {
+                return Some(result);
+            }
+        }
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "DateTime" => {
+            if let Some(result) = temporal_dispatch::datetime_method_0arg(attributes, method) {
+                return Some(result);
+            }
+        }
+        _ => {}
+    }
+
     // CX::Warn methods: message, resume
     if let Value::Instance {
         class_name,

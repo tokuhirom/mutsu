@@ -534,6 +534,23 @@ impl Value {
                 .get("format")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Date" => {
+                let (y, m, d) = crate::builtins::methods_0arg::temporal::date_attrs(attributes);
+                crate::builtins::methods_0arg::temporal::format_date(y, m, d)
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "DateTime" => {
+                let (y, mo, d, h, mi, s, tz) =
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(attributes);
+                crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
+            }
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {

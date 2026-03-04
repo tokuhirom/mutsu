@@ -334,39 +334,194 @@ impl Interpreter {
                     return Ok(Value::Num(secs.unwrap_or(0.0)));
                 }
                 "Date" => {
+                    use crate::builtins::methods_0arg::temporal;
                     let mut year: i64 = 1970;
                     let mut month: i64 = 1;
                     let mut day: i64 = 1;
                     let mut positional = Vec::new();
+                    let mut has_named = false;
                     for arg in &args {
                         match arg {
                             Value::Pair(key, value) => match key.as_str() {
-                                "year" => year = to_int(value),
-                                "month" => month = to_int(value),
-                                "day" => day = to_int(value),
+                                "year" => {
+                                    year = to_int(value);
+                                    has_named = true;
+                                }
+                                "month" => {
+                                    month = to_int(value);
+                                    has_named = true;
+                                }
+                                "day" => {
+                                    day = to_int(value);
+                                    has_named = true;
+                                }
+                                "formatter" => {} // ignored for now
+                                _ => {}
+                            },
+                            other => positional.push(other),
+                        }
+                    }
+                    // Handle positional args: can be string, DateTime, or y/m/d
+                    if let Some(v) = positional.first() {
+                        match v {
+                            // Single string arg: parse as date string
+                            Value::Str(s) if positional.len() == 1 => {
+                                let (y, m, d) = temporal::parse_date_string(s)?;
+                                return Ok(temporal::make_date(y, m, d));
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "DateTime" => {
+                                let (y, m, d, _, _, _, _) = temporal::datetime_attrs(attributes);
+                                return Ok(temporal::make_date(y, m, d));
+                            }
+                            _ => {
+                                year = to_int(v);
+                                if let Some(v2) = positional.get(1) {
+                                    month = to_int(v2);
+                                }
+                                if let Some(v3) = positional.get(2) {
+                                    day = to_int(v3);
+                                }
+                            }
+                        }
+                    }
+                    if !has_named && positional.is_empty() {
+                        return Err(RuntimeError::new("Date.new requires arguments"));
+                    }
+                    temporal::validate_date(year, month, day)?;
+                    return Ok(temporal::make_date(year, month, day));
+                }
+                "DateTime" => {
+                    use crate::builtins::methods_0arg::temporal;
+                    let mut year: i64 = 1970;
+                    let mut month: i64 = 1;
+                    let mut day: i64 = 1;
+                    let mut hour: i64 = 0;
+                    let mut minute: i64 = 0;
+                    let mut second: f64 = 0.0;
+                    let mut timezone: i64 = 0;
+                    let mut positional = Vec::new();
+                    let mut has_named = false;
+                    for arg in &args {
+                        match arg {
+                            Value::Pair(key, value) => match key.as_str() {
+                                "year" => {
+                                    year = to_int(value);
+                                    has_named = true;
+                                }
+                                "month" => {
+                                    month = to_int(value);
+                                    has_named = true;
+                                }
+                                "day" => {
+                                    day = to_int(value);
+                                    has_named = true;
+                                }
+                                "hour" => {
+                                    hour = to_int(value);
+                                    has_named = true;
+                                }
+                                "minute" => {
+                                    minute = to_int(value);
+                                    has_named = true;
+                                }
+                                "second" => {
+                                    second = to_float_value(value).unwrap_or(0.0);
+                                    has_named = true;
+                                }
+                                "timezone" => {
+                                    timezone = to_int(value);
+                                    has_named = true;
+                                }
+                                "formatter" => {} // ignored for now
                                 _ => {}
                             },
                             other => positional.push(other),
                         }
                     }
                     if let Some(v) = positional.first() {
-                        year = to_int(v);
+                        match v {
+                            Value::Str(s) => {
+                                let (y, mo, d, h, mi, s, tz) = temporal::parse_datetime_string(s)?;
+                                return Ok(temporal::make_datetime(y, mo, d, h, mi, s, tz));
+                            }
+                            Value::Int(epoch) => {
+                                // DateTime.new(posix-timestamp)
+                                let total = *epoch;
+                                let day_secs = total.rem_euclid(86400);
+                                let epoch_days = (total - day_secs) / 86400;
+                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                                let h = day_secs / 3600;
+                                let mi = (day_secs % 3600) / 60;
+                                let s = (day_secs % 60) as f64;
+                                return Ok(temporal::make_datetime(y, m, d, h, mi, s, 0));
+                            }
+                            Value::Num(epoch) => {
+                                let total = *epoch;
+                                let total_i = total.floor() as i64;
+                                let frac = total - total_i as f64;
+                                let day_secs = total_i.rem_euclid(86400);
+                                let epoch_days = (total_i - day_secs) / 86400;
+                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                                let h = day_secs / 3600;
+                                let mi = (day_secs % 3600) / 60;
+                                let s = (day_secs % 60) as f64 + frac;
+                                return Ok(temporal::make_datetime(y, m, d, h, mi, s, 0));
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "Date" => {
+                                let (y, m, d) = temporal::date_attrs(attributes);
+                                return Ok(temporal::make_datetime(y, m, d, 0, 0, 0.0, 0));
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "Instant" => {
+                                let epoch = match attributes.get("value") {
+                                    Some(Value::Num(n)) => *n,
+                                    Some(Value::Int(n)) => *n as f64,
+                                    _ => 0.0,
+                                };
+                                let total_i = epoch.floor() as i64;
+                                let frac = epoch - total_i as f64;
+                                let day_secs = total_i.rem_euclid(86400);
+                                let epoch_days = (total_i - day_secs) / 86400;
+                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                                let h = day_secs / 3600;
+                                let mi = (day_secs % 3600) / 60;
+                                let s = (day_secs % 60) as f64 + frac;
+                                return Ok(temporal::make_datetime(y, m, d, h, mi, s, timezone));
+                            }
+                            other if other.is_numeric() => {
+                                // Rat, BigInt, etc. - coerce to f64
+                                let epoch = other.to_f64();
+                                let total_i = epoch.floor() as i64;
+                                let frac = epoch - total_i as f64;
+                                let day_secs = total_i.rem_euclid(86400);
+                                let epoch_days = (total_i - day_secs) / 86400;
+                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                                let h = day_secs / 3600;
+                                let mi = (day_secs % 3600) / 60;
+                                let s = (day_secs % 60) as f64 + frac;
+                                return Ok(temporal::make_datetime(y, m, d, h, mi, s, 0));
+                            }
+                            _ => {}
+                        }
                     }
-                    if let Some(v) = positional.get(1) {
-                        month = to_int(v);
+                    if has_named {
+                        temporal::validate_date(year, month, day)?;
+                        return Ok(temporal::make_datetime(
+                            year, month, day, hour, minute, second, timezone,
+                        ));
                     }
-                    if let Some(v) = positional.get(2) {
-                        day = to_int(v);
-                    }
-                    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-                        return Err(RuntimeError::new("Date.new: invalid month/day"));
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "days".to_string(),
-                        Value::Int(Self::civil_to_epoch_days(year, month, day)),
-                    );
-                    return Ok(Value::make_instance(Symbol::intern("Date"), attrs));
+                    return Err(RuntimeError::new("DateTime.new requires arguments"));
                 }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));
