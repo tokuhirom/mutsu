@@ -1660,6 +1660,35 @@ impl Interpreter {
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
         }
+        // Register EXPORT namespace aliases so that EXPORT::TAG::name and
+        // Package::EXPORT::TAG::name resolve via normal function lookup.
+        let fq_key = format!("{}::{}", package, name);
+        let fq_sym = crate::symbol::Symbol::intern(&fq_key);
+        if let Some(def) = self.functions.get(&fq_sym).cloned() {
+            for tag in &tags {
+                // Bare EXPORT::TAG::name (accessible from the same package)
+                let bare_export = format!("EXPORT::{}::{}", tag, name);
+                self.functions
+                    .entry(crate::symbol::Symbol::intern(&bare_export))
+                    .or_insert_with(|| def.clone());
+                // Fully-qualified Package::EXPORT::TAG::name
+                let pkg_export = format!("{}::EXPORT::{}::{}", package, tag, name);
+                self.functions
+                    .entry(crate::symbol::Symbol::intern(&pkg_export))
+                    .or_insert_with(|| def.clone());
+            }
+            // Always register under EXPORT::ALL::name
+            if !tags.contains(&"ALL".to_string()) {
+                let bare_all = format!("EXPORT::ALL::{}", name);
+                self.functions
+                    .entry(crate::symbol::Symbol::intern(&bare_all))
+                    .or_insert_with(|| def.clone());
+                let pkg_all = format!("{}::EXPORT::ALL::{}", package, name);
+                self.functions
+                    .entry(crate::symbol::Symbol::intern(&pkg_all))
+                    .or_insert_with(|| def);
+            }
+        }
         let entry = self
             .exported_subs
             .entry(package)
