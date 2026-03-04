@@ -111,6 +111,65 @@ pub(super) fn read_bracketed(
     }
 }
 
+/// Read a multi-character bracketed string (e.g. `{{ ... }}`, `[[ ... ]]`).
+/// `open_str` and `close_str` are the multi-character delimiters (e.g. "{{" and "}}").
+/// Nested occurrences of `open_str` and `close_str` are tracked for proper balancing.
+/// When `allow_escape` is true, `\x` consumes both chars so escaped delimiters
+/// do not affect nesting.
+fn read_multi_bracketed<'a>(
+    input: &'a str,
+    open_str: &str,
+    close_str: &str,
+    allow_escape: bool,
+) -> PResult<'a, &'a str> {
+    if !input.starts_with(open_str) {
+        return Err(PError::expected(&format!("'{}'", open_str)));
+    }
+    let mut rest = &input[open_str.len()..];
+    let start = rest;
+    let mut depth = 1u32;
+    loop {
+        if rest.is_empty() {
+            return Err(PError::expected(&format!("closing '{}'", close_str)));
+        }
+        if allow_escape && rest.starts_with('\\') && rest.len() > 1 {
+            // Skip escape sequence (backslash + next char)
+            let next_ch = rest[1..].chars().next().unwrap();
+            rest = &rest[1 + next_ch.len_utf8()..];
+            continue;
+        }
+        if rest.starts_with(open_str) {
+            depth += 1;
+            rest = &rest[open_str.len()..];
+            continue;
+        }
+        if rest.starts_with(close_str) {
+            depth -= 1;
+            if depth == 0 {
+                let content = &start[..start.len() - rest.len()];
+                return Ok((&rest[close_str.len()..], content));
+            }
+            rest = &rest[close_str.len()..];
+            continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        rest = &rest[ch.len_utf8()..];
+    }
+}
+
+/// Count how many times the given bracket char is repeated at the start of `input`.
+fn count_repeated_bracket(input: &str, ch: char) -> usize {
+    let mut count = 0;
+    for c in input.chars() {
+        if c == ch {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
+}
+
 /// Parse Q quoting with arbitrary delimiters: Q!...!, Q{...}, Q/.../, etc.
 /// Q means no interpolation and no escape processing — content is taken verbatim.
 pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
@@ -121,12 +180,25 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     if let Some(r) = rest.strip_prefix(":to") {
         return parse_to_heredoc(r);
     }
+    // Q:q form — same as q (single-quote semantics)
+    if let Some(r) = rest.strip_prefix(":q") {
+        // Make sure it's not :qq
+        if !r.starts_with('q') {
+            return parse_q_quoted_content(r, false, false);
+        }
+    }
+    // Q:qq form — same as qq (double-quote semantics)
+    if let Some(r) = rest.strip_prefix(":qq") {
+        return parse_q_quoted_content(r, true, false);
+    }
     // Q:s form (interpolating) — e.g. Q:s|...|
     let (rest, is_scalar_interp) = if let Some(r) = rest.strip_prefix(":s") {
         (r, true)
     } else {
         (rest, false)
     };
+    // Allow optional whitespace between Q (and adverbs) and the delimiter
+    let rest = rest.trim_start_matches(' ');
     let delim_char = rest
         .chars()
         .next()
@@ -135,8 +207,25 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     if delim_char.is_alphanumeric() || delim_char.is_whitespace() {
         return Err(PError::expected("Q string delimiter"));
     }
-    // Check for bracket-style delimiter
-    if let Some(close_char) = unicode_bracket_close(delim_char) {
+    // Check for bracket-style delimiter (possibly doubled)
+    let bracket_close = match delim_char {
+        '{' => Some('}'),
+        '[' => Some(']'),
+        '(' => Some(')'),
+        '<' => Some('>'),
+        _ => unicode_bracket_close(delim_char),
+    };
+    if let Some(close_char) = bracket_close {
+        let repeat_count = count_repeated_bracket(rest, delim_char);
+        if repeat_count > 1 {
+            let open_str: String = std::iter::repeat_n(delim_char, repeat_count).collect();
+            let close_str: String = std::iter::repeat_n(close_char, repeat_count).collect();
+            let (after, content) = read_multi_bracketed(rest, &open_str, &close_str, false)?;
+            if is_scalar_interp {
+                return Ok((after, interpolate_string_content(content)));
+            }
+            return Ok((after, Expr::Literal(Value::str(content.to_string()))));
+        }
         let (after, content) = read_bracketed(rest, delim_char, close_char, false)?;
         if is_scalar_interp {
             return Ok((after, interpolate_string_content(content)));
@@ -281,7 +370,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('q') {
         return Err(PError::expected("q string"));
     }
-    let after_q = &input[1..];
+    let mut after_q = &input[1..];
 
     // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
     for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
@@ -356,9 +445,25 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return parse_to_heredoc(r);
     }
 
+    // qw/.../ is an alias for q:w/.../
+    let mut q_word_split = false;
+    let mut q_ww_split = false;
+    if let Some(after_w) = after_q.strip_prefix("ww")
+        && after_w.chars().next().is_some_and(|c| !c.is_alphanumeric())
+    {
+        q_ww_split = true;
+        after_q = after_w;
+    } else if let Some(after_w) = after_q.strip_prefix('w')
+        && after_w.chars().next().is_some_and(|c| !c.is_alphanumeric())
+    {
+        q_word_split = true;
+        after_q = after_w;
+    }
+
     // q:adverb/.../ forms (e.g. q:c/%08b/) — parse and ignore currently
     // unsupported adverbs while still accepting the quoting delimiter.
-    let mut after_q = after_q;
+    // Allow whitespace between q and : (e.g. q :w /.../)
+    let mut after_q = after_q.trim_start_matches(' ');
     let mut q_closure_interp = false;
     let mut q_format_quote = false;
     if let Some(mut r) = after_q.strip_prefix(':') {
@@ -374,6 +479,10 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
                 q_closure_interp = true;
             } else if adverb_name == "o" || adverb_name == "format" {
                 q_format_quote = true;
+            } else if adverb_name == "w" || adverb_name == "words" {
+                q_word_split = true;
+            } else if adverb_name == "ww" || adverb_name == "quotewords" {
+                q_ww_split = true;
             }
             r = &r[end..];
             if let Some(next) = r.strip_prefix(':') {
@@ -401,13 +510,26 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         (after_q, false)
     };
 
-    let (after_adverb, is_format_adverb) = if let Some(rest) = after_prefix.strip_prefix(":o") {
-        (rest, true)
-    } else if let Some(rest) = after_prefix.strip_prefix(":format") {
-        (rest, true)
-    } else {
-        (after_prefix, q_format_quote)
-    };
+    // Parse additional adverbs that may appear after qq detection
+    let mut after_adverb = after_prefix;
+    let mut is_format_adverb = false;
+    while let Some(r) = after_adverb.strip_prefix(':') {
+        let end = r
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(r.len());
+        if end == 0 {
+            break;
+        }
+        let adverb_name = &r[..end];
+        match adverb_name {
+            "o" | "format" => is_format_adverb = true,
+            "w" | "words" => q_word_split = true,
+            "ww" | "quotewords" => q_ww_split = true,
+            "c" => q_closure_interp = true,
+            _ => {} // ignore unknown adverbs
+        }
+        after_adverb = &r[end..];
+    }
     let is_format_quote = q_format_quote || is_format_adverb;
 
     let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq, q_closure_interp)?;
@@ -420,92 +542,89 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // q:w and qw — split on whitespace into a list of string literals
+    if q_word_split || q_ww_split {
+        // For q:w, extract the literal string and split on whitespace at parse time
+        if let Expr::Literal(Value::Str(ref s)) = content_expr {
+            let words: Vec<Expr> = s
+                .split_whitespace()
+                .map(|w| Expr::Literal(Value::str(w.to_string())))
+                .collect();
+            return Ok((rest, Expr::ArrayLiteral(words)));
+        }
+        // For qq:w/qq:ww with interpolation, we need runtime splitting
+        return Ok((
+            rest,
+            Expr::MethodCall {
+                target: Box::new(content_expr),
+                name: Symbol::intern("words"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     Ok((rest, content_expr))
 }
 
-fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> PResult<'_, Expr> {
-    // Must be followed by a delimiter
-    let (open, close) = match input.chars().next() {
-        Some('{') => ('{', '}'),
-        Some('[') => ('[', ']'),
-        Some('(') => ('(', ')'),
-        Some('<') => ('<', '>'),
-        Some('/') => {
-            // q/.../ — find closing /
-            let rest = &input[1..];
-            let end = rest
-                .find('/')
-                .ok_or_else(|| PError::expected("closing /"))?;
-            let content = &rest[..end];
-            let rest = &rest[end + 1..];
-            if is_qq {
-                return Ok((rest, interpolate_string_content(content)));
-            }
-            if q_closure_interp {
-                return Ok((
-                    rest,
-                    interpolate_string_content_with_modes(content, false, true),
-                ));
-            }
-            let s = content.replace("\\'", "'").replace("\\\\", "\\");
-            return Ok((rest, Expr::Literal(Value::str(s))));
-        }
-        Some(c) => {
-            if let Some(close_char) = unicode_bracket_close(c) {
-                let rest = &input[c.len_utf8()..];
-                let end = rest
-                    .find(close_char)
-                    .ok_or_else(|| PError::expected("closing Unicode bracket"))?;
-                let content = &rest[..end];
-                let rest = &rest[end + close_char.len_utf8()..];
-                if is_qq {
-                    return Ok((rest, interpolate_string_content(content)));
-                }
-                if q_closure_interp {
-                    return Ok((
-                        rest,
-                        interpolate_string_content_with_modes(content, false, true),
-                    ));
-                }
-                let s = content.replace("\\'", "'").replace("\\\\", "\\");
-                return Ok((rest, Expr::Literal(Value::str(s))));
-            }
-            // Non-bracket, non-/ delimiter (e.g. q|...|, q!...!) — symmetric delimiter
-            if !c.is_alphanumeric() && !c.is_whitespace() {
-                let rest = &input[c.len_utf8()..];
-                let end = rest
-                    .find(c)
-                    .ok_or_else(|| PError::expected(&format!("closing '{c}'")))?;
-                let content = &rest[..end];
-                let rest = &rest[end + c.len_utf8()..];
-                if is_qq {
-                    return Ok((rest, interpolate_string_content(content)));
-                }
-                if q_closure_interp {
-                    return Ok((
-                        rest,
-                        interpolate_string_content_with_modes(content, false, true),
-                    ));
-                }
-                let s = content.replace("\\'", "'").replace("\\\\", "\\");
-                return Ok((rest, Expr::Literal(Value::str(s))));
-            }
-            return Err(PError::expected("q string delimiter"));
-        }
-        _ => return Err(PError::expected("q string delimiter")),
-    };
-    let (rest, content) = read_bracketed(input, open, close, true)?;
+/// Helper to build the final expression from quoted content.
+fn make_q_content_expr(content: &str, is_qq: bool, q_closure_interp: bool) -> Expr {
     if is_qq {
-        return Ok((rest, interpolate_string_content(content)));
+        interpolate_string_content(content)
+    } else if q_closure_interp {
+        interpolate_string_content_with_modes(content, false, true)
+    } else {
+        let s = content.replace("\\'", "'").replace("\\\\", "\\");
+        Expr::Literal(Value::str(s))
     }
-    if q_closure_interp {
-        return Ok((
-            rest,
-            interpolate_string_content_with_modes(content, false, true),
-        ));
+}
+
+fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> PResult<'_, Expr> {
+    // Allow optional whitespace between q/qq and the delimiter
+    let input = input.trim_start_matches(' ');
+
+    // Must be followed by a delimiter
+    let first = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("q string delimiter"))?;
+
+    // Check for bracket-style delimiter (possibly doubled)
+    let bracket_close = match first {
+        '{' => Some('}'),
+        '[' => Some(']'),
+        '(' => Some(')'),
+        '<' => Some('>'),
+        _ => unicode_bracket_close(first),
+    };
+
+    if let Some(close_ch) = bracket_close {
+        // Count how many times the open bracket is repeated (e.g. {{ = 2, {{{ = 3)
+        let repeat_count = count_repeated_bracket(input, first);
+        if repeat_count > 1 {
+            // Multi-bracket delimiter (e.g. q{{ ... }}, q[[ ... ]])
+            let open_str: String = std::iter::repeat_n(first, repeat_count).collect();
+            let close_str: String = std::iter::repeat_n(close_ch, repeat_count).collect();
+            let (rest, content) = read_multi_bracketed(input, &open_str, &close_str, true)?;
+            return Ok((rest, make_q_content_expr(content, is_qq, q_closure_interp)));
+        }
+        // Single bracket — use read_bracketed for proper nesting
+        let (rest, content) = read_bracketed(input, first, close_ch, true)?;
+        return Ok((rest, make_q_content_expr(content, is_qq, q_closure_interp)));
     }
-    let s = content.replace("\\'", "'").replace("\\\\", "\\");
-    Ok((rest, Expr::Literal(Value::str(s))))
+
+    // Non-bracket delimiter (e.g. q/.../, q|...|)
+    if !first.is_alphanumeric() && !first.is_whitespace() {
+        let rest = &input[first.len_utf8()..];
+        let end = rest
+            .find(first)
+            .ok_or_else(|| PError::expected(&format!("closing '{first}'")))?;
+        let content = &rest[..end];
+        let rest = &rest[end + first.len_utf8()..];
+        return Ok((rest, make_q_content_expr(content, is_qq, q_closure_interp)));
+    }
+
+    Err(PError::expected("q string delimiter"))
 }
 
 /// Parse qx{...}, qx[...], qx(...), qx<...>, qx/.../, qx`...` forms.

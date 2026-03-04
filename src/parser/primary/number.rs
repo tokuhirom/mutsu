@@ -119,6 +119,10 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
     if let Some(result) = parse_prefixed_radix(input, "0b", "0B", 2, decimal_digit_value) {
         return result;
     }
+    // Decimal: 0d...
+    if let Some(result) = parse_prefixed_radix(input, "0d", "0D", 10, decimal_digit_value) {
+        return result;
+    }
     let (rest, clean) = scan_decimal_digits(input).ok_or_else(|| PError::expected("digits"))?;
     // Don't consume if next char is '.' followed by digit (that's a decimal)
     if let Some(after_dot) = rest.strip_prefix('.')
