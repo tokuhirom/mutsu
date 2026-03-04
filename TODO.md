@@ -107,9 +107,9 @@ Scalar containers are done. Array/Hash container semantics need work.
 Current implementation uses blocking OS threads. Raku's concurrency model needs:
 
 - [x] Non-blocking `await` (green threads or async runtime integration)
-- [ ] Scheduler (`Promise.in`, `Promise.at`, `Supply.interval`)
+- [x] Scheduler (`Promise.in`, `Promise.at`, `Supply.interval`)
 - [x] `Lock` / `Lock::Async`
-- [x] Atomic operations (`⚛++`; `cas` not yet implemented)
+- [x] Atomic operations (`cas`, `⚛++`)
 - [x] `Supply` combinators (`.batch`, `.grep`, `.map`, `.zip`, `.merge`, `.throttle`)
 - [x] `Supplier` / `Supplier::Preserving` (basic)
 - [x] `hyper` / `race` (basic) (parallel iteration)
