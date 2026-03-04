@@ -554,6 +554,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -574,6 +575,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -592,6 +594,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             },
         ));
     }
@@ -635,6 +638,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -655,6 +659,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -675,6 +680,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             },
         ));
     }
@@ -821,6 +827,17 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         };
     }
 
+    // Optional `where` constraint on variable: my $x where * > 0
+    let where_constraint = if let Some(r) = keyword("where", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, pred) = expression(r)?;
+        let (r, _) = ws(r)?;
+        rest = r;
+        Some(Box::new(pred))
+    } else {
+        None
+    };
+
     // Feed initialization: my @a <== expr / my @a <<== expr
     if let Some(rest) = rest
         .strip_prefix("<==")
@@ -849,6 +866,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -882,6 +900,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         let assign_stmt = Stmt::Assign {
             name: name.clone(),
@@ -919,6 +938,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         let assign_stmt = Stmt::Assign {
             name: name.clone(),
@@ -984,6 +1004,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
             if apply_modifier {
@@ -1001,6 +1022,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -1044,6 +1066,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -1077,6 +1100,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            where_constraint: where_constraint.clone(),
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -1103,6 +1127,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_export: has_export_trait,
             export_tags,
             custom_traits,
+            where_constraint: where_constraint.clone(),
         },
     ))
 }
@@ -1231,6 +1256,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             }];
             for dvar in &vars {
                 // Extract bare name (without sigil prefix)
@@ -1255,6 +1281,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    where_constraint: None,
                 });
             }
             return Ok((rest, Stmt::SyntheticBlock(stmts)));
@@ -1273,6 +1300,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            where_constraint: None,
         }];
         let has_explicit_slurpy = vars.iter().any(|v| v.is_slurpy);
         for (i, dvar) in vars.iter().enumerate() {
@@ -1309,6 +1337,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             });
             // For := binding, mark scalar variables as readonly
             if is_binding && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
@@ -1332,6 +1361,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            where_constraint: None,
         });
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
@@ -1467,6 +1497,16 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
+    // Optional `where` constraint
+    let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, pred) = expression(r)?;
+        let (r, _) = ws(r)?;
+        (r, Some(Box::new(pred)))
+    } else {
+        (rest, None)
+    };
+
     // Default value
     let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
@@ -1519,6 +1559,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint,
             is_required,
             sigil: sigil as char,
+            where_constraint,
         },
     ))
 }
@@ -1802,6 +1843,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_export,
                 export_tags: export_tags.clone(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             },
         ));
     }
@@ -1818,6 +1860,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             is_export,
             export_tags,
             custom_traits: Vec::new(),
+            where_constraint: None,
         },
     ))
 }

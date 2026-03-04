@@ -1697,6 +1697,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             is_export: false,
                             export_tags: Vec::new(),
                             custom_traits: Vec::new(),
+                            where_constraint: None,
                         },
                         Stmt::Expr(Expr::IndexAssign {
                             target,
@@ -1789,6 +1790,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             is_export: false,
                             export_tags: Vec::new(),
                             custom_traits: Vec::new(),
+                            where_constraint: None,
                         },
                         Stmt::Expr(Expr::IndexAssign {
                             target,
@@ -1938,6 +1940,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_export: *is_export,
                 export_tags: export_tags.clone(),
                 custom_traits: custom_traits.clone(),
+                where_constraint: None,
             };
             return parse_statement_modifier(r, stmt);
         }
@@ -2199,6 +2202,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         is_export: false,
                         export_tags: Vec::new(),
                         custom_traits: Vec::new(),
+                        where_constraint: None,
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),

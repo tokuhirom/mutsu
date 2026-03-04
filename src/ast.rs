@@ -337,6 +337,8 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         /// Custom variable `is` traits as `(trait_name, optional_arg_expr)`.
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// Optional `where` constraint expression for inline subset typing
+        where_constraint: Option<Box<Expr>>,
     },
     /// Mark a variable as readonly (used for `:=` binding desugaring).
     MarkReadonly(String),
@@ -509,6 +511,8 @@ pub(crate) enum Stmt {
         is_required: Option<Option<String>>,
         /// Sigil of the attribute: '$', '@', or '%'
         sigil: char,
+        /// Optional `where` constraint expression
+        where_constraint: Option<Box<Expr>>,
     },
     MethodDecl {
         name: Symbol,

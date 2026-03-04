@@ -182,6 +182,7 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
+                where_constraint: _,
             } => {
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
@@ -332,6 +333,7 @@ impl Compiler {
                         is_export: false,
                         export_tags: vec![],
                         custom_traits: Vec::new(),
+                        where_constraint: None,
                     };
                     self.compile_stmt(&var_decl);
                     self.compile_condition_expr(&desugared_cond);

@@ -1551,6 +1551,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
@@ -1562,6 +1563,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             },
         ];
         if let Some(result_var) = result_var.clone() {
@@ -1575,6 +1577,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             });
         }
 

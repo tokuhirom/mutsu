@@ -437,6 +437,7 @@ where
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             },
             Stmt::Expr(Expr::IndexAssign {
                 target: Box::new(target),

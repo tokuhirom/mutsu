@@ -200,6 +200,7 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            where_constraint: None,
         });
         body.extend(else_clause.body);
         return body;
@@ -1147,6 +1148,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    where_constraint: None,
                 },
                 while_stmt,
             ]),
@@ -1203,6 +1205,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    where_constraint: None,
                 },
                 while_stmt,
             ]),
@@ -1345,6 +1348,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -1384,6 +1388,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -1531,6 +1536,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            where_constraint: None,
         });
     }
     with_body.extend(body);
