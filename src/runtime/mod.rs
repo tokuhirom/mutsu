@@ -407,6 +407,11 @@ pub struct Interpreter {
     var_bindings: HashMap<String, String>,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
+    /// Variable default values set by `is default(...)` trait.
+    var_defaults: HashMap<String, Value>,
+    /// Container element defaults for arrays/hashes with `is default(...)`,
+    /// keyed by Arc pointer identity.
+    container_defaults: HashMap<usize, Value>,
     /// Optional hash key type constraints (e.g. `%h{Str}`).
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values keyed by Arc pointer identity.
@@ -1386,6 +1391,8 @@ impl Interpreter {
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
             var_type_constraints: HashMap::new(),
+            var_defaults: HashMap::new(),
+            container_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
             array_type_metadata: HashMap::new(),
             hash_type_metadata: HashMap::new(),
@@ -1954,6 +1961,36 @@ impl Interpreter {
         self.var_type_constraints.get(name)
     }
 
+    /// Set the default value for a variable declared with `is default(...)`.
+    pub(crate) fn set_var_default(&mut self, name: &str, value: Value) {
+        self.var_defaults.insert(name.to_string(), value);
+    }
+
+    /// Get the default value for a variable, if one was set with `is default(...)`.
+    pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
+        self.var_defaults.get(name)
+    }
+
+    /// Set the element default for a container (Array/Hash) by Arc pointer identity.
+    pub(crate) fn set_container_default(&mut self, value: &Value, default: Value) {
+        let id = match value {
+            Value::Array(items, ..) => Arc::as_ptr(items) as usize,
+            Value::Hash(map) => Arc::as_ptr(map) as usize,
+            _ => return,
+        };
+        self.container_defaults.insert(id, default);
+    }
+
+    /// Get the element default for a container (Array/Hash) by Arc pointer identity.
+    pub(crate) fn container_default(&self, value: &Value) -> Option<&Value> {
+        let id = match value {
+            Value::Array(items, ..) => Arc::as_ptr(items) as usize,
+            Value::Hash(map) => Arc::as_ptr(map) as usize,
+            _ => return None,
+        };
+        self.container_defaults.get(&id)
+    }
+
     pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
         let key = name;
         let meta_key = format!("__mutsu_hash_key_type::{}", key);
@@ -2353,6 +2390,8 @@ impl Interpreter {
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
             var_type_constraints: self.var_type_constraints.clone(),
+            var_defaults: self.var_defaults.clone(),
+            container_defaults: self.container_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             array_type_metadata: self.array_type_metadata.clone(),
             hash_type_metadata: self.hash_type_metadata.clone(),

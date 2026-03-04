@@ -469,6 +469,37 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let trait_name = Self::const_str(code, trait_name_idx).to_string();
+
+        // Handle `is default(...)` as a built-in variable trait.
+        if trait_name == "default" {
+            let default_value = if has_arg {
+                self.stack.pop().unwrap_or(Value::Nil)
+            } else {
+                Value::Bool(true)
+            };
+            let name = name.to_string();
+            self.interpreter
+                .set_var_default(&name, default_value.clone());
+            // For array/hash variables, also register the container default
+            // so that element access on missing indices returns the default.
+            if (name.starts_with('@') || name.starts_with('%'))
+                && let Some(container) = self.locals_get_by_name(code, &name)
+            {
+                self.interpreter
+                    .set_container_default(&container, default_value.clone());
+            }
+            // If the variable is currently Nil (uninitialized scalar), set it to the default.
+            if !name.starts_with('@') && !name.starts_with('%') {
+                let current = self.locals_get_by_name(code, &name);
+                if matches!(current, Some(Value::Nil) | None) {
+                    self.locals_set_by_name(code, &name, default_value.clone());
+                    self.set_env_with_main_alias(&name, default_value);
+                }
+            }
+            self.env_dirty = true;
+            return Ok(());
+        }
+
         if !(self.interpreter.has_proto("trait_mod:<is>")
             || self.interpreter.has_multi_candidates("trait_mod:<is>"))
         {

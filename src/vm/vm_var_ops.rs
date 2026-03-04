@@ -108,6 +108,10 @@ impl VM {
     }
 
     fn typed_container_default(&self, target: &Value) -> Value {
+        // Check for explicit `is default(...)` on the container first.
+        if let Some(def) = self.interpreter.container_default(target) {
+            return def.clone();
+        }
         if let Some(info) = self.interpreter.container_type_metadata(target) {
             Value::Package(Symbol::intern(&info.value_type))
         } else if matches!(target, Value::Hash(_)) {
@@ -1971,6 +1975,11 @@ impl VM {
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
+            // Re-register container default for `is default(...)` after mutation,
+            // since Arc::make_mut may have changed the pointer identity.
+            if let Some(def) = self.interpreter.var_default(&var_name).cloned() {
+                self.interpreter.set_container_default(&updated, def);
+            }
         }
         self.stack.push(val);
         Ok(())
@@ -2090,6 +2099,11 @@ impl VM {
                 return Err(RuntimeError::new(format!(
                     "X::Undeclared::Symbols: Variable '{name}' is not declared"
                 )));
+            }
+            // `is default(...)`: return the default value instead of Nil.
+            if let Some(def) = self.interpreter.var_default(&name) {
+                self.stack.push(def.clone());
+                return Ok(());
             }
         }
         self.stack.push(val);
