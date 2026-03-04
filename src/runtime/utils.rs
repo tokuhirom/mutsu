@@ -520,7 +520,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Sub(data) => {
             if matches!(
                 data.env.get("__mutsu_callable_type"),
-                Some(Value::Str(kind)) if kind == "Method"
+                Some(Value::Str(kind)) if kind.as_str() == "Method"
             ) {
                 "Method"
             } else {
@@ -625,7 +625,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "+" | "-" | "+|" | "+^" => Value::Int(0),
         "*" | "**" => Value::Int(1),
         "+&" => Value::Int(-1), // +^0 (all bits set)
-        "~" | "~|" | "~^" => Value::Str(String::new()),
+        "~" | "~|" | "~^" => Value::str(String::new()),
         "&&" | "and" | "?&" => Value::Bool(true),
         "||" | "or" | "?|" | "^^" => Value::Bool(false),
         "?^" => Value::Bool(false),
@@ -707,12 +707,12 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     if *excl_end {
                         (s..e)
                             .filter_map(char::from_u32)
-                            .map(|c| Value::Str(c.to_string()))
+                            .map(|c| Value::str(c.to_string()))
                             .collect()
                     } else {
                         (s..=e)
                             .filter_map(char::from_u32)
-                            .map(|c| Value::Str(c.to_string()))
+                            .map(|c| Value::str(c.to_string()))
                             .collect()
                     }
                 } else {
@@ -721,14 +721,14 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     let mut current = if *excl_start {
                         crate::runtime::Interpreter::string_succ(a)
                     } else {
-                        a.clone()
+                        a.to_string()
                     };
                     let limit = MAX_RANGE_EXPAND as usize;
-                    while current <= *b && result.len() < limit {
-                        if *excl_end && current == *b {
+                    while current.as_str() <= b.as_str() && result.len() < limit {
+                        if *excl_end && current.as_str() == b.as_str() {
                             break;
                         }
-                        result.push(Value::Str(current.clone()));
+                        result.push(Value::str(current.clone()));
                         current = crate::runtime::Interpreter::string_succ(&current);
                     }
                     result
@@ -762,7 +762,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 }
             }
         }
-        Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
+        Value::Set(items) => items.iter().map(|s| Value::str(s.clone())).collect(),
         Value::Bag(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))

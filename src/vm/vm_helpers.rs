@@ -361,9 +361,9 @@ impl VM {
             Value::Rat(n, d) => make_rat(n + d, *d),
             Value::Str(s) => {
                 if let Some(next) = Self::superscript_succ(s) {
-                    Value::Str(next)
+                    Value::str(next)
                 } else {
-                    Value::Str(Self::string_succ(s))
+                    Value::str(Self::string_succ(s))
                 }
             }
             _ => Value::Int(1),
@@ -388,9 +388,9 @@ impl VM {
             Value::Rat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => {
                 if let Some(prev) = Self::superscript_pred(s) {
-                    Value::Str(prev)
+                    Value::str(prev)
                 } else {
-                    Value::Str(Self::string_pred(s))
+                    Value::str(Self::string_pred(s))
                 }
             }
             _ => Value::Int(-1),
@@ -415,11 +415,11 @@ impl VM {
             format!("${name}")
         };
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("variable".to_string(), Value::Str(var_name.clone()));
-        attrs.insert("suggestions".to_string(), Value::Str(suggestion.clone()));
+        attrs.insert("variable".to_string(), Value::str(var_name.clone()));
+        attrs.insert("suggestions".to_string(), Value::str(suggestion.clone()));
         attrs.insert(
             "message".to_string(),
-            Value::Str(format!(
+            Value::str(format!(
                 "Variable '{}' is not declared. Did you mean '{}'?",
                 var_name, suggestion
             )),
@@ -1483,7 +1483,7 @@ impl VM {
         *self.interpreter.env_mut() = restored_env;
 
         let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
-            Value::Str(s) => Some(s.clone()),
+            Value::Str(s) => Some(s.to_string()),
             _ => None,
         });
 

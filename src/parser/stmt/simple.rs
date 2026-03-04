@@ -146,7 +146,7 @@ pub(in crate::parser) fn try_add_parse_time_lib_path(expr: &Expr) {
 fn extract_lib_path(expr: &Expr) -> Option<String> {
     match expr {
         // use lib "some/path"
-        Expr::Literal(Value::Str(s)) => Some(s.clone()),
+        Expr::Literal(Value::Str(s)) => Some(s.to_string()),
         // use lib $*PROGRAM.parent(N).add("path") or .add($*SPEC.catdir(<...>))
         Expr::MethodCall {
             target, name, args, ..
@@ -166,7 +166,7 @@ fn extract_lib_path(expr: &Expr) -> Option<String> {
 /// Handles string literals and `$*SPEC.catdir(<word list>)`.
 fn extract_static_string(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(Value::Str(s)) => Some(s.clone()),
+        Expr::Literal(Value::Str(s)) => Some(s.to_string()),
         // $*SPEC.catdir(<packages Test-Helpers lib>) → "packages/Test-Helpers/lib"
         Expr::MethodCall {
             target, name, args, ..
@@ -178,13 +178,13 @@ fn extract_static_string(expr: &Expr) -> Option<String> {
                 let parts: Vec<String> = args
                     .iter()
                     .filter_map(|a| match a {
-                        Expr::Literal(Value::Str(s)) => Some(s.clone()),
+                        Expr::Literal(Value::Str(s)) => Some(s.to_string()),
                         Expr::ArrayLiteral(items) => {
                             let strs: Vec<String> = items
                                 .iter()
                                 .filter_map(|i| {
                                     if let Expr::Literal(Value::Str(s)) = i {
-                                        Some(s.clone())
+                                        Some(s.to_string())
                                     } else {
                                         None
                                     }
@@ -1307,7 +1307,7 @@ pub(super) fn goto_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     // Bare identifier labels are treated as label names, not variable lookups.
     if let Ok((r, label)) = ident(rest) {
-        return parse_statement_modifier(r, Stmt::Goto(Expr::Literal(Value::Str(label))));
+        return parse_statement_modifier(r, Stmt::Goto(Expr::Literal(Value::str(label))));
     }
     let (rest, expr) = expression(rest)?;
     parse_statement_modifier(rest, Stmt::Goto(expr))
@@ -1470,12 +1470,12 @@ fn method_lvalue_assign_expr(
 ) -> Expr {
     let mut args = vec![
         target,
-        Expr::Literal(Value::Str(method_name)),
+        Expr::Literal(Value::str(method_name)),
         Expr::ArrayLiteral(method_args),
         value,
     ];
     args.push(match target_var_name {
-        Some(name) => Expr::Literal(Value::Str(name)),
+        Some(name) => Expr::Literal(Value::str(name)),
         None => Expr::Literal(Value::Nil),
     });
     Expr::Call {
@@ -1488,7 +1488,7 @@ fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr)
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
         args: vec![
-            Expr::Literal(Value::Str(name)),
+            Expr::Literal(Value::str(name)),
             Expr::ArrayLiteral(call_args),
             value,
         ],
@@ -1761,7 +1761,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
                 && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
-                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode == "kv" || mode == "not-kv")
+                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode.as_str() == "kv" || mode.as_str() == "not-kv")
             {
                 let stmt = Stmt::Expr(Expr::IndexAssign {
                     target: Box::new(args[0].clone()),

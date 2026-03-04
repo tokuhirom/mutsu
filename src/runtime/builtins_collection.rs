@@ -31,7 +31,7 @@ impl Interpreter {
                     .join(", ")
             );
             let mut attrs = StdHashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
             let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
@@ -53,7 +53,7 @@ impl Interpreter {
                     .join(", ")
             );
             let mut attrs = StdHashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
             let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
@@ -232,7 +232,7 @@ pub(super) fn builtin_val(args: &[Value]) -> Value {
     fn make_allomorphic(val: Value, original: &str) -> Value {
         let mut mixins = StdHashMap::new();
         // Store the original string (with whitespace) as the Str component
-        mixins.insert("Str".to_string(), Value::Str(original.to_string()));
+        mixins.insert("Str".to_string(), Value::str(original.to_string()));
         Value::Mixin(Box::new(val), mixins)
     }
 
@@ -286,7 +286,7 @@ pub(super) fn builtin_val(args: &[Value]) -> Value {
     }
 
     // Plain string
-    Value::Str(original.to_string())
+    Value::str(original.to_string())
 }
 
 fn try_parse_complex(word: &str) -> Option<Value> {
@@ -396,7 +396,7 @@ impl Interpreter {
                     Err(_) => v.clone(),
                 }
             } else {
-                Value::Str(k.clone())
+                Value::str(k.clone())
             };
 
             let replace = if let Some(current_key) = &best_key {
@@ -418,7 +418,7 @@ impl Interpreter {
         let by = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "by" => Some((**value).clone()),
             Value::ValuePair(key, value)
-                if matches!(key.as_ref(), Value::Str(name) if name == "by") =>
+                if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by") =>
             {
                 Some((**value).clone())
             }
@@ -428,7 +428,7 @@ impl Interpreter {
             .iter()
             .filter(|arg| {
                 !matches!(arg, Value::Pair(name, _) if name == "by")
-                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
             })
             .cloned()
             .collect();
@@ -452,7 +452,7 @@ impl Interpreter {
         let by = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "by" => Some((**value).clone()),
             Value::ValuePair(key, value)
-                if matches!(key.as_ref(), Value::Str(name) if name == "by") =>
+                if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by") =>
             {
                 Some((**value).clone())
             }
@@ -462,7 +462,7 @@ impl Interpreter {
             .iter()
             .filter(|arg| {
                 !matches!(arg, Value::Pair(name, _) if name == "by")
-                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
             })
             .cloned()
             .collect();
@@ -604,7 +604,7 @@ impl Interpreter {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(&sep);
-            return Ok(Value::Str(joined));
+            return Ok(Value::str(joined));
         }
         // Multi-arg: join(sep, item1, item2, ...)
         if args.len() > 1 {
@@ -613,9 +613,9 @@ impl Interpreter {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(&sep);
-            return Ok(Value::Str(joined));
+            return Ok(Value::str(joined));
         }
-        Ok(Value::Str(String::new()))
+        Ok(Value::str(String::new()))
     }
 
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -672,7 +672,7 @@ impl Interpreter {
                 Arc::make_mut(&mut items).reverse();
                 Value::Array(items, ArrayKind::List)
             }
-            Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
+            Some(Value::Str(s)) => Value::str(s.chars().rev().collect::<String>()),
             _ => Value::Nil,
         })
     }

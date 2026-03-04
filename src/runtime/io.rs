@@ -21,7 +21,7 @@ impl Interpreter {
 
     fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Named"), attrs)
@@ -29,7 +29,7 @@ impl Interpreter {
 
     fn make_pod_heading(level: &str, contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("level".to_string(), Value::Str(level.to_string()));
+        attrs.insert("level".to_string(), Value::str(level.to_string()));
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Heading"), attrs)
@@ -39,7 +39,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "contents".to_string(),
-            Value::array(vec![Value::Str(content)]),
+            Value::array(vec![Value::str(content)]),
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Comment"), attrs)
@@ -49,7 +49,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "contents".to_string(),
-            Value::array(lines.into_iter().map(Value::Str).collect::<Vec<_>>()),
+            Value::array(lines.into_iter().map(Value::str).collect::<Vec<_>>()),
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
@@ -67,11 +67,11 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         let contents = rows
             .into_iter()
-            .map(|row| Value::array(row.into_iter().map(Value::Str).collect::<Vec<_>>()))
+            .map(|row| Value::array(row.into_iter().map(Value::str).collect::<Vec<_>>()))
             .collect::<Vec<_>>();
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("headers".to_string(), Value::array(Vec::new()));
-        attrs.insert("caption".to_string(), Value::Str(String::new()));
+        attrs.insert("caption".to_string(), Value::str(String::new()));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Table"), attrs)
     }
@@ -299,7 +299,7 @@ impl Interpreter {
                             raw.push('\n');
                             idx += 1;
                         }
-                        entries.push(Self::make_pod_block(vec![Value::Str(raw)]));
+                        entries.push(Self::make_pod_block(vec![Value::str(raw)]));
                         continue;
                     }
                     if let Some(level) = Self::parse_item_level(target) {
@@ -466,7 +466,7 @@ impl Interpreter {
                             raw.push('\n');
                             idx += 1;
                         }
-                        entries.push(Self::make_pod_block(vec![Value::Str(raw)]));
+                        entries.push(Self::make_pod_block(vec![Value::str(raw)]));
                         continue;
                     }
                     if let Some(level) = Self::parse_item_level(target) {
@@ -589,7 +589,7 @@ impl Interpreter {
         self.env.insert("*EXECUTABLE".to_string(), exe_io);
         self.env.insert(
             "$*EXECUTABLE-NAME".to_string(),
-            Value::Str(
+            Value::str(
                 std::path::Path::new(&exe_path)
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
@@ -645,11 +645,11 @@ impl Interpreter {
         attrs.insert("handle".to_string(), Value::Int(handle_id as i64));
         if let Some(state) = self.handles.get(&handle_id) {
             if let Some(path) = &state.path {
-                attrs.insert("path".to_string(), Value::Str(path.clone()));
+                attrs.insert("path".to_string(), Value::str(path.clone()));
             }
             attrs.insert(
                 "mode".to_string(),
-                Value::Str(Self::mode_name(state.mode).to_string()),
+                Value::str(Self::mode_name(state.mode).to_string()),
             );
         }
         if bin {
@@ -780,16 +780,16 @@ impl Interpreter {
         let is_win = cfg!(windows);
 
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(name));
-        attrs.insert("auth".to_string(), Value::Str(auth));
+        attrs.insert("name".to_string(), Value::str(name));
+        attrs.insert("auth".to_string(), Value::str(auth));
         attrs.insert("version".to_string(), version);
         attrs.insert(
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
         );
-        attrs.insert("desc".to_string(), Value::Str(desc));
-        attrs.insert("release".to_string(), Value::Str(release));
-        attrs.insert("path-sep".to_string(), Value::Str(path_sep));
+        attrs.insert("desc".to_string(), Value::str(desc));
+        attrs.insert("release".to_string(), Value::str(release));
+        attrs.insert("path-sep".to_string(), Value::str(path_sep));
         attrs.insert("is-win".to_string(), Value::Bool(is_win));
 
         Value::make_instance(Symbol::intern("Distro"), attrs)
@@ -818,11 +818,8 @@ impl Interpreter {
 
     pub(super) fn make_perl_instance() -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str("Raku".to_string()));
-        attrs.insert(
-            "auth".to_string(),
-            Value::Str("The Perl Foundation".to_string()),
-        );
+        attrs.insert("name".to_string(), Value::str_from("Raku"));
+        attrs.insert("auth".to_string(), Value::str_from("The Perl Foundation"));
         attrs.insert(
             "version".to_string(),
             Value::Version {
@@ -841,19 +838,19 @@ impl Interpreter {
         );
         attrs.insert(
             "desc".to_string(),
-            Value::Str("Raku Programming Language".to_string()),
+            Value::str_from("Raku Programming Language"),
         );
         attrs.insert(
             "DISTROnames".to_string(),
             Value::array(vec![
-                Value::Str("macos".to_string()),
-                Value::Str("linux".to_string()),
-                Value::Str("freebsd".to_string()),
-                Value::Str("mswin32".to_string()),
-                Value::Str("openbsd".to_string()),
-                Value::Str("dragonfly".to_string()),
-                Value::Str("netbsd".to_string()),
-                Value::Str("browser".to_string()),
+                Value::str_from("macos"),
+                Value::str_from("linux"),
+                Value::str_from("freebsd"),
+                Value::str_from("mswin32"),
+                Value::str_from("openbsd"),
+                Value::str_from("dragonfly"),
+                Value::str_from("netbsd"),
+                Value::str_from("browser"),
             ]),
         );
         Value::make_instance(Symbol::intern("Perl"), attrs)
@@ -861,11 +858,8 @@ impl Interpreter {
 
     pub(super) fn make_vm_instance() -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str("mutsu".to_string()));
-        attrs.insert(
-            "auth".to_string(),
-            Value::Str("github.com/tokuhirom".to_string()),
-        );
+        attrs.insert("name".to_string(), Value::str_from("mutsu"));
+        attrs.insert("auth".to_string(), Value::str_from("github.com/tokuhirom"));
         attrs.insert(
             "version".to_string(),
             Value::Version {
@@ -878,11 +872,8 @@ impl Interpreter {
                 minus: false,
             },
         );
-        attrs.insert("precomp-ext".to_string(), Value::Str("mutsu".to_string()));
-        attrs.insert(
-            "precomp-target".to_string(),
-            Value::Str("mutsu".to_string()),
-        );
+        attrs.insert("precomp-ext".to_string(), Value::str_from("mutsu"));
+        attrs.insert("precomp-target".to_string(), Value::str_from("mutsu"));
         Value::make_instance(Symbol::intern("VM"), attrs)
     }
 
@@ -913,7 +904,7 @@ impl Interpreter {
                 text.to_string()
             };
             if self
-                .call_method_with_values(handle, "print", vec![Value::Str(payload.clone())])
+                .call_method_with_values(handle, "print", vec![Value::str(payload.clone())])
                 .is_ok()
             {
                 return Ok(());
@@ -944,7 +935,7 @@ impl Interpreter {
 
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {
         self.get_dynamic_handle(name).and_then(|value| match value {
-            Value::Str(s) => Some(s.clone()),
+            Value::Str(s) => Some(s.to_string()),
             Value::Instance { attributes, .. } => {
                 // Support IO::Path instances (e.g., $*CWD)
                 attributes.get("path").map(|v| v.to_string_value())
@@ -994,7 +985,7 @@ impl Interpreter {
 
     pub(crate) fn make_io_path_instance(&self, path: &str) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("path".to_string(), Value::Str(path.to_string()));
+        attrs.insert("path".to_string(), Value::str(path.to_string()));
         Value::make_instance(Symbol::intern("IO::Path"), attrs)
     }
 

@@ -153,7 +153,7 @@ impl Interpreter {
                 }
                 Value::ValuePair(key, value) => {
                     if let Value::Str(name) = key.as_ref()
-                        && name == TEST_CALLSITE_LINE_KEY
+                        && name.as_str() == TEST_CALLSITE_LINE_KEY
                     {
                         callsite_line = match value.as_ref() {
                             Value::Int(i) => Some(*i),
@@ -223,7 +223,7 @@ impl Interpreter {
         {
             return Some(val.clone());
         }
-        std::env::var_os(key).map(|v| Value::Str(v.to_string_lossy().to_string()))
+        std::env::var_os(key).map(|v| Value::str(v.to_string_lossy().to_string()))
     }
 
     fn raku_test_die_on_fail_enabled(&self) -> bool {
@@ -237,7 +237,7 @@ impl Interpreter {
             Value::BigInt(i) => i != 0.into(),
             Value::Num(n) => n != 0.0,
             Value::Rat(n, d) | Value::FatRat(n, d) => d != 0 && n != 0,
-            Value::Str(s) => !s.is_empty() && s != "0",
+            Value::Str(s) => !s.is_empty() && s.as_str() != "0",
             _ => val.truthy(),
         }
     }

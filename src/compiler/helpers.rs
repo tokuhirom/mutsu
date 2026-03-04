@@ -128,7 +128,7 @@ impl Compiler {
     pub(super) fn emit_dynamic_package_error(&mut self, name: &str) {
         let symbol = Self::dynamic_var_symbol(name);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("symbol".to_string(), Value::Str(symbol));
+        attrs.insert("symbol".to_string(), Value::str(symbol));
         let err = Value::make_instance(Symbol::intern("X::Dynamic::Package"), attrs);
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
@@ -286,7 +286,7 @@ impl Compiler {
                     self.code.emit(OpCode::Decont);
                 }
             } else {
-                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                 self.compile_expr(expr);
                 self.code.emit(OpCode::MakePair);
             }
@@ -331,7 +331,7 @@ impl Compiler {
             _ => None,
         };
         if let Some(name) = source_name {
-            let name_idx = self.code.add_constant(Value::Str(name));
+            let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::WrapVarRef(name_idx));
         }
     }
@@ -420,7 +420,7 @@ impl Compiler {
             };
             // Check for `my $name` in the same scope → X::Redeclaration
             if has_var_decl(body, bare_name) {
-                return Some(Value::Str(format!(
+                return Some(Value::str(format!(
                     "X::Redeclaration: Redeclaration of symbol '$^{}'",
                     bare_name
                 )));
@@ -438,21 +438,21 @@ impl Compiler {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert(
                         "variable_name".to_string(),
-                        Value::Str(format!("${}", bare_name)),
+                        Value::str(format!("${}", bare_name)),
                     );
                     attrs.insert(
                         "placeholder".to_string(),
-                        Value::Str(format!("$^{}", bare_name)),
+                        Value::str(format!("$^{}", bare_name)),
                     );
-                    attrs.insert("decl".to_string(), Value::Str(decl.to_string()));
-                    attrs.insert("message".to_string(), Value::Str(message));
+                    attrs.insert("decl".to_string(), Value::str(decl.to_string()));
+                    attrs.insert("message".to_string(), Value::str(message));
                     return Some(Value::make_instance(
                         Symbol::intern("X::Placeholder::NonPlaceholder"),
                         attrs,
                     ));
                 } else {
                     // No outer declaration → X::Undeclared
-                    return Some(Value::Str(format!(
+                    return Some(Value::str(format!(
                         "X::Undeclared: Variable '${}' is not declared. \
                          Did you mean '$^{}'?",
                         bare_name, bare_name
@@ -685,7 +685,7 @@ impl Compiler {
                         }
                         Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
                             if Self::has_block_placeholders(stmts) {
-                                sub_compiler.compile_stmt(&Stmt::Die(Expr::Literal(Value::Str(
+                                sub_compiler.compile_stmt(&Stmt::Die(Expr::Literal(Value::str(
                                     "Implicit placeholder parameters are not available in bare nested blocks"
                                         .to_string(),
                                 ))));
@@ -938,7 +938,7 @@ impl Compiler {
                                     name: n,
                                     value: Some(expr),
                                 } => {
-                                    self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                    self.compile_expr(&Expr::Literal(Value::str(n.clone())));
                                     self.compile_expr(expr);
                                     self.code.emit(OpCode::MakePair);
                                     regular_count += 1;
@@ -947,7 +947,7 @@ impl Compiler {
                                     name: n,
                                     value: None,
                                 } => {
-                                    self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                    self.compile_expr(&Expr::Literal(Value::str(n.clone())));
                                     self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                     self.code.emit(OpCode::MakePair);
                                     regular_count += 1;
@@ -960,7 +960,7 @@ impl Compiler {
                                 self.compile_expr(expr);
                             }
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
                         self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
@@ -977,19 +977,19 @@ impl Compiler {
                                 name,
                                 value: Some(expr),
                             } => {
-                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                                self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                                 self.compile_expr(expr);
                                 self.code.emit(OpCode::MakePair);
                             }
                             CallArg::Named { name, value: None } => {
-                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                                self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                 self.code.emit(OpCode::MakePair);
                             }
                             CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                         }
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     let arg_sources_idx = rewritten_args
                         .iter()
                         .map(|arg| match arg {
@@ -1126,7 +1126,7 @@ impl Compiler {
             self.expand_loop_phasers(body, label.as_deref());
         let param_idx = param
             .as_ref()
-            .map(|p| self.code.add_constant(Value::Str(p.clone())));
+            .map(|p| self.code.add_constant(Value::str(p.clone())));
         let bind_stmts = Self::build_for_bind_stmts(param, param_def, param_idx, params);
         if !bind_stmts.is_empty() {
             let mut merged = bind_stmts;

@@ -141,7 +141,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         if is_scalar_interp {
             return Ok((after, interpolate_string_content(content)));
         }
-        return Ok((after, Expr::Literal(Value::Str(content.to_string()))));
+        return Ok((after, Expr::Literal(Value::str(content.to_string()))));
     }
     // Non-bracket delimiter — same char opens and closes, no nesting
     let after_open = &rest[delim_char.len_utf8()..];
@@ -153,7 +153,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     if is_scalar_interp {
         return Ok((after, interpolate_string_content(content)));
     }
-    Ok((after, Expr::Literal(Value::Str(content.to_string()))))
+    Ok((after, Expr::Literal(Value::str(content.to_string()))))
 }
 
 fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
@@ -238,7 +238,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
         let expr = if content.contains("\\qq") {
             parse_single_quote_qq(&content)
         } else {
-            Expr::Literal(Value::Str(content))
+            Expr::Literal(Value::str(content))
         };
         // Return rest_of_line + after_terminator as remaining input.
         if rest_of_line.trim().is_empty() {
@@ -448,7 +448,7 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
                 ));
             }
             let s = content.replace("\\'", "'").replace("\\\\", "\\");
-            return Ok((rest, Expr::Literal(Value::Str(s))));
+            return Ok((rest, Expr::Literal(Value::str(s))));
         }
         Some(c) => {
             if let Some(close_char) = unicode_bracket_close(c) {
@@ -468,7 +468,7 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
                     ));
                 }
                 let s = content.replace("\\'", "'").replace("\\\\", "\\");
-                return Ok((rest, Expr::Literal(Value::Str(s))));
+                return Ok((rest, Expr::Literal(Value::str(s))));
             }
             // Non-bracket, non-/ delimiter (e.g. q|...|, q!...!) — symmetric delimiter
             if !c.is_alphanumeric() && !c.is_whitespace() {
@@ -488,7 +488,7 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
                     ));
                 }
                 let s = content.replace("\\'", "'").replace("\\\\", "\\");
-                return Ok((rest, Expr::Literal(Value::Str(s))));
+                return Ok((rest, Expr::Literal(Value::str(s))));
             }
             return Err(PError::expected("q string delimiter"));
         }
@@ -505,7 +505,7 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
         ));
     }
     let s = content.replace("\\'", "'").replace("\\\\", "\\");
-    Ok((rest, Expr::Literal(Value::Str(s))))
+    Ok((rest, Expr::Literal(Value::str(s))))
 }
 
 /// Parse qx{...}, qx[...], qx(...), qx<...>, qx/.../, qx`...` forms.
@@ -725,12 +725,12 @@ pub(super) fn try_interpolate_var<'a>(
             let content = &after_lt[..end];
             let words: Vec<&str> = content.split_whitespace().collect();
             let index = if words.len() <= 1 {
-                Expr::Literal(Value::Str(words.first().copied().unwrap_or("").to_string()))
+                Expr::Literal(Value::str(words.first().copied().unwrap_or("").to_string()))
             } else {
                 Expr::ArrayLiteral(
                     words
                         .into_iter()
-                        .map(|w| Expr::Literal(Value::Str(w.to_string())))
+                        .map(|w| Expr::Literal(Value::str(w.to_string())))
                         .collect(),
                 )
             };
@@ -755,7 +755,7 @@ pub(super) fn try_interpolate_var<'a>(
                 if let Ok((_, expr)) = crate::parser::expr::expression(content) {
                     expr
                 } else {
-                    Expr::Literal(Value::Str(content.to_string()))
+                    Expr::Literal(Value::str(content.to_string()))
                 }
             };
             return (
@@ -774,7 +774,7 @@ pub(super) fn try_interpolate_var<'a>(
         // Special variable $/ (match variable)
         if next == '/' {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
             }
             let var_expr = Expr::Var("/".to_string());
             let (expr, var_rest) = parse_postcircumfix_index(&rest[2..], var_expr);
@@ -785,7 +785,7 @@ pub(super) fn try_interpolate_var<'a>(
         // Numeric capture variables: $0, $1, $2, ...
         if next.is_ascii_digit() {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
             }
             let var_rest = &rest[1..];
             let end = var_rest
@@ -810,7 +810,7 @@ pub(super) fn try_interpolate_var<'a>(
             || next == '^'
         {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
             }
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
@@ -826,7 +826,7 @@ pub(super) fn try_interpolate_var<'a>(
                 let first = after_dot.as_bytes()[0];
                 if first.is_ascii_alphabetic() || first == b'_' {
                     if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
                     }
                     let end = after_dot
                         .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
@@ -845,7 +845,7 @@ pub(super) fn try_interpolate_var<'a>(
         let next = rest.as_bytes()[1] as char;
         if next.is_alphabetic() || next == '_' {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
             }
             let var_rest = &rest[1..];
             let end = var_rest
@@ -882,7 +882,7 @@ pub(super) fn try_interpolate_var<'a>(
                 return None;
             }
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
             }
             parts.push(expr);
             return Some(remainder);
@@ -894,11 +894,11 @@ pub(super) fn try_interpolate_var<'a>(
 /// Assemble interpolation parts into a final expression.
 pub(super) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr {
     if parts.is_empty() {
-        Expr::Literal(Value::Str(current))
+        Expr::Literal(Value::str(current))
     } else {
         let mut parts = parts;
         if !current.is_empty() {
-            parts.push(Expr::Literal(Value::Str(current)));
+            parts.push(Expr::Literal(Value::str(current)));
         }
         if parts.len() == 1 && matches!(&parts[0], Expr::Literal(Value::Str(_))) {
             return parts.into_iter().next().unwrap();
@@ -943,7 +943,7 @@ pub(in crate::parser) fn interpolate_string_content_with_modes(
             && remaining.trim().is_empty()
         {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
             }
             parts.push(expr);
             rest = after;
@@ -1007,7 +1007,7 @@ fn parse_single_quote_qq(content: &str) -> Expr {
             };
             if let Ok((after, interpolated)) = parsed {
                 if !current.is_empty() {
-                    parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                    parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
                 }
                 parts.push(interpolated);
                 rest = after;
@@ -1076,7 +1076,7 @@ pub(super) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if let Some(after_quote) = rest.strip_prefix(close) {
             let content = &start[..start.len() - rest.len()];
-            return Ok((after_quote, Expr::Literal(Value::Str(content.to_string()))));
+            return Ok((after_quote, Expr::Literal(Value::str(content.to_string()))));
         }
         let ch = rest.chars().next().unwrap();
         rest = &rest[ch.len_utf8()..];
@@ -1104,7 +1104,7 @@ pub(super) fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
     if depth == 0 {
         let content = &rest[..pos];
         let after = &rest[pos + '｣'.len_utf8()..];
-        Ok((after, Expr::Literal(Value::Str(content.to_string()))))
+        Ok((after, Expr::Literal(Value::str(content.to_string()))))
     } else {
         Err(PError::expected("closing ｣"))
     }
@@ -1200,7 +1200,7 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
         // Block interpolation: { expr }
         if rest.starts_with('{') {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
             }
             // Find matching close brace (tracking nesting)
             let mut depth = 0;
@@ -1275,7 +1275,7 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if rest.starts_with('{') {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
             }
             let mut depth = 0;
             let mut end = 0;

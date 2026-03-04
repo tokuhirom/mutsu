@@ -69,10 +69,10 @@ impl Interpreter {
                 if let Err(e) = child_result {
                     let os_error_msg = e.to_string();
                     let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("os-error".to_string(), Value::Str(os_error_msg.clone()));
+                    ex_attrs.insert("os-error".to_string(), Value::str(os_error_msg.clone()));
                     ex_attrs.insert(
                         "message".to_string(),
-                        Value::Str(format!("Failed to spawn '{}': {}", program, os_error_msg)),
+                        Value::str(format!("Failed to spawn '{}': {}", program, os_error_msg)),
                     );
                     let os_error = Value::make_instance(Symbol::intern("X::OS"), ex_attrs);
                     attrs.insert("spawn_error".to_string(), os_error.clone());
@@ -163,7 +163,7 @@ impl Interpreter {
                                         let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
                                         if let Some(ref tx) = tx {
                                             let _ = tx
-                                                .send(SupplyEvent::Emit(Value::Str(chunk.clone())));
+                                                .send(SupplyEvent::Emit(Value::str(chunk.clone())));
                                         }
                                         collected.push_str(&chunk);
                                     }
@@ -192,7 +192,7 @@ impl Interpreter {
                                         let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
                                         if let Some(ref tx) = tx {
                                             let _ = tx
-                                                .send(SupplyEvent::Emit(Value::Str(chunk.clone())));
+                                                .send(SupplyEvent::Emit(Value::str(chunk.clone())));
                                         }
                                         collected.push_str(&chunk);
                                     }
@@ -245,8 +245,8 @@ impl Interpreter {
                     proc_attrs.insert("signal".to_string(), Value::Int(signal));
                     proc_attrs.insert("command".to_string(), Value::real_array(cmd_arr_clone));
                     proc_attrs.insert("pid".to_string(), Value::Int(pid as i64));
-                    proc_attrs.insert("collected_stdout".to_string(), Value::Str(collected_stdout));
-                    proc_attrs.insert("collected_stderr".to_string(), Value::Str(collected_stderr));
+                    proc_attrs.insert("collected_stdout".to_string(), Value::str(collected_stdout));
+                    proc_attrs.insert("collected_stderr".to_string(), Value::str(collected_stderr));
                     proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
                     proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
                     let proc_val = Value::make_instance(Symbol::intern("Proc"), proc_attrs);

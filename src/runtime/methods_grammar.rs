@@ -74,7 +74,7 @@ impl Interpreter {
                 method
             )));
         }
-        self.env.insert("_".to_string(), Value::Str(text.clone()));
+        self.env.insert("_".to_string(), Value::str(text.clone()));
         let result = (|| -> Result<Value, RuntimeError> {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
@@ -121,7 +121,7 @@ impl Interpreter {
                 return Ok(self.make_parse_failure_value(&text, captures.to));
             }
             for (i, v) in captures.positional.iter().enumerate() {
-                self.env.insert(i.to_string(), Value::Str(v.clone()));
+                self.env.insert(i.to_string(), Value::str(v.clone()));
             }
             let match_obj = Value::make_match_object_full(
                 captures.matched,
@@ -392,12 +392,12 @@ impl Interpreter {
         let line = chars[..pos].iter().filter(|ch| **ch == '\n').count() as i64 + 1;
 
         let mut ex_attrs = HashMap::new();
-        ex_attrs.insert("reason".to_string(), Value::Str("unknown".to_string()));
-        ex_attrs.insert("filename".to_string(), Value::Str("<anon>".to_string()));
+        ex_attrs.insert("reason".to_string(), Value::str_from("unknown"));
+        ex_attrs.insert("filename".to_string(), Value::str_from("<anon>"));
         ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
         ex_attrs.insert("line".to_string(), Value::Int(line));
-        ex_attrs.insert("pre".to_string(), Value::Str(pre));
-        ex_attrs.insert("post".to_string(), Value::Str(post));
+        ex_attrs.insert("pre".to_string(), Value::str(pre));
+        ex_attrs.insert("post".to_string(), Value::str(post));
         ex_attrs.insert("highexpect".to_string(), Value::array(Vec::new()));
         let exception = Value::make_instance(Symbol::intern("X::Syntax::Confused"), ex_attrs);
 

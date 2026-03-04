@@ -221,12 +221,12 @@ impl VM {
 
     fn not_enough_dimensions_error(operation: &str, got: usize, needed: usize) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("operation".to_string(), Value::Str(operation.to_string()));
+        attrs.insert("operation".to_string(), Value::str(operation.to_string()));
         attrs.insert("got-dimensions".to_string(), Value::Int(got as i64));
         attrs.insert("needed-dimensions".to_string(), Value::Int(needed as i64));
         attrs.insert(
             "message".to_string(),
-            Value::Str(format!(
+            Value::str(format!(
                 "Not enough dimensions: got {}, needed {}",
                 got, needed
             )),
@@ -460,7 +460,7 @@ impl VM {
                     is_regex: false,
                 }
             } else {
-                Value::Str(name.to_string())
+                Value::str(name.to_string())
             }
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
@@ -482,7 +482,7 @@ impl VM {
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
             } else {
-                Value::Str(name.to_string())
+                Value::str(name.to_string())
             }
         } else if name.contains("::")
             && let Some(def) = self.interpreter.resolve_function_with_types(name, &[])
@@ -571,10 +571,10 @@ impl VM {
             } else if let Some(val) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
                 Value::Int(val)
             } else {
-                Value::Str(name.to_string())
+                Value::str(name.to_string())
             }
         } else {
-            Value::Str(name.to_string())
+            Value::str(name.to_string())
         };
         self.stack.push(val);
         Ok(())
@@ -597,12 +597,12 @@ impl VM {
                     // Return a Failure wrapping X::OutOfRange — `//` treats it as
                     // undefined but any further use (e.g. subscripting) will throw.
                     let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("what".to_string(), Value::Str("Index".to_string()));
+                    attrs.insert("what".to_string(), Value::str_from("Index"));
                     attrs.insert("got".to_string(), Value::Int(i));
-                    attrs.insert("range".to_string(), Value::Str("0..^Inf".to_string()));
+                    attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
                     attrs.insert(
                         "message".to_string(),
-                        Value::Str(format!(
+                        Value::str(format!(
                             "Index out of range. Is: {}, should be in 0..^Inf",
                             i
                         )),
@@ -762,7 +762,7 @@ impl VM {
                 Value::Str(key),
             ) if class_name == "Match" => {
                 if let Some(Value::Hash(named)) = attributes.get("named") {
-                    named.get(&key).cloned().unwrap_or(Value::Nil)
+                    named.get(key.as_str()).cloned().unwrap_or(Value::Nil)
                 } else {
                     Value::Nil
                 }
@@ -787,7 +787,7 @@ impl VM {
                 let default = self.typed_container_default(&instance);
                 let result = self
                     .interpreter
-                    .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key)])
+                    .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key.clone())])
                     .unwrap_or(Value::Nil);
                 if matches!(result, Value::Nil) {
                     default
@@ -829,18 +829,18 @@ impl VM {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(
                     "message".to_string(),
-                    Value::Str("Type Str does not support associative indexing.".to_string()),
+                    Value::str_from("Type Str does not support associative indexing."),
                 );
                 let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                 let mut failure_attrs = std::collections::HashMap::new();
                 failure_attrs.insert("exception".to_string(), ex);
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
-            (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
+            (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(&key).unwrap_or(&0)),
+            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
-            (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(&key).unwrap_or(&0.0)),
+            (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(key.as_str()).unwrap_or(&0.0)),
             (Value::Mix(m), idx) => Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)),
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
@@ -967,7 +967,7 @@ impl VM {
                     named,
                 },
                 Value::Str(key),
-            ) => named.get(&key).cloned().unwrap_or(Value::Nil),
+            ) => named.get(key.as_str()).cloned().unwrap_or(Value::Nil),
             (Value::Capture { positional, .. }, Value::Int(i)) => {
                 if i < 0 {
                     Value::Nil
@@ -1007,14 +1007,14 @@ impl VM {
             }
             // Pair subscript: $pair<key> returns value if key matches, Nil otherwise
             (Value::Pair(key, value), Value::Str(idx)) => {
-                if key == idx {
+                if key.as_str() == idx.as_str() {
                     *value
                 } else {
                     Value::Nil
                 }
             }
             (Value::ValuePair(key, value), Value::Str(idx)) => {
-                if key.to_string_value() == idx {
+                if key.to_string_value() == **idx {
                     *value
                 } else {
                     Value::Nil
@@ -1236,7 +1236,7 @@ impl VM {
                     // Whatever (*) — all hash keys.
                     Value::Whatever => {
                         let pairs: Vec<(Value, bool)> =
-                            map.keys().map(|k| (Value::Str(k.clone()), true)).collect();
+                            map.keys().map(|k| (Value::str(k.clone()), true)).collect();
                         let result = match adverb_bits {
                             0 => Value::array(
                                 pairs
@@ -1297,7 +1297,7 @@ impl VM {
                     }
                     Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                         let pairs: Vec<(Value, bool)> =
-                            map.keys().map(|k| (Value::Str(k.clone()), true)).collect();
+                            map.keys().map(|k| (Value::str(k.clone()), true)).collect();
                         let result = match adverb_bits {
                             0 => Value::array(
                                 pairs
@@ -1403,7 +1403,7 @@ impl VM {
                 _ => {
                     // For hash access, delegate to single key exists
                     let exists = match (&target, &idx) {
-                        (Value::Hash(map), Value::Str(key)) => map.contains_key(key),
+                        (Value::Hash(map), Value::Str(key)) => map.contains_key(key.as_str()),
                         (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
                         (
                             Value::Instance {
@@ -1414,7 +1414,7 @@ impl VM {
                             Value::Str(key),
                         ) if class_name == "Stash" => {
                             if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
-                                symbols.contains_key(key)
+                                symbols.contains_key(key.as_str())
                             } else {
                                 false
                             }
@@ -1632,7 +1632,7 @@ impl VM {
         for v in values {
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
-        self.stack.push(Value::Str(result));
+        self.stack.push(Value::str(result));
     }
 
     pub(super) fn exec_post_increment_op(
@@ -2227,7 +2227,7 @@ impl VM {
         }
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
-                Some(name.clone())
+                Some(name.to_string())
             } else {
                 None
             }
@@ -2378,7 +2378,7 @@ impl VM {
         self.set_env_with_main_alias(name, val.clone());
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
-                Some(name.clone())
+                Some(name.to_string())
             } else {
                 None
             }
@@ -2507,7 +2507,7 @@ impl VM {
                     if let Value::Hash(inner) = value {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
-                        result.push(Value::Str(key.clone()));
+                        result.push(Value::str(key.clone()));
                         result.push(value.clone());
                     }
                 }
@@ -2515,7 +2515,7 @@ impl VM {
                     if let Value::Hash(inner) = value {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
-                        result.push(Value::Str(key.clone()));
+                        result.push(Value::str(key.clone()));
                     }
                 }
                 HyperSliceAdverb::V => {
@@ -2528,7 +2528,7 @@ impl VM {
                 HyperSliceAdverb::Tree => {
                     // Tree mode: yield key-value pairs for all entries,
                     // including sub-hashes (as their original Value::Hash)
-                    result.push(Value::Str(key.clone()));
+                    result.push(Value::str(key.clone()));
                     result.push(value.clone());
                     if let Value::Hash(inner) = value {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
@@ -2539,7 +2539,7 @@ impl VM {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         let key_array: Vec<Value> =
-                            cur_path.iter().map(|s| Value::Str(s.clone())).collect();
+                            cur_path.iter().map(|s| Value::str(s.clone())).collect();
                         result.push(Value::array(key_array));
                     }
                 }
@@ -2548,7 +2548,7 @@ impl VM {
                         Self::hyperslice_recurse(inner, &cur_path, adverb, result);
                     } else {
                         let key_array: Vec<Value> =
-                            cur_path.iter().map(|s| Value::Str(s.clone())).collect();
+                            cur_path.iter().map(|s| Value::str(s.clone())).collect();
                         result.push(Value::array(key_array));
                         result.push(value.clone());
                     }

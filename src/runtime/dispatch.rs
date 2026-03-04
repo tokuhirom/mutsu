@@ -336,7 +336,7 @@ impl Interpreter {
             None => return Ok(None),
         };
         let subject = match self.env.get("_") {
-            Some(Value::Str(s)) => Some(s.clone()),
+            Some(Value::Str(s)) => Some(s.to_string()),
             _ => None,
         };
         // Collect all matching candidates with their declarative prefix match lengths
@@ -404,7 +404,7 @@ impl Interpreter {
         };
         match value {
             Value::Regex(pat) => Ok(Some(pat)),
-            Value::Str(s) => Ok(Some(s)),
+            Value::Str(s) => Ok(Some(s.to_string())),
             Value::Nil => Ok(None),
             other => Ok(Some(other.to_string_value())),
         }
@@ -520,7 +520,7 @@ impl Interpreter {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "message".to_string(),
-                Value::Str(format!(
+                Value::str(format!(
                     "Cannot resolve caller {}; none of these signatures matches",
                     proto_name
                 )),

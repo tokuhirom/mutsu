@@ -468,7 +468,7 @@ impl VM {
             let mut attrs = HashMap::new();
             attrs.insert(
                 "message".to_string(),
-                Value::Str("Cannot coerce a lazy list onto a Set".to_string()),
+                Value::str_from("Cannot coerce a lazy list onto a Set"),
             );
             let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
             let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");

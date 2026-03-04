@@ -258,7 +258,7 @@ impl Value {
                     format!("{}", f)
                 }
             }
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => (**s).clone(),
             Value::Bool(true) => "True".to_string(),
             Value::Bool(false) => "False".to_string(),
             Value::Range(a, b) => format!("{}..{}", a, b),

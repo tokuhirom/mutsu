@@ -103,7 +103,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::Complex(0.0, 0.0))),
         },
         "key" => match target {
-            Value::Pair(k, _) => Some(Ok(Value::Str(k.clone()))),
+            Value::Pair(k, _) => Some(Ok(Value::str(k.clone()))),
             Value::ValuePair(k, _) => Some(Ok(*k.clone())),
             Value::Instance {
                 class_name,
@@ -112,8 +112,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             } if class_name == "Pair" => {
                 Some(Ok(attributes.get("key").cloned().unwrap_or(Value::Nil)))
             }
-            Value::Bool(true) => Some(Ok(Value::Str("True".to_string()))),
-            Value::Bool(false) => Some(Ok(Value::Str("False".to_string()))),
+            Value::Bool(true) => Some(Ok(Value::str_from("True"))),
+            Value::Bool(false) => Some(Ok(Value::str_from("False"))),
             _ => None,
         },
         "value" => match target {
@@ -126,7 +126,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 if let (Some(Value::Hash(hash)), Some(Value::Str(key))) =
                     (attributes.get("__mutsu_hash_ref"), attributes.get("key"))
                 {
-                    Some(Ok(hash.get(key).cloned().unwrap_or(Value::Nil)))
+                    Some(Ok(hash.get(key.as_str()).cloned().unwrap_or(Value::Nil)))
                 } else {
                     Some(Ok(attributes.get("value").cloned().unwrap_or(Value::Nil)))
                 }
@@ -136,8 +136,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "antipair" => match target {
             Value::Pair(k, v) => Some(Ok(match v.as_ref() {
-                Value::Str(s) => Value::Pair(s.clone(), Box::new(Value::Str(k.clone()))),
-                _ => Value::ValuePair(v.clone(), Box::new(Value::Str(k.clone()))),
+                Value::Str(s) => Value::Pair(s.to_string(), Box::new(Value::str(k.clone()))),
+                _ => Value::ValuePair(v.clone(), Box::new(Value::str(k.clone()))),
             })),
             Value::ValuePair(k, v) => Some(Ok(Value::ValuePair(
                 Box::new(*v.clone()),
@@ -189,14 +189,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             let end_cp = if *excl_end { ec } else { ec + 1 };
                             (start_cp..end_cp)
                                 .filter_map(char::from_u32)
-                                .map(|c| Value::Str(c.to_string()))
+                                .map(|c| Value::str(c.to_string()))
                                 .collect()
                         } else {
                             let end_cp = if *excl_end { ec } else { ec.saturating_sub(1) };
                             (end_cp + 1..=start_cp)
                                 .rev()
                                 .filter_map(char::from_u32)
-                                .map(|c| Value::Str(c.to_string()))
+                                .map(|c| Value::str(c.to_string()))
                                 .collect()
                         };
                         Some(Ok(Value::array(items)))
@@ -397,7 +397,7 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
             let mut attrs = HashMap::new();
             attrs.insert(
                 "message".to_string(),
-                Value::Str(format!(
+                Value::str(format!(
                     "Cannot convert {} to Real: imaginary part not zero",
                     match target {
                         Value::Complex(r, i) => {
@@ -411,7 +411,7 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
                     }
                 )),
             );
-            attrs.insert("target".to_string(), Value::Str("Real".to_string()));
+            attrs.insert("target".to_string(), Value::str_from("Real"));
             attrs.insert("source".to_string(), target.clone());
             let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
             let mut err =

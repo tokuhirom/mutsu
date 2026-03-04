@@ -318,7 +318,7 @@ pub(super) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             let r = if let Ok((r, _)) = block(r) { r } else { r };
             return Ok((
                 r,
-                Stmt::Die(Expr::Literal(crate::value::Value::Str(format!(
+                Stmt::Die(Expr::Literal(crate::value::Value::str(format!(
                     "X::Syntax::UnlessElse: unless does not allow '{kw}'"
                 )))),
             ));

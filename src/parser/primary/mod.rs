@@ -167,21 +167,21 @@ mod tests {
     fn parse_scalar() {
         let (rest, expr) = primary("$x").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Var(ref n) if n == "x"));
+        assert!(matches!(expr, Expr::Var(ref n) if n.as_str() == "x"));
     }
 
     #[test]
     fn parse_twigil_var() {
         let (rest, expr) = primary("$*OUT").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Var(ref n) if n == "*OUT"));
+        assert!(matches!(expr, Expr::Var(ref n) if n.as_str() == "*OUT"));
     }
 
     #[test]
     fn parse_angle_single() {
         let (rest, expr) = primary("<hello>").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello"));
     }
 
     #[test]
@@ -270,7 +270,7 @@ mod tests {
                     Expr::Unary {
                         op: crate::token_kind::TokenKind::Pipe,
                         expr
-                    } if matches!(expr.as_ref(), Expr::HashVar(n) if n == "args")
+                    } if matches!(expr.as_ref(), Expr::HashVar(n) if n.as_str() == "args")
                 ));
             }
             _ => panic!("expected hash() call lowering"),
@@ -313,8 +313,8 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Index { target, index } => {
-                assert!(matches!(*target, Expr::Var(ref n) if n == "_"));
-                assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s == "path"));
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "_"));
+                assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s.as_str() == "path"));
             }
             _ => panic!("expected topical angle lookup"),
         }
@@ -354,7 +354,7 @@ mod tests {
     fn parse_q_c_literal() {
         let (rest, expr) = primary("q:c/%08b/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "%08b"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "%08b"));
     }
 
     #[test]
@@ -382,7 +382,7 @@ mod tests {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
     }
 
     #[test]
@@ -390,7 +390,7 @@ mod tests {
         let src = "Q:to<--END-->;\nhello\n--END--\n";
         let (rest, expr) = primary(src).unwrap();
         assert_eq!(rest, ";\n");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
     }
 
     #[test]
@@ -398,7 +398,7 @@ mod tests {
         let src = "Q:to/END/\nhello\n    END\n";
         let (rest, expr) = primary(src).unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
     }
 
     #[test]
@@ -439,7 +439,7 @@ mod tests {
             Expr::Call { ref name, ref args }
                 if name == "__mutsu_make_format"
                     && args.len() == 1
-                    && matches!(args[0], Expr::Literal(Value::Str(ref s)) if s == "%5s")
+                    && matches!(args[0], Expr::Literal(Value::Str(ref s)) if s.as_str() == "%5s")
         ));
     }
 
@@ -485,7 +485,7 @@ mod tests {
     fn parse_match_regex_with_compact_adverbs() {
         let (rest, expr) = primary("ms/ab cd/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::MatchRegex(Value::Regex(ref s)) if s == ":s ab cd"));
+        assert!(matches!(expr, Expr::MatchRegex(Value::Regex(ref s)) if s.as_str() == ":s ab cd"));
     }
 
     #[test]
@@ -515,14 +515,14 @@ mod tests {
     fn parse_token_term_literal() {
         let (rest, expr) = primary("token { <foo> }").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s == "<foo>"));
+        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s.as_str() == "<foo>"));
     }
 
     #[test]
     fn parse_package_stash_lookup_term() {
         let (rest, expr) = primary("A::").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::PseudoStash(ref s) if s == "A::"));
+        assert!(matches!(expr, Expr::PseudoStash(ref s) if s.as_str() == "A::"));
     }
 
     #[test]
@@ -547,28 +547,28 @@ mod tests {
     fn primary_bare_at_sigil_parses_as_anon_array() {
         let (rest, expr) = primary("@").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "__ANON_ARRAY__"));
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n.as_str() == "__ANON_ARRAY__"));
     }
 
     #[test]
     fn primary_parses_array_match_var() {
         let (rest, expr) = primary("@$/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "/"));
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n.as_str() == "/"));
     }
 
     #[test]
     fn primary_parses_hash_match_var() {
         let (rest, expr) = primary("%$/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::HashVar(ref n) if n == "/"));
+        assert!(matches!(expr, Expr::HashVar(ref n) if n.as_str() == "/"));
     }
 
     #[test]
     fn primary_reports_invalid_qualified_identifier_tail() {
         let (rest, expr) = primary("Foo::").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::PseudoStash(ref s) if s == "Foo::"));
+        assert!(matches!(expr, Expr::PseudoStash(ref s) if s.as_str() == "Foo::"));
     }
 
     #[test]
@@ -636,7 +636,7 @@ mod tests {
     fn primary_accepts_cross_reduction_operator() {
         let (rest, expr) = primary("[X] Mu.new X Mu xx 2").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Reduction { ref op, .. } if op == "X"));
+        assert!(matches!(expr, Expr::Reduction { ref op, .. } if op.as_str() == "X"));
     }
 
     #[test]
@@ -665,7 +665,7 @@ mod tests {
         reset_primary_memo();
         let (rest, expr) = primary("Q!hello!").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello"));
     }
 
     #[test]
@@ -673,7 +673,7 @@ mod tests {
         reset_primary_memo();
         let (rest, expr) = primary("Q{hello world}").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello world"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello world"));
     }
 
     #[test]
@@ -681,7 +681,7 @@ mod tests {
         reset_primary_memo();
         let (rest, expr) = primary("Q!hello!\n").unwrap();
         assert_eq!(rest, "\n");
-        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello"));
     }
 
     #[test]

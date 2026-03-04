@@ -8,7 +8,7 @@ fn is_internal_named_arg(arg: &Value) -> bool {
     match arg {
         Value::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
         Value::ValuePair(key, _) => {
-            matches!(key.as_ref(), Value::Str(s) if s == TEST_CALLSITE_LINE_KEY)
+            matches!(key.as_ref(), Value::Str(s) if s.as_str() == TEST_CALLSITE_LINE_KEY)
         }
         _ => false,
     }
@@ -62,7 +62,7 @@ fn coerce_value(target: &str, value: Value) -> Value {
             Value::Str(s) => Value::Num(s.parse::<f64>().unwrap_or(0.0)),
             _ => value,
         },
-        "Str" => Value::Str(crate::runtime::utils::coerce_to_str(&value)),
+        "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
         "Rat" => {
             match &value {
                 Value::Rat(_, _) => value,
@@ -121,7 +121,7 @@ fn varref_from_value(value: &Value) -> Option<(String, Value)> {
         && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
         && let Some(inner) = named.get("__mutsu_varref_value")
     {
-        return Some((name.clone(), inner.clone()));
+        return Some((name.to_string(), inner.clone()));
     }
     None
 }
@@ -148,7 +148,7 @@ fn named_values_from_unpack_target(value: &Value) -> std::collections::HashMap<S
         Value::Hash(map) => (**map).clone(),
         Value::Pair(key, val) => {
             let mut out = std::collections::HashMap::new();
-            out.insert("key".to_string(), Value::Str(key.clone()));
+            out.insert("key".to_string(), Value::str(key.clone()));
             out.insert("value".to_string(), *val.clone());
             out
         }
@@ -518,7 +518,7 @@ impl Interpreter {
             let msg = format!("Cannot assign to a readonly variable ({}) or a value", name);
             let mut err = RuntimeError::new(msg.clone());
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg));
+            attrs.insert("message".to_string(), Value::str(msg));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Assignment::RO"),
                 attrs,
@@ -538,7 +538,7 @@ impl Interpreter {
             );
             let mut err = RuntimeError::new(msg.clone());
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg));
+            attrs.insert("message".to_string(), Value::str(msg));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Multi::NoMatch"),
                 attrs,
@@ -654,7 +654,7 @@ impl Interpreter {
         self.enum_types
             .insert("Endian".to_string(), variants.clone());
         self.env
-            .insert("Endian".to_string(), Value::Str("Endian".to_string()));
+            .insert("Endian".to_string(), Value::str_from("Endian"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Endian"),
@@ -678,7 +678,7 @@ impl Interpreter {
         self.enum_types
             .insert("Order".to_string(), variants.clone());
         self.env
-            .insert("Order".to_string(), Value::Str("Order".to_string()));
+            .insert("Order".to_string(), Value::str_from("Order"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Order"),
@@ -717,7 +717,7 @@ impl Interpreter {
         self.enum_types
             .insert("Signal".to_string(), variants.clone());
         self.env
-            .insert("Signal".to_string(), Value::Str("Signal".to_string()));
+            .insert("Signal".to_string(), Value::str_from("Signal"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Signal"),
@@ -758,7 +758,7 @@ impl Interpreter {
             },
             _ => {
                 let s = arg.to_string_value();
-                Self::version_from_value(Value::Str(s))
+                Self::version_from_value(Value::str(s))
             }
         }
     }
@@ -974,7 +974,7 @@ impl Interpreter {
         match value {
             Value::Mixin(inner, _) => Self::var_target_name_from_value(inner),
             Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
-                Some(Value::Str(name)) => Some(name.clone()),
+                Some(Value::Str(name)) => Some(name.to_string()),
                 _ => None,
             },
             _ => None,
@@ -999,7 +999,9 @@ impl Interpreter {
             Value::Package(name) if self.roles.contains_key(&name.resolve()) => {
                 Some((name.resolve(), Vec::new()))
             }
-            Value::Str(name) if self.roles.contains_key(name) => Some((name.clone(), Vec::new())),
+            Value::Str(name) if self.roles.contains_key(name.as_str()) => {
+                Some((name.to_string(), Vec::new()))
+            }
             _ => None,
         }
     }
@@ -1554,7 +1556,7 @@ impl Interpreter {
                 }
                 if let Value::ValuePair(key, _) = arg
                     && let Value::Str(name) = key.as_ref()
-                    && name != TEST_CALLSITE_LINE_KEY
+                    && name.as_str() != TEST_CALLSITE_LINE_KEY
                     && !named_params.contains(name.as_str())
                 {
                     return false;
@@ -1625,7 +1627,7 @@ impl Interpreter {
                         Some((key.clone(), *val.clone()))
                     } else if let Value::ValuePair(key, val) = a {
                         if let Value::Str(name) = key.as_ref() {
-                            Some((name.clone(), *val.clone()))
+                            Some((name.to_string(), *val.clone()))
                         } else {
                             None
                         }
@@ -1821,7 +1823,7 @@ impl Interpreter {
                                 super::value_type_name(&val)
                             ));
                             let mut ex_attrs = std::collections::HashMap::new();
-                            ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+                            ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
                             let exception = Value::make_instance(
                                 Symbol::intern("X::TypeCheck::Binding::Parameter"),
                                 ex_attrs,
@@ -1850,7 +1852,7 @@ impl Interpreter {
                             super::value_type_name(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
@@ -1915,7 +1917,7 @@ impl Interpreter {
                         let readonly_key = sigilless_readonly_key(&pd.name);
                         if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
                             value = inner;
-                            self.env.insert(alias_key, Value::Str(source_name));
+                            self.env.insert(alias_key, Value::str(source_name));
                             self.env.insert(readonly_key, Value::Bool(false));
                         } else {
                             self.env.remove(&alias_key);
@@ -1944,7 +1946,7 @@ impl Interpreter {
                                 ));
                                 let mut ex_attrs = std::collections::HashMap::new();
                                 ex_attrs
-                                    .insert("message".to_string(), Value::Str(err.message.clone()));
+                                    .insert("message".to_string(), Value::str(err.message.clone()));
                                 let exception = Value::make_instance(
                                     Symbol::intern("X::TypeCheck::Binding::Parameter"),
                                     ex_attrs,
@@ -2039,7 +2041,7 @@ impl Interpreter {
                             super::value_type_name(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,

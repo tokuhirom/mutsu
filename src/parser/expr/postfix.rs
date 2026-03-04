@@ -75,8 +75,8 @@ fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
         return expr;
     };
     let var_name = match target.as_ref() {
-        Expr::ArrayVar(name) => Expr::Literal(Value::Str(format!("@{}", name))),
-        Expr::HashVar(name) => Expr::Literal(Value::Str(format!("%{}", name))),
+        Expr::ArrayVar(name) => Expr::Literal(Value::str(format!("@{}", name))),
+        Expr::HashVar(name) => Expr::Literal(Value::str(format!("%{}", name))),
         _ => Expr::Literal(Value::Nil),
     };
     Expr::Call {
@@ -84,7 +84,7 @@ fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
         args: vec![
             *target,
             *index,
-            Expr::Literal(Value::Str(adverb.to_string())),
+            Expr::Literal(Value::str(adverb.to_string())),
             var_name,
         ],
     }
@@ -365,7 +365,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_pre_inc_var"),
-                    args: vec![Expr::Literal(Value::Str(name))],
+                    args: vec![Expr::Literal(Value::str(name))],
                 },
             ));
         }
@@ -384,7 +384,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_pre_dec_var"),
-                    args: vec![Expr::Literal(Value::Str(name))],
+                    args: vec![Expr::Literal(Value::str(name))],
                 },
             ));
         }
@@ -403,7 +403,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_fetch_var"),
-                    args: vec![Expr::Literal(Value::Str(name))],
+                    args: vec![Expr::Literal(Value::str(name))],
                 },
             ));
         }
@@ -504,7 +504,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::Call {
                     name: Symbol::intern("__mutsu_hyper_prefix"),
-                    args: vec![Expr::Literal(Value::Str(symbol.to_string())), arg],
+                    args: vec![Expr::Literal(Value::str(symbol.to_string())), arg],
                 },
             ));
         }
@@ -780,11 +780,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     {
                         let r2 = &r2[end + 1..];
                         let index_expr = if keys.len() == 1 {
-                            Expr::Literal(Value::Str(keys[0].to_string()))
+                            Expr::Literal(Value::str(keys[0].to_string()))
                         } else {
                             Expr::ArrayLiteral(
                                 keys.into_iter()
-                                    .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                                    .map(|k| Expr::Literal(Value::str(k.to_string())))
                                     .collect(),
                             )
                         };
@@ -1249,11 +1249,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
             let r = &r[end + 1..];
             let index_expr = if keys.len() == 1 {
-                Expr::Literal(Value::Str(keys[0].to_string()))
+                Expr::Literal(Value::str(keys[0].to_string()))
             } else {
                 Expr::ArrayLiteral(
                     keys.into_iter()
-                        .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                        .map(|k| Expr::Literal(Value::str(k.to_string())))
                         .collect(),
                 )
             };
@@ -1563,11 +1563,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         })
                     {
                         let args = if keys.len() == 1 {
-                            vec![Expr::Literal(Value::Str(keys[0].to_string()))]
+                            vec![Expr::Literal(Value::str(keys[0].to_string()))]
                         } else {
                             vec![Expr::ArrayLiteral(
                                 keys.into_iter()
-                                    .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                                    .map(|k| Expr::Literal(Value::str(k.to_string())))
                                     .collect(),
                             )]
                         };
@@ -1744,7 +1744,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if let Some(name) = atomic_var_name(&expr) {
                 expr = Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_post_inc_var"),
-                    args: vec![Expr::Literal(Value::Str(name))],
+                    args: vec![Expr::Literal(Value::str(name))],
                 };
             } else {
                 expr = Expr::PostfixOp {
@@ -1759,7 +1759,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if let Some(name) = atomic_var_name(&expr) {
                 expr = Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_post_dec_var"),
-                    args: vec![Expr::Literal(Value::Str(name))],
+                    args: vec![Expr::Literal(Value::str(name))],
                 };
             } else {
                 expr = Expr::PostfixOp {

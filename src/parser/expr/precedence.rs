@@ -219,7 +219,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
                 && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
-                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode == "kv" || mode == "not-kv")
+                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode.as_str() == "kv" || mode.as_str() == "not-kv")
             {
                 return Ok((
                     r,
@@ -244,7 +244,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
                 args: vec![
-                    Expr::Literal(Value::Str(name.resolve())),
+                    Expr::Literal(Value::str(name.resolve())),
                     Expr::ArrayLiteral(args),
                     rhs,
                 ],

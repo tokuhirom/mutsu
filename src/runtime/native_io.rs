@@ -50,7 +50,7 @@ impl Interpreter {
         let cwd_path = self.get_cwd_path();
         let original = Path::new(&p);
         match method {
-            "Str" | "gist" => Ok(Value::Str(p.clone())),
+            "Str" | "gist" => Ok(Value::str(p.clone())),
             "raku" | "perl" => {
                 let escape = |s: &str| {
                     s.replace('\\', "\\\\")
@@ -61,7 +61,7 @@ impl Interpreter {
                         .replace('\0', "\\0")
                 };
                 let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                Ok(Value::Str(format!(
+                Ok(Value::str(format!(
                     "IO::Path.new(\"{}\", :CWD(\"{}\"))",
                     escape(&p),
                     escape(&cwd)
@@ -84,14 +84,14 @@ impl Interpreter {
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default()
                 };
-                Ok(Value::Str(bname))
+                Ok(Value::str(bname))
             }
             "dirname" => {
                 let dname = original
                     .parent()
                     .map(Self::stringify_path)
                     .unwrap_or_else(|| ".".to_string());
-                Ok(Value::Str(dname))
+                Ok(Value::str(dname))
             }
             "parent" => {
                 let mut levels = 1i64;
@@ -183,21 +183,21 @@ impl Interpreter {
                     let mut new_attrs = attributes.clone();
                     new_attrs.insert(
                         "path".to_string(),
-                        Value::Str(format!("{dir_prefix}{new_basename}")),
+                        Value::str(format!("{dir_prefix}{new_basename}")),
                     );
                     Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
                 } else {
                     let Some(parts) = selected_parts else {
-                        return Ok(Value::Str(String::new()));
+                        return Ok(Value::str(String::new()));
                     };
-                    Ok(Value::Str(
+                    Ok(Value::str(
                         Self::io_path_extension_with_n_parts(&p, parts).unwrap_or_default(),
                     ))
                 }
             }
             "absolute" => {
                 let absolute = Self::stringify_path(&path_buf);
-                Ok(Value::Str(absolute))
+                Ok(Value::str(absolute))
             }
             "relative" => {
                 let rel_base = instance_cwd
@@ -208,7 +208,7 @@ impl Interpreter {
                     .strip_prefix(&rel_base)
                     .map(Self::stringify_path)
                     .unwrap_or_else(|_| Self::stringify_path(&path_buf));
-                Ok(Value::Str(rel))
+                Ok(Value::str(rel))
             }
             "starts-with" => {
                 let prefix = args
@@ -231,7 +231,7 @@ impl Interpreter {
                     .next()
                     .map(|comp| comp.as_os_str().to_string_lossy().to_string())
                     .unwrap_or_default();
-                Ok(Value::Str(volume))
+                Ok(Value::str(volume))
             }
             "is-absolute" => Ok(Value::Bool(original.is_absolute())),
             "is-relative" => Ok(Value::Bool(!original.is_absolute())),
@@ -263,7 +263,7 @@ impl Interpreter {
                 #[cfg(unix)]
                 {
                     let mode = metadata.permissions().mode() & 0o777;
-                    Ok(Value::Str(format!("{:04o}", mode)))
+                    Ok(Value::str(format!("{:04o}", mode)))
                 }
                 #[cfg(not(unix))]
                 {
@@ -272,7 +272,7 @@ impl Interpreter {
                     } else {
                         "0666"
                     };
-                    Ok(Value::Str(mode.to_string()))
+                    Ok(Value::str(mode.to_string()))
                 }
             }
             "s" => {
@@ -319,7 +319,7 @@ impl Interpreter {
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
                 let parts = content
                     .lines()
-                    .map(|line| Value::Str(line.to_string()))
+                    .map(|line| Value::str(line.to_string()))
                     .collect();
                 Ok(Value::array(parts))
             }
@@ -328,7 +328,7 @@ impl Interpreter {
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
                 let parts = content
                     .split_whitespace()
-                    .map(|token| Value::Str(token.to_string()))
+                    .map(|token| Value::str(token.to_string()))
                     .collect();
                 Ok(Value::array(parts))
             }
@@ -336,7 +336,7 @@ impl Interpreter {
                 let content = fs::read_to_string(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
                 })?;
-                Ok(Value::Str(content))
+                Ok(Value::str(content))
             }
             "open" => {
                 let (read, write, append, bin, line_chomp, line_separators) =
@@ -422,12 +422,12 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert(
                         "path".to_string(),
-                        Value::Str(Self::stringify_path(&out_path)),
+                        Value::str(Self::stringify_path(&out_path)),
                     );
                     if let Some(cwd) = &instance_cwd
                         && !out_path.is_absolute()
                     {
-                        attrs.insert("cwd".to_string(), Value::Str(cwd.clone()));
+                        attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
                     }
                     Value::make_instance(Symbol::intern("IO::Path"), attrs)
                 };
@@ -683,16 +683,16 @@ impl Interpreter {
             "close" => Ok(Value::Bool(self.close_handle_value(&target_val)?)),
             "get" => Ok(self
                 .read_line_from_handle_value(&target_val)?
-                .map(Value::Str)
+                .map(Value::str)
                 .unwrap_or(Value::Nil)),
             "getc" => {
                 let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
-                Ok(Value::Str(String::from_utf8_lossy(&bytes).to_string()))
+                Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()))
             }
             "lines" => {
                 let mut lines = Vec::new();
                 while let Some(line) = self.read_line_from_handle_value(&target_val)? {
-                    lines.push(Value::Str(line));
+                    lines.push(Value::str(line));
                 }
                 Ok(Value::array(lines))
             }
@@ -700,7 +700,7 @@ impl Interpreter {
                 let mut words = Vec::new();
                 while let Some(line) = self.read_line_from_handle_value(&target_val)? {
                     for token in line.split_whitespace() {
-                        words.push(Value::Str(token.to_string()));
+                        words.push(Value::str(token.to_string()));
                     }
                 }
                 Ok(Value::array(words))
@@ -715,7 +715,7 @@ impl Interpreter {
                     .unwrap_or(0);
                 if count > 0 {
                     let bytes = self.read_bytes_from_handle_value(&target_val, count)?;
-                    return Ok(Value::Str(String::from_utf8_lossy(&bytes).to_string()));
+                    return Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()));
                 }
                 let path = {
                     let state = self.handle_state_mut(&target_val)?;
@@ -725,9 +725,9 @@ impl Interpreter {
                     let content = fs::read_to_string(&path).map_err(|err| {
                         RuntimeError::new(format!("Failed to read '{}': {}", path, err))
                     })?;
-                    return Ok(Value::Str(content));
+                    return Ok(Value::str(content));
                 }
-                Ok(Value::Str(String::new()))
+                Ok(Value::str(String::new()))
             }
             "write" | "print" => {
                 let content = args
@@ -778,10 +778,10 @@ impl Interpreter {
                 if let Some(arg) = args.first() {
                     let encoding = arg.to_string_value();
                     let prev = self.set_handle_encoding(&target_val, Some(encoding.clone()))?;
-                    return Ok(Value::Str(prev));
+                    return Ok(Value::str(prev));
                 }
                 let current = self.set_handle_encoding(&target_val, None)?;
-                Ok(Value::Str(current))
+                Ok(Value::str(current))
             }
             "opened" => {
                 let state = self.handle_state_mut(&target_val)?;
@@ -796,9 +796,9 @@ impl Interpreter {
                     let content = fs::read_to_string(&path).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", path, err))
                     })?;
-                    return Ok(Value::Str(content));
+                    return Ok(Value::str(content));
                 }
-                Ok(Value::Str(String::new()))
+                Ok(Value::str(String::new()))
             }
             "Supply" => self.handle_supply(target, &args),
             _ => Err(RuntimeError::new(format!(
@@ -871,7 +871,7 @@ impl Interpreter {
             let chars: Vec<char> = content.chars().collect();
             for chunk in chars.chunks(size) {
                 let s: String = chunk.iter().collect();
-                values.push(Value::Str(s));
+                values.push(Value::str(s));
             }
         }
 
@@ -891,7 +891,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         match method {
-            "slurp" | "Str" | "gist" => Ok(Value::Str(content)),
+            "slurp" | "Str" | "gist" => Ok(Value::str(content)),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Pipe",
                 method

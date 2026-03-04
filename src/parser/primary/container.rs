@@ -571,7 +571,7 @@ pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
                 right,
             } => {
                 let key = match *left {
-                    Expr::Literal(Value::Str(s)) => s,
+                    Expr::Literal(Value::Str(s)) => s.to_string(),
                     Expr::Literal(Value::Int(i)) => i.to_string(),
                     _ => return Err(PError::expected("hash pair key")),
                 };
@@ -717,7 +717,7 @@ fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
             break;
         }
         if let Some((r, quoted)) = parse_quoted_word(rest)? {
-            words.push(Expr::Literal(Value::Str(quoted)));
+            words.push(Expr::Literal(Value::str(quoted)));
             rest = r;
             continue;
         }
@@ -762,7 +762,7 @@ fn parse_quoted_word(input: &str) -> Result<Option<(&str, String)>, PError> {
 
 fn quoted_word_literal(rest: &str, expr: Expr) -> Result<Option<(&str, String)>, PError> {
     if let Expr::Literal(Value::Str(s)) = expr {
-        Ok(Some((rest, s)))
+        Ok(Some((rest, s.to_string())))
     } else {
         Err(PError::expected("string literal word"))
     }
@@ -806,13 +806,13 @@ fn angle_word_expr(word: &str) -> Expr {
     if let Some(val) = parse_angle_num(word) {
         return make_allomorphic_expr(val, word);
     }
-    Expr::Literal(Value::Str(word.to_string()))
+    Expr::Literal(Value::str(word.to_string()))
 }
 
 /// Create an allomorphic expression: a numeric value that also matches Str.
 fn make_allomorphic_expr(val: Value, word: &str) -> Expr {
     let mut mixins = std::collections::HashMap::new();
-    mixins.insert("Str".to_string(), Value::Str(word.to_string()));
+    mixins.insert("Str".to_string(), Value::str(word.to_string()));
     Expr::Literal(Value::Mixin(Box::new(val), mixins))
 }
 

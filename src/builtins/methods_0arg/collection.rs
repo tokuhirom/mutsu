@@ -147,22 +147,22 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
+                    let keys: Vec<Value> = map.keys().map(|k| Value::str(k.clone())).collect();
                     Some(Ok(Value::array(keys)))
                 }
                 Value::Pair(key, _) => {
-                    Some(Ok(Value::Seq(Arc::new(vec![Value::Str(key.clone())]))))
+                    Some(Ok(Value::Seq(Arc::new(vec![Value::str(key.clone())]))))
                 }
                 Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
                 Value::Set(s) => Some(Ok(Value::array(
-                    s.iter().map(|k| Value::Str(k.clone())).collect(),
+                    s.iter().map(|k| Value::str(k.clone())).collect(),
                 ))),
                 Value::Bag(b) => Some(Ok(Value::array(
-                    b.keys().map(|k| Value::Str(k.clone())).collect(),
+                    b.keys().map(|k| Value::str(k.clone())).collect(),
                 ))),
                 Value::Mix(m) => Some(Ok(Value::array(
-                    m.keys().map(|k| Value::Str(k.clone())).collect(),
+                    m.keys().map(|k| Value::str(k.clone())).collect(),
                 ))),
                 Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
                 v if v.is_range() => Some(Ok(Value::array(positional_keys(
@@ -219,13 +219,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Hash(items) => {
                     let mut kv = Vec::new();
                     for (k, v) in items.iter() {
-                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::str(k.clone()));
                         kv.push(v.clone());
                     }
                     Some(Ok(Value::array(kv)))
                 }
                 Value::Pair(key, value) => Some(Ok(Value::Seq(Arc::new(vec![
-                    Value::Str(key.clone()),
+                    Value::str(key.clone()),
                     *value.clone(),
                 ])))),
                 Value::ValuePair(key, value) => {
@@ -235,7 +235,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Set(s) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
-                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::str(k.clone()));
                         kv.push(Value::Bool(true));
                     }
                     Some(Ok(Value::array(kv)))
@@ -243,7 +243,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Bag(b) => {
                     let mut kv = Vec::new();
                     for (k, v) in b.iter() {
-                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::str(k.clone()));
                         kv.push(Value::Int(*v));
                     }
                     Some(Ok(Value::array(kv)))
@@ -251,13 +251,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Mix(m) => {
                     let mut kv = Vec::new();
                     for (k, v) in m.iter() {
-                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::str(k.clone()));
                         kv.push(Value::Num(*v));
                     }
                     Some(Ok(Value::array(kv)))
                 }
                 Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
-                    Value::Str(key.resolve()),
+                    Value::str(key.resolve()),
                     Value::Int(*value),
                 ])))),
                 Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
@@ -321,7 +321,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     attrs.insert("got".to_string(), Value::Int(items.len() as i64));
                     attrs.insert(
                         "message".to_string(),
-                        Value::Str(format!(
+                        Value::str(format!(
                             "Cannot pair up odd number of elements ({})",
                             items.len()
                         )),
@@ -348,8 +348,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 items
                     .iter()
                     .map(|(k, v)| match v {
-                        Value::Str(s) => Value::Pair(s.clone(), Box::new(Value::Str(k.clone()))),
-                        _ => Value::ValuePair(Box::new(v.clone()), Box::new(Value::Str(k.clone()))),
+                        Value::Str(s) => {
+                            Value::Pair(s.to_string(), Box::new(Value::str(k.clone())))
+                        }
+                        _ => Value::ValuePair(Box::new(v.clone()), Box::new(Value::str(k.clone()))),
                     })
                     .collect(),
             ))),
@@ -369,11 +371,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let make_inverted_pair = |val: &Value, key: &str| -> Value {
                     match val {
                         Value::Str(s) => {
-                            Value::Pair(s.clone(), Box::new(Value::Str(key.to_string())))
+                            Value::Pair(s.to_string(), Box::new(Value::str(key.to_string())))
                         }
                         _ => Value::ValuePair(
                             Box::new(val.clone()),
-                            Box::new(Value::Str(key.to_string())),
+                            Box::new(Value::str(key.to_string())),
                         ),
                     }
                 };

@@ -50,7 +50,7 @@ impl Interpreter {
                 Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
                 _ => Value::Num(0.0),
             },
-            "Str" => Value::Str(crate::runtime::utils::coerce_to_str(&value)),
+            "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
             "Bool" => Value::Bool(value.truthy()),
             _ => Value::Nil,
         };

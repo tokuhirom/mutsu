@@ -332,11 +332,11 @@ mod tests {
                 assert_eq!(name, "f");
                 assert_eq!(args.len(), 3);
                 assert!(
-                    matches!(&args[0], Expr::Literal(crate::value::Value::Str(s)) if s == "say 42")
+                    matches!(&args[0], Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "say 42")
                 );
                 assert!(matches!(&args[1], Expr::Hash(_)));
                 assert!(
-                    matches!(&args[2], Expr::Literal(crate::value::Value::Str(s)) if s == "msg")
+                    matches!(&args[2], Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "msg")
                 );
             }
             other => panic!("expected function call expression, got {other:?}"),
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(items.len(), 7);
         assert!(matches!(
             &items[3],
-            Expr::Literal(crate::value::Value::Str(s)) if s == "\r\nth"
+            Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "\r\nth"
         ));
     }
 

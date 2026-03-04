@@ -38,10 +38,10 @@ impl Value {
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av.eqv(bv),
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak.eqv(bk) && av.eqv(bv),
             (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
-                matches!(bk.as_ref(), Value::Str(s) if s == ak) && av.eqv(bv)
+                matches!(bk.as_ref(), Value::Str(s) if s.as_str() == ak) && av.eqv(bv)
             }
             (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
-                matches!(ak.as_ref(), Value::Str(s) if s == bk) && av.eqv(bv)
+                matches!(ak.as_ref(), Value::Str(s) if s.as_str() == bk) && av.eqv(bv)
             }
             // Captures: recursively use eqv for positional and named elements
             (
@@ -227,8 +227,8 @@ impl Value {
                 return enum_type.resolve() == type_name;
             }
             Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
-                Some(Value::Str(kind)) if kind == "Method" => "Method",
-                Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
+                Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
+                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
                 _ => "Sub",
             },
             Value::WeakSub(_) => "Sub",
@@ -361,7 +361,7 @@ impl Value {
                     Value::Sub(data)
                         if matches!(
                             data.env.get("__mutsu_callable_type"),
-                            Some(Value::Str(kind)) if kind == "Method"
+                            Some(Value::Str(kind)) if kind.as_str() == "Method"
                         )
                 ) || matches!(
                     self,

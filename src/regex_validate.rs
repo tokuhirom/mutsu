@@ -33,7 +33,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 {
                     let msg = "The use of hash variables in regexes is reserved";
                     let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
                     let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
@@ -62,8 +62,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     if symbol.len() > 2 {
                         let msg = "Cannot interpolate attribute in a regex";
                         let mut attrs = HashMap::new();
-                        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-                        attrs.insert("symbol".to_string(), Value::Str(symbol.to_string()));
+                        attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                        attrs.insert("symbol".to_string(), Value::str(symbol.to_string()));
                         let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
                         let mut err = RuntimeError::new(msg);
                         err.exception = Some(Box::new(ex));
@@ -165,8 +165,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 if ct.starts_with("$!") && ct.len() > 2 {
                     let msg = "Cannot interpolate attribute in a regex";
                     let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-                    attrs.insert("symbol".to_string(), Value::Str(ct.to_string()));
+                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                    attrs.insert("symbol".to_string(), Value::str(ct.to_string()));
                     let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
@@ -176,7 +176,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 if content.contains("::") && content.contains('=') {
                     let msg = "Can't use a long name as a regex alias";
                     let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
                     let ex = Value::make_instance(
                         Symbol::intern("X::Syntax::Regex::Alias::LongName"),
                         attrs,
@@ -229,8 +229,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         let symbol = format!("$!{}", symbol_name);
                         let msg = "Cannot interpolate attribute in a regex";
                         let mut attrs = HashMap::new();
-                        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
-                        attrs.insert("symbol".to_string(), Value::Str(symbol));
+                        attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                        attrs.insert("symbol".to_string(), Value::str(symbol));
                         let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
                         let mut err = RuntimeError::new(msg);
                         err.exception = Some(Box::new(ex));
@@ -432,7 +432,7 @@ fn validate_backslash_sequence(esc: char) -> Result<(), RuntimeError> {
             // Unknown alphabetic backslash sequence
             let msg = format!("Unrecognized backslash sequence: \\{}", esc);
             let mut attrs = HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
             let ex =
                 Value::make_instance(Symbol::intern("X::Backslash::UnrecognizedSequence"), attrs);
             let mut err = RuntimeError::new(msg);
@@ -448,8 +448,8 @@ pub(crate) fn make_unrecognized_metachar_error(metachar: char) -> RuntimeError {
         metachar
     );
     let mut attrs = HashMap::new();
-    attrs.insert("message".to_string(), Value::Str(msg.clone()));
-    attrs.insert("metachar".to_string(), Value::Str(metachar.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("metachar".to_string(), Value::str(metachar.to_string()));
     let ex = Value::make_instance(
         Symbol::intern("X::Syntax::Regex::UnrecognizedMetachar"),
         attrs,
@@ -462,8 +462,8 @@ pub(crate) fn make_unrecognized_metachar_error(metachar: char) -> RuntimeError {
 fn make_unrecognized_modifier_error(modifier: &str) -> RuntimeError {
     let msg = format!("Unrecognized regex modifier :{}", modifier);
     let mut attrs = HashMap::new();
-    attrs.insert("message".to_string(), Value::Str(msg.clone()));
-    attrs.insert("modifier".to_string(), Value::Str(modifier.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("modifier".to_string(), Value::str(modifier.to_string()));
     let ex = Value::make_instance(
         Symbol::intern("X::Syntax::Regex::UnrecognizedModifier"),
         attrs,
@@ -479,7 +479,7 @@ fn make_quantifier_error(quant: char) -> RuntimeError {
         quant
     );
     let mut attrs = HashMap::new();
-    attrs.insert("message".to_string(), Value::Str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Quantifier"), attrs);
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));

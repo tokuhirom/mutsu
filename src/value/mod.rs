@@ -178,7 +178,7 @@ pub enum Value {
     Int(i64),
     BigInt(NumBigInt),
     Num(f64),
-    Str(String),
+    Str(Arc<String>),
     Bool(bool),
     Range(i64, i64),
     RangeExcl(i64, i64),
@@ -655,10 +655,10 @@ impl PartialEq for Value {
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak == bk && av == bv,
             (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
-                matches!(bk.as_ref(), Value::Str(s) if s == ak) && av == bv
+                matches!(bk.as_ref(), Value::Str(s) if s.as_str() == ak) && av == bv
             }
             (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
-                matches!(ak.as_ref(), Value::Str(s) if s == bk) && av == bv
+                matches!(ak.as_ref(), Value::Str(s) if s.as_str() == bk) && av == bv
             }
             (
                 Value::Enum {
@@ -808,6 +808,12 @@ impl Value {
     }
 
     // ---- Arc-wrapping convenience constructors ----
+    pub fn str(s: String) -> Self {
+        Value::Str(Arc::new(s))
+    }
+    pub fn str_from(s: &str) -> Self {
+        Value::Str(Arc::new(s.to_string()))
+    }
     pub fn array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(items), ArrayKind::List)
     }
@@ -953,7 +959,7 @@ impl Value {
     ) -> Self {
         fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
             let mut attrs = HashMap::new();
-            attrs.insert("str".to_string(), Value::Str(s.to_string()));
+            attrs.insert("str".to_string(), Value::str(s.to_string()));
             // Try to find the captured text's position within the original string
             let (cap_from, cap_to) = if let Some(o) = orig {
                 // Search for the captured substring starting from search_from
@@ -981,7 +987,7 @@ impl Value {
             attrs.insert("list".to_string(), Value::array(Vec::new()));
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
             if let Some(o) = orig {
-                attrs.insert("orig".to_string(), Value::Str(o.to_string()));
+                attrs.insert("orig".to_string(), Value::str(o.to_string()));
             }
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
@@ -1016,27 +1022,27 @@ impl Value {
                 }
             }
             let mut attrs = HashMap::new();
-            attrs.insert("str".to_string(), Value::Str(caps.matched.clone()));
+            attrs.insert("str".to_string(), Value::str(caps.matched.clone()));
             attrs.insert("from".to_string(), Value::Int(caps.from as i64));
             attrs.insert("to".to_string(), Value::Int(caps.to as i64));
             attrs.insert("list".to_string(), Value::array(pos_vals));
             attrs.insert("named".to_string(), Value::hash(sub_named));
             if let Some(o) = orig {
-                attrs.insert("orig".to_string(), Value::Str(o.to_string()));
+                attrs.insert("orig".to_string(), Value::str(o.to_string()));
             }
             // Store :sym<> variant name so action dispatch can find it
             if let Some(ref sym_val) = caps.sym {
-                attrs.insert("sym_variant".to_string(), Value::Str(sym_val.clone()));
+                attrs.insert("sym_variant".to_string(), Value::str(sym_val.clone()));
             }
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
 
         let mut attrs = HashMap::new();
-        attrs.insert("str".to_string(), Value::Str(matched));
+        attrs.insert("str".to_string(), Value::str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
         if let Some(o) = orig {
-            attrs.insert("orig".to_string(), Value::Str(o.to_string()));
+            attrs.insert("orig".to_string(), Value::str(o.to_string()));
         }
         let search_start = from as usize;
         let caps: Vec<Value> = positional

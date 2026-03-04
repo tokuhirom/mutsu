@@ -199,7 +199,7 @@ impl Interpreter {
 
     fn reduction_repeat_error(class_name: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(message.to_string()));
+        attrs.insert("message".to_string(), Value::str(message.to_string()));
         let ex = Value::make_instance(Symbol::intern(class_name), attrs);
         let mut err = RuntimeError::new(message.to_string());
         err.exception = Some(Box::new(ex));
@@ -461,7 +461,7 @@ impl Interpreter {
                 }
             }
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => Ok(Value::Str(format!(
+            "~" => Ok(Value::str(format!(
                 "{}{}",
                 crate::runtime::utils::coerce_to_str(left),
                 crate::runtime::utils::coerce_to_str(right)
@@ -691,7 +691,7 @@ impl Interpreter {
                     let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
                     out.push(lb | rb);
                 }
-                Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
+                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
             }
             "~^" => {
                 let ls = crate::runtime::utils::coerce_to_str(left);
@@ -703,7 +703,7 @@ impl Interpreter {
                     let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
                     out.push(lb ^ rb);
                 }
-                Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
+                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
             }
             "~&" => {
                 let ls = crate::runtime::utils::coerce_to_str(left);
@@ -713,7 +713,7 @@ impl Interpreter {
                 for i in 0..min_len {
                     out.push(ls.as_bytes()[i] & rs.as_bytes()[i]);
                 }
-                Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
+                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
             }
             "+<" => Ok(Self::shift_left_i64(to_int(left), to_int(right))),
             "+>" => Ok(Self::shift_right_i64(to_int(left), to_int(right))),
@@ -722,7 +722,7 @@ impl Interpreter {
                     let mut env = crate::env::Env::new();
                     env.insert(
                         "__mutsu_callable_type".to_string(),
-                        Value::Str("WhateverCode".to_string()),
+                        Value::str_from("WhateverCode"),
                     );
                     let param = "__wc_0".to_string();
                     let body = vec![Stmt::Expr(Expr::Binary {
@@ -747,7 +747,7 @@ impl Interpreter {
                     ));
                 };
                 let n = n_raw.max(0) as usize;
-                Ok(Value::Str(
+                Ok(Value::str(
                     crate::runtime::utils::coerce_to_str(left).repeat(n),
                 ))
             }
@@ -845,7 +845,7 @@ impl Interpreter {
                 (start..end).map(Value::Int).collect()
             }
             Value::GenericRange { .. } => crate::runtime::utils::value_to_list(val),
-            Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
+            Value::Set(items) => items.iter().map(|s| Value::str(s.clone())).collect(),
             Value::Bag(items) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))

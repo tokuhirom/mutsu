@@ -566,7 +566,7 @@ impl Interpreter {
             .collect();
         guts.sort_by_key(Self::junction_sort_key);
         Some(Value::array(vec![
-            Value::Str(Self::junction_kind_name(kind).to_string()),
+            Value::str(Self::junction_kind_name(kind).to_string()),
             Value::array(guts),
         ]))
     }
@@ -797,7 +797,7 @@ impl Interpreter {
         let code_val = Self::positional_value_required(args, 0, "eval-lives-ok expects code")?;
         let desc = Self::positional_string(args, 1);
         let code = match code_val {
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.to_string(),
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
@@ -837,7 +837,7 @@ impl Interpreter {
         let code_val = Self::positional_value_required(args, 0, "eval-dies-ok expects code")?;
         let desc = Self::positional_string(args, 1);
         let code = match code_val {
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.to_string(),
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
@@ -1198,7 +1198,7 @@ impl Interpreter {
     fn test_fn_is_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "is_run expects code")?;
         let program = match program_val {
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.to_string(),
             // Str type object = no code (e.g., is_run Str, :args['--help'])
             Value::Package(name) if name == "Str" => String::new(),
             Value::Nil => String::new(),
@@ -1281,10 +1281,10 @@ impl Interpreter {
         };
         let mut ok = true;
         if let Some(expected) = expected_out {
-            ok &= self.smart_match(&Value::Str(out), &expected);
+            ok &= self.smart_match(&Value::str(out), &expected);
         }
         if let Some(expected) = expected_err {
-            ok &= self.smart_match(&Value::Str(err), &expected);
+            ok &= self.smart_match(&Value::str(err), &expected);
         }
         if let Some(expected) = expected_status {
             ok &= self.smart_match(&Value::Int(status), &expected);
@@ -1592,7 +1592,7 @@ impl Interpreter {
         // Accept both `Pair` and `ValuePair` keys for compatibility with non-string keys.
         let to_pair_parts = |value: &Value| -> Option<(Value, Value)> {
             match value {
-                Value::Pair(k, v) => Some((Value::Str(k.clone()), *v.clone())),
+                Value::Pair(k, v) => Some((Value::str(k.clone()), *v.clone())),
                 Value::ValuePair(k, v) => Some((*k.clone(), *v.clone())),
                 _ => None,
             }
@@ -1647,7 +1647,7 @@ impl Interpreter {
     fn test_fn_get_out(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "get_out expects code")?;
         let program = match program_val {
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.to_string(),
             _ => return Err(RuntimeError::new("get_out expects string code")),
         };
         let mut nested = Interpreter::new();
@@ -1658,8 +1658,8 @@ impl Interpreter {
         let result = nested.run(&program);
         let (out, err, status) = Self::extract_run_output(&nested, result);
         let mut hash = std::collections::HashMap::new();
-        hash.insert("out".to_string(), Value::Str(out));
-        hash.insert("err".to_string(), Value::Str(err));
+        hash.insert("out".to_string(), Value::str(out));
+        hash.insert("err".to_string(), Value::str(err));
         hash.insert("status".to_string(), Value::Int(status));
         Ok(Value::Hash(std::sync::Arc::new(hash)))
     }
@@ -1667,7 +1667,7 @@ impl Interpreter {
     fn test_fn_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let got = self.test_fn_get_out(args)?;
         let Value::Hash(map) = got else {
-            return Ok(Value::Str(String::new()));
+            return Ok(Value::str(String::new()));
         };
         if let Some(Value::Str(err)) = map.get("err")
             && !err.is_empty()
@@ -1677,7 +1677,7 @@ impl Interpreter {
         if let Some(Value::Str(out)) = map.get("out") {
             return Ok(Value::Str(out.clone()));
         }
-        Ok(Value::Str(String::new()))
+        Ok(Value::str(String::new()))
     }
 
     fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1736,7 +1736,7 @@ impl Interpreter {
         // Test 1: code threw a warning
         self.test_ok(did_warn, "code threw a warning", false)?;
         // Test 2: warning message matches test pattern
-        let msg_val = Value::Str(warn_message.trim_end().to_string());
+        let msg_val = Value::str(warn_message.trim_end().to_string());
         let matched = self.smart_match(&msg_val, &test_pattern);
         self.test_ok(matched, "warning message passes test", false)?;
         self.finish_subtest(ctx, &label, Ok(()))?;
@@ -1746,7 +1746,7 @@ impl Interpreter {
     fn test_fn_doesnt_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "doesn't-warn expects code")?;
         let program = match program_val {
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.to_string(),
             _ => return Err(RuntimeError::new("doesn't-warn expects string code")),
         };
         let desc = Self::positional_string(args, 1);
@@ -1795,7 +1795,7 @@ impl Interpreter {
         if let Some(Ok(Value::Str(s))) =
             crate::builtins::native_method_0arg(val, crate::symbol::Symbol::intern("raku"))
         {
-            s
+            s.to_string()
         } else {
             val.to_string_value()
         }
@@ -2008,11 +2008,11 @@ impl Interpreter {
         self.test_ok(did_not_hang, "program did not hang", false)?;
         if did_not_hang {
             if let Some(expected) = expected_out {
-                let ok = self.smart_match(&Value::Str(stdout_str), &expected);
+                let ok = self.smart_match(&Value::str(stdout_str), &expected);
                 self.test_ok(ok, "STDOUT", false)?;
             }
             if let Some(expected) = expected_err {
-                let ok = self.smart_match(&Value::Str(stderr_str), &expected);
+                let ok = self.smart_match(&Value::str(stderr_str), &expected);
                 self.test_ok(ok, "STDERR", false)?;
             }
         }
@@ -2055,7 +2055,7 @@ impl Interpreter {
 
         let path_str = path.to_string_lossy().to_string();
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("path".to_string(), Value::Str(path_str));
+        attrs.insert("path".to_string(), Value::str(path_str));
         Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs))
     }
 
@@ -2084,7 +2084,7 @@ impl Interpreter {
 
         let path_str = path.to_string_lossy().to_string();
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("path".to_string(), Value::Str(path_str));
+        attrs.insert("path".to_string(), Value::str(path_str));
         Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs))
     }
 

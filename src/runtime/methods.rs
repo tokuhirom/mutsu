@@ -10,12 +10,12 @@ fn make_private_permission_error(method_name: &str, class_name: &str) -> Runtime
         method_name, class_name
     );
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("method".to_string(), Value::Str(method_name.to_string()));
+    attrs.insert("method".to_string(), Value::str(method_name.to_string()));
     attrs.insert(
         "source-package".to_string(),
-        Value::Str(class_name.to_string()),
+        Value::str(class_name.to_string()),
     );
-    attrs.insert("message".to_string(), Value::Str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Method::Private::Permission"), attrs);
     let mut err = RuntimeError::new(&msg);
     err.exception = Some(Box::new(ex));
@@ -31,10 +31,10 @@ fn make_method_not_found_error(method_name: &str, type_name: &str, private: bool
         type_name
     );
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("method".to_string(), Value::Str(method_name.to_string()));
-    attrs.insert("typename".to_string(), Value::Str(type_name.to_string()));
+    attrs.insert("method".to_string(), Value::str(method_name.to_string()));
+    attrs.insert("typename".to_string(), Value::str(type_name.to_string()));
     attrs.insert("private".to_string(), Value::Bool(private));
-    attrs.insert("message".to_string(), Value::Str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Method::NotFound"), attrs);
     let mut err = RuntimeError::new(&msg);
     err.exception = Some(Box::new(ex));
@@ -448,7 +448,7 @@ impl Interpreter {
             && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
             && let Some(inner) = named.get("__mutsu_varref_value")
         {
-            return Some((name.clone(), inner.clone()));
+            return Some((name.to_string(), inner.clone()));
         }
         None
     }
@@ -457,7 +457,7 @@ impl Interpreter {
         match value {
             Value::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
             Value::Instance { attributes, .. } => match attributes.get("__mutsu_var_target") {
-                Some(Value::Str(name)) => Some(name.clone()),
+                Some(Value::Str(name)) => Some(name.to_string()),
                 _ => None,
             },
             _ => None,
@@ -612,7 +612,7 @@ impl Interpreter {
                     }
                 });
         let return_type = data.env.get("__mutsu_return_type").and_then(|v| match v {
-            Value::Str(s) => Some(s.clone()),
+            Value::Str(s) => Some(s.to_string()),
             _ => None,
         });
         let info = param_defs_to_sig_info(&param_defs, return_type);
@@ -990,7 +990,7 @@ impl Interpreter {
             }
             // Handle .raku on Proxy subclass
             if method == "raku" || method == "Str" || method == "gist" {
-                return Ok(Value::Str(format!("{}()", subclass_name.resolve())));
+                return Ok(Value::str(format!("{}()", subclass_name.resolve())));
             }
         }
 
@@ -1026,9 +1026,9 @@ impl Interpreter {
                 .unwrap_or_default();
             match method {
                 "CALL-ME" => {
-                    return Ok(Value::Str(super::sprintf::format_sprintf_args(&fmt, &args)));
+                    return Ok(Value::str(super::sprintf::format_sprintf_args(&fmt, &args)));
                 }
-                "Str" | "gist" => return Ok(Value::Str(fmt)),
+                "Str" | "gist" => return Ok(Value::str(fmt)),
                 _ => {}
             }
         }
@@ -1102,7 +1102,7 @@ impl Interpreter {
                         format!("({inner})")
                     }
                     other => match interp.call_method_with_values(other.clone(), "gist", vec![]) {
-                        Ok(Value::Str(s)) => s,
+                        Ok(Value::Str(s)) => s.to_string(),
                         Ok(v) => v.to_string_value(),
                         Err(_) => other.to_string_value(),
                     },
@@ -1117,7 +1117,7 @@ impl Interpreter {
                         .map(|item| gist_item(self, item))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    return Ok(Value::Str(format!("({inner})")));
+                    return Ok(Value::str(format!("({inner})")));
                 }
                 _ => {}
             }
@@ -1376,8 +1376,8 @@ impl Interpreter {
         // Enum type-object dispatch for Bool and user enums (e.g. `Order.roll`).
         let enum_type_name: Option<String> = match &target {
             Value::Package(type_name) => Some(type_name.resolve()),
-            Value::Str(type_name) if self.enum_types.contains_key(type_name) => {
-                Some(type_name.clone())
+            Value::Str(type_name) if self.enum_types.contains_key(type_name.as_str()) => {
+                Some(type_name.to_string())
             }
             Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
                 Value::Enum { enum_type, .. }
@@ -1491,7 +1491,7 @@ impl Interpreter {
             && matches!(method, "pick" | "roll")
             && args.len() <= 1
         {
-            let chars: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+            let chars: Vec<Value> = s.chars().map(|c| Value::str(c.to_string())).collect();
             if chars.is_empty() {
                 return Ok(if args.is_empty() {
                     Value::Nil
@@ -1636,7 +1636,7 @@ impl Interpreter {
         {
             let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::Nil);
             let mut named = std::collections::HashMap::new();
-            named.insert("__mutsu_varref_name".to_string(), Value::Str(source_name));
+            named.insert("__mutsu_varref_name".to_string(), Value::str(source_name));
             named.insert("__mutsu_varref_value".to_string(), source_value);
             return Ok(Value::Capture {
                 positional: Vec::new(),
@@ -1770,7 +1770,7 @@ impl Interpreter {
             let found = self.call_method_with_values(
                 how_clone,
                 "find_method",
-                vec![target.clone(), Value::Str(method.to_string())],
+                vec![target.clone(), Value::str(method.to_string())],
             );
             if let Ok(callable) = found
                 && !matches!(callable, Value::Nil)
@@ -1801,7 +1801,7 @@ impl Interpreter {
                 let numeric = args[0].clone();
                 let string = args[1].to_string_value();
                 let mut mixins = std::collections::HashMap::new();
-                mixins.insert("Str".to_string(), Value::Str(string));
+                mixins.insert("Str".to_string(), Value::str(string));
                 return Ok(Value::Mixin(Box::new(numeric), mixins));
             }
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
@@ -1847,11 +1847,11 @@ impl Interpreter {
                     }
                     if let Value::ValuePair(name, value) = arg {
                         if let Value::Str(key) = name.as_ref() {
-                            if key == "label" {
+                            if key.as_str() == "label" {
                                 label = Some(value.to_string_value());
                                 continue;
                             }
-                            if key == "repeat" {
+                            if key.as_str() == "repeat" {
                                 repeat = value.truthy();
                                 continue;
                             }
@@ -1986,7 +1986,7 @@ impl Interpreter {
                     };
                     let decoded = self.decode_with_encoding(&bytes, &encoding)?;
                     let normalized = self.translate_newlines_for_decode(&decoded);
-                    return Ok(Value::Str(normalized));
+                    return Ok(Value::str(normalized));
                 }
             }
             "polymod" => {
@@ -2004,7 +2004,7 @@ impl Interpreter {
             "does" if args.len() == 1 => {
                 let role_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name.clone(),
+                    Value::Str(name) => name.to_string(),
                     _ => return Ok(Value::Bool(false)),
                 };
                 return Ok(Value::Bool(target.does_check(&role_name)));
@@ -2028,7 +2028,7 @@ impl Interpreter {
                                 let error_val = if let Some(ex) = e.exception {
                                     *ex
                                 } else {
-                                    Value::Str(e.message)
+                                    Value::str(e.message)
                                 };
                                 promise.break_with(error_val, output, stderr);
                             }
@@ -2089,7 +2089,7 @@ impl Interpreter {
                     let reason_val = args
                         .into_iter()
                         .next()
-                        .unwrap_or_else(|| Value::Str("Died".to_string()));
+                        .unwrap_or_else(|| Value::str_from("Died"));
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     promise.break_with(reason_val, String::new(), String::new());
                     return Ok(Value::Promise(promise));
@@ -2217,8 +2217,8 @@ impl Interpreter {
                     Value::Routine { is_regex: true, .. } => "Regex",
                     Value::Routine { .. } => "Sub",
                     Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
-                        Some(Value::Str(kind)) if kind == "Method" => "Method",
-                        Some(Value::Str(kind)) if kind == "WhateverCode" => "WhateverCode",
+                        Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
+                        Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
                         _ => "Sub",
                     },
                     Value::WeakSub(_) => "Sub",
@@ -2333,7 +2333,7 @@ impl Interpreter {
                         .join(",");
                     let full_name = format!("{}[{}]", base_name, args_str);
                     let mut attrs = HashMap::new();
-                    attrs.insert("name".to_string(), Value::Str(full_name));
+                    attrs.insert("name".to_string(), Value::str(full_name));
                     return Ok(Value::make_instance(
                         Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"),
                         attrs,
@@ -2388,7 +2388,7 @@ impl Interpreter {
                     "Perl6::Metamodel::ClassHOW"
                 };
                 let mut attrs = HashMap::new();
-                attrs.insert("name".to_string(), Value::Str(type_name));
+                attrs.insert("name".to_string(), Value::str(type_name));
                 return Ok(Value::make_instance(Symbol::intern(how_name), attrs));
             }
             "WHO" if args.is_empty() => {
@@ -2416,13 +2416,13 @@ impl Interpreter {
                 };
                 for key in keys {
                     if let Some(doc) = self.doc_comments.get(&key) {
-                        return Ok(Value::Str(doc.clone()));
+                        return Ok(Value::str(doc.clone()));
                     }
                 }
                 return Ok(Value::Nil);
             }
             "^name" if args.is_empty() => {
-                return Ok(Value::Str(match &target {
+                return Ok(Value::str(match &target {
                     Value::Package(name) => name.resolve(),
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     Value::Promise(p) => p.class_name().resolve(),
@@ -2446,7 +2446,7 @@ impl Interpreter {
             "enums" => {
                 let type_name_owned = match &target {
                     Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.clone()),
+                    Value::Str(name) => Some(name.to_string()),
                     _ => None,
                 };
                 let type_name = type_name_owned.as_deref();
@@ -2462,11 +2462,11 @@ impl Interpreter {
             }
             "invert" => {
                 if let Value::Str(type_name) = &target
-                    && let Some(variants) = self.enum_types.get(type_name)
+                    && let Some(variants) = self.enum_types.get(type_name.as_str())
                 {
                     let mut result = Vec::new();
                     for (k, v) in variants {
-                        result.push(Value::Pair(v.to_string(), Box::new(Value::Str(k.clone()))));
+                        result.push(Value::Pair(v.to_string(), Box::new(Value::str(k.clone()))));
                     }
                     return Ok(Value::array(result));
                 }
@@ -2500,79 +2500,79 @@ impl Interpreter {
                 let Some(pattern) = pattern_arg else {
                     return Ok(Value::Nil);
                 };
-                return match pattern {
-                    Value::Regex(pat) | Value::Str(pat) => {
-                        if overlap {
-                            let all = self.regex_match_all_with_captures(pat, &text);
-                            if all.is_empty() {
-                                return Ok(Value::Nil);
-                            }
-                            let mut best_by_start: std::collections::BTreeMap<
-                                usize,
-                                RegexCaptures,
-                            > = std::collections::BTreeMap::new();
-                            for capture in all {
-                                let key = capture.from;
-                                match best_by_start.get(&key) {
-                                    Some(existing) if capture.to <= existing.to => {}
-                                    _ => {
-                                        best_by_start.insert(key, capture);
-                                    }
+                let pat: String = match &pattern {
+                    Value::Regex(p) => p.clone(),
+                    Value::Str(p) => p.to_string(),
+                    _ => return Ok(Value::Nil),
+                };
+                return {
+                    if overlap {
+                        let all = self.regex_match_all_with_captures(&pat, &text);
+                        if all.is_empty() {
+                            return Ok(Value::Nil);
+                        }
+                        let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
+                            std::collections::BTreeMap::new();
+                        for capture in all {
+                            let key = capture.from;
+                            match best_by_start.get(&key) {
+                                Some(existing) if capture.to <= existing.to => {}
+                                _ => {
+                                    best_by_start.insert(key, capture);
                                 }
                             }
-                            let matches = best_by_start
-                                .into_values()
-                                .map(|c| {
-                                    Value::make_match_object_with_captures(
-                                        c.matched,
-                                        c.from as i64,
-                                        c.to as i64,
-                                        &c.positional,
-                                        &c.named,
-                                    )
-                                })
-                                .collect::<Vec<_>>();
-                            return Ok(Value::array(matches));
                         }
-                        // Use anchored match if :p(N) or :pos(N) is specified
-                        let captures = if let Some(pos) = anchored_pos {
-                            self.regex_match_with_captures_at(pat, &text, pos)
-                        } else {
-                            self.regex_match_with_captures(pat, &text)
-                        };
-                        if let Some(captures) = captures {
-                            let matched = captures.matched.clone();
-                            let from = captures.from as i64;
-                            let to = captures.to as i64;
-                            for (i, v) in captures.positional.iter().enumerate() {
-                                self.env.insert(i.to_string(), Value::Str(v.clone()));
-                            }
-                            // Execute code blocks from regex for side effects
-                            self.execute_regex_code_blocks(&captures.code_blocks);
-                            let match_obj = Value::make_match_object_full(
-                                matched,
-                                from,
-                                to,
-                                &captures.positional,
-                                &captures.named,
-                                &captures.named_subcaps,
-                                Some(&text),
-                            );
-                            // Set named capture env vars from match object
-                            if let Value::Instance { ref attributes, .. } = match_obj
-                                && let Some(Value::Hash(named_hash)) = attributes.get("named")
-                            {
-                                for (k, v) in named_hash.iter() {
-                                    self.env.insert(format!("<{}>", k), v.clone());
-                                }
-                            }
-                            self.env.insert("/".to_string(), match_obj.clone());
-                            Ok(match_obj)
-                        } else {
-                            Ok(Value::Nil)
-                        }
+                        let matches = best_by_start
+                            .into_values()
+                            .map(|c| {
+                                Value::make_match_object_with_captures(
+                                    c.matched,
+                                    c.from as i64,
+                                    c.to as i64,
+                                    &c.positional,
+                                    &c.named,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        return Ok(Value::array(matches));
                     }
-                    _ => Ok(Value::Nil),
+                    // Use anchored match if :p(N) or :pos(N) is specified
+                    let captures = if let Some(pos) = anchored_pos {
+                        self.regex_match_with_captures_at(&pat, &text, pos)
+                    } else {
+                        self.regex_match_with_captures(&pat, &text)
+                    };
+                    if let Some(captures) = captures {
+                        let matched = captures.matched.clone();
+                        let from = captures.from as i64;
+                        let to = captures.to as i64;
+                        for (i, v) in captures.positional.iter().enumerate() {
+                            self.env.insert(i.to_string(), Value::str(v.clone()));
+                        }
+                        // Execute code blocks from regex for side effects
+                        self.execute_regex_code_blocks(&captures.code_blocks);
+                        let match_obj = Value::make_match_object_full(
+                            matched,
+                            from,
+                            to,
+                            &captures.positional,
+                            &captures.named,
+                            &captures.named_subcaps,
+                            Some(&text),
+                        );
+                        // Set named capture env vars from match object
+                        if let Value::Instance { ref attributes, .. } = match_obj
+                            && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                        {
+                            for (k, v) in named_hash.iter() {
+                                self.env.insert(format!("<{}>", k), v.clone());
+                            }
+                        }
+                        self.env.insert("/".to_string(), match_obj.clone());
+                        Ok(match_obj)
+                    } else {
+                        Ok(Value::Nil)
+                    }
                 };
             }
             "subst" => {
@@ -2585,19 +2585,19 @@ impl Interpreter {
                         if needle.is_empty() {
                             let chars = text
                                 .chars()
-                                .map(|ch| Value::Str(ch.to_string()))
+                                .map(|ch| Value::str(ch.to_string()))
                                 .collect::<Vec<_>>();
                             return Ok(Value::array(chars));
                         }
                         let mut result = Vec::new();
                         let mut offset = 0usize;
                         while offset <= text.len() {
-                            let Some(pos) = text[offset..].find(needle) else {
+                            let Some(pos) = text[offset..].find(needle.as_str()) else {
                                 break;
                             };
                             let start = offset + pos;
                             let end = start + needle.len();
-                            result.push(Value::Str(text[start..end].to_string()));
+                            result.push(Value::str(text[start..end].to_string()));
                             offset = end;
                         }
                         return Ok(Value::array(result));
@@ -2609,7 +2609,7 @@ impl Interpreter {
                             .iter()
                             .map(|(start, end)| {
                                 let s: String = chars[*start..*end].iter().collect();
-                                Value::Str(s)
+                                Value::str(s)
                             })
                             .collect();
                         return Ok(Value::array(result));
@@ -2622,7 +2622,7 @@ impl Interpreter {
                             .iter()
                             .map(|(start, end)| {
                                 let s: String = chars[*start..*end].iter().collect();
-                                Value::Str(s)
+                                Value::str(s)
                             })
                             .collect();
                         return Ok(Value::array(result));
@@ -2952,7 +2952,7 @@ impl Interpreter {
                     if let Some(prefix) = name.strip_prefix("file#") {
                         let new_args = vec![Value::Pair(
                             "prefix".to_string(),
-                            Box::new(Value::Str(prefix.to_string())),
+                            Box::new(Value::str(prefix.to_string())),
                         )];
                         return self.call_method_with_values(
                             Value::Package(Symbol::intern("CompUnit::Repository::FileSystem")),
@@ -3251,7 +3251,7 @@ impl Interpreter {
                 } if class_name == "Stash" => {
                     let keys = match attributes.get("symbols") {
                         Some(Value::Hash(map)) => {
-                            map.keys().cloned().map(Value::Str).collect::<Vec<Value>>()
+                            map.keys().cloned().map(Value::str).collect::<Vec<Value>>()
                         }
                         _ => Vec::new(),
                     };
@@ -3327,16 +3327,16 @@ impl Interpreter {
         } = &target
         {
             match method {
-                "key" => return Ok(Value::Str(key.resolve())),
+                "key" => return Ok(Value::str(key.resolve())),
                 "value" | "Int" | "Numeric" => return Ok(Value::Int(*value)),
                 "WHAT" => return Ok(Value::Package(*enum_type)),
                 "raku" | "perl" => {
-                    return Ok(Value::Str(format!("{}::{}", enum_type, key)));
+                    return Ok(Value::str(format!("{}::{}", enum_type, key)));
                 }
-                "gist" | "Str" => return Ok(Value::Str(key.resolve())),
+                "gist" | "Str" => return Ok(Value::str(key.resolve())),
                 "kv" => {
                     return Ok(Value::array(vec![
-                        Value::Str(key.resolve()),
+                        Value::str(key.resolve()),
                         Value::Int(*value),
                     ]));
                 }
@@ -3503,7 +3503,7 @@ impl Interpreter {
                             })
                             .collect();
                         let joined = parts.join("/");
-                        return Ok(Value::Str(joined));
+                        return Ok(Value::str(joined));
                     }
                     "catfile" => {
                         let parts: Vec<String> = args
@@ -3521,7 +3521,7 @@ impl Interpreter {
                             })
                             .collect();
                         let joined = parts.join("/");
-                        return Ok(Value::Str(joined));
+                        return Ok(Value::str(joined));
                     }
                     "catpath" => {
                         let vol = args
@@ -3546,7 +3546,7 @@ impl Interpreter {
                             }
                             result.push_str(&file);
                         }
-                        return Ok(Value::Str(result));
+                        return Ok(Value::str(result));
                     }
                     _ => {}
                 }
@@ -3588,8 +3588,8 @@ impl Interpreter {
                             return Ok(Value::Nil);
                         }
                         let mut attrs = HashMap::new();
-                        attrs.insert("from".to_string(), Value::Str("Raku".to_string()));
-                        attrs.insert("short-name".to_string(), Value::Str(short_name.resolve()));
+                        attrs.insert("from".to_string(), Value::str_from("Raku"));
+                        attrs.insert("short-name".to_string(), Value::str(short_name.resolve()));
                         attrs.insert("precompiled".to_string(), Value::Bool(false));
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
@@ -3625,7 +3625,7 @@ impl Interpreter {
             if method == "isa" {
                 let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
                     Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name,
+                    Value::Str(name) => name.to_string(),
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other.to_string_value(),
                 };
@@ -3640,7 +3640,7 @@ impl Interpreter {
                     || class_name.resolve().ends_with("Exception"))
                 && let Some(msg) = attributes.get("message")
             {
-                return Ok(Value::Str(msg.to_string_value()));
+                return Ok(Value::str(msg.to_string_value()));
             }
             if (method == "raku" || method == "perl") && args.is_empty() {
                 if class_name == "ObjAt" {
@@ -3648,9 +3648,9 @@ impl Interpreter {
                         .get("WHICH")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    return Ok(Value::Str(format!("ObjAt.new(\"{}\")", which)));
+                    return Ok(Value::str(format!("ObjAt.new(\"{}\")", which)));
                 }
-                return Ok(Value::Str(format!("{}.new()", class_name)));
+                return Ok(Value::str(format!("{}.new()", class_name)));
             }
             if method == "name" && args.is_empty() {
                 return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
@@ -4021,7 +4021,7 @@ impl Interpreter {
 
                 // Try user-defined FALLBACK method
                 if method != "FALLBACK" && self.has_user_method(&class_name.resolve(), "FALLBACK") {
-                    let mut fallback_args = vec![Value::Str(method.to_string())];
+                    let mut fallback_args = vec![Value::str(method.to_string())];
                     fallback_args.extend(args);
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
                 }
@@ -4040,24 +4040,24 @@ impl Interpreter {
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::Str(format!("{}()", name))),
-                other => Ok(Value::Str(other.to_string_value())),
+                Value::Package(name) => Ok(Value::str(format!("{}()", name))),
+                other => Ok(Value::str(other.to_string_value())),
             },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
                     if crate::value::is_internal_anon_type_name(&name.resolve()) {
-                        return Ok(Value::Str("()".to_string()));
+                        return Ok(Value::str_from("()"));
                     }
                     let resolved = name.resolve();
                     let short = resolved.split("::").last().unwrap_or(&resolved);
-                    Ok(Value::Str(format!("({})", short)))
+                    Ok(Value::str(format!("({})", short)))
                 }
-                other => Ok(Value::Str(other.to_string_value())),
+                other => Ok(Value::str(other.to_string_value())),
             },
             "WHERE" if args.is_empty() => {
                 let type_obj_name = match &target {
                     Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.clone()),
+                    Value::Str(name) => Some(name.to_string()),
                     _ => None,
                 };
                 if let Some(name) = type_obj_name {
@@ -4067,7 +4067,7 @@ impl Interpreter {
                             method
                         )));
                     }
-                    Ok(Value::Str(format!("{}|type-object", name)))
+                    Ok(Value::str(format!("{}|type-object", name)))
                 } else {
                     Err(RuntimeError::new(format!(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
@@ -4076,14 +4076,14 @@ impl Interpreter {
                 }
             }
             "raku" | "perl" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::Str(name.resolve())),
-                other => Ok(Value::Str(other.to_string_value())),
+                Value::Package(name) => Ok(Value::str(name.resolve())),
+                other => Ok(Value::str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {
-                Value::Routine { name, .. } => Ok(Value::Str(name.resolve())),
-                Value::Package(name) => Ok(Value::Str(name.resolve())),
-                Value::Str(name) => Ok(Value::Str(name)),
-                Value::Sub(data) => Ok(Value::Str(data.name.resolve())),
+                Value::Routine { name, .. } => Ok(Value::str(name.resolve())),
+                Value::Package(name) => Ok(Value::str(name.resolve())),
+                Value::Str(name) => Ok(Value::Str(name.clone())),
+                Value::Sub(data) => Ok(Value::str(data.name.resolve())),
                 _ => Ok(Value::Nil),
             },
             "isa" if args.len() == 1 && matches!(&target, Value::Package(_)) => {
@@ -4093,7 +4093,7 @@ impl Interpreter {
                 };
                 let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
                     Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name,
+                    Value::Str(name) => name.to_string(),
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other.to_string_value(),
                 };
@@ -4103,21 +4103,21 @@ impl Interpreter {
             }
             "REPR" if args.is_empty() => match target {
                 Value::CustomType { repr, .. } | Value::CustomTypeInstance { repr, .. } => {
-                    Ok(Value::Str(repr))
+                    Ok(Value::str(repr))
                 }
                 Value::Package(name) if self.classes.contains_key(&name.resolve()) => {
-                    Ok(Value::Str("P6opaque".to_string()))
+                    Ok(Value::str_from("P6opaque"))
                 }
-                _ => Ok(Value::Str("P6opaque".to_string())),
+                _ => Ok(Value::str_from("P6opaque")),
             },
             "Str" | "Stringy" if args.is_empty() => match target {
-                Value::Package(_) => Ok(Value::Str(String::new())),
-                _ => Ok(Value::Str(target.to_string_value())),
+                Value::Package(_) => Ok(Value::str(String::new())),
+                _ => Ok(Value::str(target.to_string_value())),
             },
             "Numeric" | "Real" if args.is_empty() => {
                 let num_name = match &target {
                     Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.clone()),
+                    Value::Str(name) => Some(name.to_string()),
                     _ => None,
                 };
                 if let Some(name) = num_name {
@@ -4371,7 +4371,7 @@ impl Interpreter {
     fn are_expected_type_name(&self, value: &Value) -> String {
         match value {
             Value::Package(name) => name.resolve(),
-            Value::Str(name) => name.clone(),
+            Value::Str(name) => name.to_string(),
             Value::Instance { class_name, .. } => class_name.resolve(),
             _ => value.to_string_value(),
         }

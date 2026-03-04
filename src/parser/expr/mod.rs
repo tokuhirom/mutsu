@@ -48,7 +48,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             let is_bareword = matches!(&expr, Expr::BareWord(_));
             let left = match expr {
                 Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
-                    Expr::Literal(Value::Str(name.clone()))
+                    Expr::Literal(Value::str(name.clone()))
                 }
                 _ => expr,
             };
@@ -101,7 +101,7 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
         let is_bareword = matches!(&expr, Expr::BareWord(_));
         let left = match expr {
             Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
-                Expr::Literal(Value::Str(name.clone()))
+                Expr::Literal(Value::str(name.clone()))
             }
             _ => expr,
         };
@@ -1123,7 +1123,7 @@ mod tests {
     fn parse_postfix_angle_index_zen() {
         let (rest, expr) = expression("$x<>").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Var(ref n) if n == "x"));
+        assert!(matches!(expr, Expr::Var(ref n) if n.as_str() == "x"));
     }
 
     #[test]
@@ -1136,7 +1136,7 @@ mod tests {
             } => {
                 assert_eq!(name, "values");
                 assert!(args.is_empty());
-                assert!(matches!(*target, Expr::HashVar(ref n) if n == "h"));
+                assert!(matches!(*target, Expr::HashVar(ref n) if n.as_str() == "h"));
             }
             _ => panic!("expected method call expression"),
         }
@@ -1166,7 +1166,7 @@ mod tests {
                 assert!(args.iter().any(|arg| matches!(
                     arg,
                     Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
-                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s == "__mutsu_test_callsite_line")
+                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "__mutsu_test_callsite_line")
                 )));
             }
             _ => panic!("expected call expression"),
@@ -1190,7 +1190,7 @@ mod tests {
                 assert!(args.iter().any(|arg| matches!(
                     arg,
                     Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
-                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s == "__mutsu_test_callsite_line")
+                    if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "__mutsu_test_callsite_line")
                 )));
             }
             _ => panic!("expected call expression"),
@@ -1238,7 +1238,7 @@ mod tests {
                 assert_eq!(name, "map");
                 assert_eq!(args.len(), 2);
                 assert!(matches!(args[0], Expr::AnonSub { .. }));
-                assert!(matches!(args[1], Expr::ArrayVar(ref n) if n == "list"));
+                assert!(matches!(args[1], Expr::ArrayVar(ref n) if n.as_str() == "list"));
             }
             _ => panic!("expected call expression"),
         }
@@ -1252,7 +1252,7 @@ mod tests {
             Expr::MethodCall { name, args, .. } => {
                 assert_eq!(name, "map");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::Lambda { ref param, .. } if param == "x"));
+                assert!(matches!(args[0], Expr::Lambda { ref param, .. } if param.as_str() == "x"));
             }
             _ => panic!("expected method call expression"),
         }
@@ -1444,7 +1444,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "__mutsu_hyper_prefix");
                 assert_eq!(args.len(), 2);
-                assert!(matches!(args[0], Expr::Literal(Value::Str(ref s)) if s == "-"));
+                assert!(matches!(args[0], Expr::Literal(Value::Str(ref s)) if s.as_str() == "-"));
             }
             _ => panic!("expected hyper prefix metaop call"),
         }
@@ -1599,7 +1599,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "postfix:<!>");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::Var(ref n) if n == "base"));
+                assert!(matches!(args[0], Expr::Var(ref n) if n.as_str() == "base"));
             }
             _ => panic!("expected postfix operator call"),
         }
@@ -1642,7 +1642,7 @@ mod tests {
                 op: TokenKind::PlusPlus,
                 expr,
             } => {
-                assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
+                assert!(matches!(*expr, Expr::Var(ref n) if n.as_str() == "x"));
             }
             _ => panic!("expected dot-postfix increment"),
         }
@@ -1656,7 +1656,7 @@ mod tests {
             Expr::HyperMethodCall {
                 target, name, args, ..
             } => {
-                assert!(matches!(*target, Expr::Var(ref n) if n == "x"));
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "x"));
                 assert_eq!(name, "postfix:<++>");
                 assert!(args.is_empty());
             }
@@ -1673,7 +1673,7 @@ mod tests {
                 op: TokenKind::MinusMinus,
                 expr,
             } => {
-                assert!(matches!(*expr, Expr::Var(ref n) if n == "x"));
+                assert!(matches!(*expr, Expr::Var(ref n) if n.as_str() == "x"));
             }
             _ => panic!("expected dot-postfix decrement"),
         }
@@ -1794,7 +1794,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::CallOn { target, args } if args.is_empty() && matches!(*target, Expr::Var(ref n) if n == "x")
+            Expr::CallOn { target, args } if args.is_empty() && matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
         ));
     }
 }

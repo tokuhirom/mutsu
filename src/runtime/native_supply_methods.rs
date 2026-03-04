@@ -37,12 +37,12 @@ impl Interpreter {
                     }
                     let keep = graphemes.len().saturating_sub(1);
                     if keep > 0 {
-                        emitted.push(Value::Str(graphemes[..keep].concat()));
+                        emitted.push(Value::str(graphemes[..keep].concat()));
                     }
                     carry = graphemes[keep].to_string();
                 }
                 if !carry.is_empty() {
-                    emitted.push(Value::Str(carry));
+                    emitted.push(Value::str(carry));
                 }
 
                 let mut new_attrs = HashMap::new();
@@ -211,18 +211,18 @@ impl Interpreter {
                     Value::Regex(pat) => {
                         let matches = self.regex_find_all(pat, &source);
                         if matches.is_empty() {
-                            vec![Value::Str(source)]
+                            vec![Value::str(source)]
                         } else {
                             let chars: Vec<char> = source.chars().collect();
                             let mut out = Vec::new();
                             let mut last_end = 0usize;
                             for (start, end) in matches {
                                 let piece: String = chars[last_end..start].iter().collect();
-                                out.push(Value::Str(piece));
+                                out.push(Value::str(piece));
                                 last_end = end;
                             }
                             let tail: String = chars[last_end..].iter().collect();
-                            out.push(Value::Str(tail));
+                            out.push(Value::str(tail));
                             out
                         }
                     }
@@ -230,7 +230,7 @@ impl Interpreter {
                         let sep = other.to_string_value();
                         source
                             .split(&sep)
-                            .map(|s| Value::Str(s.to_string()))
+                            .map(|s| Value::str(s.to_string()))
                             .collect()
                     }
                 };
@@ -575,7 +575,7 @@ impl Interpreter {
                 let reason = args
                     .first()
                     .cloned()
-                    .unwrap_or_else(|| Value::Str("Died".to_string()));
+                    .unwrap_or_else(|| Value::str_from("Died"));
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason);
                 }
@@ -643,7 +643,7 @@ impl Interpreter {
                 let reason = args
                     .first()
                     .cloned()
-                    .unwrap_or_else(|| Value::Str("Died".to_string()));
+                    .unwrap_or_else(|| Value::str_from("Died"));
                 attrs.insert("done".to_string(), Value::Bool(true));
                 attrs.insert("quit_reason".to_string(), reason.clone());
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {

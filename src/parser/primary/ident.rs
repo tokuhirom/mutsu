@@ -27,7 +27,7 @@ const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
     if crate::parser::stmt::simple::is_test_assertion_callable(name) {
         args.push(Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(
+            left: Box::new(Expr::Literal(Value::str(
                 TEST_CALLSITE_LINE_KEY.to_string(),
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
@@ -36,7 +36,7 @@ fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Ve
     }
     if name == "callframe" || name == "caller" {
         args.push(Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(CALLFRAME_LINE_KEY.to_string()))),
+            left: Box::new(Expr::Literal(Value::str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
         });
@@ -875,7 +875,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     let module_name_for_parse = match &target_raw {
         Expr::BareWord(name) => Some(name.clone()),
         Expr::Literal(Value::Package(name)) => Some(name.resolve()),
-        Expr::Literal(Value::Str(name)) => Some(name.clone()),
+        Expr::Literal(Value::Str(name)) => Some(name.to_string()),
         _ => None,
     };
     let target = if let Expr::BareWord(name) = target_raw {
@@ -905,7 +905,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         args.push(Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(
+            left: Box::new(Expr::Literal(Value::str(
                 "__mutsu_require_file".to_string(),
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
@@ -1390,7 +1390,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         &after_bracket[end + 1..],
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(Expr::Literal(Value::Str(symbol.to_string()))),
+                            index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
                         },
                     ));
                 }
@@ -1516,7 +1516,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let mut args = args;
         if args.is_empty() {
             args.push(Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(
+                left: Box::new(Expr::Literal(Value::str(
                     TEST_CALLSITE_LINE_KEY.to_string(),
                 ))),
                 op: crate::token_kind::TokenKind::FatArrow,
@@ -1536,7 +1536,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r2,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(name))),
+                left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
             },
@@ -1742,7 +1742,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && is_terminator
     {
         let args = vec![Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(
+            left: Box::new(Expr::Literal(Value::str(
                 TEST_CALLSITE_LINE_KEY.to_string(),
             ))),
             op: crate::token_kind::TokenKind::FatArrow,

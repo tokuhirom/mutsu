@@ -97,7 +97,7 @@ pub(crate) fn split_supply_chunks_into_lines(chunks: &[Value], chomp: bool) -> V
     }
     crate::builtins::split_lines_with_chomp(&combined, chomp)
         .into_iter()
-        .map(Value::Str)
+        .map(Value::str)
         .collect()
 }
 
@@ -406,7 +406,7 @@ pub(super) fn supplier_emit_callbacks(
                 for line in
                     take_complete_lines_from_buffer(&mut tap.line_buffer, tap.line_chomp, false)
                 {
-                    callbacks.push((tap.callback.clone(), Value::Str(line), tap.delay_seconds));
+                    callbacks.push((tap.callback.clone(), Value::str(line), tap.delay_seconds));
                 }
             } else {
                 callbacks.push((
@@ -430,7 +430,7 @@ pub(super) fn flush_supplier_line_taps(supplier_id: u64) -> Vec<(Value, Value)> 
                 for line in
                     take_complete_lines_from_buffer(&mut tap.line_buffer, tap.line_chomp, true)
                 {
-                    callbacks.push((tap.callback.clone(), Value::Str(line)));
+                    callbacks.push((tap.callback.clone(), Value::str(line)));
                 }
             }
         }
@@ -1006,7 +1006,7 @@ impl Interpreter {
             "keep" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 attrs.insert("result".to_string(), value);
-                attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
+                attrs.insert("status".to_string(), Value::str_from("Kept"));
                 Ok((Value::Nil, attrs))
             }
             _ => Err(RuntimeError::new(format!(
@@ -1072,14 +1072,14 @@ impl Interpreter {
             "status" => Ok(attributes
                 .get("status")
                 .cloned()
-                .unwrap_or(Value::Str("Planned".to_string()))),
+                .unwrap_or(Value::str_from("Planned"))),
             "then" => {
                 let block = args.first().cloned().unwrap_or(Value::Nil);
                 let status = attributes
                     .get("status")
                     .cloned()
-                    .unwrap_or(Value::Str("Planned".to_string()));
-                if matches!(status, Value::Str(ref s) if s == "Kept") {
+                    .unwrap_or(Value::str_from("Planned"));
+                if matches!(status, Value::Str(ref s) if s.as_str() == "Kept") {
                     let value = attributes.get("result").cloned().unwrap_or(Value::Nil);
                     let result = self.call_sub_value(block, vec![value], false)?;
                     Ok(self.make_promise_instance("Kept", result))
@@ -1151,7 +1151,7 @@ impl Interpreter {
                     Some(Value::Int(c)) => *c,
                     _ => -1,
                 };
-                Value::Str(exitcode.to_string())
+                Value::str(exitcode.to_string())
             }
             _ => Value::Nil,
         }
@@ -1182,14 +1182,14 @@ impl Interpreter {
                         }
                     })
                     .unwrap_or_default();
-                Ok(Value::Str(format!("{} ({})", n, v)))
+                Ok(Value::str(format!("{} ({})", n, v)))
             }
             "Str" => {
                 let n = attributes
                     .get("name")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Ok(Value::Str(n))
+                Ok(Value::str(n))
             }
             "raku" | "perl" => {
                 let release = attributes
@@ -1222,7 +1222,7 @@ impl Interpreter {
                     .get("desc")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Ok(Value::Str(format!(
+                Ok(Value::str(format!(
                     "Distro.new(release => \"{}\", path-sep => \"{}\", name => \"{}\", auth => \"{}\", version => {}, signature => Blob, desc => \"{}\")",
                     release, path_sep, n, auth, ver, desc
                 )))
@@ -1240,11 +1240,8 @@ impl Interpreter {
         match method {
             "compiler" => {
                 let mut compiler_attrs = HashMap::new();
-                compiler_attrs.insert("name".to_string(), Value::Str("mutsu".to_string()));
-                compiler_attrs.insert(
-                    "auth".to_string(),
-                    Value::Str("github.com/tokuhirom".to_string()),
-                );
+                compiler_attrs.insert("name".to_string(), Value::str_from("mutsu"));
+                compiler_attrs.insert("auth".to_string(), Value::str_from("github.com/tokuhirom"));
                 compiler_attrs.insert(
                     "version".to_string(),
                     Value::Version {
@@ -1267,14 +1264,14 @@ impl Interpreter {
                 );
                 compiler_attrs.insert(
                     "desc".to_string(),
-                    Value::Str("mutsu Raku interpreter".to_string()),
+                    Value::str_from("mutsu Raku interpreter"),
                 );
-                compiler_attrs.insert("release".to_string(), Value::Str("0.1.0".to_string()));
-                compiler_attrs.insert("codename".to_string(), Value::Str("mutsu".to_string()));
-                compiler_attrs.insert("id".to_string(), Value::Str(String::new()));
+                compiler_attrs.insert("release".to_string(), Value::str_from("0.1.0"));
+                compiler_attrs.insert("codename".to_string(), Value::str_from("mutsu"));
+                compiler_attrs.insert("id".to_string(), Value::str(String::new()));
                 Value::make_instance(Symbol::intern("Compiler"), compiler_attrs)
             }
-            "backend" => Value::Str("mutsu".to_string()),
+            "backend" => Value::str_from("mutsu"),
             "gist" => {
                 let name = attributes
                     .get("name")
@@ -1284,21 +1281,21 @@ impl Interpreter {
                     .get("version")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Value::Str(format!("{} ({})", name, version))
+                Value::str(format!("{} ({})", name, version))
             }
             "Str" => {
                 let name = attributes
                     .get("name")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Value::Str(name)
+                Value::str(name)
             }
             "raku" => {
                 let name = attributes
                     .get("name")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Value::Str(format!("{}.new(...)", name))
+                Value::str(format!("{}.new(...)", name))
             }
             _ => attributes.get(method).cloned().unwrap_or(Value::Nil),
         }
@@ -1334,7 +1331,7 @@ impl Interpreter {
                     let addr = stream
                         .peer_addr()
                         .map_err(|e| RuntimeError::new(format!("getpeername failed: {}", e)))?;
-                    Ok(Value::Str(addr.to_string()))
+                    Ok(Value::str(addr.to_string()))
                 } else {
                     Err(RuntimeError::new("Socket not connected"))
                 }
@@ -1362,7 +1359,7 @@ impl Interpreter {
             "name" => attributes
                 .get("name")
                 .cloned()
-                .unwrap_or(Value::Str(String::new())),
+                .unwrap_or(Value::str(String::new())),
             "alternative-names" => attributes
                 .get("alternative-names")
                 .cloned()
@@ -1374,7 +1371,7 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let mut attrs = HashMap::new();
-                attrs.insert("encoding".to_string(), Value::Str(enc_name));
+                attrs.insert("encoding".to_string(), Value::str(enc_name));
                 Value::make_instance(Symbol::intern("Encoding::Encoder"), attrs)
             }
             "decoder" => {
@@ -1383,7 +1380,7 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let mut attrs = HashMap::new();
-                attrs.insert("encoding".to_string(), Value::Str(enc_name));
+                attrs.insert("encoding".to_string(), Value::str(enc_name));
                 Value::make_instance(Symbol::intern("Encoding::Decoder"), attrs)
             }
             "gist" | "Str" => {
@@ -1391,7 +1388,7 @@ impl Interpreter {
                     .get("name")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Value::Str(format!("Encoding::Builtin<{}>", name))
+                Value::str(format!("Encoding::Builtin<{}>", name))
             }
             "WHAT" => Value::Package(Symbol::intern("Encoding::Builtin")),
             _ => Value::Nil,
@@ -1429,7 +1426,7 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Value::Str(input)
+                Value::str(input)
             }
             "WHAT" => Value::Package(Symbol::intern("Encoding::Decoder")),
             _ => Value::Nil,

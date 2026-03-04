@@ -102,7 +102,7 @@ impl Compiler {
         } else {
             let idx = self
                 .code
-                .add_constant(Value::Str(self.qualify_variable_name(name)));
+                .add_constant(Value::str(self.qualify_variable_name(name)));
             self.code.emit(OpCode::SetGlobal(idx));
         }
     }
@@ -128,7 +128,7 @@ impl Compiler {
             .iter()
             .map(|arg| {
                 if let Some(name) = Self::positional_arg_source_name(arg) {
-                    Value::Str(name)
+                    Value::str(name)
                 } else {
                     Value::Nil
                 }
@@ -289,7 +289,7 @@ impl Compiler {
                         }
                         Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
                             if Self::has_block_placeholders(body) {
-                                self.compile_stmt(&Stmt::Die(Expr::Literal(Value::Str(
+                                self.compile_stmt(&Stmt::Die(Expr::Literal(Value::str(
                                     "Implicit placeholder parameters are not available in bare nested blocks"
                                         .to_string(),
                                 ))));

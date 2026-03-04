@@ -170,10 +170,10 @@ pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<St
 pub(crate) fn make_signature_value(info: SigInfo) -> Value {
     let raku_str = render_signature(&info);
     let mut attrs = HashMap::new();
-    attrs.insert("raku".to_string(), Value::Str(raku_str.clone()));
-    attrs.insert("perl".to_string(), Value::Str(raku_str.clone()));
-    attrs.insert("Str".to_string(), Value::Str(raku_str.clone()));
-    attrs.insert("gist".to_string(), Value::Str(raku_str));
+    attrs.insert("raku".to_string(), Value::str(raku_str.clone()));
+    attrs.insert("perl".to_string(), Value::str(raku_str.clone()));
+    attrs.insert("Str".to_string(), Value::str(raku_str.clone()));
+    attrs.insert("gist".to_string(), Value::str(raku_str));
     attrs.insert(
         "params".to_string(),
         make_params_value_from_sig_params(&info.params),
@@ -203,7 +203,7 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     } else {
         format!("{}{}", p.sigil, p.name)
     };
-    attrs.insert("name".to_string(), Value::Str(display_name));
+    attrs.insert("name".to_string(), Value::str(display_name));
 
     // type: resolve to type object (Package) instead of string
     let type_val = match &p.type_constraint {
@@ -216,7 +216,7 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     let is_named = p.named || (p.slurpy && p.sigil == '%');
     attrs.insert("named".to_string(), Value::Bool(is_named));
     attrs.insert("slurpy".to_string(), Value::Bool(p.slurpy));
-    attrs.insert("sigil".to_string(), Value::Str(p.sigil.to_string()));
+    attrs.insert("sigil".to_string(), Value::str(p.sigil.to_string()));
     attrs.insert("multi-invocant".to_string(), Value::Bool(p.multi_invocant));
 
     // readonly: true unless rw/raw/copy/sigilless
@@ -248,7 +248,7 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     let named_names_val: Vec<Value> = p
         .named_names
         .iter()
-        .map(|n| Value::Str(n.clone()))
+        .map(|n| Value::str(n.clone()))
         .collect();
     attrs.insert("named_names".to_string(), Value::array(named_names_val));
 
@@ -260,7 +260,7 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     } else {
         ""
     };
-    attrs.insert("prefix".to_string(), Value::Str(prefix.to_string()));
+    attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
 
     // suffix: ? if optional positional, ! if required named, else ""
     let suffix = if p.optional_marker && !p.named && !p.slurpy {
@@ -270,11 +270,11 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     } else {
         ""
     };
-    attrs.insert("suffix".to_string(), Value::Str(suffix.to_string()));
+    attrs.insert("suffix".to_string(), Value::str(suffix.to_string()));
 
     // twigil: extract from name
     let twigil = extract_twigil(&p.name);
-    attrs.insert("twigil".to_string(), Value::Str(twigil.to_string()));
+    attrs.insert("twigil".to_string(), Value::str(twigil.to_string()));
 
     // TODO: constraints - needs runtime evaluation support for where clauses
     // For now, store a marker that allows unconstrained params to smartmatch truely

@@ -34,7 +34,7 @@ impl Compiler {
             Expr::Var(name) => {
                 // $CALLER:: / $CALLER::CALLER:: variable access
                 if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
-                    let name_idx = self.code.add_constant(Value::Str(bare_name));
+                    let name_idx = self.code.add_constant(Value::str(bare_name));
                     self.code.emit(OpCode::GetCallerVar {
                         name_idx,
                         depth: depth as u32,
@@ -43,7 +43,7 @@ impl Compiler {
                 }
                 // $DYNAMIC:: variable access
                 if let Some(bare_name) = name.strip_prefix("DYNAMIC::") {
-                    let name_idx = self.code.add_constant(Value::Str(bare_name.to_string()));
+                    let name_idx = self.code.add_constant(Value::str(bare_name.to_string()));
                     self.code.emit(OpCode::GetDynamicVar(name_idx));
                     return;
                 }
@@ -58,7 +58,7 @@ impl Compiler {
                 }
                 // Slang variables ($~MAIN, $~Quote, $~Regex, $~P5Regex)
                 if let Some(slang_name) = name.strip_prefix('~') {
-                    let idx = self.code.add_constant(Value::Str(slang_name.to_string()));
+                    let idx = self.code.add_constant(Value::str(slang_name.to_string()));
                     self.code.emit(OpCode::LoadConst(idx));
                 }
                 // Compile-time package/module variables
@@ -70,14 +70,14 @@ impl Compiler {
                 } else if name == "?CLASS" || name == "?ROLE" {
                     // ::?CLASS / ::?ROLE resolves at runtime from env
                     // (set by run_instance_method_resolved for method bodies)
-                    let name_idx = self.code.add_constant(Value::Str(name.to_string()));
+                    let name_idx = self.code.add_constant(Value::str(name.to_string()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {
                     let name_idx = self
                         .code
-                        .add_constant(Value::Str(self.qualify_variable_name(name)));
+                        .add_constant(Value::str(self.qualify_variable_name(name)));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 }
             }
@@ -88,7 +88,7 @@ impl Compiler {
                 } else {
                     self.qualify_variable_name(&format!("@{}", name))
                 };
-                let name_idx = self.code.add_constant(Value::Str(var_name));
+                let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
@@ -98,7 +98,7 @@ impl Compiler {
                 } else {
                     self.qualify_variable_name(&format!("%{}", name))
                 };
-                let name_idx = self.code.add_constant(Value::Str(var_name));
+                let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
@@ -106,12 +106,12 @@ impl Compiler {
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
             }
             Expr::PseudoStash(name) => {
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::GetPseudoStash(name_idx));
             }
             Expr::Unary { op, expr } => match op {
@@ -145,24 +145,24 @@ impl Compiler {
                 }
                 TokenKind::PlusPlus => {
                     if let Expr::Var(name) = expr.as_ref() {
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::PreIncrement(name_idx));
                     } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                         // ++state $ — compile the VarDecl, then increment
                         self.compile_expr(expr);
                         self.code.emit(OpCode::Pop);
-                        let name_idx = self.code.add_constant(Value::Str(var_name));
+                        let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::PreIncrement(name_idx));
                     } else if let Expr::Index { target, index } = expr.as_ref() {
                         if let Some(name) = Self::postfix_index_name(target) {
                             self.compile_expr(index);
-                            let name_idx = self.code.add_constant(Value::Str(name));
+                            let name_idx = self.code.add_constant(Value::str(name));
                             self.code.emit(OpCode::PreIncrementIndex(name_idx));
                         } else {
                             let temp_name =
                                 format!("__mutsu_tmp_preinc_{}", self.code.constants.len());
                             let temp_name_idx =
-                                self.code.add_constant(Value::Str(temp_name.clone()));
+                                self.code.add_constant(Value::str(temp_name.clone()));
                             self.compile_expr(target);
                             self.code.emit(OpCode::SetGlobal(temp_name_idx));
                             self.compile_expr(index);
@@ -171,29 +171,29 @@ impl Compiler {
                     } else {
                         self.compile_expr(&Expr::Call {
                             name: Symbol::intern("__mutsu_incdec_nomatch"),
-                            args: vec![Expr::Literal(Value::Str("prefix:<++>".to_string()))],
+                            args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
                         });
                     }
                 }
                 TokenKind::MinusMinus => {
                     if let Expr::Var(name) = expr.as_ref() {
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::PreDecrement(name_idx));
                     } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                         self.compile_expr(expr);
                         self.code.emit(OpCode::Pop);
-                        let name_idx = self.code.add_constant(Value::Str(var_name));
+                        let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::PreDecrement(name_idx));
                     } else if let Expr::Index { target, index } = expr.as_ref() {
                         if let Some(name) = Self::postfix_index_name(target) {
                             self.compile_expr(index);
-                            let name_idx = self.code.add_constant(Value::Str(name));
+                            let name_idx = self.code.add_constant(Value::str(name));
                             self.code.emit(OpCode::PreDecrementIndex(name_idx));
                         } else {
                             let temp_name =
                                 format!("__mutsu_tmp_predec_{}", self.code.constants.len());
                             let temp_name_idx =
-                                self.code.add_constant(Value::Str(temp_name.clone()));
+                                self.code.add_constant(Value::str(temp_name.clone()));
                             self.compile_expr(target);
                             self.code.emit(OpCode::SetGlobal(temp_name_idx));
                             self.compile_expr(index);
@@ -202,7 +202,7 @@ impl Compiler {
                     } else {
                         self.compile_expr(&Expr::Call {
                             name: Symbol::intern("__mutsu_incdec_nomatch"),
-                            args: vec![Expr::Literal(Value::Str("prefix:<-->".to_string()))],
+                            args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],
                         });
                     }
                 }
@@ -221,7 +221,7 @@ impl Compiler {
                 _ => {
                     self.compile_expr(expr);
                     let op_name = format!("prefix:<{}>", super::helpers::token_kind_to_op_name(op));
-                    let name_idx = self.code.add_constant(Value::Str(op_name));
+                    let name_idx = self.code.add_constant(Value::str(op_name));
                     self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity: 1,
@@ -268,7 +268,7 @@ impl Compiler {
                 {
                     // Compile the slip arg (the capture variable)
                     self.compile_expr(right);
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::CallFuncSlip {
                         name_idx,
                         regular_arity: 0,
@@ -407,7 +407,7 @@ impl Compiler {
                     {
                         self.compile_expr(left);
                         self.compile_expr(right);
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::DoesVar(name_idx));
                         return;
                     }
@@ -419,7 +419,7 @@ impl Compiler {
                 {
                     self.compile_expr(left);
                     self.compile_expr(right);
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::InfixFunc {
                         name_idx,
                         right_arity: 1,
@@ -429,7 +429,7 @@ impl Compiler {
                     self.compile_expr(left);
                     self.compile_expr(right);
                     let op_name = super::helpers::token_kind_to_op_name(op);
-                    let name_idx = self.code.add_constant(Value::Str(op_name));
+                    let name_idx = self.code.add_constant(Value::str(op_name));
                     self.code.emit(OpCode::InfixFunc {
                         name_idx,
                         right_arity: 1,
@@ -494,8 +494,8 @@ impl Compiler {
                 {
                     let call_name_idx = self
                         .code
-                        .add_constant(Value::Str("__mutsu_atomic_fetch_var".to_string()));
-                    let arg_idx = self.code.add_constant(Value::Str(var_name.clone()));
+                        .add_constant(Value::str_from("__mutsu_atomic_fetch_var"));
+                    let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::LoadConst(arg_idx));
                     self.code.emit(OpCode::CallFunc {
                         name_idx: call_name_idx,
@@ -516,7 +516,7 @@ impl Compiler {
                     if let Some(vname) = var_name {
                         // Push Nil and assign to the variable
                         self.code.emit(OpCode::LoadNil);
-                        let name_idx = self.code.add_constant(Value::Str(vname));
+                        let name_idx = self.code.add_constant(Value::str(vname));
                         self.code.emit(OpCode::AssignExpr(name_idx));
                     } else {
                         self.code.emit(OpCode::LoadNil);
@@ -586,7 +586,7 @@ impl Compiler {
                     for arg in &rewritten_args {
                         self.compile_call_arg(arg);
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity,
@@ -652,7 +652,7 @@ impl Compiler {
                         for arg in args {
                             self.compile_expr(arg);
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
                         self.code.emit(OpCode::CallFunc {
                             name_idx,
                             arity,
@@ -683,7 +683,7 @@ impl Compiler {
                             if let Some(delta) = delta {
                                 let atomic_add = Expr::Call {
                                     name: Symbol::intern("__mutsu_atomic_add_var"),
-                                    args: vec![Expr::Literal(Value::Str(vname.clone())), delta],
+                                    args: vec![Expr::Literal(Value::str(vname.clone())), delta],
                                 };
                                 self.compile_expr(&atomic_add);
                                 return;
@@ -703,7 +703,7 @@ impl Compiler {
                         for arg in args {
                             self.compile_expr(arg);
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
                         self.code.emit(OpCode::CallFunc {
                             name_idx,
                             arity,
@@ -765,7 +765,7 @@ impl Compiler {
                                 break; // only one slip supported
                             }
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
                         self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
@@ -777,7 +777,7 @@ impl Compiler {
                         for arg in args {
                             self.compile_call_arg(arg);
                         }
-                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
                         self.code.emit(OpCode::CallFunc {
                             name_idx,
                             arity,
@@ -822,10 +822,10 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
-                let target_name_idx = self.code.add_constant(Value::Str(target_name));
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                let target_name_idx = self.code.add_constant(Value::str(target_name));
                 let modifier_idx =
-                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                    modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
                 self.code.emit(OpCode::CallMethodMut {
                     name_idx,
                     arity,
@@ -858,7 +858,7 @@ impl Compiler {
                             self.code.emit(OpCode::Pop);
                         }
                         self.compile_expr(delete_index);
-                        let name_idx = self.code.add_constant(Value::Str(var_name));
+                        let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::DeleteIndexNamed(name_idx));
                     } else {
                         self.compile_expr(delete_target);
@@ -872,9 +872,9 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 let modifier_idx =
-                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                    modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
                 self.code.emit(OpCode::CallMethod {
                     name_idx,
                     arity,
@@ -909,9 +909,9 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 let modifier_idx =
-                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                    modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
                 self.code.emit(OpCode::HyperMethodCall {
                     name_idx,
                     arity,
@@ -932,7 +932,7 @@ impl Compiler {
                     self.compile_method_arg(arg);
                 }
                 let modifier_idx =
-                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                    modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
                 self.code.emit(OpCode::HyperMethodCallDynamic {
                     arity,
                     modifier_idx,
@@ -988,23 +988,23 @@ impl Compiler {
                 expr,
             } => {
                 if let Expr::Var(name) = expr.as_ref() {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     // state/my declarator in expression position: `state $x++`, `my $x.++`
                     self.compile_expr(expr);
                     self.code.emit(OpCode::Pop);
-                    let name_idx = self.code.add_constant(Value::Str(var_name));
+                    let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PostIncrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
-                        let name_idx = self.code.add_constant(Value::Str(name));
+                        let name_idx = self.code.add_constant(Value::str(name));
                         self.code.emit(OpCode::PostIncrementIndex(name_idx));
                     } else {
                         // Arbitrary expression target: assign to temp, increment via temp
                         let temp_name = format!("__mutsu_tmp_inc_{}", self.code.constants.len());
-                        let temp_name_idx = self.code.add_constant(Value::Str(temp_name.clone()));
+                        let temp_name_idx = self.code.add_constant(Value::str(temp_name.clone()));
                         self.compile_expr(target);
                         self.code.emit(OpCode::SetGlobal(temp_name_idx));
                         self.compile_expr(index);
@@ -1013,7 +1013,7 @@ impl Compiler {
                 } else {
                     self.compile_expr(&Expr::Call {
                         name: Symbol::intern("__mutsu_incdec_nomatch"),
-                        args: vec![Expr::Literal(Value::Str("postfix:<++>".to_string()))],
+                        args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
                     });
                 }
             }
@@ -1023,21 +1023,21 @@ impl Compiler {
                 expr,
             } => {
                 if let Expr::Var(name) = expr.as_ref() {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::Pop);
-                    let name_idx = self.code.add_constant(Value::Str(var_name));
+                    let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PostDecrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
-                        let name_idx = self.code.add_constant(Value::Str(name));
+                        let name_idx = self.code.add_constant(Value::str(name));
                         self.code.emit(OpCode::PostDecrementIndex(name_idx));
                     } else {
                         let temp_name = format!("__mutsu_tmp_dec_{}", self.code.constants.len());
-                        let temp_name_idx = self.code.add_constant(Value::Str(temp_name.clone()));
+                        let temp_name_idx = self.code.add_constant(Value::str(temp_name.clone()));
                         self.compile_expr(target);
                         self.code.emit(OpCode::SetGlobal(temp_name_idx));
                         self.compile_expr(index);
@@ -1046,7 +1046,7 @@ impl Compiler {
                 } else {
                     self.compile_expr(&Expr::Call {
                         name: Symbol::intern("__mutsu_incdec_nomatch"),
-                        args: vec![Expr::Literal(Value::Str("postfix:<-->".to_string()))],
+                        args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
                     });
                 }
             }
@@ -1056,7 +1056,7 @@ impl Compiler {
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::AssignExprLocal(slot));
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                 }
             }
@@ -1066,18 +1066,18 @@ impl Compiler {
                 if keys.len() > 1 {
                     // Multi-key subscript: $<w1 w2 w3> → list of individual captures
                     for key in &keys {
-                        let name_idx = self.code.add_constant(Value::Str(format!("<{}>", key)));
+                        let name_idx = self.code.add_constant(Value::str(format!("<{}>", key)));
                         self.code.emit(OpCode::GetCaptureVar(name_idx));
                     }
                     self.code.emit(OpCode::MakeArray(keys.len() as u32));
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(format!("<{}>", name)));
+                    let name_idx = self.code.add_constant(Value::str(format!("<{}>", name)));
                     self.code.emit(OpCode::GetCaptureVar(name_idx));
                 }
             }
             // Code variable (&foo)
             Expr::CodeVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::GetCodeVar(name_idx));
             }
             // Hash literal
@@ -1085,7 +1085,7 @@ impl Compiler {
                 let n = pairs.len() as u32;
                 for (key, val_opt) in pairs {
                     // Push key as string constant
-                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                    let key_idx = self.code.add_constant(Value::str(key.clone()));
                     self.code.emit(OpCode::LoadConst(key_idx));
                     // Push value (or True if none, for bare colonpairs like :a)
                     if let Some(val_expr) = val_opt {
@@ -1098,7 +1098,7 @@ impl Compiler {
             }
             // Environment variable access (%*ENV<key>)
             Expr::EnvIndex(key) => {
-                let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                let key_idx = self.code.add_constant(Value::str(key.clone()));
                 self.code.emit(OpCode::GetEnvIndex(key_idx));
             }
             // Exists check (:exists)
@@ -1124,7 +1124,7 @@ impl Compiler {
                 if !negated && arg.is_none() && *adverb == ExistsAdverb::None {
                     match target.as_ref() {
                         Expr::EnvIndex(key) => {
-                            let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                            let key_idx = self.code.add_constant(Value::str(key.clone()));
                             self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                             return;
                         }
@@ -1134,7 +1134,7 @@ impl Compiler {
                             && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
                         {
                             if let Expr::Literal(Value::Str(key)) = index.as_ref() {
-                                let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                                let key_idx = self.code.add_constant(Value::str((**key).clone()));
                                 self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                                 return;
                             }
@@ -1186,7 +1186,7 @@ impl Compiler {
             // Reduction ([+] @arr)
             Expr::Reduction { op, expr } => {
                 self.compile_expr(expr);
-                let op_idx = self.code.add_constant(Value::Str(op.clone()));
+                let op_idx = self.code.add_constant(Value::str(op.clone()));
                 self.code.emit(OpCode::Reduction(op_idx));
             }
             // __ROUTINE__ magic
@@ -1203,8 +1203,8 @@ impl Compiler {
                 replacement,
                 samemark,
             } => {
-                let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
-                let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
+                let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
+                let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
@@ -1217,8 +1217,8 @@ impl Compiler {
                 replacement,
                 samemark,
             } => {
-                let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
-                let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
+                let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
+                let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
@@ -1233,8 +1233,8 @@ impl Compiler {
                 complement,
                 squash,
             } => {
-                let from_idx = self.code.add_constant(Value::Str(from.clone()));
-                let to_idx = self.code.add_constant(Value::Str(to.clone()));
+                let from_idx = self.code.add_constant(Value::str(from.clone()));
+                let to_idx = self.code.add_constant(Value::str(to.clone()));
                 self.code.emit(OpCode::Transliterate {
                     from_idx,
                     to_idx,
@@ -1253,7 +1253,7 @@ impl Compiler {
             } => {
                 self.compile_expr(left);
                 self.compile_expr(right);
-                let op_idx = self.code.add_constant(Value::Str(op.clone()));
+                let op_idx = self.code.add_constant(Value::str(op.clone()));
                 self.code.emit(OpCode::HyperOp {
                     op_idx,
                     dwim_left: *dwim_left,
@@ -1328,8 +1328,8 @@ impl Compiler {
                 }
                 self.compile_expr(left);
                 self.compile_expr(right);
-                let meta_idx = self.code.add_constant(Value::Str(meta.clone()));
-                let op_idx = self.code.add_constant(Value::Str(op.clone()));
+                let meta_idx = self.code.add_constant(Value::str(meta.clone()));
+                let op_idx = self.code.add_constant(Value::str(op.clone()));
                 self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
             }
             // InfixFunc (atan2, sprintf): compile sub-expressions, delegate operation
@@ -1377,10 +1377,10 @@ impl Compiler {
                 for r in right {
                     self.compile_expr(r);
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let modifier_idx = modifier
                     .as_ref()
-                    .map(|m| self.code.add_constant(Value::Str(m.clone())));
+                    .map(|m| self.code.add_constant(Value::str(m.clone())));
                 self.code.emit(OpCode::InfixFunc {
                     name_idx,
                     right_arity: right.len() as u32,
@@ -1432,7 +1432,7 @@ impl Compiler {
                         self.compile_expr(expr);
                         let slot = self.alloc_local(name);
                         let key = format!("__state_{}::{}", self.current_package, name);
-                        let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                        let key_idx = self.code.add_constant(Value::str(key.clone()));
                         self.code.state_locals.push((slot as usize, key.clone()));
                         self.code.emit(OpCode::StateVarInit(slot, key_idx));
                         self.code.emit(OpCode::GetLocal(slot));
@@ -1449,10 +1449,10 @@ impl Compiler {
                         let jump_have_value = self.code.emit(OpCode::JumpIfNotNil(0));
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(expr);
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::SetGlobal(name_idx));
                         // Read back the coerced value (SetGlobal coerces list→hash for %)
-                        let name_idx2 = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                         if name.starts_with('@') {
                             self.code.emit(OpCode::GetArrayVar(name_idx2));
                         } else {
@@ -1463,7 +1463,7 @@ impl Compiler {
                         let jump_end = self.code.emit(OpCode::Jump(0));
                         self.code.patch_jump(jump_have_value);
                         self.code.emit(OpCode::Pop);
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
                         if name.starts_with('@') {
                             self.code.emit(OpCode::GetArrayVar(name_idx));
                         } else {
@@ -1475,7 +1475,7 @@ impl Compiler {
                         self.code.emit(OpCode::Dup);
                         self.emit_set_named_var(name);
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::SetVarDynamic {
                         name_idx,
                         dynamic: is_dynamic,
@@ -1524,20 +1524,20 @@ impl Compiler {
                         self.compile_expr(expr);
                         self.code.emit(OpCode::IndirectTypeLookup);
                     } else {
-                        let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
                 }
                 Stmt::RoleDecl { name, .. } => {
                     // Register the role and return the role type object.
                     self.compile_stmt(stmt);
-                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
                 Stmt::Package { name, .. } => {
                     // Register the package and return the type object.
                     self.compile_stmt(stmt);
-                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
                 Stmt::EnumDecl { name, .. } if name.resolve().is_empty() => {
@@ -1566,7 +1566,7 @@ impl Compiler {
                     && args.len() == 1
                 {
                     self.compile_expr(&args[0]);
-                    let method_idx = self.code.add_constant(Value::Str("Array".to_string()));
+                    let method_idx = self.code.add_constant(Value::str_from("Array"));
                     self.code.emit(OpCode::CallMethod {
                         name_idx: method_idx,
                         arity: 0,
@@ -1581,7 +1581,7 @@ impl Compiler {
                     && args.len() == 1
                 {
                     self.compile_expr(&args[0]);
-                    let method_idx = self.code.add_constant(Value::Str("Hash".to_string()));
+                    let method_idx = self.code.add_constant(Value::str_from("Hash"));
                     self.code.emit(OpCode::CallMethod {
                         name_idx: method_idx,
                         arity: 0,
@@ -1595,7 +1595,7 @@ impl Compiler {
                     for arg in args {
                         self.compile_expr(arg);
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::CallOnCodeVar {
                         name_idx,
                         arity: args.len() as u32,
@@ -1720,13 +1720,13 @@ impl Compiler {
                     }
                     self.compile_expr(value);
                     self.compile_expr(index);
-                    let name_idx = self.code.add_constant(Value::Str(name));
+                    let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::IndexAssignExprNamed(name_idx));
                 } else if let Some((name, inner_index)) = Self::index_assign_nested_target(target) {
                     self.compile_expr(value);
                     self.compile_expr(index);
                     self.compile_expr(inner_index);
-                    let name_idx = self.code.add_constant(Value::Str(name));
+                    let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::IndexAssignExprNested(name_idx));
                 } else {
                     // Generic fallback: compile target, then index, then value
@@ -1743,7 +1743,7 @@ impl Compiler {
             }
             Expr::IndirectCodeLookup { package, name } => {
                 self.compile_expr(package);
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::IndirectCodeLookup(name_idx));
             }
             Expr::ControlFlow { kind, label } => match kind {
@@ -1984,7 +1984,7 @@ impl Compiler {
         // Load $_ as the LHS
         let name_idx = self
             .code
-            .add_constant(Value::Str(self.qualify_variable_name("_")));
+            .add_constant(Value::str(self.qualify_variable_name("_")));
         self.code.emit(OpCode::GetGlobal(name_idx));
         // SmartMatchExpr will set $_ to LHS, run RHS, then smartmatch
         let sm_idx = self.code.emit(OpCode::SmartMatchExpr {

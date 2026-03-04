@@ -17,8 +17,8 @@ impl Interpreter {
                     let (result, _, _) = shared.wait();
                     let msg = result.to_string_value();
                     let mut attrs = HashMap::new();
-                    attrs.insert("payload".to_string(), Value::Str(msg.clone()));
-                    attrs.insert("message".to_string(), Value::Str(msg.clone()));
+                    attrs.insert("payload".to_string(), Value::str(msg.clone()));
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
                     let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
@@ -39,7 +39,7 @@ impl Interpreter {
                     Ok(result)
                 }
             }
-            "status" => Ok(Value::Str(shared.status())),
+            "status" => Ok(Value::str(shared.status())),
             "then" => {
                 let block = args.into_iter().next().unwrap_or(Value::Nil);
                 let orig = shared.clone();
@@ -64,7 +64,7 @@ impl Interpreter {
                             let error_val = if let Some(ex) = e.exception {
                                 *ex
                             } else {
-                                Value::Str(e.message)
+                                Value::str(e.message)
                             };
                             new_promise.break_with(
                                 error_val,
@@ -82,7 +82,7 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert(
                         "message".to_string(),
-                        Value::Str(
+                        Value::str(
                             "Access denied to keep/break this Promise; already vowed".to_string(),
                         ),
                     );
@@ -100,12 +100,12 @@ impl Interpreter {
                 let reason_val = args
                     .into_iter()
                     .next()
-                    .unwrap_or_else(|| Value::Str("Died".to_string()));
+                    .unwrap_or_else(|| Value::str_from("Died"));
                 if let Err(_status) = shared.try_break(reason_val) {
                     let mut attrs = HashMap::new();
                     attrs.insert(
                         "message".to_string(),
-                        Value::Str(
+                        Value::str(
                             "Access denied to keep/break this Promise; already vowed".to_string(),
                         ),
                     );
@@ -123,10 +123,10 @@ impl Interpreter {
                 let status = shared.status();
                 if status != "Broken" {
                     let mut attrs = HashMap::new();
-                    attrs.insert("status".to_string(), Value::Str(status.clone()));
+                    attrs.insert("status".to_string(), Value::str(status.clone()));
                     attrs.insert(
                         "message".to_string(),
-                        Value::Str(format!(
+                        Value::str(format!(
                             "Can only call '.cause' on a broken promise (status: {})",
                             status
                         )),
@@ -156,11 +156,11 @@ impl Interpreter {
                             let mut attrs = HashMap::new();
                             attrs.insert(
                                 "payload".to_string(),
-                                Value::Str(result.to_string_value()),
+                                Value::str(result.to_string_value()),
                             );
                             attrs.insert(
                                 "message".to_string(),
-                                Value::Str(result.to_string_value()),
+                                Value::str(result.to_string_value()),
                             );
                             Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                         }
@@ -176,15 +176,15 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
             }
             "WHAT" => Ok(Value::Package(shared.class_name())),
-            "raku" | "perl" => Ok(Value::Str(format!(
+            "raku" | "perl" => Ok(Value::str(format!(
                 "Promise.new(status => {})",
                 shared.status()
             ))),
-            "Str" | "gist" => Ok(Value::Str(format!("Promise({})", shared.status()))),
+            "Str" | "gist" => Ok(Value::str(format!("Promise({})", shared.status()))),
             "isa" => {
                 let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
                     Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name,
+                    Value::Str(name) => name.to_string(),
                     other => other.to_string_value(),
                 };
                 let cn = shared.class_name().resolve();
@@ -235,7 +235,7 @@ impl Interpreter {
             "closed" => Ok(Value::Bool(ch.closed())),
             "Bool" => Ok(Value::Bool(true)),
             "WHAT" => Ok(Value::Package(Symbol::intern("Channel"))),
-            "Str" | "gist" => Ok(Value::Str("Channel".to_string())),
+            "Str" | "gist" => Ok(Value::str_from("Channel")),
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on Channel",
                 method

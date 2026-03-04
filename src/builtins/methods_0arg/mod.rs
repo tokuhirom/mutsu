@@ -132,7 +132,7 @@ pub(crate) fn native_method_0arg(
                 .unwrap_or_default();
             let which_str = format!("{}|{}|Str|{}", allo_name, inner_which, str_part);
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("WHICH".to_string(), Value::Str(which_str));
+            attrs.insert("WHICH".to_string(), Value::str(which_str));
             return Some(Ok(Value::make_instance(
                 crate::symbol::Symbol::intern("ObjAt"),
                 attrs,
@@ -151,10 +151,10 @@ pub(crate) fn native_method_0arg(
                 return Some(Ok(Value::Int(text.chars().count() as i64)));
             }
             "comb" => {
-                let parts: Vec<Value> = text.chars().map(|c| Value::Str(c.to_string())).collect();
+                let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
                 return Some(Ok(Value::array(parts)));
             }
-            "Str" => return Some(Ok(Value::Str(text.clone()))),
+            "Str" => return Some(Ok(Value::str(text.clone()))),
             "list" => {
                 let codepoints: Vec<Value> = text.chars().map(|c| Value::Int(c as i64)).collect();
                 return Some(Ok(Value::array(codepoints)));
@@ -180,11 +180,11 @@ pub(crate) fn native_method_0arg(
     // CompUnit::DependencySpecification methods
     if let Value::CompUnitDepSpec { short_name } = target {
         return match method {
-            "short-name" => Some(Ok(Value::Str(short_name.resolve()))),
+            "short-name" => Some(Ok(Value::str(short_name.resolve()))),
             "version-matcher" => Some(Ok(Value::Bool(true))),
             "auth-matcher" => Some(Ok(Value::Bool(true))),
             "api-matcher" => Some(Ok(Value::Bool(true))),
-            "Str" | "gist" => Some(Ok(Value::Str(short_name.resolve()))),
+            "Str" | "gist" => Some(Ok(Value::str(short_name.resolve()))),
             _ => None,
         };
     }
@@ -221,7 +221,7 @@ fn dispatch_capture(
         "elems" => Some(Ok(Value::Int(positional.len() as i64))),
         "is-lazy" => Some(Ok(Value::Bool(false))),
         "keys" => Some(Ok(Value::array(
-            named.keys().map(|k| Value::Str(k.clone())).collect(),
+            named.keys().map(|k| Value::str(k.clone())).collect(),
         ))),
         "values" => Some(Ok(Value::array(named.values().cloned().collect()))),
         "pairs" => Some(Ok(Value::array(
@@ -244,14 +244,14 @@ fn dispatch_capture(
                     parts.push(format!(":{}({})", k, raku_value(v)));
                 }
             }
-            Some(Ok(Value::Str(format!("\\({})", parts.join(", ")))))
+            Some(Ok(Value::str(format!("\\({})", parts.join(", ")))))
         }
         "gist" | "Str" => {
             let target = Value::Capture {
                 positional: positional.to_vec(),
                 named: named.clone(),
             };
-            Some(Ok(Value::Str(target.to_string_value())))
+            Some(Ok(Value::str(target.to_string_value())))
         }
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
         "WHAT" => Some(Ok(Value::Package(Symbol::intern("Capture")))),
@@ -492,14 +492,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes
                     .get("message")
                     .cloned()
-                    .unwrap_or(Value::Str(String::new()))));
+                    .unwrap_or(Value::str(String::new()))));
             }
             "resume" => return Some(Ok(Value::Nil)),
             "gist" | "Str" => {
                 return Some(Ok(attributes
                     .get("message")
                     .cloned()
-                    .unwrap_or(Value::Str(String::new()))));
+                    .unwrap_or(Value::str(String::new()))));
             }
             _ => {}
         }
@@ -559,23 +559,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                     }
                 }
-                return Some(Ok(Value::Str(gist)));
+                return Some(Ok(Value::str(gist)));
             }
             "Str" => {
                 return Some(Ok(attributes
                     .get("str")
                     .cloned()
-                    .unwrap_or(Value::Str(String::new()))));
+                    .unwrap_or(Value::str(String::new()))));
             }
             "Bool" => return Some(Ok(Value::Bool(true))),
             "orig" => {
                 return Some(Ok(attributes
                     .get("orig")
                     .cloned()
-                    .unwrap_or(Value::Str(String::new()))));
+                    .unwrap_or(Value::str(String::new()))));
             }
             "raku" | "perl" => {
-                return Some(Ok(Value::Str(match_raku_repr(attributes))));
+                return Some(Ok(Value::str(match_raku_repr(attributes))));
             }
             "list" | "Array" => {
                 return Some(Ok(attributes
@@ -591,7 +591,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             _ => {
                 // Delegate unknown methods to string representation
-                let str_val = Value::Str(target.to_string_value());
+                let str_val = Value::str(target.to_string_value());
                 return native_method_0arg(&str_val, Symbol::intern(method));
             }
         }
@@ -735,7 +735,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 ),
             };
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("WHICH".to_string(), Value::Str(which_str));
+            attrs.insert("WHICH".to_string(), Value::str(which_str));
             Some(Ok(Value::make_instance(Symbol::intern("ObjAt"), attrs)))
         }
         "Bool" => {
@@ -749,7 +749,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
-            Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
+            Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
             Value::Array(items, ArrayKind::List)
                 if items.iter().all(|v| matches!(v, Value::Int(_))) =>
             {
@@ -761,9 +761,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         _ => None,
                     })
                     .collect();
-                Some(Ok(Value::Str(s)))
+                Some(Ok(Value::str(s)))
             }
-            _ => Some(Ok(Value::Str(target.to_string_value()))),
+            _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "Int" => {
             let result = match target {
@@ -937,7 +937,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             };
             if let Some(ch) = char::from_u32(code as u32) {
-                Some(Ok(Value::Str(ch.to_string())))
+                Some(Ok(Value::str(ch.to_string())))
             } else {
                 Some(Err(RuntimeError::new(format!(
                     "chr({}) does not map to a valid Unicode character",
@@ -964,7 +964,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .iter()
                 .filter_map(|&code| char::from_u32(code as u32))
                 .collect();
-            Some(Ok(Value::Str(s)))
+            Some(Ok(Value::str(s)))
         }
         "elems" => {
             let result = match target {
@@ -1088,10 +1088,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(Value::Num(builtin_rand() * max)))
         }
-        "uc" => Some(Ok(Value::Str(target.to_string_value().to_uppercase()))),
-        "lc" => Some(Ok(Value::Str(target.to_string_value().to_lowercase()))),
-        "fc" => Some(Ok(Value::Str(unicode_foldcase(&target.to_string_value())))),
-        "tc" => Some(Ok(Value::Str(titlecase_string(&target.to_string_value())))),
+        "uc" => Some(Ok(Value::str(target.to_string_value().to_uppercase()))),
+        "lc" => Some(Ok(Value::str(target.to_string_value().to_lowercase()))),
+        "fc" => Some(Ok(Value::str(unicode_foldcase(&target.to_string_value())))),
+        "tc" => Some(Ok(Value::str(titlecase_string(&target.to_string_value())))),
         "sign" => {
             let result = match target {
                 Value::Int(i) => Value::Int(i.signum()),
@@ -1184,7 +1184,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::array(reversed)))
                 }
             }
-            Value::Str(s) => Some(Ok(Value::Str(s.chars().rev().collect()))),
+            Value::Str(s) => Some(Ok(Value::str(s.chars().rev().collect()))),
             _ => None,
         },
         "unique" => match target {
@@ -1294,7 +1294,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let s = target.to_string_value();
             let words: Vec<Value> = s
                 .split_whitespace()
-                .map(|w| Value::Str(w.to_string()))
+                .map(|w| Value::str(w.to_string()))
                 .collect();
             Some(Ok(Value::array(words)))
         }
@@ -1314,21 +1314,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let s = target.to_string_value();
             let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
                 .into_iter()
-                .map(Value::Str)
+                .map(Value::str)
                 .collect();
             Some(Ok(Value::array(lines)))
         }
-        "trim" => Some(Ok(Value::Str(target.to_string_value().trim().to_string()))),
-        "trim-leading" => Some(Ok(Value::Str(
+        "trim" => Some(Ok(Value::str(target.to_string_value().trim().to_string()))),
+        "trim-leading" => Some(Ok(Value::str(
             target.to_string_value().trim_start().to_string(),
         ))),
-        "trim-trailing" => Some(Ok(Value::Str(
+        "trim-trailing" => Some(Ok(Value::str(
             target.to_string_value().trim_end().to_string(),
         ))),
         "flip" => {
             let s = target.to_string_value();
             let reversed: String = s.graphemes(true).rev().collect();
-            Some(Ok(Value::Str(reversed)))
+            Some(Ok(Value::str(reversed)))
         }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
@@ -1351,7 +1351,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 },
             ))))
         }
-        "chomp" => Some(Ok(Value::Str(
+        "chomp" => Some(Ok(Value::str(
             target.to_string_value().trim_end_matches('\n').to_string(),
         ))),
         "chop" => {
@@ -1363,11 +1363,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             let mut s = target.to_string_value();
             s.pop();
-            Some(Ok(Value::Str(s)))
+            Some(Ok(Value::str(s)))
         }
         "comb" => {
             let s = target.to_string_value();
-            let parts: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+            let parts: Vec<Value> = s.chars().map(|c| Value::str(c.to_string())).collect();
             Some(Ok(Value::array(parts)))
         }
         "join" => match target {
@@ -1377,42 +1377,42 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()
                     .join("");
-                Some(Ok(Value::Str(joined)))
+                Some(Ok(Value::str(joined)))
             }
-            _ => Some(Ok(Value::Str(target.to_string_value()))),
+            _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "gist" | "raku" | "perl" => match target {
             Value::Bool(b) => {
                 if method == "gist" {
-                    Some(Ok(Value::Str(
+                    Some(Ok(Value::str(
                         if *b { "True" } else { "False" }.to_string(),
                     )))
                 } else {
-                    Some(Ok(Value::Str(
+                    Some(Ok(Value::str(
                         if *b { "Bool::True" } else { "Bool::False" }.to_string(),
                     )))
                 }
             }
-            Value::Nil => Some(Ok(Value::Str("(Any)".to_string()))),
+            Value::Nil => Some(Ok(Value::str_from("(Any)"))),
             Value::Rat(n, d) => {
                 if *d == 0 {
                     if *n == 0 {
-                        Some(Ok(Value::Str("NaN".to_string())))
+                        Some(Ok(Value::str_from("NaN")))
                     } else if *n > 0 {
-                        Some(Ok(Value::Str("Inf".to_string())))
+                        Some(Ok(Value::str_from("Inf")))
                     } else {
-                        Some(Ok(Value::Str("-Inf".to_string())))
+                        Some(Ok(Value::str_from("-Inf")))
                     }
                 } else if *n % *d == 0 {
                     if method == "raku" || method == "perl" {
                         // .raku on Rat always shows decimal: 27.0, not 27
-                        Some(Ok(Value::Str(format!("{}.0", *n / *d))))
+                        Some(Ok(Value::str(format!("{}.0", *n / *d))))
                     } else {
-                        Some(Ok(Value::Str(format!("{}", *n / *d))))
+                        Some(Ok(Value::str(format!("{}", *n / *d))))
                     }
                 } else {
                     if method == "gist" {
-                        return Some(Ok(Value::Str(target.to_string_value())));
+                        return Some(Ok(Value::str(target.to_string_value())));
                     }
                     let mut dd = *d;
                     while dd % 2 == 0 {
@@ -1423,9 +1423,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     if dd == 1 {
                         let val = *n as f64 / *d as f64;
-                        Some(Ok(Value::Str(format!("{}", val))))
+                        Some(Ok(Value::str(format!("{}", val))))
                     } else {
-                        Some(Ok(Value::Str(format!("<{}/{}>", n, d))))
+                        Some(Ok(Value::str(format!("<{}/{}>", n, d))))
                     }
                 }
             }
@@ -1438,7 +1438,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(attributes
                     .get(attr_key)
                     .cloned()
-                    .unwrap_or_else(|| Value::Str(format!("{}()", class_name)))))
+                    .unwrap_or_else(|| Value::str(format!("{}()", class_name)))))
             }
             Value::Instance {
                 class_name,
@@ -1454,7 +1454,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .get("line")
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|| "0".to_string());
-                    Some(Ok(Value::Str(format!("{} at line {}", file, line))))
+                    Some(Ok(Value::str(format!("{} at line {}", file, line))))
                 } else {
                     // .raku: CallFrame.new(...)
                     let file = attributes
@@ -1465,7 +1465,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .get("line")
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|| "0".to_string());
-                    Some(Ok(Value::Str(format!(
+                    Some(Ok(Value::str(format!(
                         "CallFrame.new(annotations => {{:file(\"{}\"), :line(\"{}\")}}, my => {{}})",
                         file, line
                     ))))
@@ -1483,7 +1483,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 } else {
                     ""
                 };
-                Some(Ok(Value::Str(format!("v{}{}", s, suffix))))
+                Some(Ok(Value::str(format!("v{}{}", s, suffix))))
             }
             Value::Str(s) => {
                 if method == "raku" || method == "perl" {
@@ -1495,16 +1495,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .replace('\t', "\\t")
                         .replace('\r', "\\r")
                         .replace('\0', "\\0");
-                    Some(Ok(Value::Str(format!("\"{}\"", escaped))))
+                    Some(Ok(Value::str(format!("\"{}\"", escaped))))
                 } else {
                     Some(Ok(Value::Str(s.clone())))
                 }
             }
             Value::Array(_, _) if method == "raku" || method == "perl" => {
-                Some(Ok(Value::Str(raku_value(target))))
+                Some(Ok(Value::str(raku_value(target))))
             }
             Value::Seq(_) if method == "raku" || method == "perl" => {
-                Some(Ok(Value::Str(raku_value(target))))
+                Some(Ok(Value::str(raku_value(target))))
             }
             Value::Array(items, kind) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
@@ -1531,7 +1531,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 }
                 let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                Some(Ok(Value::Str(gist_array_wrap(&inner, *kind))))
+                Some(Ok(Value::str(gist_array_wrap(&inner, *kind))))
             }
             Value::Seq(items) | Value::Slip(items) if method == "gist" => {
                 fn gist_item(v: &Value) -> String {
@@ -1558,11 +1558,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 }
                 let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-                Some(Ok(Value::Str(format!("({})", inner))))
+                Some(Ok(Value::str(format!("({})", inner))))
             }
             Value::Slip(items) if method == "raku" || method == "perl" => {
                 let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                Some(Ok(Value::Str(format!("slip({})", inner))))
+                Some(Ok(Value::str(format!("slip({})", inner))))
             }
             Value::Junction { kind, values } if method == "raku" || method == "perl" => {
                 let kind_str = match kind {
@@ -1572,31 +1572,31 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     crate::value::JunctionKind::None => "none",
                 };
                 let inner = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                Some(Ok(Value::Str(format!("{}({})", kind_str, inner))))
+                Some(Ok(Value::str(format!("{}({})", kind_str, inner))))
             }
             Value::Pair(_, _) | Value::ValuePair(_, _) => {
                 if method == "raku" || method == "perl" {
-                    Some(Ok(Value::Str(raku_value(target))))
+                    Some(Ok(Value::str(raku_value(target))))
                 } else {
-                    Some(Ok(Value::Str(target.to_string_value())))
+                    Some(Ok(Value::str(target.to_string_value())))
                 }
             }
             Value::BigInt(i) => {
                 if method == "raku" || method == "perl" {
-                    Some(Ok(Value::Str(format!("{i}.0"))))
+                    Some(Ok(Value::str(format!("{i}.0"))))
                 } else {
-                    Some(Ok(Value::Str(i.to_string())))
+                    Some(Ok(Value::str(i.to_string())))
                 }
             }
-            Value::Int(i) => Some(Ok(Value::Str(format!("{}", i)))),
+            Value::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
             Value::Complex(r, i) => {
                 if method == "raku" || method == "perl" {
-                    Some(Ok(Value::Str(format!(
+                    Some(Ok(Value::str(format!(
                         "<{}>",
                         crate::value::format_complex(*r, *i)
                     ))))
                 } else {
-                    Some(Ok(Value::Str(crate::value::format_complex(*r, *i))))
+                    Some(Ok(Value::str(crate::value::format_complex(*r, *i))))
                 }
             }
             Value::Hash(map) => {
@@ -1616,7 +1616,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             }
                         })
                         .collect();
-                    Some(Ok(Value::Str(format!("{{{}}}", parts.join(", ")))))
+                    Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
                 } else {
                     // gist
                     let mut sorted_keys: Vec<&String> = map.keys().collect();
@@ -1625,10 +1625,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .iter()
                         .map(|k| format!("{} => {}", k, map[*k].to_string_value()))
                         .collect();
-                    Some(Ok(Value::Str(format!("{{{}}}", parts.join(", ")))))
+                    Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
                 }
             }
-            _ => Some(Ok(Value::Str(target.to_string_value()))),
+            _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "head" => match target {
             Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
@@ -1715,10 +1715,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
-        "tclc" => Some(Ok(Value::Str(crate::value::tclc_str(
+        "tclc" => Some(Ok(Value::str(crate::value::tclc_str(
             &target.to_string_value(),
         )))),
-        "wordcase" => Some(Ok(Value::Str(crate::value::wordcase_str(
+        "wordcase" => Some(Ok(Value::str(crate::value::wordcase_str(
             &target.to_string_value(),
         )))),
         "succ" => match target {
@@ -1731,13 +1731,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Bool(_) => Some(Ok(Value::Bool(true))),
             Value::Str(s) => {
                 if s.is_empty() {
-                    Some(Ok(Value::Str(String::new())))
+                    Some(Ok(Value::str(String::new())))
                 } else {
                     let mut chars: Vec<char> = s.chars().collect();
                     if let Some(last) = chars.last_mut() {
                         *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
                     }
-                    Some(Ok(Value::Str(chars.into_iter().collect())))
+                    Some(Ok(Value::str(chars.into_iter().collect())))
                 }
             }
             _ => Some(Ok(target.clone())),

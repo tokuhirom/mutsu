@@ -347,19 +347,19 @@ impl Interpreter {
     fn make_regex_eval_env(&self, caps: &RegexCaptures) -> Env {
         let mut env = self.env.clone();
         for (i, val) in caps.positional.iter().enumerate() {
-            env.insert(i.to_string(), Value::Str(val.clone()));
+            env.insert(i.to_string(), Value::str(val.clone()));
         }
         let match_list: Vec<Value> = caps
             .positional
             .iter()
-            .map(|s| Value::Str(s.clone()))
+            .map(|s| Value::str(s.clone()))
             .collect();
         env.insert("/".to_string(), Value::array(match_list));
         for (k, v) in &caps.named {
             let value = if v.len() == 1 {
-                Value::Str(v[0].clone())
+                Value::str(v[0].clone())
             } else {
-                Value::array(v.iter().cloned().map(Value::Str).collect())
+                Value::array(v.iter().cloned().map(Value::str).collect())
             };
             env.insert(format!("<{}>", k), value);
         }
@@ -474,7 +474,7 @@ impl Interpreter {
                 if let Some(value) = value {
                     let pattern = match value {
                         Value::Regex(pat) => pat,
-                        Value::Str(s) => s,
+                        Value::Str(s) => s.to_string(),
                         Value::Nil => String::new(),
                         other => other.to_string_value(),
                     };
@@ -2192,7 +2192,7 @@ impl Interpreter {
     ) -> Option<String> {
         let mut env = self.make_regex_eval_env(caps);
         // Set $_ to the match target string
-        env.insert("_".to_string(), Value::Str(target.to_string()));
+        env.insert("_".to_string(), Value::str(target.to_string()));
         // Add variables declared via :my inside the regex
         for (k, v) in &caps.regex_vars {
             env.insert(k.clone(), v.clone());
@@ -2265,21 +2265,21 @@ impl Interpreter {
         let mut env = self.env.clone();
         // Set positional capture variables ($0, $1, etc.)
         for (i, val) in caps.positional.iter().enumerate() {
-            env.insert(i.to_string(), Value::Str(val.clone()));
+            env.insert(i.to_string(), Value::str(val.clone()));
         }
         // Build $/ as an array for $/[n] access
         let match_list: Vec<Value> = caps
             .positional
             .iter()
-            .map(|s| Value::Str(s.clone()))
+            .map(|s| Value::str(s.clone()))
             .collect();
         env.insert("/".to_string(), Value::array(match_list));
         // Set named captures
         for (k, v) in &caps.named {
             let value = if v.len() == 1 {
-                Value::Str(v[0].clone())
+                Value::str(v[0].clone())
             } else {
-                Value::array(v.iter().cloned().map(Value::Str).collect())
+                Value::array(v.iter().cloned().map(Value::str).collect())
             };
             env.insert(format!("<{}>", k), value);
         }

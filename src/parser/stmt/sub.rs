@@ -421,7 +421,7 @@ pub(super) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr
     let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, ')')?;
     let name = match &expr {
-        Expr::Literal(Value::Str(s)) => s.clone(),
+        Expr::Literal(Value::Str(s)) => s.to_string(),
         Expr::BareWord(s) => s.clone(),
         _ => "__INDIRECT_DECL_NAME__".to_string(),
     };
