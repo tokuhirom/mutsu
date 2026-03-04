@@ -827,6 +827,13 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ref class_name,
             ref attributes,
             ..
+        } if class_name == "Duration" => {
+            attributes.get("value").cloned().unwrap_or(Value::Num(0.0))
+        }
+        Value::Instance {
+            ref class_name,
+            ref attributes,
+            ..
         } if class_name == "Date" => {
             let (y, m, d) = crate::builtins::methods_0arg::temporal::date_attrs(attributes);
             let epoch = crate::builtins::methods_0arg::temporal::civil_to_epoch_days(y, m, d);

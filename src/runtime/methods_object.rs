@@ -330,8 +330,14 @@ impl Interpreter {
                     return Ok(Self::version_from_value(arg));
                 }
                 "Duration" => {
-                    let secs = args.first().map(to_float_value).unwrap_or(Some(0.0));
-                    return Ok(Value::Num(secs.unwrap_or(0.0)));
+                    let secs = args
+                        .first()
+                        .map(to_float_value)
+                        .unwrap_or(Some(0.0))
+                        .unwrap_or(0.0);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("value".to_string(), Value::Num(secs));
+                    return Ok(Value::make_instance(Symbol::intern("Duration"), attrs));
                 }
                 "Date" => {
                     use crate::builtins::methods_0arg::temporal;
@@ -484,11 +490,13 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Instant" => {
-                                let epoch = match attributes.get("value") {
+                                let tai = match attributes.get("value") {
                                     Some(Value::Num(n)) => *n,
                                     Some(Value::Int(n)) => *n as f64,
                                     _ => 0.0,
                                 };
+                                // Convert from TAI (Instant) to POSIX
+                                let epoch = temporal::instant_to_posix(tai);
                                 let total_i = epoch.floor() as i64;
                                 let frac = epoch - total_i as f64;
                                 let day_secs = total_i.rem_euclid(86400);

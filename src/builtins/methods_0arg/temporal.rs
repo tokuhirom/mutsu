@@ -420,6 +420,71 @@ pub fn day_fraction(hour: i64, minute: i64, second: f64) -> f64 {
     (hour as f64 * 3600.0 + minute as f64 * 60.0 + second) / 86400.0
 }
 
+/// Leap seconds table: (posix_timestamp_of_insertion, cumulative_leap_seconds).
+/// Each entry marks a point where a leap second was inserted.
+/// Raku's Instant uses TAI-like time = POSIX + offset (including leap seconds).
+const LEAP_SECONDS: &[(i64, i64)] = &[
+    (63_072_000, 10),    // 1972-01-01
+    (78_796_800, 11),    // 1972-07-01
+    (94_694_400, 12),    // 1973-01-01
+    (126_230_400, 13),   // 1974-01-01
+    (157_766_400, 14),   // 1975-01-01
+    (189_302_400, 15),   // 1976-01-01
+    (220_924_800, 16),   // 1977-01-01
+    (252_460_800, 17),   // 1978-01-01
+    (283_996_800, 18),   // 1979-01-01
+    (315_532_800, 19),   // 1980-01-01
+    (362_793_600, 20),   // 1981-07-01
+    (394_329_600, 21),   // 1982-07-01
+    (425_865_600, 22),   // 1983-07-01
+    (489_024_000, 23),   // 1985-07-01
+    (567_993_600, 24),   // 1988-01-01
+    (631_152_000, 25),   // 1990-01-01
+    (662_688_000, 26),   // 1991-01-01
+    (709_948_800, 27),   // 1992-07-01
+    (741_484_800, 28),   // 1993-07-01
+    (773_020_800, 29),   // 1994-07-01
+    (820_454_400, 30),   // 1996-01-01
+    (867_715_200, 31),   // 1997-07-01
+    (915_148_800, 32),   // 1999-01-01
+    (1_136_073_600, 33), // 2006-01-01
+    (1_230_768_000, 34), // 2009-01-01
+    (1_341_100_800, 35), // 2012-07-01
+    (1_435_708_800, 36), // 2015-07-01
+    (1_483_228_800, 37), // 2017-01-01
+];
+
+/// Count of leap seconds at a given POSIX timestamp.
+pub fn leap_seconds_at(posix: f64) -> i64 {
+    let posix_i = posix.floor() as i64;
+    let mut result = 0;
+    for &(threshold, cumulative) in LEAP_SECONDS {
+        if posix_i >= threshold {
+            result = cumulative;
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+/// Convert POSIX timestamp to Raku Instant value (TAI-like, includes leap seconds).
+pub fn posix_to_instant(posix: f64) -> f64 {
+    posix + leap_seconds_at(posix) as f64
+}
+
+/// Convert Raku Instant value back to POSIX timestamp.
+pub fn instant_to_posix(instant: f64) -> f64 {
+    // Binary search: find posix such that posix + leap_seconds_at(posix) == instant
+    // Simple approach: subtract leap seconds iteratively
+    let mut posix = instant;
+    for _ in 0..3 {
+        let ls = leap_seconds_at(posix) as f64;
+        posix = instant - ls;
+    }
+    posix
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

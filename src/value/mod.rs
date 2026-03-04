@@ -978,9 +978,10 @@ impl Value {
 
     /// Create an Instant value from the current system time.
     pub(crate) fn make_instant_now() -> Self {
-        let secs = current_time_secs_f64();
+        let posix = current_time_secs_f64();
+        let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(posix);
         let mut attrs = HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(secs));
+        attrs.insert("value".to_string(), Value::Num(tai));
         Value::make_instance(Symbol::intern("Instant"), attrs)
     }
 

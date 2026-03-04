@@ -53,9 +53,10 @@ pub fn date_method_0arg(
         }
         "DateTime" => Some(Ok(make_datetime(year, month, day, 0, 0, 0.0, 0))),
         "Instant" => {
-            let epoch = civil_to_epoch_days(year, month, day) as f64 * 86400.0;
+            let posix = civil_to_epoch_days(year, month, day) as f64 * 86400.0;
+            let tai = posix_to_instant(posix);
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::Num(epoch));
+            attrs.insert("value".to_string(), Value::Num(tai));
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
         "raku" | "perl" => Some(Ok(Value::str(format!(
@@ -143,9 +144,10 @@ pub fn datetime_method_0arg(
         )))),
         "day-fraction" => Some(Ok(Value::Num(day_fraction(hour, minute, second)))),
         "Instant" => {
-            let epoch = datetime_to_posix(year, month, day, hour, minute, second, timezone);
+            let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
+            let tai = posix_to_instant(posix);
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::Num(epoch));
+            attrs.insert("value".to_string(), Value::Num(tai));
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
         "DateTime" => Some(Ok(make_datetime(

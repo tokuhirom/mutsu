@@ -460,9 +460,9 @@ impl Interpreter {
                 .collect();
             if name == "Instant" && normalized_method == "from_posix" {
                 let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
+                let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(secs);
                 let mut attrs = HashMap::new();
-                // Match Rakudo's Instant.from-posix behavior (TAI includes leap-second offset).
-                attrs.insert("value".to_string(), Value::Num(secs + 10.0));
+                attrs.insert("value".to_string(), Value::Num(tai));
                 return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
             }
             if name == "Supply" && method == "interval" {

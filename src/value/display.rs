@@ -512,6 +512,18 @@ impl Value {
                 class_name,
                 attributes,
                 ..
+            } if class_name == "Duration" => {
+                let val = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                if val == val.floor() {
+                    format!("{}", val as i64)
+                } else {
+                    format!("{}", val)
+                }
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
             } if class_name == "Signature" => attributes
                 .get("gist")
                 .map(|v: &Value| v.to_string_value())
