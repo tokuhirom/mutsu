@@ -20,6 +20,7 @@ mod vm_misc_ops;
 mod vm_register_ops;
 mod vm_set_ops;
 mod vm_string_regex_ops;
+mod vm_var_assign_ops;
 mod vm_var_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
