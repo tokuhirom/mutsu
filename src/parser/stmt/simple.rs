@@ -556,6 +556,72 @@ pub(in crate::parser) fn match_user_declared_postfix_op(input: &str) -> Option<(
     })
 }
 
+/// Check if an operator symbol would conflict with core language syntax.
+/// These operators are registered as subs but should not be matched as infix
+/// operators during expression parsing because they have fixed syntactic meaning.
+fn is_syntax_conflicting_infix(op: &str) -> bool {
+    matches!(
+        op,
+        ";" | ")" | "]" | "}" | "," | ":" | "=" | "=>" | "{" | "(" | "["
+    )
+}
+
+/// Match a user-declared infix operator (symbol form) against the current input.
+/// Returns `(symbol, consumed_len)` when input begins with an in-scope
+/// `infix:<...>` operator symbol. This handles both non-alphabetic symbols
+/// (e.g. `©`, `×`) and mixed symbols containing non-word characters (e.g. `_<_`).
+pub(in crate::parser) fn match_user_declared_infix_symbol_op(
+    input: &str,
+) -> Option<(String, usize)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize)> = None;
+
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let Some(op) = name
+                    .strip_prefix("infix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                else {
+                    continue;
+                };
+                if op.is_empty() {
+                    continue;
+                }
+                // Skip operators whose symbols conflict with language syntax
+                if is_syntax_conflicting_infix(op) {
+                    continue;
+                }
+                if !input.starts_with(op) {
+                    continue;
+                }
+                let consumed = op.len();
+                // For word-like operators, require identifier boundary.
+                if op
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len)| consumed > *best_len)
+                {
+                    best = Some((op.to_string(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
 /// Register a user-declared term symbol.
 /// The canonical name must be in `term:<...>` form.
 pub(in crate::parser) fn register_user_term_symbol(name: &str) {
