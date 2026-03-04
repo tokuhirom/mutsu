@@ -211,7 +211,7 @@ impl Interpreter {
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Int(i)) => Value::Int(i.abs()),
-            Some(Value::BigInt(n)) => Value::BigInt(n.abs()),
+            Some(Value::BigInt(n)) => Value::bigint(n.as_ref().abs()),
             Some(Value::Num(f)) => Value::Num(f.abs()),
             Some(Value::Rat(n, d)) => Value::Rat(n.abs(), d),
             Some(Value::Complex(r, i)) => Value::Num((r * r + i * i).sqrt()),
@@ -233,7 +233,7 @@ pub(super) fn builtin_val(args: &[Value]) -> Value {
         let mut mixins = StdHashMap::new();
         // Store the original string (with whitespace) as the Str component
         mixins.insert("Str".to_string(), Value::str(original.to_string()));
-        Value::Mixin(Box::new(val), mixins)
+        Value::mixin(val, mixins)
     }
 
     // Try complex (must end with 'i')
@@ -513,32 +513,32 @@ impl Interpreter {
                 Value::Range(i64::MIN, *b)
             }
             (Value::Str(a), Value::Str(b)) => Value::GenericRange {
-                start: Box::new(Value::Str(a.clone())),
-                end: Box::new(Value::Str(b.clone())),
+                start: Arc::new(Value::Str(a.clone())),
+                end: Arc::new(Value::Str(b.clone())),
                 excl_start: false,
                 excl_end: false,
             },
             (l, r) if l.is_numeric() && r.is_numeric() => Value::GenericRange {
-                start: Box::new(l.clone()),
-                end: Box::new(r.clone()),
+                start: Arc::new(l.clone()),
+                end: Arc::new(r.clone()),
                 excl_start: false,
                 excl_end: false,
             },
             (Value::Str(a), r) if r.is_numeric() => Value::GenericRange {
-                start: Box::new(Value::Str(a.clone())),
-                end: Box::new(r.clone()),
+                start: Arc::new(Value::Str(a.clone())),
+                end: Arc::new(r.clone()),
                 excl_start: false,
                 excl_end: false,
             },
             (l, Value::Str(b)) if l.is_numeric() => Value::GenericRange {
-                start: Box::new(l.clone()),
-                end: Box::new(Value::Str(b.clone())),
+                start: Arc::new(l.clone()),
+                end: Arc::new(Value::Str(b.clone())),
                 excl_start: false,
                 excl_end: false,
             },
             (_, Value::Sub(_)) | (Value::Sub(_), _) => Value::GenericRange {
-                start: Box::new(left),
-                end: Box::new(right),
+                start: Arc::new(left),
+                end: Arc::new(right),
                 excl_start: false,
                 excl_end: false,
             },

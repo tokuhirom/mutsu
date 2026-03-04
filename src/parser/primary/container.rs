@@ -663,8 +663,10 @@ fn parse_quote_word_list<'a>(
         // Single-word angle brackets: <7+8i> produces plain Complex, not ComplexStr
         // (Raku has no ComplexStr allomorph for single-element < >)
         let expr = match expr {
-            Expr::Literal(Value::Mixin(inner, _)) if matches!(*inner, Value::Complex(..)) => {
-                Expr::Literal(*inner)
+            Expr::Literal(Value::Mixin(inner, _))
+                if matches!(inner.as_ref(), Value::Complex(..)) =>
+            {
+                Expr::Literal(inner.as_ref().clone())
             }
             other => other,
         };
@@ -813,7 +815,7 @@ fn angle_word_expr(word: &str) -> Expr {
 fn make_allomorphic_expr(val: Value, word: &str) -> Expr {
     let mut mixins = std::collections::HashMap::new();
     mixins.insert("Str".to_string(), Value::str(word.to_string()));
-    Expr::Literal(Value::Mixin(Box::new(val), mixins))
+    Expr::Literal(Value::mixin(val, mixins))
 }
 
 fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {

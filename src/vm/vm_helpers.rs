@@ -355,8 +355,8 @@ impl VM {
             Value::Int(i) => i
                 .checked_add(1)
                 .map(Value::Int)
-                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) + 1)),
-            Value::BigInt(n) => Value::from_bigint(n + 1),
+                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(*i) + 1)),
+            Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
             Value::Str(s) => {
@@ -382,8 +382,8 @@ impl VM {
             Value::Int(i) => i
                 .checked_sub(1)
                 .map(Value::Int)
-                .unwrap_or_else(|| Value::BigInt(num_bigint::BigInt::from(*i) - 1)),
-            Value::BigInt(n) => Value::from_bigint(n - 1),
+                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(*i) - 1)),
+            Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => {
@@ -1866,7 +1866,7 @@ impl VM {
 
         let big_val = match &value {
             Value::Int(n) => NumBigInt::from(*n),
-            Value::BigInt(n) => n.clone(),
+            Value::BigInt(n) => (**n).clone(),
             _ => return value,
         };
 
@@ -1874,7 +1874,7 @@ impl VM {
         wrapped
             .to_i64()
             .map(Value::Int)
-            .unwrap_or_else(|| Value::BigInt(wrapped))
+            .unwrap_or_else(|| Value::bigint(wrapped))
     }
 }
 

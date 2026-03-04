@@ -52,7 +52,7 @@ impl Interpreter {
             return Ok(result);
         }
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
-            return Ok(Value::Regex(pattern));
+            return Ok(Value::regex(pattern));
         }
         if let Some(variants) = self.enum_types.get(name).cloned() {
             let Some(first) = args.first().cloned() else {

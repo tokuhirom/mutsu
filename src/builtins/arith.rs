@@ -1,5 +1,7 @@
 #![allow(clippy::result_large_err)]
 
+use std::sync::Arc;
+
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
@@ -9,7 +11,7 @@ use num_traits::{ToPrimitive, Zero};
 fn as_bigint(value: &Value) -> Option<NumBigInt> {
     match value {
         Value::Int(i) => Some(NumBigInt::from(*i)),
-        Value::BigInt(i) => Some(i.clone()),
+        Value::BigInt(i) => Some((**i).clone()),
         _ => None,
     }
 }
@@ -154,8 +156,8 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             let excl_start = matches!(&left, Value::RangeExclStart(..) | Value::RangeExclBoth(..));
             let excl_end = matches!(&left, Value::RangeExcl(..) | Value::RangeExclBoth(..));
             return Value::GenericRange {
-                start: Box::new(arith_sub(Value::Int(*a), rhs.clone())),
-                end: Box::new(arith_sub(Value::Int(*b), rhs.clone())),
+                start: Arc::new(arith_sub(Value::Int(*a), rhs.clone())),
+                end: Arc::new(arith_sub(Value::Int(*b), rhs.clone())),
                 excl_start,
                 excl_end,
             };
@@ -237,7 +239,7 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
                     if let Some(product) = a.checked_mul(b) {
                         Value::Int(product)
                     } else {
-                        Value::BigInt(NumBigInt::from(a) * NumBigInt::from(b))
+                        Value::bigint(NumBigInt::from(a) * NumBigInt::from(b))
                     }
                 }
                 (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
@@ -258,7 +260,7 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
                     if let Some(product) = a.checked_mul(b) {
                         Value::Int(product)
                     } else {
-                        Value::BigInt(NumBigInt::from(a) * NumBigInt::from(b))
+                        Value::bigint(NumBigInt::from(a) * NumBigInt::from(b))
                     }
                 }
                 (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
@@ -312,8 +314,8 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                     return Err(RuntimeError::numeric_divide_by_zero());
                 }
                 let bb = NumBigInt::from(*b);
-                if (a % &bb).is_zero() {
-                    Value::from_bigint(a / bb)
+                if (&**a % &bb).is_zero() {
+                    Value::from_bigint(&**a / bb)
                 } else {
                     Value::Num((a.to_string().parse::<f64>().unwrap_or(0.0)) / (*b as f64))
                 }
@@ -323,8 +325,8 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                     return Err(RuntimeError::numeric_divide_by_zero());
                 }
                 let aa = NumBigInt::from(*a);
-                if (&aa % b).is_zero() {
-                    Value::from_bigint(aa / b)
+                if (&aa % &**b).is_zero() {
+                    Value::from_bigint(aa / &**b)
                 } else {
                     Value::Num((*a as f64) / b.to_string().parse::<f64>().unwrap_or(1.0))
                 }
@@ -333,8 +335,8 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                 if b.is_zero() {
                     return Err(RuntimeError::numeric_divide_by_zero());
                 }
-                if (a % b).is_zero() {
-                    Value::from_bigint(a / b)
+                if (&**a % &**b).is_zero() {
+                    Value::from_bigint(&**a / &**b)
                 } else {
                     Value::Num(
                         a.to_string().parse::<f64>().unwrap_or(0.0)
@@ -403,18 +405,18 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
                 (Value::BigInt(_), Value::Int(0)) => {
                     return Err(RuntimeError::new("Modulo by zero"));
                 }
-                (Value::Int(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+                (Value::Int(_), Value::BigInt(b)) if b.is_zero() => {
                     return Err(RuntimeError::new("Modulo by zero"));
                 }
-                (Value::BigInt(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+                (Value::BigInt(_), Value::BigInt(b)) if b.is_zero() => {
                     return Err(RuntimeError::new("Modulo by zero"));
                 }
                 (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
-                (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a % b),
+                (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a.as_ref() % b),
                 (Value::Int(a), Value::BigInt(b)) => {
-                    Value::from_bigint(num_bigint::BigInt::from(a) % b)
+                    Value::from_bigint(num_bigint::BigInt::from(a) % b.as_ref())
                 }
-                (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a % b),
+                (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a.as_ref() % b.as_ref()),
                 (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
@@ -429,18 +431,18 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::BigInt(_), Value::Int(0)) => {
                 return Err(RuntimeError::new("Modulo by zero"));
             }
-            (Value::Int(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+            (Value::Int(_), Value::BigInt(b)) if b.is_zero() => {
                 return Err(RuntimeError::new("Modulo by zero"));
             }
-            (Value::BigInt(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+            (Value::BigInt(_), Value::BigInt(b)) if b.is_zero() => {
                 return Err(RuntimeError::new("Modulo by zero"));
             }
             (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
-            (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a % b),
+            (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a.as_ref() % b),
             (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(num_bigint::BigInt::from(a) % b)
+                Value::from_bigint(num_bigint::BigInt::from(a) % b.as_ref())
             }
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a % b),
+            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a.as_ref() % b.as_ref()),
             (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
             (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
             (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
@@ -501,7 +503,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     // Overflow: use BigInt
                     use num_bigint::BigInt;
                     let base = BigInt::from(a);
-                    Value::BigInt(base.pow(b as u32))
+                    Value::bigint(base.pow(b as u32))
                 }
             }
             (Value::Int(a), Value::Int(b)) => {
@@ -543,22 +545,22 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
             (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
             (Value::BigInt(a), Value::Int(b)) if b >= 0 => {
                 if let Ok(exp_u) = u32::try_from(b) {
-                    Value::BigInt(a.pow(exp_u))
+                    Value::bigint((*a).clone().pow(exp_u))
                 } else {
-                    Value::Num(a.to_f64().unwrap_or(0.0).powf(b as f64))
+                    Value::Num(a.as_ref().to_f64().unwrap_or(0.0).powf(b as f64))
                 }
             }
             (Value::BigInt(a), Value::Int(b)) => {
-                if a == NumBigInt::from(1) {
+                if *a == NumBigInt::from(1) {
                     Value::Int(1)
-                } else if a == NumBigInt::from(-1) {
+                } else if *a == NumBigInt::from(-1) {
                     if (-b) % 2 == 0 {
                         Value::Int(1)
                     } else {
                         Value::Int(-1)
                     }
                 } else {
-                    Value::Num(a.to_f64().unwrap_or(0.0).powf(b as f64))
+                    Value::Num(a.as_ref().to_f64().unwrap_or(0.0).powf(b as f64))
                 }
             }
             (Value::Int(a), Value::Num(b)) => {
@@ -571,7 +573,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                             Value::Int(result)
                         } else {
                             use num_bigint::BigInt;
-                            Value::BigInt(BigInt::from(a).pow(exp_u))
+                            Value::bigint(BigInt::from(a).pow(exp_u))
                         }
                     } else {
                         let pos = (-exp_i) as u32;
@@ -586,25 +588,25 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (Value::Int(a), Value::BigInt(b)) => {
-                let is_even = (&b % 2u8) == NumBigInt::from(0u8);
+                let is_even = (b.as_ref() % 2u8) == NumBigInt::from(0u8);
                 if b.is_zero() || a == 1 {
                     Value::Int(1)
                 } else if a == -1 {
                     Value::Int(if is_even { 1 } else { -1 })
                 } else if a == 0 && b.sign() != Sign::Minus {
                     Value::Int(0)
-                } else if let Some(exp_u) = b.to_u32() {
+                } else if let Some(exp_u) = b.as_ref().to_u32() {
                     if let Some(result) = a.checked_pow(exp_u) {
                         Value::Int(result)
                     } else {
-                        Value::BigInt(NumBigInt::from(a).pow(exp_u))
+                        Value::bigint(NumBigInt::from(a).pow(exp_u))
                     }
                 } else {
-                    Value::Num((a as f64).powf(b.to_f64().unwrap_or(f64::INFINITY)))
+                    Value::Num((a as f64).powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
                 }
             }
             (Value::Num(a), Value::BigInt(b)) => {
-                let is_even = (&b % 2u8) == NumBigInt::from(0u8);
+                let is_even = (b.as_ref() % 2u8) == NumBigInt::from(0u8);
                 if b.is_zero() || a == 1.0 {
                     Value::Num(1.0)
                 } else if a == -1.0 {
@@ -612,7 +614,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 } else if a == 0.0 && b.sign() != Sign::Minus {
                     Value::Num(0.0)
                 } else {
-                    Value::Num(a.powf(b.to_f64().unwrap_or(f64::INFINITY)))
+                    Value::Num(a.powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
                 }
             }
             (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
@@ -632,7 +634,7 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
                 Ok(Value::Num(-(i as f64)))
             }
         }
-        Value::BigInt(i) => Ok(Value::BigInt(-i)),
+        Value::BigInt(i) => Ok(Value::bigint(-(*i).clone())),
         Value::Num(f) => Ok(Value::Num(-f)),
         Value::Rat(n, d) => {
             if let Some(neg) = n.checked_neg() {

@@ -104,7 +104,7 @@ impl Interpreter {
                 // For ValuePair, the key preserves its original type
                 if let Value::Regex(pattern) = key.as_ref() {
                     rules.push(TransRule::Regex {
-                        pattern: pattern.clone(),
+                        pattern: pattern.to_string(),
                         replacement: value.to_string_value(),
                     });
                 } else {

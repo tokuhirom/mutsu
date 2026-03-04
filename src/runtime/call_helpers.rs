@@ -234,7 +234,7 @@ impl Interpreter {
             Value::Nil => false,
             Value::Bool(b) => b,
             Value::Int(i) => i != 0,
-            Value::BigInt(i) => i != 0.into(),
+            Value::BigInt(i) => *i.as_ref() != 0.into(),
             Value::Num(n) => n != 0.0,
             Value::Rat(n, d) | Value::FatRat(n, d) => d != 0 && n != 0,
             Value::Str(s) => !s.is_empty() && s.as_str() != "0",

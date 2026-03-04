@@ -63,13 +63,15 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         arg_index += 1;
         let int_val = || match arg {
             Some(Value::Int(i)) => *i,
-            Some(Value::BigInt(bi)) => num_traits::ToPrimitive::to_i64(bi).unwrap_or_else(|| {
-                if bi.sign() == num_bigint::Sign::Minus {
-                    i64::MIN
-                } else {
-                    i64::MAX
-                }
-            }),
+            Some(Value::BigInt(bi)) => {
+                num_traits::ToPrimitive::to_i64(bi.as_ref()).unwrap_or_else(|| {
+                    if bi.sign() == num_bigint::Sign::Minus {
+                        i64::MIN
+                    } else {
+                        i64::MAX
+                    }
+                })
+            }
             Some(Value::Num(f)) => *f as i64,
             Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
             Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
@@ -83,7 +85,7 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             _ => 0,
         };
         let bigint_val = || match arg {
-            Some(Value::BigInt(bi)) => bi.clone(),
+            Some(Value::BigInt(bi)) => (**bi).clone(),
             Some(Value::Int(i)) => BigInt::from(*i),
             Some(Value::Num(f)) => BigInt::from(*f as i64),
             Some(Value::Rat(n, d)) if *d != 0 => BigInt::from(*n / *d),

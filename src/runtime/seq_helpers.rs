@@ -927,7 +927,7 @@ impl Interpreter {
         if def.body.len() == 1
             && let Stmt::Expr(Expr::Literal(Value::Regex(pat))) = &def.body[0]
         {
-            return Some(pat.clone());
+            return Some(pat.to_string());
         }
         None
     }

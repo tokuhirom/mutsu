@@ -279,10 +279,7 @@ impl Interpreter {
                     let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
                     let mut mixins = std::collections::HashMap::new();
                     mixins.insert("Failure".to_string(), failure);
-                    Value::Mixin(
-                        Box::new(Value::Sub(std::sync::Arc::new(sub_data.clone()))),
-                        mixins,
-                    )
+                    Value::mixin(Value::Sub(std::sync::Arc::new(sub_data.clone())), mixins)
                 };
             let mut incoming_named = std::collections::HashMap::new();
             for arg in args {

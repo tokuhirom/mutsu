@@ -5,7 +5,7 @@ impl VM {
     fn integral_bigint(value: &Value) -> Option<num_bigint::BigInt> {
         match value {
             Value::Int(i) => Some(num_bigint::BigInt::from(*i)),
-            Value::BigInt(i) => Some(i.clone()),
+            Value::BigInt(i) => Some((**i).clone()),
             Value::Num(n)
                 if n.fract() == 0.0
                     && n.is_finite()

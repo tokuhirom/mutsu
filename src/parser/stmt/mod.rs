@@ -1147,7 +1147,7 @@ mod tests {
                 if name == "rx"
                     && matches!(
                         body.as_slice(),
-                        [Stmt::Expr(Expr::Literal(Value::Regex(pattern)))] if pattern == "abc"
+                        [Stmt::Expr(Expr::Literal(Value::Regex(pattern)))] if pattern.as_str() == "abc"
                     )
         ));
     }

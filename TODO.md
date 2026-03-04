@@ -129,11 +129,10 @@ Design doc: `docs/gc.md`
 - [x] Set / Bag / Mix (`Arc<HashSet>` / `Arc<HashMap>`)
 - [x] Seq / Slip / Junction values (`Arc<Vec<Value>>`)
 - [x] Str (`Arc<String>`) — PR #748
-- [ ] BigInt (`NumBigInt` → `Arc<NumBigInt>`)
-- [ ] Pair key (`Pair(String, Box<Value>)` → `Pair(Arc<String>, Box<Value>)`)
-- [ ] GenericRange (`Box<Value>` → `Arc<Value>`)
-- [ ] Mixin (`Box<Value>, HashMap` → `Arc<Value>, Arc<HashMap>`)
-- [ ] Regex / RegexWithAdverbs (pattern `String` → `Arc<String>`)
+- [x] BigInt (`Arc<NumBigInt>`)
+- [x] GenericRange (`Arc<Value>`)
+- [x] Mixin (`Arc<Value>, Arc<HashMap>`)
+- [x] Regex / RegexWithAdverbs (pattern `Arc<String>`)
 
 #### Phase 2: WeakSub for cycle-breaking
 

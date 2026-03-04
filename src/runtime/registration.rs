@@ -2547,7 +2547,7 @@ impl Interpreter {
                             if type_constraint.starts_with('u') || type_constraint == "byte" {
                                 // Unsigned: store as BigInt if needed
                                 if v > i64::MAX as u64 {
-                                    Value::BigInt(num_bigint::BigInt::from(v as u128))
+                                    Value::bigint(num_bigint::BigInt::from(v as u128))
                                 } else {
                                     Value::Int(v as i64)
                                 }

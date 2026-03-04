@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
 
 use crate::ast::Expr;
@@ -546,7 +548,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 return Ok((
                     rest,
                     Expr::Literal(Value::RegexWithAdverbs {
-                        pattern,
+                        pattern: Arc::new(pattern),
                         exhaustive: adverbs.exhaustive,
                         repeat: if adverbs.overlap && adverbs.repeat.is_none() {
                             Some(0)
@@ -558,7 +560,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     }),
                 ));
             }
-            return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
+            return Ok((rest, Expr::Literal(Value::regex(pattern.to_string()))));
         }
         return Err(PError::expected("regex closing delimiter"));
     }
@@ -862,7 +864,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     // m// always matches against $_ (unlike rx//)
                     let regex_val = if has_adverbs {
                         Value::RegexWithAdverbs {
-                            pattern,
+                            pattern: Arc::new(pattern),
                             exhaustive: adverbs.exhaustive,
                             repeat: if adverbs.overlap && adverbs.repeat.is_none() {
                                 Some(0)
@@ -873,7 +875,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             pos: adverbs.pos,
                         }
                     } else {
-                        Value::Regex(pattern)
+                        Value::regex(pattern)
                     };
                     return Ok((rest, Expr::MatchRegex(regex_val)));
                 }
@@ -888,7 +890,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             && !pattern.is_empty()
         {
             validate_regex_pattern_or_perror(pattern)?;
-            return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
+            return Ok((rest, Expr::Literal(Value::regex(pattern.to_string()))));
         }
     }
 

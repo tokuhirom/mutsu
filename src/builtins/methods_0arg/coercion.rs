@@ -92,7 +92,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Complex(*n as f64 / *d as f64, 0.0))),
             Value::FatRat(n, d) if *d != 0 => Some(Ok(Value::Complex(*n as f64 / *d as f64, 0.0))),
             Value::BigInt(n) => Some(Ok(Value::Complex(
-                num_traits::ToPrimitive::to_f64(n).unwrap_or(f64::INFINITY),
+                num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(f64::INFINITY),
                 0.0,
             ))),
             Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Complex(

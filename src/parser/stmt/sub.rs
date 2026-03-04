@@ -61,7 +61,7 @@ fn static_default_type(expr: &Expr) -> Option<String> {
 fn negate_literal_value(value: &Value) -> Option<Value> {
     match value {
         Value::Int(n) => Some(Value::Int(-n)),
-        Value::BigInt(n) => Some(Value::BigInt(-n)),
+        Value::BigInt(n) => Some(Value::bigint(-n.as_ref())),
         Value::Num(n) => Some(Value::Num(-n)),
         Value::Rat(n, d) => Some(crate::value::make_rat(-n, *d)),
         Value::FatRat(n, d) => Some(Value::FatRat(-n, *d)),

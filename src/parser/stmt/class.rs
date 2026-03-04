@@ -744,7 +744,7 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     if is_ratchet {
         pattern = format!(":ratchet {pattern}");
     }
-    let body = vec![Stmt::Expr(Expr::Literal(Value::Regex(pattern)))];
+    let body = vec![Stmt::Expr(Expr::Literal(Value::regex(pattern)))];
 
     if is_rule {
         Ok((

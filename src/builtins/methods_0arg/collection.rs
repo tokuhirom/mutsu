@@ -414,8 +414,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                 }
                 Some(Ok(Value::GenericRange {
-                    start: Box::new(min.clone()),
-                    end: Box::new(max.clone()),
+                    start: Arc::new(min.clone()),
+                    end: Arc::new(max.clone()),
                     excl_start: false,
                     excl_end: false,
                 }))

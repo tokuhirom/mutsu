@@ -12,7 +12,7 @@ fn complex_parts(v: &Value) -> (f64, f64) {
 pub(super) fn value_to_f64(v: &Value) -> f64 {
     match v {
         Value::Int(n) => *n as f64,
-        Value::BigInt(n) => num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0),
+        Value::BigInt(n) => num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(0.0),
         Value::Num(n) => *n,
         Value::Rat(n, d) => {
             if *d != 0 {

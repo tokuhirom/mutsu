@@ -97,7 +97,7 @@ pub(super) fn parse_int_radix(clean: &str, radix: u32) -> Expr {
     if let Ok(n) = i64::from_str_radix(clean, radix) {
         Expr::Literal(Value::Int(n))
     } else if let Some(n) = num_bigint::BigInt::parse_bytes(clean.as_bytes(), radix) {
-        Expr::Literal(Value::BigInt(n))
+        Expr::Literal(Value::bigint(n))
     } else {
         Expr::Literal(Value::Int(0))
     }
@@ -172,7 +172,7 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
     if let Ok(n) = clean.parse::<i64>() {
         Ok((rest, Expr::Literal(Value::Int(n))))
     } else if let Ok(n) = clean.parse::<num_bigint::BigInt>() {
-        Ok((rest, Expr::Literal(Value::BigInt(n))))
+        Ok((rest, Expr::Literal(Value::bigint(n))))
     } else {
         Ok((rest, Expr::Literal(Value::Int(0))))
     }
