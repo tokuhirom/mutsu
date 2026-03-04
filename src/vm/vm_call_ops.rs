@@ -209,6 +209,7 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -321,6 +322,7 @@ impl VM {
         _arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value
         if self.stack.len() < total {
@@ -368,6 +370,7 @@ impl VM {
         modifier_idx: Option<u32>,
         quoted: bool,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
@@ -735,9 +738,10 @@ impl VM {
 
     pub(super) fn exec_call_method_dynamic_op(
         &mut self,
-        _code: &CompiledCode,
+        code: &CompiledCode,
         arity: u32,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new("VM stack underflow in CallMethodDynamic"));
@@ -788,6 +792,7 @@ impl VM {
         modifier_idx: Option<u32>,
         quoted: bool,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
@@ -943,6 +948,7 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallOnValue"));
@@ -1012,6 +1018,7 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -1081,6 +1088,7 @@ impl VM {
         modifier_idx: Option<u32>,
         quoted: bool,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
@@ -1250,6 +1258,7 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
@@ -1409,6 +1418,7 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -1488,6 +1498,7 @@ impl VM {
         name_idx: u32,
         arity: u32,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -1515,6 +1526,7 @@ impl VM {
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value
         if self.stack.len() < total {

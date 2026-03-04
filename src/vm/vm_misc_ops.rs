@@ -907,11 +907,13 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
         let saved = self.interpreter.current_package().to_string();
+        self.ensure_env_synced(code);
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
         self.interpreter.set_current_package(name);
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.interpreter.set_current_package(saved);
+        self.ensure_env_synced(code);
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
@@ -1041,6 +1043,7 @@ impl VM {
         let leave_start = body_end as usize;
         let end = end as usize;
         let routine_snapshot = self.interpreter.snapshot_routine_registry();
+        self.ensure_env_synced(code);
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
 
@@ -1053,6 +1056,7 @@ impl VM {
         let leave_res = self.run_range(code, leave_start, end, compiled_fns);
         self.interpreter.restore_routine_registry(routine_snapshot);
 
+        self.ensure_env_synced(code);
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
@@ -1150,6 +1154,7 @@ impl VM {
         index_mode: bool,
         is_temp: bool,
     ) {
+        self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         if index_mode {
             let _idx_val = self.stack.pop().unwrap_or(Value::Int(0));

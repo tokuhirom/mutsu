@@ -9,6 +9,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
+            self.ensure_env_synced(code);
             let list = LazyList {
                 body: body.clone(),
                 env: self.interpreter.env().clone(),
@@ -37,6 +38,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
+            self.ensure_env_synced(code);
             let params = crate::ast::collect_placeholders(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
@@ -78,6 +80,7 @@ impl VM {
             ..
         } = stmt
         {
+            self.ensure_env_synced(code);
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
@@ -122,6 +125,7 @@ impl VM {
             ..
         } = stmt
         {
+            self.ensure_env_synced(code);
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
@@ -157,6 +161,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
+            self.ensure_env_synced(code);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
                 package: Symbol::intern(self.interpreter.current_package()),
@@ -185,6 +190,7 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,

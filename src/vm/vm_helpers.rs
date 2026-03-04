@@ -3,8 +3,13 @@ use crate::symbol::Symbol;
 
 impl VM {
     /// Sync locals from env if the dirty flag is set, then clear the flag.
+    /// If locals are also dirty, flush them to env first so we don't lose
+    /// values that were only written to the locals array (fast-path SetLocal).
     pub(super) fn ensure_locals_synced(&mut self, code: &CompiledCode) {
         if self.env_dirty {
+            // Flush locals→env first so env has the latest simple-local values
+            // before we pull env→locals (which may overwrite them with stale data).
+            self.ensure_env_synced(code);
             self.sync_locals_from_env(code);
             self.env_dirty = false;
         }
@@ -19,8 +24,10 @@ impl VM {
             saved_locals: std::mem::take(&mut self.locals),
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
+            saved_locals_dirty: self.locals_dirty,
         };
         self.env_dirty = false;
+        self.locals_dirty = false;
         self.call_frames.push(frame);
     }
 
@@ -35,6 +42,7 @@ impl VM {
         self.interpreter
             .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
         self.env_dirty = frame.saved_env_dirty;
+        self.locals_dirty = frame.saved_locals_dirty;
         frame
     }
 
@@ -790,6 +798,20 @@ impl VM {
     pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             self.set_env_with_main_alias(name, self.locals[i].clone());
+        }
+    }
+
+    /// Sync only simple locals to env (the ones whose SetLocal fast path
+    /// skips env writes). Only runs when locals_dirty is set.
+    pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {
+        if self.locals_dirty {
+            for (i, name) in code.locals.iter().enumerate() {
+                if code.simple_locals[i] {
+                    self.interpreter
+                        .set_shared_var(name, self.locals[i].clone());
+                }
+            }
+            self.locals_dirty = false;
         }
     }
 
