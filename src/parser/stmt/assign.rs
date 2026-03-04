@@ -33,8 +33,17 @@ pub(crate) enum CompoundAssignOp {
     BitOr,
     BitAnd,
     BitXor,
+    BitShiftLeft,
+    BitShiftRight,
     Min,
     Max,
+    KeywordOr,
+    KeywordAnd,
+    Orelse,
+    Andthen,
+    IntDiv,
+    Lcm,
+    Gcd,
 }
 
 impl CompoundAssignOp {
@@ -55,8 +64,17 @@ impl CompoundAssignOp {
             CompoundAssignOp::BitOr => "+|=",
             CompoundAssignOp::BitAnd => "+&=",
             CompoundAssignOp::BitXor => "+^=",
+            CompoundAssignOp::BitShiftLeft => "+<=",
+            CompoundAssignOp::BitShiftRight => "+>=",
             CompoundAssignOp::Min => "min=",
             CompoundAssignOp::Max => "max=",
+            CompoundAssignOp::KeywordOr => "or=",
+            CompoundAssignOp::KeywordAnd => "and=",
+            CompoundAssignOp::Orelse => "orelse=",
+            CompoundAssignOp::Andthen => "andthen=",
+            CompoundAssignOp::IntDiv => "div=",
+            CompoundAssignOp::Lcm => "lcm=",
+            CompoundAssignOp::Gcd => "gcd=",
         }
     }
 
@@ -77,8 +95,17 @@ impl CompoundAssignOp {
             CompoundAssignOp::BitOr => TokenKind::BitOr,
             CompoundAssignOp::BitAnd => TokenKind::BitAnd,
             CompoundAssignOp::BitXor => TokenKind::BitXor,
+            CompoundAssignOp::BitShiftLeft => TokenKind::BitShiftLeft,
+            CompoundAssignOp::BitShiftRight => TokenKind::BitShiftRight,
             CompoundAssignOp::Min => TokenKind::Ident("min".to_string()),
             CompoundAssignOp::Max => TokenKind::Ident("max".to_string()),
+            CompoundAssignOp::KeywordOr => TokenKind::OrWord,
+            CompoundAssignOp::KeywordAnd => TokenKind::AndAnd,
+            CompoundAssignOp::Orelse => TokenKind::OrElse,
+            CompoundAssignOp::Andthen => TokenKind::AndThen,
+            CompoundAssignOp::IntDiv => TokenKind::Ident("div".to_string()),
+            CompoundAssignOp::Lcm => TokenKind::Ident("lcm".to_string()),
+            CompoundAssignOp::Gcd => TokenKind::Ident("gcd".to_string()),
         }
     }
 }
@@ -133,8 +160,17 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::BitOr,
     CompoundAssignOp::BitAnd,
     CompoundAssignOp::BitXor,
-    CompoundAssignOp::Min, // min= (word boundary checked in parse_compound_assign_op)
-    CompoundAssignOp::Max, // max= (word boundary checked in parse_compound_assign_op)
+    CompoundAssignOp::BitShiftLeft,  // +<=
+    CompoundAssignOp::BitShiftRight, // +>=
+    CompoundAssignOp::Min,           // min= (word boundary checked in parse_compound_assign_op)
+    CompoundAssignOp::Max,           // max= (word boundary checked in parse_compound_assign_op)
+    CompoundAssignOp::Orelse,        // orelse= before or= to match longest first
+    CompoundAssignOp::KeywordOr,     // or=
+    CompoundAssignOp::Andthen,       // andthen= before and= to match longest first
+    CompoundAssignOp::KeywordAnd,    // and=
+    CompoundAssignOp::IntDiv,        // div=
+    CompoundAssignOp::Lcm,           // lcm=
+    CompoundAssignOp::Gcd,           // gcd=
 ];
 
 pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
@@ -172,17 +208,7 @@ pub(crate) fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, Stri
     let name = &input[..end];
     if matches!(
         name,
-        "if" | "unless"
-            | "for"
-            | "while"
-            | "until"
-            | "given"
-            | "when"
-            | "with"
-            | "without"
-            | "and"
-            | "or"
-            | "not"
+        "if" | "unless" | "for" | "while" | "until" | "given" | "when" | "with" | "without" | "not"
     ) {
         return None;
     }
