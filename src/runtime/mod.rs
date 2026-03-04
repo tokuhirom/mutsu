@@ -24,6 +24,33 @@ use crate::value::{
 };
 use num_traits::Signed;
 
+/// Split a string by commas while respecting bracket/paren depth.
+/// Returns the trimmed, non-empty parts.
+fn split_balanced_comma_list(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, ch) in input.char_indices() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                let part = input[start..i].trim();
+                if !part.is_empty() {
+                    args.push(part.to_string());
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let last = input[start..].trim();
+    if !last.is_empty() {
+        args.push(last.to_string());
+    }
+    args
+}
+
 /// Get the current process ID (returns 0 on WASM where process IDs don't exist).
 fn current_process_id() -> i64 {
     #[cfg(not(target_arch = "wasm32"))]
