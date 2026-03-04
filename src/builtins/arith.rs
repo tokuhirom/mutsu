@@ -8,6 +8,12 @@ use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 
+/// Check if a value is a Date, Instant, or Duration instance (temporal operand for arithmetic).
+pub fn is_temporal_operand(value: &Value) -> bool {
+    matches!(value, Value::Instance { class_name, .. }
+        if class_name == "Date" || class_name == "Instant" || class_name == "Duration")
+}
+
 fn as_bigint(value: &Value) -> Option<NumBigInt> {
     match value {
         Value::Int(i) => Some(NumBigInt::from(*i)),
@@ -41,6 +47,23 @@ fn instance_instant_value(value: &Value) -> Option<f64> {
     }
 }
 
+fn instance_duration_value(value: &Value) -> Option<f64> {
+    match value {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Duration" => attributes.get("value").and_then(runtime::to_float_value),
+        _ => None,
+    }
+}
+
+fn make_duration(secs: f64) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("value".to_string(), Value::Num(secs));
+    Value::make_instance(Symbol::intern("Duration"), attrs)
+}
+
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
     // Range + Int: shift both bounds
@@ -62,6 +85,53 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
             return Ok(Value::RangeExclBoth(a + n, b + n));
         }
         _ => {}
+    }
+    // Date + Int: add days
+    if let Some(days) = instance_days(&left)
+        && let Value::Int(delta) = &right
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let new_days = days + delta;
+        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
+        return Ok(temporal::make_date(y, m, d));
+    }
+    if let Some(days) = instance_days(&right)
+        && let Value::Int(delta) = &left
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let new_days = days + delta;
+        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
+        return Ok(temporal::make_date(y, m, d));
+    }
+    // Instant + Numeric => Instant (add to TAI value)
+    if let Some(tai) = instance_instant_value(&left)
+        && right.is_numeric()
+    {
+        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(tai + delta));
+        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+    }
+    if let Some(tai) = instance_instant_value(&right)
+        && left.is_numeric()
+    {
+        let delta = runtime::to_float_value(&left).unwrap_or(0.0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(tai + delta));
+        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+    }
+    // Duration + Numeric => Duration
+    if let Some(dur) = instance_duration_value(&left)
+        && right.is_numeric()
+    {
+        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
+        return Ok(make_duration(dur + delta));
+    }
+    if let Some(dur) = instance_duration_value(&right)
+        && left.is_numeric()
+    {
+        let delta = runtime::to_float_value(&left).unwrap_or(0.0);
+        return Ok(make_duration(dur + delta));
     }
     let (l, r) = runtime::coerce_numeric(left, right);
     Ok(arith_add_coerced(l, r))
@@ -122,7 +192,8 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         instance_instant_value(&left),
         instance_instant_value(&right),
     ) {
-        return Value::Num(a - b);
+        // Instant - Instant returns a Duration
+        return make_duration(a - b);
     }
     if let Some(a) = instance_instant_value(&left)
         && right.is_numeric()
@@ -132,15 +203,30 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         attrs.insert("value".to_string(), Value::Num(a - delta));
         return Value::make_instance(Symbol::intern("Instant"), attrs);
     }
+    // Duration - Duration returns Duration
+    if let (Some(a), Some(b)) = (
+        instance_duration_value(&left),
+        instance_duration_value(&right),
+    ) {
+        return make_duration(a - b);
+    }
+    // Duration - Numeric returns Duration
+    if let Some(a) = instance_duration_value(&left)
+        && right.is_numeric()
+    {
+        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
+        return make_duration(a - delta);
+    }
     if let (Some(a), Some(b)) = (instance_days(&left), instance_days(&right)) {
         return Value::Int(a - b);
     }
     if let Some(days) = instance_days(&left)
         && let Value::Int(delta) = right
     {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("days".to_string(), Value::Int(days - delta));
-        return Value::make_instance(Symbol::intern("Date"), attrs);
+        use crate::builtins::methods_0arg::temporal;
+        let new_days = days - delta;
+        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
+        return temporal::make_date(y, m, d);
     }
     match (&left, &right) {
         (Value::Range(a, b), Value::Int(n)) => return Value::Range(a - n, b - n),

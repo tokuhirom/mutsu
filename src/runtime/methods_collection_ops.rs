@@ -550,6 +550,7 @@ impl Interpreter {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn civil_to_epoch_days(year: i64, month: i64, day: i64) -> i64 {
         let y = year - i64::from(month <= 2);
         let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -560,6 +561,7 @@ impl Interpreter {
         era * 146_097 + doe - 719_468
     }
 
+    #[allow(dead_code)]
     pub(super) fn leap_seconds_before_day(epoch_days: i64) -> i64 {
         const LEAP_EFFECTIVE_DATES: &[(i64, i64, i64)] = &[
             (1972, 7, 1),
@@ -596,6 +598,7 @@ impl Interpreter {
             .count() as i64
     }
 
+    #[allow(dead_code)]
     pub(super) fn date_days_to_epoch_with_leap_seconds(days: i64) -> f64 {
         (days * 86_400 + Self::leap_seconds_before_day(days)) as f64
     }
