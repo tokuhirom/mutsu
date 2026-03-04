@@ -103,6 +103,36 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         let (y, m, d) = temporal::epoch_days_to_civil(new_days);
         return Ok(temporal::make_date(y, m, d));
     }
+    // Instant + Numeric => Instant (add to TAI value)
+    if let Some(tai) = instance_instant_value(&left)
+        && right.is_numeric()
+    {
+        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(tai + delta));
+        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+    }
+    if let Some(tai) = instance_instant_value(&right)
+        && left.is_numeric()
+    {
+        let delta = runtime::to_float_value(&left).unwrap_or(0.0);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(tai + delta));
+        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+    }
+    // Duration + Numeric => Duration
+    if let Some(dur) = instance_duration_value(&left)
+        && right.is_numeric()
+    {
+        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
+        return Ok(make_duration(dur + delta));
+    }
+    if let Some(dur) = instance_duration_value(&right)
+        && left.is_numeric()
+    {
+        let delta = runtime::to_float_value(&left).unwrap_or(0.0);
+        return Ok(make_duration(dur + delta));
+    }
     let (l, r) = runtime::coerce_numeric(left, right);
     Ok(arith_add_coerced(l, r))
 }

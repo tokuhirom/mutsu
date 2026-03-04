@@ -1201,7 +1201,20 @@ impl Interpreter {
             }
             "at" => {
                 if let Some(cls) = self.promise_class_name(&target) {
-                    let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
+                    // at_time may be an Instant (TAI) or a plain numeric (POSIX).
+                    // Convert Instant values to POSIX for delay calculation.
+                    let at_time = match args.first() {
+                        Some(Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        }) if class_name == "Instant" => {
+                            let tai = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                            crate::builtins::methods_0arg::temporal::instant_to_posix(tai)
+                        }
+                        Some(v) => v.to_f64(),
+                        None => 0.0,
+                    };
                     let now = crate::value::current_time_secs_f64();
                     let delay = (at_time - now).max(0.0);
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
