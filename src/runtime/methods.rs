@@ -3565,6 +3565,7 @@ impl Interpreter {
                             Some(Value::CompUnitDepSpec { short_name }) => *short_name,
                             _ => return Ok(Value::Nil),
                         };
+                        let short_name_str = short_name.resolve();
                         let prefix = attributes
                             .get("prefix")
                             .map(Value::to_string_value)
@@ -3573,28 +3574,39 @@ impl Interpreter {
                             .unwrap_or_else(|_| std::path::PathBuf::from(&prefix))
                             .to_string_lossy()
                             .to_string();
+                        // Check cache first
                         let cache_key =
-                            format!("__mutsu_compunit::{}::{}", canonical_prefix, short_name);
+                            format!("__mutsu_compunit::{}::{}", canonical_prefix, short_name_str);
                         if let Some(existing) = self.env.get(&cache_key).cloned() {
                             return Ok(existing);
                         }
-                        let relative = short_name.resolve().replace("::", "/");
-                        let mut found = None;
+                        // Try to find the module file in the prefix directory
+                        let relative = short_name_str.replace("::", "/");
+                        let mut found_path = None;
                         for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
                             let candidate = std::path::Path::new(&canonical_prefix)
                                 .join(format!("{relative}{ext}"));
                             if candidate.exists() {
-                                found = Some(candidate);
+                                found_path = Some(candidate);
                                 break;
                             }
                         }
-                        if found.is_none() {
-                            return Ok(Value::Nil);
+                        // If not found in prefix, try the standard module resolution
+                        if found_path.is_none() {
+                            found_path = self.resolve_module_path(&short_name_str);
                         }
+                        let Some(source_path) = found_path else {
+                            return Ok(Value::Nil);
+                        };
+                        // Load the module, using precompilation cache when available
+                        let (stmts, precompiled) =
+                            self.parse_module_source(&short_name_str, &source_path)?;
+                        self.run_block(&stmts)?;
+                        self.loaded_modules.insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
-                        attrs.insert("short-name".to_string(), Value::str(short_name.resolve()));
-                        attrs.insert("precompiled".to_string(), Value::Bool(false));
+                        attrs.insert("short-name".to_string(), Value::str(short_name_str));
+                        attrs.insert("precompiled".to_string(), Value::Bool(precompiled));
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
                         return Ok(compunit);

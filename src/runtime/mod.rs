@@ -1893,6 +1893,8 @@ impl Interpreter {
     pub(crate) fn no_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if module == "strict" {
             self.strict_mode = false;
+        } else if module == "precompilation" {
+            self.precomp_enabled = false;
         }
         Ok(())
     }
