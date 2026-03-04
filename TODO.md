@@ -93,13 +93,14 @@ Scalar containers are done. Array/Hash container semantics need work.
 
 - [x] `nextsame` / `nextwith` / `callsame` / `callwith` re-dispatch
 - [x] Anonymous classes (`class { }`)
-- [ ] Parameterized roles (`role Foo[Type] { }`)
-- [ ] `trusts` declarator
+- [x] Parameterized roles (`role Foo[Type] { }`)
+- [x] `trusts` declarator
 - [ ] `augment class` (monkey-patching)
-- [ ] Meta-object protocol (`.^methods`, `.^attributes`, `.^mro` etc.)
-- [ ] `FALLBACK` method
-- [ ] Full `handles` delegation (with rename, exclude)
-- [ ] Attribute `is required` / `is built` traits
+- [x] Meta-object protocol (`.^methods`, `.^attributes`, `.^mro` etc.)
+  - Remaining: `.^attributes` not fully listing all attributes
+- [x] `FALLBACK` method
+- [x] Full `handles` delegation (with rename, exclude)
+- [x] Attribute `is required` / `is built` traits
 
 ### A7. Concurrency overhaul (S17: 5/99 passing)
 
