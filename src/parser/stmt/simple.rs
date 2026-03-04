@@ -2438,8 +2438,8 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, Stmt::Succeed));
     }
     if name == "done" {
-        let (rest, _) = opt_char(rest, ';');
-        return Ok((rest, Stmt::ReactDone));
+        // Support statement modifiers like `done if $v >= 2`
+        return parse_statement_modifier(rest, Stmt::ReactDone);
     }
 
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
