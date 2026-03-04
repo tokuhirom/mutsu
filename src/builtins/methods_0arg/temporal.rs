@@ -454,10 +454,14 @@ const LEAP_SECONDS: &[(i64, i64)] = &[
     (1_483_228_800, 37), // 2017-01-01
 ];
 
-/// Count of leap seconds at a given POSIX timestamp.
+/// TAI-UTC offset at a given POSIX timestamp.
+/// Before 1972, the offset is the initial 10 seconds that TAI was ahead of UTC.
+/// Each leap second after 1972-01-01 adds 1 to the cumulative offset.
 pub fn leap_seconds_at(posix: f64) -> i64 {
     let posix_i = posix.floor() as i64;
-    let mut result = 0;
+    // The initial TAI-UTC offset is 10 seconds (set at 1972-01-01).
+    // All cumulative values in the table include this base offset.
+    let mut result = 10;
     for &(threshold, cumulative) in LEAP_SECONDS {
         if posix_i >= threshold {
             result = cumulative;
