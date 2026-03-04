@@ -15,6 +15,7 @@ pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
 mod display;
 mod error;
+mod serde_support;
 pub(crate) mod signature;
 pub(crate) mod types;
 pub(crate) use types::what_type_name;
@@ -45,7 +46,7 @@ pub(crate) fn next_instance_id() -> u64 {
     INSTANCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum JunctionKind {
     Any,
     All,
@@ -128,7 +129,7 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
 }
 
 /// Distinguishes the four array/list container kinds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ArrayKind {
     /// `(1,2,3)` — flattens in slurpy context, `.raku` → `(1, 2, 3)`
     List,
@@ -301,7 +302,7 @@ pub enum Value {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum VersionPart {
     Num(i64),
     Str(String),

@@ -17,7 +17,7 @@ regex = "1.12.3"
 fancy-regex = "0.14"
 pcre2 = { version = "0.2", optional = true }
 unicode_names2 = "2.0.0"
-num-bigint = "0.4"
+num-bigint = { version = "0.4", features = ["serde"] }
 num-traits = "0.2"
 num-integer = "0.1"
 unicode-segmentation = "1.12.0"
@@ -29,6 +29,8 @@ encoding_rs = "0.8"
 wasm-bindgen = { version = "0.2", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 rustc-hash = "2.1.1"
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
 
 [profile.release]
 debug = true

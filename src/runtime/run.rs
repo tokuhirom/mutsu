@@ -591,7 +591,8 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+    /// Resolve a module name to a file path by searching lib paths and standard locations.
+    fn resolve_module_path(&self, module: &str) -> Option<std::path::PathBuf> {
         let filename = format!("{}.rakumod", module.replace("::", "/"));
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         for base in &self.lib_paths {
@@ -631,18 +632,26 @@ impl Interpreter {
                 );
             }
         }
-        let mut code = None;
-        for path in candidates {
-            if path.exists() {
-                let content = fs::read_to_string(&path).map_err(|err| {
-                    RuntimeError::new(format!("Failed to read module {}: {}", module, err))
-                })?;
-                code = Some(content);
-                break;
-            }
+        candidates.into_iter().find(|path| path.exists())
+    }
+
+    /// Parse a module source file, using the precompilation cache when available.
+    fn parse_module_source(
+        &mut self,
+        module: &str,
+        source_path: &Path,
+    ) -> Result<Vec<crate::ast::Stmt>, RuntimeError> {
+        // Try loading from precompilation cache
+        if self.precomp_enabled
+            && let Some(stmts) = crate::precomp::load_cached_ast(source_path)
+        {
+            return Ok(stmts);
         }
-        let code =
-            code.ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
+
+        // Cache miss or disabled — parse from source
+        let code = fs::read_to_string(source_path).map_err(|err| {
+            RuntimeError::new(format!("Failed to read module {}: {}", module, err))
+        })?;
         let preprocessed = Self::preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
@@ -655,8 +664,21 @@ impl Interpreter {
             err.message = format!("Failed to parse module '{}': {}", module, err.message);
             err
         })?;
-        // Handle `unit class Foo;` — merge remaining stmts into the class body
         let stmts = Self::merge_unit_class(stmts);
+
+        // Save to precompilation cache
+        if self.precomp_enabled {
+            crate::precomp::save_cached_ast(source_path, &stmts);
+        }
+
+        Ok(stmts)
+    }
+
+    pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let source_path = self
+            .resolve_module_path(module)
+            .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
+        let stmts = self.parse_module_source(module, &source_path)?;
         self.run_block(&stmts)?;
         Ok(())
     }

@@ -2,7 +2,7 @@ use crate::value::VersionPart;
 use num_bigint::BigInt as NumBigInt;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum DStrPart {
     Lit(String),
     Var(String),
@@ -10,7 +10,7 @@ pub(crate) enum DStrPart {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TokenKind {
     Number(i64),
     BigNumber(NumBigInt),

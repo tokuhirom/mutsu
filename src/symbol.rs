@@ -1,4 +1,5 @@
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::sync::{OnceLock, RwLock};
 
@@ -10,6 +11,19 @@ use std::sync::{OnceLock, RwLock};
 /// convenience — prefer Symbol-to-Symbol where possible).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
+
+impl Serialize for Symbol {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.resolve().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Symbol {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(Symbol::intern(&s))
+    }
+}
 
 impl PartialEq<&str> for Symbol {
     fn eq(&self, other: &&str) -> bool {
