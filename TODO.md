@@ -71,7 +71,7 @@ Scalar containers are done. Array/Hash container semantics need work.
 - [x] `import` with selective import (`use Foo :bar`)
 - [x] `require` at runtime (dynamic module loading)
 - [x] `unit module` / `unit class` / `unit role`
-- [ ] Proper `EXPORT` sub convention (tag-based registry exists but no actual `EXPORT::TAG::symbol` subs)
+- [x] Proper `EXPORT` sub convention (`EXPORT::TAG::symbol` namespace population)
 - [ ] `CompUnit` / repository API (for `zef` compatibility) — type name recognized, no API
 - [ ] Precompilation (bytecode caching for loaded modules) — not started
 
