@@ -5,6 +5,7 @@ mod control;
 pub(crate) mod decl;
 pub(super) mod modifier;
 pub(super) mod simple;
+mod simple_expr_stmt;
 mod sub;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
