@@ -2586,13 +2586,18 @@ impl Interpreter {
         target_fallback: &Value,
     ) -> Value {
         if key.starts_with('@') {
+            // Drop env's copy of the Arc first so that shared_vars holds
+            // the only strong reference (refcount=1).  This allows
+            // Arc::make_mut to mutate the vector in-place (O(1)) instead
+            // of deep-copying it every time (which would make N pushes O(n²)).
+            // Reads still work because get_env_with_main_alias checks
+            // shared_vars first when shared_vars_active is true.
+            self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
-                let result = Value::Array(Arc::clone(arc_items), *kind);
-                self.env.insert(key.to_string(), result.clone());
-                return result;
+                return Value::Array(Arc::clone(arc_items), *kind);
             }
         }
         // Fallback for non-shared arrays: use Arc::make_mut for COW
