@@ -485,7 +485,14 @@ mod tests {
     fn parse_match_regex_with_compact_adverbs() {
         let (rest, expr) = primary("ms/ab cd/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::MatchRegex(Value::Regex(ref s)) if s.as_str() == ":s ab cd"));
+        assert!(matches!(
+            expr,
+            Expr::MatchRegex(Value::RegexWithAdverbs {
+                pattern: ref s,
+                sigspace: true,
+                ..
+            }) if s.as_str() == ":s ab cd"
+        ));
     }
 
     #[test]

@@ -813,6 +813,59 @@ impl Interpreter {
         }
     }
 
+    /// Select non-overlapping matches from all matches (for :g/global).
+    /// Takes the longest match at each position, then greedily selects
+    /// matches that don't overlap with previously selected ones.
+    fn select_non_overlapping_matches(&self, all: Vec<RegexCaptures>) -> Vec<RegexCaptures> {
+        if all.is_empty() {
+            return Vec::new();
+        }
+        // First, pick the longest match at each starting position
+        let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
+            std::collections::BTreeMap::new();
+        for capture in all {
+            let key = capture.from;
+            match best_by_start.get(&key) {
+                Some(existing) if capture.to <= existing.to => {}
+                _ => {
+                    best_by_start.insert(key, capture);
+                }
+            }
+        }
+        // Then greedily select non-overlapping: skip if starts before previous end
+        let mut result = Vec::new();
+        let mut last_end = 0usize;
+        for (_, capture) in best_by_start {
+            if capture.from >= last_end {
+                last_end = capture.to;
+                result.push(capture);
+            }
+        }
+        result
+    }
+
+    /// Apply multiple regex captures (for :g, :ov, :ex) — set $/ to list of Match objects.
+    fn apply_multi_regex_captures(&mut self, selected: &[RegexCaptures]) {
+        let slash_list = selected
+            .iter()
+            .map(|c| {
+                Value::make_match_object_with_captures(
+                    c.matched.clone(),
+                    c.from as i64,
+                    c.to as i64,
+                    &c.positional,
+                    &c.named,
+                )
+            })
+            .collect::<Vec<_>>();
+        self.env.insert("/".to_string(), Value::array(slash_list));
+        if let Some(first) = selected.first() {
+            for (i, cap) in first.positional.iter().enumerate() {
+                self.env.insert(i.to_string(), Value::str(cap.clone()));
+            }
+        }
+    }
+
     /// Get the match continuation position from `$/.to`, defaulting to 0.
     fn get_match_to_position(&self) -> usize {
         if let Some(Value::Instance { attributes, .. }) = self.env.get("/")
@@ -1079,13 +1132,15 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
-            // :pos/:p anchored match (non-exhaustive) — match at $/.to (or 0)
+            // :pos/:p anchored match (non-exhaustive/non-global) — match at $/.to (or 0)
             (
                 _,
                 Value::RegexWithAdverbs {
                     pattern: pat,
                     pos: true,
+                    global: false,
                     exhaustive: false,
+                    overlap: false,
                     ..
                 },
             ) => {
@@ -1098,12 +1153,145 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::Nil);
                 false
             }
+            // :g (global) — find all non-overlapping matches
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    global: true,
+                    overlap: false,
+                    exhaustive: false,
+                    repeat,
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                // Filter to non-overlapping: take longest match at each position,
+                // then skip matches that overlap with already-selected ones
+                let non_overlapping = self.select_non_overlapping_matches(all);
+                if non_overlapping.is_empty() {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                let selected = if let Some(needed) = *repeat {
+                    if non_overlapping.len() < needed {
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                    non_overlapping.into_iter().take(needed).collect::<Vec<_>>()
+                } else {
+                    non_overlapping
+                };
+                self.apply_multi_regex_captures(&selected);
+                true
+            }
+            // :ov (overlap) — find longest match at each starting position
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    overlap: true,
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                if all.is_empty() {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                // Keep longest match at each starting position
+                let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
+                    std::collections::BTreeMap::new();
+                for capture in all {
+                    let key = capture.from;
+                    match best_by_start.get(&key) {
+                        Some(existing) if capture.to <= existing.to => {}
+                        _ => {
+                            best_by_start.insert(key, capture);
+                        }
+                    }
+                }
+                let selected: Vec<_> = best_by_start.into_values().collect();
+                self.apply_multi_regex_captures(&selected);
+                true
+            }
+            // :ex (exhaustive) — find ALL possible matches
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    exhaustive: true,
+                    repeat,
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let mut all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                if all.is_empty() {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                let selected = if let Some(needed) = *repeat {
+                    let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
+                    all.retain(|c| c.from == earliest);
+                    if all.len() < needed {
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                    all.into_iter().take(needed).collect::<Vec<_>>()
+                } else {
+                    all
+                };
+                self.apply_multi_regex_captures(&selected);
+                true
+            }
+            // Single match: plain Regex or RegexWithAdverbs without multi-match flags
             (_, Value::Regex(pat))
             | (
                 _,
                 Value::RegexWithAdverbs {
                     pattern: pat,
+                    global: false,
                     exhaustive: false,
+                    overlap: false,
                     perl5: false,
                     ..
                 },
@@ -1139,11 +1327,14 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::Nil);
                 false
             }
+            // P5 regex single match
             (
                 _,
                 Value::RegexWithAdverbs {
                     pattern: pat,
+                    global: false,
                     exhaustive: false,
+                    overlap: false,
                     perl5: true,
                     ..
                 },
@@ -1159,83 +1350,6 @@ impl Interpreter {
                 }
                 self.env.insert("/".to_string(), Value::Nil);
                 false
-            }
-            (
-                _,
-                Value::RegexWithAdverbs {
-                    pattern,
-                    exhaustive: true,
-                    repeat,
-                    perl5,
-                    ..
-                },
-            ) => {
-                let text = left.to_string_value();
-                let mut all = if *perl5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(pattern, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(pattern, &text)
-                    }
-                } else {
-                    self.regex_match_all_with_captures(pattern, &text)
-                };
-                if all.is_empty() {
-                    self.env.insert("/".to_string(), Value::Nil);
-                    return false;
-                }
-                let selected = if let Some(needed) = *repeat {
-                    if needed == 0 {
-                        let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
-                            std::collections::BTreeMap::new();
-                        for capture in all {
-                            let key = capture.from;
-                            match best_by_start.get(&key) {
-                                Some(existing) if capture.to <= existing.to => {}
-                                _ => {
-                                    best_by_start.insert(key, capture);
-                                }
-                            }
-                        }
-                        best_by_start.into_values().collect::<Vec<_>>()
-                    } else {
-                        let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
-                        all.retain(|c| c.from == earliest);
-                        if all.len() < needed {
-                            self.env.insert("/".to_string(), Value::Nil);
-                            return false;
-                        }
-                        all.into_iter().take(needed).collect::<Vec<_>>()
-                    }
-                } else {
-                    all
-                };
-                if selected.is_empty() {
-                    self.env.insert("/".to_string(), Value::Nil);
-                    return false;
-                }
-                let slash_list = selected
-                    .iter()
-                    .map(|c| {
-                        Value::make_match_object_with_captures(
-                            c.matched.clone(),
-                            c.from as i64,
-                            c.to as i64,
-                            &c.positional,
-                            &c.named,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                self.env.insert("/".to_string(), Value::array(slash_list));
-                if let Some(first) = selected.first() {
-                    for (i, cap) in first.positional.iter().enumerate() {
-                        self.env.insert(i.to_string(), Value::str(cap.clone()));
-                    }
-                }
-                true
             }
             (_, Value::Junction { kind, values }) => match kind {
                 crate::value::JunctionKind::Any => values.iter().any(|v| self.smart_match(left, v)),

@@ -222,10 +222,16 @@ pub enum Value {
     Regex(Arc<String>),
     RegexWithAdverbs {
         pattern: Arc<String>,
+        global: bool,
         exhaustive: bool,
+        overlap: bool,
         repeat: Option<usize>,
         perl5: bool,
         pos: bool,
+        ignore_case: bool,
+        sigspace: bool,
+        samecase: bool,
+        samespace: bool,
     },
     Sub(Arc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
@@ -677,19 +683,43 @@ impl PartialEq for Value {
             (
                 Value::RegexWithAdverbs {
                     pattern: ap,
+                    global: ag,
                     exhaustive: aex,
+                    overlap: aov,
                     repeat: ar,
                     perl5: ap5,
                     pos: apos,
+                    ignore_case: aic,
+                    sigspace: ass,
+                    samecase: asc,
+                    samespace: asp,
                 },
                 Value::RegexWithAdverbs {
                     pattern: bp,
+                    global: bg,
                     exhaustive: bex,
+                    overlap: bov,
                     repeat: br,
                     perl5: bp5,
                     pos: bpos,
+                    ignore_case: bic,
+                    sigspace: bss,
+                    samecase: bsc,
+                    samespace: bsp,
                 },
-            ) => ap == bp && aex == bex && ar == br && ap5 == bp5 && apos == bpos,
+            ) => {
+                ap == bp
+                    && ag == bg
+                    && aex == bex
+                    && aov == bov
+                    && ar == br
+                    && ap5 == bp5
+                    && apos == bpos
+                    && aic == bic
+                    && ass == bss
+                    && asc == bsc
+                    && asp == bsp
+            }
             (
                 Value::Routine {
                     package: ap,

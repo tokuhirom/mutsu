@@ -552,20 +552,44 @@ impl Value {
             Value::Regex(pattern) => format!("/{}/", pattern),
             Value::RegexWithAdverbs {
                 pattern,
+                global,
                 exhaustive,
+                overlap,
                 repeat,
                 perl5,
+                ignore_case,
+                sigspace,
+                samecase,
+                samespace,
                 ..
             } => {
                 let mut prefix = String::new();
+                if *ignore_case {
+                    prefix.push_str(":i");
+                }
+                if *sigspace {
+                    prefix.push_str(":s");
+                }
+                if *global {
+                    prefix.push_str(":g");
+                }
                 if *exhaustive {
                     prefix.push_str(":ex");
+                }
+                if *overlap {
+                    prefix.push_str(":ov");
                 }
                 if let Some(count) = repeat {
                     prefix.push_str(&format!(":x({count})"));
                 }
                 if *perl5 {
                     prefix.push_str(":P5");
+                }
+                if *samecase {
+                    prefix.push_str(":ii");
+                }
+                if *samespace {
+                    prefix.push_str(":ss");
                 }
                 format!("m{prefix}/{pattern}/")
             }
