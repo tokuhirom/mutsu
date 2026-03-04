@@ -1285,6 +1285,10 @@ impl Interpreter {
         }
         // Mixin allomorphic types: check both inner type and mixin type keys
         if let Value::Mixin(inner, mixins) = value {
+            // Check allomorphic type names first (IntStr, NumStr, RatStr, ComplexStr, Allomorph)
+            if value.isa_check(constraint) {
+                return true;
+            }
             if self.type_matches_value(constraint, inner) {
                 return true;
             }
