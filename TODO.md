@@ -67,13 +67,13 @@ Scalar containers are done. Array/Hash container semantics need work.
 
 ### A4. Module/package system (S10: 0/9, S11: 3/22 passing)
 
-- [ ] `export` / `is export` trait with tag support
-- [ ] `import` with selective import (`use Foo :bar`)
-- [ ] `require` at runtime (dynamic module loading)
-- [ ] `unit module` / `unit class` / `unit role`
-- [ ] Proper `EXPORT` sub convention
-- [ ] `CompUnit` / repository API (for `zef` compatibility)
-- [ ] Precompilation (bytecode caching for loaded modules)
+- [x] `export` / `is export` trait with tag support
+- [x] `import` with selective import (`use Foo :bar`)
+- [x] `require` at runtime (dynamic module loading)
+- [x] `unit module` / `unit class` / `unit role`
+- [ ] Proper `EXPORT` sub convention (tag-based registry exists but no actual `EXPORT::TAG::symbol` subs)
+- [ ] `CompUnit` / repository API (for `zef` compatibility) — type name recognized, no API
+- [ ] Precompilation (bytecode caching for loaded modules) — not started
 
 ### A5. Grammar/regex completion (S05: 10/98 passing)
 
