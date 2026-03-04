@@ -295,6 +295,10 @@ enum RegexAtom {
         negated: bool,
         is_behind: bool,
     },
+    /// `<<` or `«` — left word boundary assertion (zero-width)
+    LeftWordBoundary,
+    /// `>>` or `»` — right word boundary assertion (zero-width)
+    RightWordBoundary,
 }
 
 #[derive(Clone)]

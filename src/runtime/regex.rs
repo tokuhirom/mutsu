@@ -9,6 +9,12 @@ struct NamedRegexLookupSpec {
     arg_exprs: Vec<String>,
 }
 
+/// Check if a character is a "word" character for word boundary purposes.
+/// In Raku, word characters are alphanumeric or underscore.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
 impl Interpreter {
     fn regex_escape_literal(text: &str) -> String {
         let mut out = String::new();
@@ -1674,6 +1680,30 @@ impl Interpreter {
             RegexAtom::ZeroWidth => {
                 return Some(pos); // Matches at any position without consuming
             }
+            RegexAtom::LeftWordBoundary => {
+                // << / « — left word boundary: position is at the start of a word.
+                // The char before pos is NOT a word char (or pos == 0),
+                // AND the char at pos IS a word char.
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let at_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                return if !before_is_word && at_is_word {
+                    Some(pos)
+                } else {
+                    None
+                };
+            }
+            RegexAtom::RightWordBoundary => {
+                // >> / » — right word boundary: position is at the end of a word.
+                // The char before pos IS a word char,
+                // AND the char at pos is NOT a word char (or pos == chars.len()).
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let at_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                return if before_is_word && !at_is_word {
+                    Some(pos)
+                } else {
+                    None
+                };
+            }
             RegexAtom::CodeAssertion { .. } => {
                 // In non-capture mode, code assertions always succeed
                 // (we can't evaluate them without capture context)
@@ -1869,7 +1899,9 @@ impl Interpreter {
             | RegexAtom::CaptureStartMarker
             | RegexAtom::CaptureEndMarker
             | RegexAtom::VarDecl { .. }
-            | RegexAtom::ClosureInterpolation { .. } => unreachable!(),
+            | RegexAtom::ClosureInterpolation { .. }
+            | RegexAtom::LeftWordBoundary
+            | RegexAtom::RightWordBoundary => unreachable!(),
         };
         if matched {
             match atom {
@@ -1934,7 +1966,10 @@ impl Interpreter {
                 }
                 return best;
             }
-            RegexAtom::ZeroWidth | RegexAtom::UnicodePropAssert { .. } => {
+            RegexAtom::ZeroWidth
+            | RegexAtom::UnicodePropAssert { .. }
+            | RegexAtom::LeftWordBoundary
+            | RegexAtom::RightWordBoundary => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));
