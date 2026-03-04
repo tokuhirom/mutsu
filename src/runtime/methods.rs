@@ -3877,6 +3877,17 @@ impl Interpreter {
                 } else {
                     1.0
                 };
+                // Second argument: initial delay before first emission (default 0)
+                let initial_delay = args.get(1).map_or(0.0, |value| match value {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(n) => *n,
+                    other => other.to_string_value().parse::<f64>().unwrap_or(0.0),
+                });
+                let initial_delay = if initial_delay.is_finite() && initial_delay >= 0.0 {
+                    initial_delay
+                } else {
+                    0.0
+                };
 
                 let supply_id = super::native_methods::next_supply_id();
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -3885,10 +3896,13 @@ impl Interpreter {
                 }
 
                 std::thread::spawn(move || {
-                    let delay = std::time::Duration::from_secs_f64(period_secs);
+                    let period = std::time::Duration::from_secs_f64(period_secs);
                     let mut tick = 0i64;
+                    // Initial delay before first emission (default 0 = immediate)
+                    if initial_delay > 0.0 {
+                        std::thread::sleep(std::time::Duration::from_secs_f64(initial_delay));
+                    }
                     loop {
-                        std::thread::sleep(delay);
                         if tx
                             .send(super::native_methods::SupplyEvent::Emit(Value::Int(tick)))
                             .is_err()
@@ -3896,6 +3910,7 @@ impl Interpreter {
                             break;
                         }
                         tick = tick.saturating_add(1);
+                        std::thread::sleep(period);
                     }
                 });
 
