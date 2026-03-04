@@ -7,6 +7,7 @@ pub(super) mod modifier;
 pub(super) mod simple;
 mod simple_expr_stmt;
 mod sub;
+mod sub_param;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, parse_char, update_best_error};
