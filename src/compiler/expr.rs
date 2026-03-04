@@ -1766,6 +1766,11 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::IndirectCodeLookup(name_idx));
             }
+            Expr::SymbolicDeref { sigil, expr } => {
+                self.compile_expr(expr);
+                let sigil_idx = self.code.add_constant(Value::str(sigil.clone()));
+                self.code.emit(OpCode::SymbolicDeref(sigil_idx));
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));

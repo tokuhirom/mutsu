@@ -531,6 +531,33 @@ impl VM {
         self.stack.push(val);
     }
 
+    /// Execute symbolic variable dereference: $::("name"), @::("name"), %::("name").
+    /// Pops the name string from the stack, prepends the sigil, and looks up the variable.
+    pub(super) fn exec_symbolic_deref_op(&mut self, code: &CompiledCode, sigil_idx: u32) {
+        let sigil = Self::const_str(code, sigil_idx).to_string();
+        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name = name_val.to_string_value();
+        // For $::("x"), look up the bare name "x" (scalars are stored without sigil).
+        // For @::("x"), look up "@x" (arrays are stored with sigil).
+        // For %::("x"), look up "%x" (hashes are stored with sigil).
+        // For &::("x"), resolve as a code variable (function lookup).
+        if sigil == "&" {
+            let val = self.interpreter.resolve_code_var(&name);
+            self.stack.push(val);
+            return;
+        }
+        let lookup_name = match sigil.as_str() {
+            "$" => name.to_string(),
+            "@" => format!("@{}", name),
+            "%" => format!("%{}", name),
+            _ => name.to_string(),
+        };
+        let val = self
+            .get_env_with_main_alias(&lookup_name)
+            .unwrap_or(Value::Nil);
+        self.stack.push(val);
+    }
+
     pub(super) fn exec_assign_expr_op(
         &mut self,
         code: &CompiledCode,

@@ -122,6 +122,19 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let full_name = format!("={}", name);
         return Ok((rest, Expr::Var(full_name)));
     }
+    // Symbolic variable dereference: $::("name")
+    if let Some(after_colons) = input.strip_prefix("::(") {
+        let (after_expr, expr) = expression(after_colons)?;
+        let (after_expr, _) = ws(after_expr)?;
+        let (rest, _) = parse_char(after_expr, ')')?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "$".to_string(),
+                expr: Box::new(expr),
+            },
+        ));
+    }
     // Named parameter variable inside blocks: $:name
     if let Some(after_colon) = input.strip_prefix(':') {
         let (rest, name) = parse_ident_with_hyphens(after_colon)?;
@@ -317,6 +330,19 @@ fn parse_interpolation_qualified_ident_with_hyphens_or_empty(input: &str) -> (&s
 /// Parse an @array variable reference.
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
+    // Symbolic variable dereference: @::("name")
+    if let Some(after_colons) = input.strip_prefix("::(") {
+        let (after_expr, expr) = expression(after_colons)?;
+        let (after_expr, _) = ws(after_expr)?;
+        let (rest, _) = parse_char(after_expr, ')')?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "@".to_string(),
+                expr: Box::new(expr),
+            },
+        ));
+    }
     // Handle `.` twigil: @.attr → self.attr (in list context)
     if input.starts_with('.')
         && input.len() > 1
@@ -373,6 +399,19 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
 /// Parse a %hash variable reference.
 pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
+    // Symbolic variable dereference: %::("name")
+    if let Some(after_colons) = input.strip_prefix("::(") {
+        let (after_expr, expr) = expression(after_colons)?;
+        let (after_expr, _) = ws(after_expr)?;
+        let (rest, _) = parse_char(after_expr, ')')?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "%".to_string(),
+                expr: Box::new(expr),
+            },
+        ));
+    }
     // Handle `.` twigil: %.attr → self.attr (in hash context)
     if input.starts_with('.')
         && input.len() > 1
@@ -492,6 +531,7 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected(":: after indirect package lookup"));
     }
     // Handle &::($expr)::name — indirect package lookup
+    // Handle &::($expr) — symbolic code dereference (looks up &name at runtime)
     if let Some(after_colons) = input.strip_prefix("::(") {
         let (after_expr, expr) = expression(after_colons)?;
         let (after_expr, _) = parse_char(after_expr, ')')?;
@@ -506,7 +546,14 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        return Err(PError::expected(":: after indirect package lookup"));
+        // No ::name suffix — this is &::("name"), a symbolic code variable deref
+        return Ok((
+            after_expr,
+            Expr::SymbolicDeref {
+                sigil: "&".to_string(),
+                expr: Box::new(expr),
+            },
+        ));
     }
     // Handle package-qualified code refs: &SETTING::OUTER::...::name
     // or &CALLER::SETTING::OUTER::...::name

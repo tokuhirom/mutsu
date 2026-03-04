@@ -607,6 +607,10 @@ pub(crate) enum OpCode {
     /// Indirect code lookup: pop package string from stack, resolve &name in that package context.
     IndirectCodeLookup(u32),
 
+    /// Symbolic variable dereference: pop name string from stack, look up variable by sigil+name.
+    /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
+    SymbolicDeref(u32),
+
     /// Save current variable value for `let`/`temp` scope management.
     /// Pops the array index (if index_mode is true) from the stack.
     /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).

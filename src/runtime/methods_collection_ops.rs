@@ -765,6 +765,7 @@ impl Interpreter {
                 | Expr::BlockMagic
                 | Expr::PseudoStash(_) => false,
                 Expr::IndirectCodeLookup { package, .. } => expr_contains_last(package),
+                Expr::SymbolicDeref { expr, .. } => expr_contains_last(expr),
                 Expr::HyperSlice { target, .. } => expr_contains_last(target),
                 Expr::HyperIndex { target, keys } => {
                     expr_contains_last(target) || expr_contains_last(keys)

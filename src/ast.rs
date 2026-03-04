@@ -258,6 +258,12 @@ pub(crate) enum Expr {
         package: Box<Expr>,
         name: String,
     },
+    /// Symbolic variable dereference: $::("name"), @::("name"), %::("name")
+    /// Resolves a variable by name at runtime. The sigil is "$", "@", or "%".
+    SymbolicDeref {
+        sigil: String,
+        expr: Box<Expr>,
+    },
     PseudoStash(String),
     /// Hash hyperslice: %hash{**}:adverb
     HyperSlice {
@@ -879,6 +885,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         }
         Expr::CodeVar(_) => {}
         Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
+        Expr::SymbolicDeref { expr, .. } => collect_ph_expr(expr, out),
         Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. } | Expr::MetaOp { left, right, .. } => {
             collect_ph_expr(left, out);
