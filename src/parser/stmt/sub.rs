@@ -1894,12 +1894,16 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         let (r, sub_params) = parse_param_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
+        let (r, _) = ws(r)?;
+        let (r, required, opt_marker) = parse_required_suffix(r);
         let mut p = make_param("__subsig__".to_string());
         p.sub_signature = Some(sub_params);
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
         p.type_constraint = type_constraint;
+        p.required = required;
+        p.optional_marker = opt_marker;
         return Ok((r, p));
     }
 

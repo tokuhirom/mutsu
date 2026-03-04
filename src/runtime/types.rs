@@ -224,6 +224,52 @@ fn sub_signature_matches_value(
     true
 }
 
+/// Bind a named parameter's sub-signature for renaming (e.g., `:a(:$b)`).
+/// Unlike destructuring, the value is bound directly to each inner param.
+fn bind_named_rename_sub_signature(
+    interpreter: &mut Interpreter,
+    sub_params: &[ParamDef],
+    value: &Value,
+) -> Result<(), RuntimeError> {
+    for sub_pd in sub_params {
+        if sub_pd.slurpy {
+            continue;
+        }
+        let bind_name = &sub_pd.name;
+        if bind_name.is_empty() {
+            continue;
+        }
+        if let Some(tc) = &sub_pd.type_constraint
+            && !interpreter.type_matches_value(tc, value)
+        {
+            return Err(RuntimeError::new(format!(
+                "Type check failed in binding to parameter '{}'; expected {}, got {}",
+                bind_name,
+                tc,
+                super::value_type_name(value)
+            )));
+        }
+        // Sigil-based type check: %param requires Associative, @param requires Positional
+        if bind_name.starts_with('%') && !matches!(value, Value::Hash(..)) {
+            return Err(RuntimeError::new(format!(
+                "Type check failed in binding to parameter '{}'; expected Associative, got {}",
+                bind_name,
+                super::value_type_name(value)
+            )));
+        }
+        if bind_name.starts_with('@') && !matches!(value, Value::Array(..) | Value::Nil) {
+            return Err(RuntimeError::new(format!(
+                "Type check failed in binding to parameter '{}'; expected Positional, got {}",
+                bind_name,
+                super::value_type_name(value)
+            )));
+        }
+        interpreter.bind_param_value(bind_name, value.clone());
+        interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
+    }
+    Ok(())
+}
+
 fn bind_sub_signature_from_value(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
@@ -1864,10 +1910,34 @@ impl Interpreter {
                         self.bind_param_value(&pd.name, *val.clone());
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                         if let Some(sub_params) = &pd.sub_signature {
-                            bind_sub_signature_from_value(self, sub_params, &val)?;
+                            bind_named_rename_sub_signature(self, sub_params, &val)?;
                         }
                         found = true;
                         break;
+                    }
+                }
+                // Alias matching: for :a(:$b), also accept b => val
+                if !found && let Some(sub_params) = &pd.sub_signature {
+                    for sub_pd in sub_params {
+                        if found {
+                            break;
+                        }
+                        if !sub_pd.named {
+                            continue;
+                        }
+                        let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
+                        for arg in args.iter() {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if let Value::Pair(key, inner_val) = arg
+                                && key == inner_key
+                            {
+                                self.bind_param_value(&pd.name, *inner_val.clone());
+                                self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                                bind_named_rename_sub_signature(self, sub_params, &inner_val)?;
+                                found = true;
+                                break;
+                            }
+                        }
                     }
                 }
                 if !found && let Some(default_expr) = &pd.default {
@@ -1894,6 +1964,11 @@ impl Interpreter {
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
+                } else if !found && pd.required {
+                    return Err(RuntimeError::new(format!(
+                        "Required named parameter '{}' not passed",
+                        pd.name
+                    )));
                 }
             } else {
                 // Positional param — skip over Value::Pair entries (named args)
@@ -2176,21 +2251,35 @@ impl Interpreter {
             }
         }
         // Check for unexpected named arguments when no hash/capture slurpy is present
-        // Skip this check when any param has a sub-signature (unpacking dispatch)
         let has_hash_slurpy = param_defs
             .iter()
             .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
-        let has_sub_sig = param_defs.iter().any(|pd| pd.sub_signature.is_some());
-        if !has_hash_slurpy && !has_sub_sig {
+        // Only skip for positional sub-signatures (unpacking dispatch), not named renaming
+        let has_positional_sub_sig = param_defs
+            .iter()
+            .any(|pd| !pd.named && pd.sub_signature.is_some());
+        if !has_hash_slurpy && !has_positional_sub_sig {
             for arg in plain_args.iter() {
                 let arg = unwrap_varref_value(arg.clone());
                 if let Value::Pair(key, _) = arg {
                     // Check if this named arg was consumed by a named param or colon placeholder
                     let consumed = param_defs.iter().any(|pd| {
-                        (pd.named && pd.name == key)
+                        if (pd.named && pd.name == key)
                             || pd.name == format!(":{}", key)
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
+                        {
+                            return true;
+                        }
+                        // Also check inner named aliases from sub-signatures
+                        if let Some(sub_params) = &pd.sub_signature {
+                            for sp in sub_params {
+                                if sp.named && sp.name == key {
+                                    return true;
+                                }
+                            }
+                        }
+                        false
                     });
                     if !consumed {
                         return Err(RuntimeError::new(format!(
@@ -2207,7 +2296,7 @@ impl Interpreter {
         let has_array_slurpy = param_defs
             .iter()
             .any(|pd| pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless));
-        if !has_array_slurpy && !has_sub_sig {
+        if !has_array_slurpy && !has_positional_sub_sig {
             let positional_param_count = param_defs
                 .iter()
                 .filter(|pd| !pd.named && !pd.slurpy)
