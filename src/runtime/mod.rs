@@ -474,6 +474,8 @@ pub struct Interpreter {
     /// Pending error from regex security validation, to be propagated by the caller.
     #[allow(dead_code)]
     pending_regex_error: Option<RuntimeError>,
+    /// When true, module precompilation cache is enabled.
+    precomp_enabled: bool,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -1468,6 +1470,7 @@ impl Interpreter {
             rebless_map: HashMap::new(),
             action_made: None,
             pending_regex_error: None,
+            precomp_enabled: true,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1925,6 +1928,11 @@ impl Interpreter {
     /// Enable immediate flushing of output to stdout.
     pub fn set_immediate_stdout(&mut self, val: bool) {
         self.immediate_stdout = val;
+    }
+
+    /// Enable or disable module precompilation cache.
+    pub fn set_precomp_enabled(&mut self, val: bool) {
+        self.precomp_enabled = val;
     }
 
     pub fn exit_code(&self) -> i64 {
@@ -2504,6 +2512,7 @@ impl Interpreter {
             rebless_map: self.rebless_map.clone(),
             action_made: None,
             pending_regex_error: None,
+            precomp_enabled: self.precomp_enabled,
         };
         cloned.init_io_environment();
         cloned

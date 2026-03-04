@@ -37,6 +37,7 @@ fn print_help(program: &str) {
     println!("  --dump-ast     Dump the AST instead of executing");
     println!("  --doc          Render Pod documentation from the source");
     println!("  --repl         Start the interactive REPL");
+    println!("  --no-precomp   Disable module precompilation cache");
     println!("  -h, --help     Show this help message");
     println!();
     println!("Environment variables:");
@@ -50,6 +51,7 @@ fn main() {
     let mut dump_ast = false;
     let mut doc_mode = false;
     let mut repl_flag = false;
+    let mut no_precomp = false;
     let mut lib_paths: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
     let mut iter = args[1..].iter();
@@ -63,6 +65,8 @@ fn main() {
             doc_mode = true;
         } else if arg == "--repl" {
             repl_flag = true;
+        } else if arg == "--no-precomp" {
+            no_precomp = true;
         } else if arg.starts_with("--parser=") {
             eprintln!("--parser option is no longer supported");
             std::process::exit(1);
@@ -153,6 +157,9 @@ fn main() {
 
     let mut interpreter = Interpreter::new();
     interpreter.set_immediate_stdout(true);
+    if no_precomp {
+        interpreter.set_precomp_enabled(false);
+    }
     for path in lib_paths {
         interpreter.add_lib_path(path);
     }

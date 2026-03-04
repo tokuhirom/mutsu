@@ -79,15 +79,13 @@ impl Interpreter {
         None
     }
 
-    fn require_load_from_file(
+    /// Parse a source file for require, returning the merged AST.
+    fn parse_require_source(
         &mut self,
         file: &str,
-        package_hint: Option<&str>,
-    ) -> Result<(), RuntimeError> {
-        let path = self
-            .resolve_require_file_path(file)
-            .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", file)))?;
-        let code = std::fs::read_to_string(&path)
+        path: &std::path::Path,
+    ) -> Result<Vec<crate::ast::Stmt>, RuntimeError> {
+        let code = std::fs::read_to_string(path)
             .map_err(|e| RuntimeError::new(format!("Failed to read module {}: {}", file, e)))?;
         let preprocessed = Self::preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
@@ -101,7 +99,30 @@ impl Interpreter {
             err.message = format!("Failed to parse module '{}': {}", file, err.message);
             err
         })?;
-        let stmts = Self::merge_unit_class(stmts);
+        Ok(Self::merge_unit_class(stmts))
+    }
+
+    fn require_load_from_file(
+        &mut self,
+        file: &str,
+        package_hint: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        let path = self
+            .resolve_require_file_path(file)
+            .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", file)))?;
+
+        // Try loading from precompilation cache
+        let stmts = if self.precomp_enabled {
+            if let Some(cached) = crate::precomp::load_cached_ast(&path) {
+                cached
+            } else {
+                let parsed = self.parse_require_source(file, &path)?;
+                crate::precomp::save_cached_ast(&path, &parsed);
+                parsed
+            }
+        } else {
+            self.parse_require_source(file, &path)?
+        };
         let saved_package = self.current_package.clone();
         let before_function_keys: std::collections::HashSet<Symbol> =
             self.functions.keys().copied().collect();

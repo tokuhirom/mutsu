@@ -4,7 +4,7 @@ use crate::value::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamDef {
     pub(crate) name: String,
     pub(crate) default: Option<Expr>,
@@ -32,7 +32,7 @@ pub(crate) struct ParamDef {
     pub(crate) shape_constraints: Option<Vec<Expr>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FunctionDef {
     pub(crate) package: Symbol,
     pub(crate) name: Symbol,
@@ -62,7 +62,7 @@ pub(crate) fn function_body_fingerprint(
     hasher.finish()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,
     Check,
@@ -81,7 +81,7 @@ pub(crate) enum PhaserKind {
     Close,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
@@ -272,7 +272,7 @@ pub(crate) enum Expr {
 }
 
 /// Secondary adverb on :exists subscript adverb
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ExistsAdverb {
     None,
     Kv,
@@ -286,7 +286,7 @@ pub(crate) enum ExistsAdverb {
     InvalidV,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HyperSliceAdverb {
     Kv,
     K,
@@ -296,14 +296,14 @@ pub(crate) enum HyperSliceAdverb {
     DeepKv,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ControlFlowKind {
     Last,
     Next,
     Redo,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum CallArg {
     Positional(Expr),
     Named {
@@ -317,14 +317,14 @@ pub(crate) enum CallArg {
 }
 
 /// Execution mode for `for` loops.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ForMode {
     Normal,
     Race,
     Hyper,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
         name: String,
@@ -566,7 +566,7 @@ pub(crate) enum Stmt {
     Expr(Expr),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub(crate) enum AssignOp {
     Assign,
     Bind,
