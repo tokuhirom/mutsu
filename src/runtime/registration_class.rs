@@ -4,25 +4,7 @@ use crate::symbol::Symbol;
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
 fn parse_role_type_args(input: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0;
-    for (i, ch) in input.char_indices() {
-        match ch {
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth -= 1,
-            ',' if depth == 0 => {
-                args.push(input[start..i].trim().to_string());
-                start = i + 1;
-            }
-            _ => {}
-        }
-    }
-    let last = input[start..].trim();
-    if !last.is_empty() {
-        args.push(last.to_string());
-    }
-    args
+    split_balanced_comma_list(input)
 }
 
 fn looks_like_type_arg_expr(input: &str) -> bool {

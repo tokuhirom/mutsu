@@ -9,28 +9,7 @@ impl Interpreter {
     fn parse_parametric_spec(spec: &str) -> (String, Vec<String>) {
         if let Some((base, rest)) = spec.split_once('[') {
             let inner = rest.strip_suffix(']').unwrap_or(rest);
-            let mut args = Vec::new();
-            let mut depth = 0i32;
-            let mut start = 0usize;
-            for (i, ch) in inner.char_indices() {
-                match ch {
-                    '[' | '(' => depth += 1,
-                    ']' | ')' => depth -= 1,
-                    ',' if depth == 0 => {
-                        let part = inner[start..i].trim();
-                        if !part.is_empty() {
-                            args.push(part.to_string());
-                        }
-                        start = i + 1;
-                    }
-                    _ => {}
-                }
-            }
-            let tail = inner[start..].trim();
-            if !tail.is_empty() {
-                args.push(tail.to_string());
-            }
-            (base.to_string(), args)
+            (base.to_string(), split_balanced_comma_list(inner))
         } else {
             (spec.to_string(), Vec::new())
         }
