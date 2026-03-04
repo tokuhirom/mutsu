@@ -242,6 +242,7 @@ roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
+roast/S06-signature/named-renaming.t
 roast/S06-signature/optional.t
 roast/S06-signature/passing-hashes.t
 roast/S06-signature/positional-placeholders.t
