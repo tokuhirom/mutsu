@@ -1549,6 +1549,10 @@ impl VM {
                 self.exec_indirect_code_lookup_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::SymbolicDeref(sigil_idx) => {
+                self.exec_symbolic_deref_op(code, *sigil_idx);
+                *ip += 1;
+            }
             OpCode::StateVarInit(slot, key_idx) => {
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;

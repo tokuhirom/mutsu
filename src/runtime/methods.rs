@@ -307,6 +307,7 @@ impl Interpreter {
                     }
                 }
                 Expr::IndirectCodeLookup { package, .. } => scan_expr(package, positional, named),
+                Expr::SymbolicDeref { expr, .. } => scan_expr(expr, positional, named),
                 Expr::Hash(pairs) => {
                     for (_, value) in pairs {
                         if let Some(v) = value {
