@@ -94,7 +94,7 @@ impl VM {
             items
                 .iter()
                 .map(|item| match item {
-                    Value::Str(name) => Some(name.clone()),
+                    Value::Str(name) => Some(name.to_string()),
                     _ => None,
                 })
                 .collect(),

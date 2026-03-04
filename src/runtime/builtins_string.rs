@@ -17,7 +17,7 @@ impl Interpreter {
                 result.push_str(&item.to_string_value());
             }
         }
-        Ok(Value::Str(result))
+        Ok(Value::str(result))
     }
 
     pub(super) fn builtin_chr(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -25,9 +25,9 @@ impl Interpreter {
             && *i >= 0
             && let Some(ch) = std::char::from_u32(*i as u32)
         {
-            return Ok(Value::Str(ch.to_string()));
+            return Ok(Value::str(ch.to_string()));
         }
-        Ok(Value::Str(String::new()))
+        Ok(Value::str(String::new()))
     }
 
     pub(super) fn builtin_ord(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -87,17 +87,17 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        Ok(Value::Str(val.chars().rev().collect()))
+        Ok(Value::str(val.chars().rev().collect()))
     }
 
     pub(super) fn builtin_lc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        Ok(Value::Str(val.to_string_value().to_lowercase()))
+        Ok(Value::str(val.to_string_value().to_lowercase()))
     }
 
     pub(super) fn builtin_uc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        Ok(Value::Str(val.to_string_value().to_uppercase()))
+        Ok(Value::str(val.to_string_value().to_uppercase()))
     }
 
     pub(super) fn builtin_tc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -117,7 +117,7 @@ impl Interpreter {
                 result.push(ch);
             }
         }
-        Ok(Value::Str(result))
+        Ok(Value::str(result))
     }
 
     pub(super) fn builtin_trim(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -125,7 +125,7 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        Ok(Value::Str(val.trim().to_string()))
+        Ok(Value::str(val.trim().to_string()))
     }
 
     pub(super) fn builtin_chars(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -140,17 +140,17 @@ impl Interpreter {
 
     pub(super) fn builtin_sprintf(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let fmt = match args.first() {
-            Some(Value::Str(s)) => s.clone(),
+            Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
         let rendered = super::format_sprintf(&fmt, args.get(1));
-        Ok(Value::Str(rendered))
+        Ok(Value::str(rendered))
     }
 
     pub(super) fn builtin_make_format(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
         let mut attrs = HashMap::new();
-        attrs.insert("format".to_string(), Value::Str(fmt));
+        attrs.insert("format".to_string(), Value::str(fmt));
         Ok(Value::make_instance(Symbol::intern("Format"), attrs))
     }
 }

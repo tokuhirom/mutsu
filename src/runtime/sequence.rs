@@ -16,7 +16,7 @@ impl Interpreter {
             .collect::<Vec<_>>()
             .join(",");
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("from".to_string(), Value::Str(from_str));
+        attrs.insert("from".to_string(), Value::str(from_str));
         let ex = Value::make_instance(Symbol::intern("X::Sequence::Deduction"), attrs);
         let mut err = RuntimeError::new("X::Sequence::Deduction");
         err.exception = Some(Box::new(ex));
@@ -25,8 +25,8 @@ impl Interpreter {
 
     fn sequence_empty_endpoint_error() -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("action".to_string(), Value::Str("endpoint".to_string()));
-        attrs.insert("what".to_string(), Value::Str("list".to_string()));
+        attrs.insert("action".to_string(), Value::str_from("endpoint"));
+        attrs.insert("what".to_string(), Value::str_from("list"));
         let ex = Value::make_instance(Symbol::intern("X::Cannot::Empty"), attrs);
         let mut err = RuntimeError::new("X::Cannot::Empty");
         err.exception = Some(Box::new(ex));
@@ -937,7 +937,7 @@ impl Interpreter {
                                 if let Some(next_ch) =
                                     char::from_u32((ch as i64 + delta as i64) as u32)
                                 {
-                                    Value::Str(next_ch.to_string())
+                                    Value::str(next_ch.to_string())
                                 } else {
                                     break;
                                 }
@@ -959,7 +959,7 @@ impl Interpreter {
                                         idxs.push(pos);
                                     }
                                     if idxs.is_empty() {
-                                        Value::Str(Self::string_pred(s)?)
+                                        Value::str(Self::string_pred(s)?)
                                     } else {
                                         let mut borrow = true;
                                         for idx in idxs.iter_mut().rev() {
@@ -978,14 +978,14 @@ impl Interpreter {
                                                 "Decrement out of range",
                                             ));
                                         }
-                                        Value::Str(
+                                        Value::str(
                                             idxs.into_iter().map(|i| alpha[i]).collect::<String>(),
                                         )
                                     }
                                 } else if let Some(radix) = digit_string_radix {
-                                    Value::Str(Self::digit_string_pred_radix(s, radix)?)
+                                    Value::str(Self::digit_string_pred_radix(s, radix)?)
                                 } else {
-                                    Value::Str(Self::string_pred(s)?)
+                                    Value::str(Self::string_pred(s)?)
                                 }
                             } else {
                                 break;
@@ -1005,7 +1005,7 @@ impl Interpreter {
                                         idxs.push(pos);
                                     }
                                     if idxs.is_empty() {
-                                        Value::Str(Self::string_succ(s))
+                                        Value::str(Self::string_succ(s))
                                     } else {
                                         let mut carry = true;
                                         for idx in idxs.iter_mut().rev() {
@@ -1024,14 +1024,14 @@ impl Interpreter {
                                                 "Increment out of range",
                                             ));
                                         }
-                                        Value::Str(
+                                        Value::str(
                                             idxs.into_iter().map(|i| alpha[i]).collect::<String>(),
                                         )
                                     }
                                 } else if let Some(radix) = digit_string_radix {
-                                    Value::Str(Self::digit_string_succ_radix(s, radix))
+                                    Value::str(Self::digit_string_succ_radix(s, radix))
                                 } else {
-                                    Value::Str(Self::string_succ(s))
+                                    Value::str(Self::string_succ(s))
                                 }
                             } else {
                                 break;

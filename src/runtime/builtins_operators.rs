@@ -35,7 +35,7 @@ impl Interpreter {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
                 "-" | "−" => crate::builtins::arith_negate(arg.clone()),
-                "~" => Ok(Value::Str(crate::runtime::utils::coerce_to_str(arg))),
+                "~" => Ok(Value::str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
@@ -65,8 +65,8 @@ impl Interpreter {
             let value_str = first.to_string_value();
             let msg = format!("No value '{}' found in enum {}", value_str, name);
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg.clone()));
-            attrs.insert("type".to_string(), Value::Str(name.to_string()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("type".to_string(), Value::str(name.to_string()));
             attrs.insert("value".to_string(), first);
             let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);
             let mut err = RuntimeError::new(msg);
@@ -285,7 +285,7 @@ impl Interpreter {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "message".to_string(),
-                Value::Str(format!(
+                Value::str(format!(
                     "Cannot resolve caller {}; none of these signatures matches",
                     name
                 )),
@@ -313,7 +313,7 @@ impl Interpreter {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "message".to_string(),
-                Value::Str(format!(
+                Value::str(format!(
                     "Cannot resolve caller {}; none of these signatures matches",
                     name
                 )),
@@ -377,7 +377,7 @@ impl Interpreter {
         // Treat this as a Method object value.
         if !args.is_empty() && args[0].to_string_value() == "method" {
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("name".to_string(), Value::Str(op.to_string()));
+            attrs.insert("name".to_string(), Value::str(op.to_string()));
             attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
             let mut sig_attrs = std::collections::HashMap::new();
             sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
@@ -426,7 +426,7 @@ impl Interpreter {
                 return Ok(Value::Bool(true));
             }
             if op == "~" {
-                return Ok(Value::Str(crate::runtime::utils::coerce_to_str(&args[0])));
+                return Ok(Value::str(crate::runtime::utils::coerce_to_str(&args[0])));
             }
             // Set operators with single arg: coerce to appropriate set type
             if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
@@ -535,7 +535,7 @@ impl Interpreter {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert(
                         "message".to_string(),
-                        Value::Str("Cannot coerce a lazy list onto a Set".to_string()),
+                        Value::str_from("Cannot coerce a lazy list onto a Set"),
                     );
                     let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
                     let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");
@@ -627,7 +627,7 @@ impl Interpreter {
 
     pub(super) fn repeat_error(class_name: &str, message: String) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(message.clone()));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
         let ex = Value::make_instance(Symbol::intern(class_name), attrs);
         let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(ex));
@@ -762,7 +762,7 @@ impl Interpreter {
         let mut env = crate::env::Env::new();
         env.insert(
             "__mutsu_callable_type".to_string(),
-            Value::Str("WhateverCode".to_string()),
+            Value::str_from("WhateverCode"),
         );
         let param = "__wc_0".to_string();
         let body = vec![Stmt::Expr(Expr::Binary {
@@ -823,7 +823,7 @@ impl Interpreter {
                         ));
                     };
                     let n = n_raw.max(0) as usize;
-                    acc = Value::Str(crate::runtime::utils::coerce_to_str(&acc).repeat(n));
+                    acc = Value::str(crate::runtime::utils::coerce_to_str(&acc).repeat(n));
                 }
                 "xx" => {
                     const EAGER_LIMIT: usize = 10_000;

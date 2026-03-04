@@ -180,10 +180,10 @@ impl RuntimeError {
 
     pub(crate) fn illegal_on_fixed_dimension_array(operation: &str) -> Self {
         let mut attrs = HashMap::new();
-        attrs.insert("operation".to_string(), Value::Str(operation.to_string()));
+        attrs.insert("operation".to_string(), Value::str(operation.to_string()));
         attrs.insert(
             "message".to_string(),
-            Value::Str(format!("Cannot {} a fixed-dimension array", operation)),
+            Value::str(format!("Cannot {} a fixed-dimension array", operation)),
         );
         let ex = Value::make_instance(Symbol::intern("X::IllegalOnFixedDimensionArray"), attrs);
         let mut err = Self::new(format!("Cannot {} a fixed-dimension array", operation));
@@ -193,12 +193,12 @@ impl RuntimeError {
 
     pub(crate) fn attribute_required(name: &str, why: Option<&str>) -> Self {
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        attrs.insert("name".to_string(), Value::str(name.to_string()));
         let why_str = why.unwrap_or("Required").to_string();
-        attrs.insert("why".to_string(), Value::Str(why_str.clone()));
+        attrs.insert("why".to_string(), Value::str(why_str.clone()));
         attrs.insert(
             "message".to_string(),
-            Value::Str(format!(
+            Value::str(format!(
                 "The attribute '{}' is required, but you did not provide a value for it.",
                 name
             )),
@@ -216,7 +216,7 @@ impl RuntimeError {
         let mut attrs = HashMap::new();
         attrs.insert(
             "message".to_string(),
-            Value::Str("Attempt to divide by zero".to_string()),
+            Value::str_from("Attempt to divide by zero"),
         );
         let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
         let mut err = Self::new("X::Numeric::DivideByZero");

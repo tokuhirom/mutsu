@@ -740,7 +740,7 @@ impl Interpreter {
     fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
         let make_capture_match = |capture: &str, from: usize, to: usize| {
             let mut attrs = HashMap::new();
-            attrs.insert("str".to_string(), Value::Str(capture.to_string()));
+            attrs.insert("str".to_string(), Value::str(capture.to_string()));
             attrs.insert("from".to_string(), Value::Int(from as i64));
             attrs.insert("to".to_string(), Value::Int(to as i64));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
@@ -749,7 +749,7 @@ impl Interpreter {
         };
 
         let mut attrs = HashMap::new();
-        attrs.insert("str".to_string(), Value::Str(captures.matched.clone()));
+        attrs.insert("str".to_string(), Value::str(captures.matched.clone()));
         attrs.insert("from".to_string(), Value::Int(captures.from as i64));
         attrs.insert("to".to_string(), Value::Int(captures.to as i64));
         let positional: Vec<Value> = captures
@@ -1049,13 +1049,13 @@ impl Interpreter {
                         );
                         self.env.insert("/".to_string(), match_obj);
                         for (i, v) in captures.positional.iter().enumerate() {
-                            self.env.insert(i.to_string(), Value::Str(v.clone()));
+                            self.env.insert(i.to_string(), Value::str(v.clone()));
                         }
                         for (k, v) in &captures.named {
                             let value = if v.len() == 1 {
-                                Value::Str(v[0].clone())
+                                Value::str(v[0].clone())
                             } else {
-                                Value::array(v.iter().cloned().map(Value::Str).collect())
+                                Value::array(v.iter().cloned().map(Value::str).collect())
                             };
                             self.env.insert(format!("<{}>", k), value);
                         }
@@ -1111,7 +1111,7 @@ impl Interpreter {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
                     for (i, v) in captures.positional.iter().enumerate() {
-                        self.env.insert(i.to_string(), Value::Str(v.clone()));
+                        self.env.insert(i.to_string(), Value::str(v.clone()));
                     }
                     // Execute code blocks from regex for side effects
                     self.execute_regex_code_blocks(&captures.code_blocks);
@@ -1232,7 +1232,7 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::array(slash_list));
                 if let Some(first) = selected.first() {
                     for (i, cap) in first.positional.iter().enumerate() {
-                        self.env.insert(i.to_string(), Value::Str(cap.clone()));
+                        self.env.insert(i.to_string(), Value::str(cap.clone()));
                     }
                 }
                 true
@@ -1260,7 +1260,7 @@ impl Interpreter {
                     } if class_name == "IO::Path" => {
                         attributes.get("path").map(|v| v.to_string_value())
                     }
-                    Value::Str(s) => Some(s.clone()),
+                    Value::Str(s) => Some(s.to_string()),
                     _ => None,
                 };
                 if let Some(p) = path_str {
@@ -1511,8 +1511,8 @@ impl Interpreter {
                 self.type_matches_value(&type_name_resolved, left)
             }
             // Backward-compatibility: enum type objects may still arrive as Str values.
-            (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name) => {
-                matches!(left, Value::Enum { enum_type, .. } if enum_type.resolve() == *type_name)
+            (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name.as_str()) => {
+                matches!(left, Value::Enum { enum_type, .. } if enum_type.resolve() == **type_name)
             }
             // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).
             (

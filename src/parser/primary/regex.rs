@@ -576,10 +576,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 || r.starts_with(')')
                 || r.starts_with(',')
             {
-                (
-                    r,
-                    Expr::Literal(Value::Str("Stub code executed".to_string())),
-                )
+                (r, Expr::Literal(Value::str_from("Stub code executed")))
             } else {
                 expression(r)?
             };
@@ -597,10 +594,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     if let Some(r) = input.strip_prefix("!!!") {
         let (r, _) = ws(r)?;
         let (r, msg) = if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
-            (
-                r,
-                Expr::Literal(Value::Str("Stub code executed".to_string())),
-            )
+            (r, Expr::Literal(Value::str_from("Stub code executed")))
         } else {
             expression(r)?
         };
@@ -617,10 +611,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     if let Some(r) = input.strip_prefix("???") {
         let (r, _) = ws(r)?;
         let (r, msg) = if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
-            (
-                r,
-                Expr::Literal(Value::Str("Stub code executed".to_string())),
-            )
+            (r, Expr::Literal(Value::str_from("Stub code executed")))
         } else {
             expression(r)?
         };
@@ -1001,11 +992,11 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             {
                 let rest = &r2[end + 1..];
                 let index_expr = if keys.len() == 1 {
-                    Expr::Literal(Value::Str(keys[0].to_string()))
+                    Expr::Literal(Value::str(keys[0].to_string()))
                 } else {
                     Expr::ArrayLiteral(
                         keys.into_iter()
-                            .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                            .map(|k| Expr::Literal(Value::str(k.to_string())))
                             .collect(),
                     )
                 };

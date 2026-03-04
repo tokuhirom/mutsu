@@ -115,7 +115,7 @@ pub(crate) fn native_method_1arg(
             let char_count = s.chars().count();
             let keep = char_count.saturating_sub(n);
             let result: String = s.chars().take(keep).collect();
-            Some(Ok(Value::Str(result)))
+            Some(Ok(Value::str(result)))
         }
         "contains" => {
             if let Value::Package(type_name) = arg {
@@ -132,7 +132,7 @@ pub(crate) fn native_method_1arg(
         "samemark" => {
             let target_str = target.to_string_value();
             let source_str = arg.to_string_value();
-            Some(Ok(Value::Str(crate::builtins::samemark_string(
+            Some(Ok(Value::str(crate::builtins::samemark_string(
                 &target_str,
                 &source_str,
             ))))
@@ -199,7 +199,7 @@ pub(crate) fn native_method_1arg(
                 _ => return None,
             };
             let result: String = s.chars().skip(start).collect();
-            Some(Ok(Value::Str(result)))
+            Some(Ok(Value::str(result)))
         }
         "AT-POS" => {
             let idx = match arg {
@@ -212,7 +212,7 @@ pub(crate) fn native_method_1arg(
                     Some(Ok(items.get(idx).cloned().unwrap_or(Value::Nil)))
                 }
                 Value::Str(s) => {
-                    let ch = s.chars().nth(idx).map(|c| Value::Str(c.to_string()));
+                    let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
                     Some(Ok(ch.unwrap_or(Value::Nil)))
                 }
                 Value::Instance {
@@ -236,7 +236,7 @@ pub(crate) fn native_method_1arg(
             }
             let s = target.to_string_value();
             let sep = arg.to_string_value();
-            let parts: Vec<Value> = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
+            let parts: Vec<Value> = s.split(&sep).map(|p| Value::str(p.to_string())).collect();
             Some(Ok(Value::array(parts)))
         }
         "lines" => {
@@ -251,7 +251,7 @@ pub(crate) fn native_method_1arg(
                     let lines: Vec<Value> =
                         crate::builtins::split_lines_with_chomp(&s, value.truthy())
                             .into_iter()
-                            .map(Value::Str)
+                            .map(Value::str)
                             .collect();
                     return Some(Ok(Value::array(lines)));
                 }
@@ -274,7 +274,7 @@ pub(crate) fn native_method_1arg(
             if let Some(n) = limit {
                 lines.truncate(n);
             }
-            let lines: Vec<Value> = lines.into_iter().map(Value::Str).collect();
+            let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
             Some(Ok(Value::array(lines)))
         }
         "join" => match target {
@@ -285,7 +285,7 @@ pub(crate) fn native_method_1arg(
                     .map(|v| v.to_string_value())
                     .collect::<Vec<_>>()
                     .join(&sep);
-                Some(Ok(Value::Str(joined)))
+                Some(Ok(Value::str(joined)))
             }
             Value::Capture { positional, .. } => {
                 let sep = arg.to_string_value();
@@ -294,11 +294,11 @@ pub(crate) fn native_method_1arg(
                     .map(|v| v.to_string_value())
                     .collect::<Vec<_>>()
                     .join(&sep);
-                Some(Ok(Value::Str(joined)))
+                Some(Ok(Value::str(joined)))
             }
             Value::Pair(k, v) => {
                 let sep = arg.to_string_value();
-                Some(Ok(Value::Str(format!(
+                Some(Ok(Value::str(format!(
                     "{}{}{}",
                     k,
                     sep,
@@ -307,7 +307,7 @@ pub(crate) fn native_method_1arg(
             }
             Value::ValuePair(k, v) => {
                 let sep = arg.to_string_value();
-                Some(Ok(Value::Str(format!(
+                Some(Ok(Value::str(format!(
                     "{}{}{}",
                     k.to_string_value(),
                     sep,
@@ -320,7 +320,7 @@ pub(crate) fn native_method_1arg(
             | Value::Num(_)
             | Value::Rat(..)
             | Value::Bool(_)
-            | Value::Nil => Some(Ok(Value::Str(target.to_string_value()))),
+            | Value::Nil => Some(Ok(Value::str(target.to_string_value()))),
             // Other types (LazyList, etc.) fall through to the runtime handler
             _ => None,
         },
@@ -438,7 +438,7 @@ pub(crate) fn native_method_1arg(
                 attrs.insert("got".to_string(), Value::Int(n));
                 attrs.insert(
                     "message".to_string(),
-                    Value::Str(format!("batch size must be at least 1, got {}", n)),
+                    Value::str(format!("batch size must be at least 1, got {}", n)),
                 );
                 let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
                 let mut err = RuntimeError::new(format!(
@@ -475,17 +475,17 @@ pub(crate) fn native_method_1arg(
                     .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
                     .collect::<Vec<_>>()
                     .join(" ");
-                Some(Ok(Value::Str(rendered)))
+                Some(Ok(Value::str(rendered)))
             } else {
                 let rendered = runtime::format_sprintf(&fmt, Some(target));
-                Some(Ok(Value::Str(rendered)))
+                Some(Ok(Value::str(rendered)))
             }
         }
         "sprintf" => {
             // Method form: '%f'.sprintf(value) — target is the format string
             let fmt = target.to_string_value();
             let rendered = runtime::format_sprintf(&fmt, Some(arg));
-            Some(Ok(Value::Str(rendered)))
+            Some(Ok(Value::str(rendered)))
         }
         "parse-base" => {
             let radix = match arg {
@@ -527,7 +527,7 @@ pub(crate) fn native_method_1arg(
                 let negative = *i < 0;
                 let mut n = if negative { (-*i) as u64 } else { *i as u64 };
                 if n == 0 {
-                    return Some(Ok(Value::Str("0".to_string())));
+                    return Some(Ok(Value::str_from("0")));
                 }
                 let digits = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
                 let mut buf = Vec::new();
@@ -539,7 +539,7 @@ pub(crate) fn native_method_1arg(
                     buf.push(b'-');
                 }
                 buf.reverse();
-                Some(Ok(Value::Str(String::from_utf8(buf).unwrap())))
+                Some(Ok(Value::str(String::from_utf8(buf).unwrap())))
             }
             Value::Num(f) => {
                 let radix = match arg {
@@ -565,12 +565,12 @@ pub(crate) fn native_method_1arg(
                 };
                 // Convert Num to Rat for precise base conversion
                 let (n, d) = f64_to_rat(*f);
-                Some(Ok(Value::Str(rat_to_base(n, d, radix, None))))
+                Some(Ok(Value::str(rat_to_base(n, d, radix, None))))
             }
             Value::Rat(n, d) => {
                 let radix = parse_radix(arg)?;
                 // For Rat, use rational arithmetic for precision
-                Some(Ok(Value::Str(rat_to_base(*n, *d, radix, None))))
+                Some(Ok(Value::str(rat_to_base(*n, *d, radix, None))))
             }
             _ => None,
         },
@@ -1068,7 +1068,7 @@ pub(crate) fn native_method_2arg(
                 .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
                 .collect::<Vec<_>>()
                 .join(&sep);
-            Some(Ok(Value::Str(rendered)))
+            Some(Ok(Value::str(rendered)))
         }
         "substr" => {
             let s = target.to_string_value();
@@ -1083,7 +1083,7 @@ pub(crate) fn native_method_2arg(
             let chars: Vec<char> = s.chars().collect();
             let end = (start + len).min(chars.len());
             let start = start.min(chars.len());
-            Some(Ok(Value::Str(chars[start..end].iter().collect())))
+            Some(Ok(Value::str(chars[start..end].iter().collect())))
         }
         "base" => {
             let radix = match arg1 {
@@ -1112,9 +1112,9 @@ pub(crate) fn native_method_2arg(
                 _ => None?,
             };
             match target {
-                Value::Int(i) => Some(Ok(Value::Str(rat_to_base(*i, 1, radix, Some(digits))))),
-                Value::Num(f) => Some(Ok(Value::Str(format_base_with_digits(*f, radix, digits)))),
-                Value::Rat(n, d) => Some(Ok(Value::Str(rat_to_base(*n, *d, radix, Some(digits))))),
+                Value::Int(i) => Some(Ok(Value::str(rat_to_base(*i, 1, radix, Some(digits))))),
+                Value::Num(f) => Some(Ok(Value::str(format_base_with_digits(*f, radix, digits)))),
+                Value::Rat(n, d) => Some(Ok(Value::str(rat_to_base(*n, *d, radix, Some(digits))))),
                 _ => None,
             }
         }

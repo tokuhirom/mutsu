@@ -169,7 +169,7 @@ impl Interpreter {
             Value::Regex(pat) => {
                 let matches = self.regex_find_all(pat, &text);
                 if matches.is_empty() {
-                    return Ok(Value::Str(text));
+                    return Ok(Value::str(text));
                 }
                 let chars: Vec<char> = text.chars().collect();
                 if global {
@@ -190,7 +190,7 @@ impl Interpreter {
                     }
                     let suffix: String = chars[last_end..].iter().collect();
                     result.push_str(&suffix);
-                    Ok(Value::Str(result))
+                    Ok(Value::str(result))
                 } else {
                     // Replace first match only
                     if let Some((start, end)) = matches.first() {
@@ -203,25 +203,25 @@ impl Interpreter {
                             &replacement_str,
                             &matched_text,
                         )?;
-                        Ok(Value::Str(format!("{}{}{}", prefix, repl, suffix)))
+                        Ok(Value::str(format!("{}{}{}", prefix, repl, suffix)))
                     } else {
-                        Ok(Value::Str(text))
+                        Ok(Value::str(text))
                     }
                 }
             }
             Value::Str(pat) => {
                 if global {
-                    Ok(Value::Str(text.replace(pat, &replacement_str)))
+                    Ok(Value::str(text.replace(pat.as_str(), &replacement_str)))
                 } else {
-                    Ok(Value::Str(text.replacen(pat, &replacement_str, 1)))
+                    Ok(Value::str(text.replacen(pat.as_str(), &replacement_str, 1)))
                 }
             }
             _ => {
                 let pat_str = pattern.to_string_value();
                 if global {
-                    Ok(Value::Str(text.replace(&pat_str, &replacement_str)))
+                    Ok(Value::str(text.replace(&pat_str, &replacement_str)))
                 } else {
-                    Ok(Value::Str(text.replacen(&pat_str, &replacement_str, 1)))
+                    Ok(Value::str(text.replacen(&pat_str, &replacement_str, 1)))
                 }
             }
         }
@@ -251,7 +251,7 @@ impl Interpreter {
             self.env.insert(k.clone(), v.clone());
         }
         // Set $/ to the matched text
-        let match_val = Value::Str(matched_text.to_string());
+        let match_val = Value::str(matched_text.to_string());
         self.env.insert("/".to_string(), match_val.clone());
         self.env.insert("$_".to_string(), match_val);
         let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
@@ -278,7 +278,7 @@ impl Interpreter {
         let needle = positional
             .first()
             .cloned()
-            .unwrap_or(Value::Str(String::new()));
+            .unwrap_or(Value::str(String::new()));
         let start = if let Some(pos) = positional.get(1) {
             match pos {
                 Value::Int(i) => *i,
@@ -528,10 +528,7 @@ impl Interpreter {
     pub(super) fn out_of_range_error(&self, got: Value) -> RuntimeError {
         let mut attrs = HashMap::new();
         attrs.insert("got".to_string(), got);
-        attrs.insert(
-            "message".to_string(),
-            Value::Str("X::OutOfRange".to_string()),
-        );
+        attrs.insert("message".to_string(), Value::str_from("X::OutOfRange"));
         let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
         let mut err = RuntimeError::new("X::OutOfRange".to_string());
         err.exception = Some(Box::new(ex));
@@ -646,6 +643,6 @@ impl Interpreter {
         };
 
         let start = start.min(total_len);
-        Ok(Value::Str(chars[start..end].iter().collect()))
+        Ok(Value::str(chars[start..end].iter().collect()))
     }
 }

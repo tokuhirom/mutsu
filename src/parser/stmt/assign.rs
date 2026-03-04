@@ -302,12 +302,12 @@ fn method_lvalue_assign_expr(
 ) -> Expr {
     let mut args = vec![
         target,
-        Expr::Literal(Value::Str(method_name)),
+        Expr::Literal(Value::str(method_name)),
         Expr::ArrayLiteral(method_args),
         value,
     ];
     args.push(match target_var_name {
-        Some(name) => Expr::Literal(Value::Str(name)),
+        Some(name) => Expr::Literal(Value::str(name)),
         None => Expr::Literal(Value::Nil),
     });
     Expr::Call {
@@ -320,7 +320,7 @@ fn named_sub_lvalue_assign_expr(name: String, call_args: Vec<Expr>, value: Expr)
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
         args: vec![
-            Expr::Literal(Value::Str(name)),
+            Expr::Literal(Value::str(name)),
             Expr::ArrayLiteral(call_args),
             value,
         ],
@@ -345,7 +345,7 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
         let Expr::Literal(Value::Str(mode)) = &args[2] else {
             return None;
         };
-        Some((args[0].clone(), args[1].clone(), mode.clone()))
+        Some((args[0].clone(), args[1].clone(), mode.to_string()))
     }
 
     match lhs {
@@ -525,7 +525,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             rest,
             Expr::Call {
                 name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![Expr::Literal(Value::Str(name)), rhs],
+                args: vec![Expr::Literal(Value::str(name)), rhs],
             },
         ));
     }
@@ -651,7 +651,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::Str(name)), *expr],
+                    args: vec![Expr::Literal(Value::str(name)), *expr],
                 },
             ));
         }
@@ -927,7 +927,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             rest,
             Expr::Call {
                 name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![Expr::Literal(Value::Str(name)), rhs],
+                args: vec![Expr::Literal(Value::str(name)), rhs],
             },
         ));
     }
@@ -952,7 +952,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 rest,
                 Expr::Call {
                     name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::Str(name)), rhs],
+                    args: vec![Expr::Literal(Value::str(name)), rhs],
                 },
             ));
         }
@@ -1090,7 +1090,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 if is_atomic {
                     let stmt = Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_atomic_store_var"),
-                        args: vec![Expr::Literal(Value::Str(bare_name)), expr],
+                        args: vec![Expr::Literal(Value::str(bare_name)), expr],
                     });
                     return parse_statement_modifier(rest, stmt);
                 }
@@ -1151,10 +1151,10 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![
                     var_expr,
-                    Expr::Literal(Value::Str(method_name)),
+                    Expr::Literal(Value::str(method_name)),
                     Expr::ArrayLiteral(Vec::new()),
                     updated_value,
-                    Expr::Literal(Value::Str(name.clone())),
+                    Expr::Literal(Value::str(name.clone())),
                 ],
             };
             let stmt = Stmt::Expr(assign_call);
@@ -1315,7 +1315,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         })?;
         let stmt = Stmt::Expr(Expr::Call {
             name: Symbol::intern("__mutsu_atomic_add_var"),
-            args: vec![Expr::Literal(Value::Str(name)), rhs],
+            args: vec![Expr::Literal(Value::str(name)), rhs],
         });
         return parse_statement_modifier(rest, stmt);
     }
@@ -1341,7 +1341,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         if is_atomic {
             let stmt = Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_atomic_store_var"),
-                args: vec![Expr::Literal(Value::Str(name)), expr],
+                args: vec![Expr::Literal(Value::str(name)), expr],
             });
             return parse_statement_modifier(rest, stmt);
         }

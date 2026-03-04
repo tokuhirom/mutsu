@@ -384,10 +384,10 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         if r.starts_with(')') {
             let (r, _) = parse_char(r, ')')?;
             let mut attrs = HashMap::new();
-            attrs.insert("raku".to_string(), Value::Str(":()".to_string()));
-            attrs.insert("perl".to_string(), Value::Str(":()".to_string()));
-            attrs.insert("Str".to_string(), Value::Str(":()".to_string()));
-            attrs.insert("gist".to_string(), Value::Str(":()".to_string()));
+            attrs.insert("raku".to_string(), Value::str_from(":()"));
+            attrs.insert("perl".to_string(), Value::str_from(":()"));
+            attrs.insert("Str".to_string(), Value::str_from(":()"));
+            attrs.insert("gist".to_string(), Value::str_from(":()"));
             return Ok((
                 r,
                 Expr::Literal(Value::make_instance(Symbol::intern("Signature"), attrs)),
@@ -466,10 +466,10 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 .join(", ");
             let sig = format!(":({})", rendered);
             let mut attrs = HashMap::new();
-            attrs.insert("raku".to_string(), Value::Str(sig.clone()));
-            attrs.insert("perl".to_string(), Value::Str(sig.clone()));
-            attrs.insert("Str".to_string(), Value::Str(sig.clone()));
-            attrs.insert("gist".to_string(), Value::Str(sig));
+            attrs.insert("raku".to_string(), Value::str(sig.clone()));
+            attrs.insert("perl".to_string(), Value::str(sig.clone()));
+            attrs.insert("Str".to_string(), Value::str(sig.clone()));
+            attrs.insert("gist".to_string(), Value::str(sig));
             return Ok((
                 r_end,
                 Expr::Literal(Value::make_instance(Symbol::intern("Signature"), attrs)),
@@ -537,7 +537,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 return Ok((
                     rest,
                     Expr::Binary {
-                        left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                        left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(Expr::Literal(val)),
                     },
@@ -551,7 +551,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             rest,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(Value::Bool(false))),
             },
@@ -572,7 +572,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                    left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(var_expr),
                 },
@@ -612,7 +612,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             rest,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(key))),
+                left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(var_expr),
             },
@@ -656,7 +656,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                    left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::ArrayLiteral(items)),
                 },
@@ -666,7 +666,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(first),
             },
@@ -694,7 +694,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::BracketArray(items)),
             },
@@ -706,7 +706,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::AnonSub { body, is_rw: false }),
             },
@@ -721,19 +721,19 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let words = split_angle_words(content);
             if !words.is_empty() {
                 let val_expr = if words.len() == 1 {
-                    Expr::Literal(Value::Str(words[0].to_string()))
+                    Expr::Literal(Value::str(words[0].to_string()))
                 } else {
                     Expr::ArrayLiteral(
                         words
                             .into_iter()
-                            .map(|w| Expr::Literal(Value::Str(w.to_string())))
+                            .map(|w| Expr::Literal(Value::str(w.to_string())))
                             .collect(),
                     )
                 };
                 return Ok((
                     r,
                     Expr::Binary {
-                        left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                        left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(val_expr),
                     },
@@ -745,7 +745,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+            left: Box::new(Expr::Literal(Value::str(name.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::Bool(true))),
         },
@@ -761,7 +761,7 @@ fn render_signature_item(expr: &Expr) -> String {
         Expr::Binary { left, op, right } if *op == crate::token_kind::TokenKind::FatArrow => {
             if let Expr::Literal(Value::Str(name)) = left.as_ref() {
                 match right.as_ref() {
-                    Expr::Var(v) if v == name => format!(":${}", name),
+                    Expr::Var(v) if v.as_str() == name.as_str() => format!(":${}", name),
                     Expr::Literal(Value::Bool(true)) => format!(":${}", name),
                     other => format!(":${} = {}", name, render_signature_item(other)),
                 }
@@ -1450,7 +1450,7 @@ fn hash_args_from_pairs(pairs: Vec<(String, Option<Expr>)>) -> Vec<Expr> {
     pairs
         .into_iter()
         .map(|(key, val_opt)| Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str(key))),
+            left: Box::new(Expr::Literal(Value::str(key))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(val_opt.unwrap_or(Expr::Literal(Value::Nil))),
         })
@@ -1470,7 +1470,7 @@ fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
     if let Ok((r, Expr::Literal(Value::Str(s)))) =
         single_quoted_string(input).or_else(|_| double_quoted_string(input))
     {
-        return Ok((r, s));
+        return Ok((r, s.to_string()));
     }
     Err(PError::expected("hash key"))
 }
@@ -1634,12 +1634,12 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         if words.len() == 1 {
             return Ok((
                 r,
-                (name, Some(Expr::Literal(Value::Str(words[0].to_string())))),
+                (name, Some(Expr::Literal(Value::str(words[0].to_string())))),
             ));
         }
         let items = words
             .iter()
-            .map(|w| Expr::Literal(Value::Str(w.to_string())))
+            .map(|w| Expr::Literal(Value::str(w.to_string())))
             .collect();
         return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
     }

@@ -420,7 +420,7 @@ impl VM {
                 let mut ex_attrs = std::collections::HashMap::new();
                 ex_attrs.insert(
                     "message".to_string(),
-                    Value::Str(format!(
+                    Value::str(format!(
                         "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
                         s
                     )),
@@ -455,7 +455,7 @@ impl VM {
             return Ok(());
         }
         self.stack
-            .push(Value::Str(crate::runtime::utils::coerce_to_str(&val)));
+            .push(Value::str(crate::runtime::utils::coerce_to_str(&val)));
         Ok(())
     }
 
@@ -535,7 +535,7 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = match &code.constants[name_idx as usize] {
-            Value::Str(s) => s.clone(),
+            Value::Str(s) => s.to_string(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.interpreter.check_readonly_for_modify(&name)?;
@@ -582,7 +582,7 @@ impl VM {
         self.set_env_with_main_alias(&name, val.clone());
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
-                Some(name.clone())
+                Some(name.to_string())
             } else {
                 None
             }
@@ -614,7 +614,7 @@ impl VM {
         let value = self.stack.pop().unwrap_or(Value::Nil);
         let name = Self::const_str(code, name_idx).to_string();
         let mut named = std::collections::HashMap::new();
-        named.insert("__mutsu_varref_name".to_string(), Value::Str(name));
+        named.insert("__mutsu_varref_name".to_string(), Value::str(name));
         named.insert("__mutsu_varref_value".to_string(), value);
         self.stack.push(Value::Capture {
             positional: Vec::new(),
@@ -627,11 +627,11 @@ impl VM {
         let val = if let Some(Value::Hash(env_hash)) = self.interpreter.env().get("%*ENV") {
             env_hash.get(key).cloned().unwrap_or_else(|| {
                 std::env::var_os(key)
-                    .map(|v| Value::Str(v.to_string_lossy().to_string()))
+                    .map(|v| Value::str(v.to_string_lossy().to_string()))
                     .unwrap_or(Value::Nil)
             })
         } else if let Some(value) = std::env::var_os(key) {
-            Value::Str(value.to_string_lossy().to_string())
+            Value::str(value.to_string_lossy().to_string())
         } else {
             Value::Nil
         };
@@ -969,7 +969,7 @@ impl VM {
                 && !self.interpreter.type_matches_value(constraint, &value)
             {
                 let coerced = match base_constraint {
-                    "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(&value))),
+                    "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),
                     _ => None,
                 };
                 if let Some(new_val) = coerced {

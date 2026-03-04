@@ -206,7 +206,7 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Str(format!(
+        self.stack.push(Value::str(format!(
             "{}{}",
             crate::runtime::utils::coerce_to_str(&left),
             crate::runtime::utils::coerce_to_str(&right)

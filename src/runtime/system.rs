@@ -23,7 +23,7 @@ impl Interpreter {
         let [Stmt::Expr(Expr::BareWord(name))] = stmts else {
             return false;
         };
-        matches!(result, Value::Str(s) if s == name)
+        matches!(result, Value::Str(s) if s.as_str() == name)
             && !self.env().contains_key(name)
             && !self.has_class(name)
             && !self.has_function(name)
@@ -215,7 +215,7 @@ impl Interpreter {
             let my_hash = self.build_lexical_hash(&self.env, None);
             let mut attrs = HashMap::new();
             attrs.insert("line".to_string(), Value::Int(line));
-            attrs.insert("file".to_string(), Value::Str(file));
+            attrs.insert("file".to_string(), Value::str(file));
             attrs.insert("code".to_string(), code);
             attrs.insert("my".to_string(), my_hash);
             attrs.insert("inline".to_string(), Value::Bool(false));
@@ -234,7 +234,7 @@ impl Interpreter {
         let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
         let mut attrs = HashMap::new();
         attrs.insert("line".to_string(), Value::Int(entry.line));
-        attrs.insert("file".to_string(), Value::Str(entry.file.clone()));
+        attrs.insert("file".to_string(), Value::str(entry.file.clone()));
         attrs.insert("code".to_string(), code);
         attrs.insert("my".to_string(), my_hash);
         attrs.insert("inline".to_string(), Value::Bool(false));
@@ -349,10 +349,10 @@ impl Interpreter {
             addresses.push("127.0.0.1".to_string());
         }
         let mut info = HashMap::new();
-        info.insert("name".to_string(), Value::Str(name.clone()));
-        info.insert("addr".to_string(), Value::Str(addresses[0].clone()));
+        info.insert("name".to_string(), Value::str(name.clone()));
+        info.insert("addr".to_string(), Value::str(addresses[0].clone()));
         info.insert("aliases".to_string(), Value::array(Vec::new()));
-        let addrs_values = addresses.into_iter().map(Value::Str).collect();
+        let addrs_values = addresses.into_iter().map(Value::str).collect();
         info.insert("addrs".to_string(), Value::array(addrs_values));
         Value::hash(info)
     }

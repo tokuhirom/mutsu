@@ -385,7 +385,7 @@ impl VM {
             }
             OpCode::SetGlobal(name_idx) => {
                 let name = match &code.constants[*name_idx as usize] {
-                    Value::Str(s) => s.clone(),
+                    Value::Str(s) => s.to_string(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
                 if self.interpreter.strict_mode
@@ -428,7 +428,7 @@ impl VM {
                 }
                 if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
                     if let Value::Str(name) = v {
-                        Some(name.clone())
+                        Some(name.to_string())
                     } else {
                         None
                     }
@@ -733,7 +733,7 @@ impl VM {
             OpCode::ContainerizePair => {
                 let val = self.stack.pop().unwrap();
                 let containerized = match val {
-                    Value::Pair(k, v) => Value::ValuePair(Box::new(Value::Str(k)), v),
+                    Value::Pair(k, v) => Value::ValuePair(Box::new(Value::str(k)), v),
                     other => other,
                 };
                 self.stack.push(containerized);
@@ -1360,7 +1360,7 @@ impl VM {
                 let mut attrs = HashMap::new();
                 attrs.insert(
                     "message".to_string(),
-                    Value::Str("Attempt to return outside of any Routine".to_string()),
+                    Value::str_from("Attempt to return outside of any Routine"),
                 );
                 attrs.insert("out-of-dynamic-scope".to_string(), Value::Bool(false));
                 let exc = Value::make_instance(Symbol::intern("X::ControlFlow::Return"), attrs);

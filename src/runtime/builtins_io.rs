@@ -27,16 +27,16 @@ impl Interpreter {
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
         self.env
-            .insert("_".to_string(), Value::Str(entry_name.to_string()));
+            .insert("_".to_string(), Value::str(entry_name.to_string()));
         self.env
-            .insert("$_".to_string(), Value::Str(entry_name.to_string()));
+            .insert("$_".to_string(), Value::str(entry_name.to_string()));
 
         let matched = match test {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => self
-                .call_sub_value(test.clone(), vec![Value::Str(entry_name.to_string())], true)
+                .call_sub_value(test.clone(), vec![Value::str(entry_name.to_string())], true)
                 .map(|v| v.truthy())
                 .unwrap_or(false),
-            _ => self.smart_match(&Value::Str(entry_name.to_string()), test),
+            _ => self.smart_match(&Value::str(entry_name.to_string()), test),
         };
 
         if let Some(v) = saved_cwd {
@@ -71,7 +71,7 @@ impl Interpreter {
         check_null_in_path(&path)?;
         let content = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
-        Ok(Value::Str(content))
+        Ok(Value::str(content))
     }
 
     pub(super) fn builtin_spurt(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -192,12 +192,12 @@ impl Interpreter {
             let mut attrs = HashMap::new();
             attrs.insert(
                 "path".to_string(),
-                Value::Str(Self::stringify_path(&out_path)),
+                Value::str(Self::stringify_path(&out_path)),
             );
             if let Some(cwd) = &requested_cwd_opt
                 && !out_path.is_absolute()
             {
-                attrs.insert("cwd".to_string(), Value::Str(cwd.clone()));
+                attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
             }
             entries.push(Value::make_instance(Symbol::intern("IO::Path"), attrs));
         };
@@ -430,7 +430,7 @@ impl Interpreter {
             .env
             .get("$*TMPDIR")
             .cloned()
-            .unwrap_or_else(|| Value::Str(String::new())))
+            .unwrap_or_else(|| Value::str(String::new())))
     }
 
     pub(super) fn builtin_homedir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -445,7 +445,7 @@ impl Interpreter {
             self.env.insert("$*HOME".to_string(), home_val);
             return Ok(self.make_io_path_instance(&repr));
         }
-        Ok(Value::Str(
+        Ok(Value::str(
             self.get_dynamic_string("$*HOME").unwrap_or_default(),
         ))
     }
@@ -541,9 +541,9 @@ impl Interpreter {
             let line = self
                 .read_line_from_handle_value(&handle)?
                 .unwrap_or_default();
-            return Ok(Value::Str(line));
+            return Ok(Value::str(line));
         }
-        Ok(Value::Str(String::new()))
+        Ok(Value::str(String::new()))
     }
 
     pub(super) fn builtin_get(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -554,7 +554,7 @@ impl Interpreter {
         if let Some(handle) = handle {
             return Ok(self
                 .read_line_from_handle_value(&handle)?
-                .map(Value::Str)
+                .map(Value::str)
                 .unwrap_or(Value::Nil));
         }
         Ok(Value::Nil)
@@ -595,7 +595,7 @@ impl Interpreter {
             if let Some(n) = limit {
                 lines.truncate(n);
             }
-            let values = lines.into_iter().map(Value::Str).collect();
+            let values = lines.into_iter().map(Value::str).collect();
             return Ok(Value::array(values));
         }
 
@@ -606,7 +606,7 @@ impl Interpreter {
         if let Some(handle) = handle {
             let mut lines = Vec::new();
             while let Some(line) = self.read_line_from_handle_value(&handle)? {
-                lines.push(Value::Str(line));
+                lines.push(Value::str(line));
             }
             return Ok(Value::array(lines));
         }
@@ -625,7 +625,7 @@ impl Interpreter {
             let mut words = Vec::new();
             while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 for token in line.split_whitespace() {
-                    words.push(Value::Str(token.to_string()));
+                    words.push(Value::str(token.to_string()));
                 }
             }
             return Ok(Value::array(words));

@@ -86,7 +86,7 @@ impl Interpreter {
             Value::Str(name) => variants
                 .iter()
                 .enumerate()
-                .find(|(_, (key, _))| *key == name)
+                .find(|(_, (key, _))| key.as_str() == name.as_str())
                 .and_then(|(idx, _)| by_index(idx)),
             other => self
                 .call_method_with_values(other, enum_name, vec![])
@@ -421,7 +421,7 @@ impl Interpreter {
             "lines" => self.builtin_lines(&args),
             "words" => self.builtin_words(&args),
             // System
-            "getlogin" => Ok(Value::Str(Self::get_login_name().unwrap_or_default())),
+            "getlogin" => Ok(Value::str(Self::get_login_name().unwrap_or_default())),
             "gethost" => self.builtin_gethost(&args),
             "chroot" => self.builtin_chroot(&args),
             "run" => self.builtin_run(&args),
@@ -605,7 +605,7 @@ impl Interpreter {
             }
             Some(Value::Package(name)) if name == "Block" => {}
             Some(Value::Str(label)) => {
-                sig.label = Some(label);
+                sig.label = Some(label.to_string());
             }
             Some(other) => {
                 sig.label = Some(other.to_string_value());
@@ -681,7 +681,7 @@ impl Interpreter {
                     .collect::<Vec<_>>(),
                 Value::Hash(map) => map
                     .keys()
-                    .map(|k| Value::Str(k.clone()))
+                    .map(|k| Value::str(k.clone()))
                     .collect::<Vec<_>>(),
                 _ => Vec::new(),
             };
@@ -726,7 +726,7 @@ impl Interpreter {
                 for idx in &indices {
                     let key_str = idx.to_string_value();
                     let key =
-                        super::builtins_collection::builtin_val(&[Value::Str(key_str.clone())]);
+                        super::builtins_collection::builtin_val(&[Value::str(key_str.clone())]);
                     let exists = map.contains_key(&key_str);
                     let value = map
                         .get(&key_str)
@@ -1200,20 +1200,20 @@ impl Interpreter {
     fn atomic_value_key_for_name(&mut self, name: &str) -> String {
         let name_key = Self::atomic_shared_name_key(name);
         if let Some(Value::Str(existing)) = self.env.get(&name_key) {
-            return existing.clone();
+            return existing.to_string();
         }
         let value_key = {
             let mut shared = self.shared_vars.write().unwrap();
             if let Some(Value::Str(existing)) = shared.get(&name_key) {
-                existing.clone()
+                existing.to_string()
             } else {
                 let id = ATOMIC_VAR_KEY_COUNTER.fetch_add(1, Ordering::Relaxed);
                 let value_key = Self::atomic_shared_value_key(id);
-                shared.insert(name_key.clone(), Value::Str(value_key.clone()));
+                shared.insert(name_key.clone(), Value::str(value_key.clone()));
                 value_key
             }
         };
-        self.env.insert(name_key, Value::Str(value_key.clone()));
+        self.env.insert(name_key, Value::str(value_key.clone()));
         value_key
     }
 
@@ -1359,7 +1359,7 @@ impl Interpreter {
 
     fn make_stub_exception(message: String) -> Value {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(message));
+        attrs.insert("message".to_string(), Value::str(message));
         Value::make_instance(Symbol::intern("X::StubCode"), attrs)
     }
 
@@ -1391,7 +1391,7 @@ impl Interpreter {
         );
         let mut err = RuntimeError::new(msg.clone());
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(msg));
+        attrs.insert("message".to_string(), Value::str(msg));
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::Multi::NoMatch"),
             attrs,
@@ -1413,7 +1413,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "message".to_string(),
-            Value::Str(format!(
+            Value::str(format!(
                 "{func_name} is not in the dynamic scope of a dispatcher"
             )),
         );
@@ -1637,7 +1637,7 @@ impl Interpreter {
         let code = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
         let saved_file = self.env.get("?FILE").cloned();
-        self.env.insert("?FILE".to_string(), Value::Str(path));
+        self.env.insert("?FILE".to_string(), Value::str(path));
         let result = self.eval_eval_string(&code);
         if let Some(prev) = saved_file {
             self.env.insert("?FILE".to_string(), prev);

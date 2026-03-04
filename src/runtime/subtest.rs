@@ -232,7 +232,7 @@ impl Interpreter {
                                 sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
                                 match self.call_sub_value(
                                     sub.callback.clone(),
-                                    vec![Value::Str(line)],
+                                    vec![Value::str(line)],
                                     true,
                                 ) {
                                     Err(e) if e.is_react_done => break 'react_loop,
@@ -255,7 +255,7 @@ impl Interpreter {
                             let remaining = std::mem::take(&mut sub.line_buffer);
                             match self.call_sub_value(
                                 sub.callback.clone(),
-                                vec![Value::Str(remaining)],
+                                vec![Value::str(remaining)],
                                 true,
                             ) {
                                 Err(e) if e.is_react_done => break 'react_loop,

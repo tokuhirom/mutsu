@@ -55,14 +55,14 @@ impl VM {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert(
             "message".to_string(),
-            Value::Str(if signal.message.is_empty() {
+            Value::str(if signal.message.is_empty() {
                 class_name.to_string()
             } else {
                 signal.message.clone()
             }),
         );
         if let Some(label) = signal.label.as_ref() {
-            attrs.insert("label".to_string(), Value::Str(label.clone()));
+            attrs.insert("label".to_string(), Value::str(label.clone()));
         }
         Some(Value::make_instance(Symbol::intern(class_name), attrs))
     }
@@ -224,7 +224,7 @@ impl VM {
         let param_name = spec
             .param_idx
             .map(|idx| match &code.constants[idx as usize] {
-                Value::Str(s) => s.clone(),
+                Value::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
 
@@ -743,7 +743,7 @@ impl VM {
                     *ex.clone()
                 } else {
                     let mut exc_attrs = std::collections::HashMap::new();
-                    exc_attrs.insert("message".to_string(), Value::Str(e.message.clone()));
+                    exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
                     Value::make_instance(Symbol::intern("Exception"), exc_attrs)
                 };
                 let saved_topic = self.interpreter.env().get("_").cloned();

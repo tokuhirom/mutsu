@@ -575,7 +575,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert(
             "message".to_string(),
-            Value::Str("Malformed return value".to_string()),
+            Value::str_from("Malformed return value"),
         );
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::AdHoc"),

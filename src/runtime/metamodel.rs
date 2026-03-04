@@ -35,7 +35,7 @@ impl Interpreter {
 
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Str(s) => repr = s.clone(),
+                Value::Str(s) => repr = s.to_string(),
                 Value::Pair(k, v) if k == "mixin" => {
                     is_mixin = v.truthy();
                 }
@@ -209,7 +209,7 @@ impl Interpreter {
         let _ = self.call_method_with_values(
             rhs_how.clone(),
             "find_method",
-            vec![Value::Nil, Value::Str("ACCEPTS".to_string())],
+            vec![Value::Nil, Value::str_from("ACCEPTS")],
         );
         false
     }

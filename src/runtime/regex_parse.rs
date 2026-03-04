@@ -1600,7 +1600,7 @@ impl Interpreter {
         if matches!(value, Value::Hash(_)) {
             let msg = "The use of hashes in regexes is reserved";
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+            attrs.insert("message".to_string(), Value::str(msg.to_string()));
             let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
@@ -1706,7 +1706,7 @@ impl Interpreter {
     pub(super) fn make_longname_alias_error() -> RuntimeError {
         let msg = "Can't use a long name as a regex alias";
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.to_string()));
         let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Alias::LongName"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(ex));
@@ -1717,7 +1717,7 @@ impl Interpreter {
     pub(super) fn make_security_policy_error() -> RuntimeError {
         let msg = "Prohibited regex interpolation";
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(msg.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.to_string()));
         let ex = Value::make_instance(Symbol::intern("X::SecurityPolicy"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(ex));
@@ -1981,9 +1981,9 @@ mod tests {
         interp.env.insert(
             "@list".to_string(),
             Value::array(vec![
-                Value::Str("x".to_string()),
-                Value::Str("xx".to_string()),
-                Value::Str("xxxx".to_string()),
+                Value::str_from("x"),
+                Value::str_from("xx"),
+                Value::str_from("xxxx"),
             ]),
         );
         let interpolated = interp.interpolate_regex_scalars(" ||@list ").unwrap();

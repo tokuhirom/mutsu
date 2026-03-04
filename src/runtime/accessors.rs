@@ -15,7 +15,7 @@ impl Interpreter {
     fn callable_return_type_inner(callable: &Value) -> Option<String> {
         match callable {
             Value::Sub(data) => match data.env.get("__mutsu_return_type") {
-                Some(Value::Str(rt)) => Some(rt.clone()),
+                Some(Value::Str(rt)) => Some(rt.to_string()),
                 _ => None,
             },
             _ => None,
@@ -32,7 +32,7 @@ impl Interpreter {
             if let Some(Value::Sub(data)) = self.env.get(key)
                 && let Some(Value::Str(spec)) = data.env.get("__mutsu_return_type")
             {
-                return Some(spec.clone());
+                return Some(spec.to_string());
             }
         }
         // Also check the FunctionDef registry
@@ -113,7 +113,7 @@ impl Interpreter {
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
         let exception = err.exception.as_deref().cloned().unwrap_or_else(|| {
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(err.message.clone()));
+            attrs.insert("message".to_string(), Value::str(err.message.clone()));
             Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
         });
         let mut failure_attrs = std::collections::HashMap::new();
@@ -218,7 +218,7 @@ impl Interpreter {
             super::utils::value_type_name(got)
         );
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
         let exception = Value::make_instance(Symbol::intern("X::TypeCheck::Return"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(exception));
@@ -233,7 +233,7 @@ impl Interpreter {
             target
         );
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::Str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
         let exception = Value::make_instance(Symbol::intern("X::Coerce::Impossible"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(exception));
@@ -452,7 +452,7 @@ impl Interpreter {
         env.insert("__mutsu_compose_left".to_string(), left);
         env.insert("__mutsu_compose_right".to_string(), right);
         if let Some(rt) = left_return_type {
-            env.insert("__mutsu_return_type".to_string(), Value::Str(rt));
+            env.insert("__mutsu_return_type".to_string(), Value::str(rt));
         }
 
         Value::make_sub_with_id(
@@ -741,7 +741,7 @@ impl Interpreter {
             if def.is_method {
                 captured_env.insert(
                     "__mutsu_callable_type".to_string(),
-                    Value::Str("Method".to_string()),
+                    Value::str_from("Method"),
                 );
             }
             Value::make_sub(
@@ -923,7 +923,7 @@ impl Interpreter {
 
     fn make_stash_instance(package: &str, symbols: HashMap<String, Value>) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(package.to_string()));
+        attrs.insert("name".to_string(), Value::str(package.to_string()));
         attrs.insert("symbols".to_string(), Value::hash(symbols));
         Value::make_instance(Symbol::intern("Stash"), attrs)
     }
@@ -996,7 +996,7 @@ impl Interpreter {
         let mut ex_attrs = HashMap::new();
         ex_attrs.insert(
             "message".to_string(),
-            Value::Str(format!("No such symbol '{name}'")),
+            Value::str(format!("No such symbol '{name}'")),
         );
         let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
         let mut failure_attrs = HashMap::new();

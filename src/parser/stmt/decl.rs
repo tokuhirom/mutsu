@@ -207,7 +207,7 @@ fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
         target: Box::new(Expr::BareWord("Array".to_string())),
         name: Symbol::intern("new"),
         args: vec![Expr::Binary {
-            left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
+            left: Box::new(Expr::Literal(Value::str_from("shape"))),
             op: TokenKind::FatArrow,
             right: Box::new(shape_value),
         }],
@@ -232,12 +232,12 @@ fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
         name: Symbol::intern("new"),
         args: vec![
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
+                left: Box::new(Expr::Literal(Value::str_from("shape"))),
                 op: TokenKind::FatArrow,
                 right: Box::new(shape_value),
             },
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str("data".to_string()))),
+                left: Box::new(Expr::Literal(Value::str_from("data"))),
                 op: TokenKind::FatArrow,
                 right: Box::new(data),
             },
@@ -1246,7 +1246,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                     name: dvar.name.clone(),
                     expr: Expr::Index {
                         target: Box::new(Expr::HashVar(hash_bare.clone())),
-                        index: Box::new(Expr::Literal(Value::Str(bare_name.to_string()))),
+                        index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
                     },
                     type_constraint: None,
                     is_state: false,
@@ -1606,7 +1606,8 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
 fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let (rest, expr) = expression(input)?;
     match expr {
-        Expr::BareWord(name) | Expr::Literal(Value::Str(name)) => Ok((rest, (name, None))),
+        Expr::BareWord(name) => Ok((rest, (name, None))),
+        Expr::Literal(Value::Str(name)) => Ok((rest, (name.to_string(), None))),
         Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
@@ -1617,7 +1618,7 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
                     Expr::Literal(Value::Bool(true)) => None,
                     other => Some(other),
                 };
-                Ok((rest, (name, value_expr)))
+                Ok((rest, (name.to_string(), value_expr)))
             }
             _ => Err(PError::expected("enum variant name")),
         },
@@ -1785,7 +1786,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         let (rest, expr) = parse_comma_or_expr(rest)?;
         // Track compile-time string constants for operator name resolution
         if let crate::ast::Expr::Literal(crate::value::Value::Str(ref s)) = expr {
-            super::simple::register_compile_time_constant(&name, s.clone());
+            super::simple::register_compile_time_constant(&name, s.to_string());
         }
         let (rest, _) = ws(rest)?;
         let (rest, _) = opt_char(rest, ';');

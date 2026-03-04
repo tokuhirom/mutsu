@@ -1551,7 +1551,7 @@ impl Interpreter {
         let io_path = self.make_io_path_instance(path);
         self.env.insert("*PROGRAM".to_string(), io_path);
         self.env
-            .insert("*PROGRAM-NAME".to_string(), Value::Str(path.to_string()));
+            .insert("*PROGRAM-NAME".to_string(), Value::str(path.to_string()));
     }
 
     pub fn set_args(&mut self, args: Vec<Value>) {
@@ -1923,12 +1923,12 @@ impl Interpreter {
             self.var_type_constraints
                 .insert(key.clone(), info.value_type.clone());
             self.env
-                .insert(meta_key, Value::Str(info.value_type.clone()));
+                .insert(meta_key, Value::str(info.value_type.clone()));
             let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
             if let Some(key_type) = info.key_type.clone() {
                 self.var_hash_key_constraints
                     .insert(key.clone(), key_type.clone());
-                self.env.insert(hash_key_meta_key, Value::Str(key_type));
+                self.env.insert(hash_key_meta_key, Value::str(key_type));
             } else {
                 self.var_hash_key_constraints.remove(&key);
                 self.env.remove(&hash_key_meta_key);
@@ -1946,7 +1946,7 @@ impl Interpreter {
         let key = name;
         let meta_key = format!("__mutsu_type::{}", key);
         if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
-            return Some(tc.clone());
+            return Some(tc.to_string());
         }
         if let Some(tc) = self.var_type_constraints.get(key) {
             return Some(tc.clone());
@@ -1995,7 +1995,7 @@ impl Interpreter {
         let key = name;
         let meta_key = format!("__mutsu_hash_key_type::{}", key);
         if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
-            return Some(tc.clone());
+            return Some(tc.to_string());
         }
         self.var_hash_key_constraints.get(key).cloned()
     }
@@ -2526,7 +2526,7 @@ impl Interpreter {
             return;
         };
         let mut shared = self.shared_vars.write().unwrap();
-        shared.remove(&value_key);
+        shared.remove(value_key.as_str());
         shared.remove(&name_key);
     }
 
@@ -2535,7 +2535,7 @@ impl Interpreter {
         self.env.remove(&name_key);
         let mut shared = self.shared_vars.write().unwrap();
         if let Some(Value::Str(value_key)) = shared.remove(&name_key) {
-            shared.remove(&value_key);
+            shared.remove(value_key.as_str());
         }
     }
 
@@ -2551,8 +2551,8 @@ impl Interpreter {
             let Value::Str(alias_name) = alias else {
                 continue;
             };
-            if let Some(value) = current_env.get(alias_name).cloned() {
-                saved_env.insert(alias_name.clone(), value);
+            if let Some(value) = current_env.get(alias_name.as_str()).cloned() {
+                saved_env.insert(alias_name.to_string(), value);
             }
         }
     }

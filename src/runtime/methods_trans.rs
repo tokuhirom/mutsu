@@ -115,11 +115,11 @@ impl Interpreter {
         }
 
         if rules.is_empty() {
-            return Ok(Value::Str(text));
+            return Ok(Value::str(text));
         }
 
         let result = self.apply_trans_rules(&text, &rules, squash, delete, complement);
-        Ok(Value::Str(result))
+        Ok(Value::str(result))
     }
 
     fn parse_trans_pair(&self, key: &str, value: &Value) -> TransRule {
@@ -133,7 +133,7 @@ impl Interpreter {
         }
 
         let to_list = value_to_string_list(value);
-        let from_list = value_to_string_list(&Value::Str(key.to_string()));
+        let from_list = value_to_string_list(&Value::str(key.to_string()));
 
         let has_multichar = from_list.iter().any(|s| s.chars().count() > 1);
 

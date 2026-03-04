@@ -84,7 +84,7 @@ impl VM {
             out.push_str(&text[..start_b]);
             out.push_str(&replacement);
             out.push_str(&text[end_b..]);
-            let result = Value::Str(out);
+            let result = Value::str(out);
             self.interpreter.env_mut().insert("_".to_string(), result);
             // Push Bool::True so `$x ~~ s///` returns True on match
             self.stack.push(Value::Bool(true));
@@ -123,9 +123,9 @@ impl VM {
             out.push_str(&text[..start_b]);
             out.push_str(&replacement);
             out.push_str(&text[end_b..]);
-            self.stack.push(Value::Str(out));
+            self.stack.push(Value::str(out));
         } else {
-            self.stack.push(Value::Str(text));
+            self.stack.push(Value::str(text));
         }
         Ok(())
     }
@@ -148,7 +148,7 @@ impl VM {
             .cloned()
             .unwrap_or(Value::Nil);
 
-        let mut args = vec![Value::Pair(from, Box::new(Value::Str(to)))];
+        let mut args = vec![Value::Pair(from, Box::new(Value::str(to)))];
         if delete {
             args.push(Value::Pair("d".to_string(), Box::new(Value::Bool(true))));
         }
@@ -360,8 +360,8 @@ impl VM {
             }
             Value::Num(y.atan2(x))
         } else if name == "sprintf" {
-            let fmt = match left_val {
-                Value::Str(s) => s,
+            let fmt = match &left_val {
+                Value::Str(s) => s.to_string(),
                 _ => String::new(),
             };
             if modifier.as_deref() == Some("X") {
@@ -369,11 +369,11 @@ impl VM {
                 for val in &right_vals {
                     parts.push(runtime::format_sprintf(&fmt, Some(val)));
                 }
-                Value::Str(parts.join(" "))
+                Value::str(parts.join(" "))
             } else {
                 let arg = right_vals.first();
                 let rendered = runtime::format_sprintf(&fmt, arg);
-                Value::Str(rendered)
+                Value::str(rendered)
             }
         } else {
             let mut call_args = vec![left_val.clone()];
@@ -541,7 +541,7 @@ impl VM {
             let matcher_key = format!("__mutsu_ff_state::{scope}::{site_id}");
             let mut map = std::collections::HashMap::new();
             map.insert("__mutsu_ff_matcher".to_string(), Value::Bool(true));
-            map.insert("key".to_string(), Value::Str(matcher_key));
+            map.insert("key".to_string(), Value::str(matcher_key));
             map.insert("lhs".to_string(), lhs_pattern);
             map.insert("rhs".to_string(), rhs_pattern);
             map.insert("exclude_start".to_string(), Value::Bool(exclude_start));
@@ -648,7 +648,7 @@ impl VM {
                         && call_args[0].to_string_value() == "method"
                     {
                         let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("name".to_string(), Value::Str(method_name.to_string()));
+                        attrs.insert("name".to_string(), Value::str(method_name.to_string()));
                         attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
                         let mut sig_attrs = std::collections::HashMap::new();
                         sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
@@ -684,7 +684,7 @@ impl VM {
                             && call_args[0].to_string_value() == "method"
                         {
                             let mut attrs = std::collections::HashMap::new();
-                            attrs.insert("name".to_string(), Value::Str(method_name.to_string()));
+                            attrs.insert("name".to_string(), Value::str(method_name.to_string()));
                             attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
                             let mut sig_attrs = std::collections::HashMap::new();
                             sig_attrs.insert("params".to_string(), Value::array(Vec::new()));

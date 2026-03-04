@@ -426,7 +426,7 @@ impl Interpreter {
         let preprocessed = Self::preprocess_roast_directives(input);
         if !self.env.contains_key("*PROGRAM") {
             self.env
-                .insert("*PROGRAM".to_string(), Value::Str(String::new()));
+                .insert("*PROGRAM".to_string(), Value::str(String::new()));
         }
         self.collect_doc_comments(&preprocessed);
         self.collect_pod_blocks(&preprocessed);
@@ -434,7 +434,7 @@ impl Interpreter {
             .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
-        self.env.insert("?FILE".to_string(), Value::Str(file_name));
+        self.env.insert("?FILE".to_string(), Value::str(file_name));
         self.env.insert("?LINE".to_string(), Value::Int(1));
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
@@ -446,7 +446,7 @@ impl Interpreter {
         }
         let (stmts, finish_content) = parse_result?;
         if let Some(content) = finish_content {
-            self.env.insert("=finish".to_string(), Value::Str(content));
+            self.env.insert("=finish".to_string(), Value::str(content));
         }
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run
@@ -512,7 +512,7 @@ impl Interpreter {
                 let arg_idx = main_call.add_constant(arg);
                 main_call.emit(OpCode::LoadConst(arg_idx));
             }
-            let name_idx = main_call.add_constant(Value::Str("MAIN".to_string()));
+            let name_idx = main_call.add_constant(Value::str_from("MAIN"));
             main_call.emit(OpCode::ExecCall {
                 name_idx,
                 arity,

@@ -60,7 +60,7 @@ impl Interpreter {
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(
                 "__mutsu_routine_name".to_string(),
-                Value::Str(name.to_string()),
+                Value::str(name.to_string()),
             );
             // Apply assumed args
             for arg in &args {
@@ -266,10 +266,10 @@ impl Interpreter {
                 |sub_data: &crate::value::SubData, expected: Value, symbol: String| {
                     let mut ex_attrs = std::collections::HashMap::new();
                     ex_attrs.insert("expected".to_string(), expected.clone());
-                    ex_attrs.insert("symbol".to_string(), Value::Str(symbol));
+                    ex_attrs.insert("symbol".to_string(), Value::str(symbol));
                     ex_attrs.insert(
                         "payload".to_string(),
-                        Value::Str(expected.to_string_value()),
+                        Value::str(expected.to_string_value()),
                     );
                     let exception =
                         Value::make_instance(Symbol::intern("X::TypeCheck::Binding"), ex_attrs);
@@ -299,7 +299,7 @@ impl Interpreter {
             if next.param_defs.is_empty() && !incoming_named.is_empty() {
                 return Some(Ok(make_failure(
                     &next,
-                    Value::Str("Unexpected".to_string()),
+                    Value::str_from("Unexpected"),
                     String::new(),
                 )));
             }
@@ -311,7 +311,7 @@ impl Interpreter {
                 if !allows_extra_named && !known_named.contains(name) {
                     return Some(Ok(make_failure(
                         &next,
-                        Value::Str("Unexpected".to_string()),
+                        Value::str_from("Unexpected"),
                         String::new(),
                     )));
                 }

@@ -15,7 +15,7 @@ impl Interpreter {
                 name
             );
             let mut attrs = HashMap::new();
-            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
             let ex = Value::make_instance(Symbol::intern("X::Constructor::BadType"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
@@ -224,11 +224,9 @@ impl Interpreter {
                                     constraint, got_type, got_repr,
                                 );
                                 let mut attrs = std::collections::HashMap::new();
-                                attrs.insert("message".to_string(), Value::Str(msg.clone()));
-                                attrs.insert(
-                                    "operation".to_string(),
-                                    Value::Str("assignment".to_string()),
-                                );
+                                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                                attrs
+                                    .insert("operation".to_string(), Value::str_from("assignment"));
                                 attrs.insert("got".to_string(), item.clone());
                                 attrs.insert(
                                     "expected".to_string(),
@@ -318,7 +316,7 @@ impl Interpreter {
                         loop {
                             let val =
                                 self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                            if matches!(&val, Value::Str(s) if s == "IterationEnd") {
+                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd") {
                                 break;
                             }
                             items.push(val);
@@ -424,7 +422,7 @@ impl Interpreter {
                             && key == "short-name"
                         {
                             if let Value::Str(s) = value.as_ref() {
-                                short_name = Some(s.clone());
+                                short_name = Some(s.to_string());
                             } else {
                                 return Err(RuntimeError::new(
                                     "CompUnit::DependencySpecification.new: :short-name must be a Str",
@@ -464,7 +462,7 @@ impl Interpreter {
                         "prefix".to_string(),
                         self.make_io_path_instance(&canonical_prefix),
                     );
-                    attrs.insert("short-id".to_string(), Value::Str("file".to_string()));
+                    attrs.insert("short-id".to_string(), Value::str_from("file"));
                     let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);
@@ -542,9 +540,9 @@ impl Interpreter {
                         ));
                     }
                     let mut attrs = HashMap::new();
-                    attrs.insert("path".to_string(), Value::Str(path));
+                    attrs.insert("path".to_string(), Value::str(path));
                     if let Some(cwd) = cwd_attr {
-                        attrs.insert("cwd".to_string(), Value::Str(cwd));
+                        attrs.insert("cwd".to_string(), Value::str(cwd));
                     }
                     return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }
@@ -687,7 +685,7 @@ impl Interpreter {
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     let mut frame_attrs = HashMap::new();
-                    frame_attrs.insert("file".to_string(), Value::Str(file));
+                    frame_attrs.insert("file".to_string(), Value::str(file));
                     let frame =
                         Value::make_instance(Symbol::intern("Backtrace::Frame"), frame_attrs);
                     return Ok(Value::array(vec![frame]));
@@ -727,10 +725,10 @@ impl Interpreter {
                         .take((to - from) as usize)
                         .collect();
                     let mut attrs = HashMap::new();
-                    attrs.insert("str".to_string(), Value::Str(matched));
+                    attrs.insert("str".to_string(), Value::str(matched));
                     attrs.insert("from".to_string(), Value::Int(from));
                     attrs.insert("to".to_string(), Value::Int(to));
-                    attrs.insert("orig".to_string(), Value::Str(orig));
+                    attrs.insert("orig".to_string(), Value::str(orig));
                     // Convert list to positional captures
                     if let Value::Array(items, ..) = &list {
                         attrs.insert("list".to_string(), Value::array(items.to_vec()));
@@ -1153,7 +1151,7 @@ impl Interpreter {
                 // Built-in type objects: .new creates a default defined instance
                 match name.resolve().as_str() {
                     "Int" => Ok(Value::Int(0)),
-                    "Str" => Ok(Value::Str(String::new())),
+                    "Str" => Ok(Value::str(String::new())),
                     "Num" => Ok(Value::Num(0.0)),
                     "Bool" => Ok(Value::Bool(false)),
                     _ => Err(RuntimeError::new(format!(
@@ -1162,7 +1160,7 @@ impl Interpreter {
                     ))),
                 }
             }
-            Value::Str(_) => Ok(Value::Str(String::new())),
+            Value::Str(_) => Ok(Value::str(String::new())),
             Value::Int(_) => Ok(Value::Int(0)),
             Value::Num(_) => Ok(Value::Num(0.0)),
             Value::Bool(_) => Ok(Value::Bool(false)),

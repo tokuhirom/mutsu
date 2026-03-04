@@ -23,7 +23,7 @@ impl Compiler {
         } = expr
             && matches!(
                 left.as_ref(),
-                Expr::Literal(Value::Str(key)) if key == "tests"
+                Expr::Literal(Value::Str(key)) if key.as_str() == "tests"
             )
         {
             return Some(right.as_ref());
@@ -33,11 +33,11 @@ impl Compiler {
 
     fn compile_test_more_use(&mut self, arg: &Option<Expr>) {
         // `Test::More` is provided by native Test functions.
-        let test_name_idx = self.code.add_constant(Value::Str("Test".to_string()));
+        let test_name_idx = self.code.add_constant(Value::str_from("Test"));
         self.code.emit(OpCode::UseModule(test_name_idx));
         if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
             self.compile_expr(plan_arg);
-            let plan_name_idx = self.code.add_constant(Value::Str("plan".to_string()));
+            let plan_name_idx = self.code.add_constant(Value::str_from("plan"));
             self.code.emit(OpCode::ExecCall {
                 name_idx: plan_name_idx,
                 arity: 1,
@@ -157,7 +157,7 @@ impl Compiler {
                 }
             }
             Stmt::MarkReadonly(name) => {
-                let idx = self.code.add_constant(Value::Str(name.clone()));
+                let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx));
             }
             Stmt::Say(exprs) => {
@@ -192,7 +192,7 @@ impl Compiler {
                 if name.starts_with('*') && self.accessed_dynamic_vars.contains(name) {
                     let symbol = Self::dynamic_var_symbol(name);
                     let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("symbol".to_string(), Value::Str(symbol));
+                    attrs.insert("symbol".to_string(), Value::str(symbol));
                     let err =
                         Value::make_instance(Symbol::intern("X::Dynamic::Postdeclaration"), attrs);
                     let idx = self.code.add_constant(err);
@@ -201,7 +201,7 @@ impl Compiler {
                     return;
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::SetVarDynamic {
                     name_idx,
                     dynamic: is_dynamic,
@@ -214,13 +214,13 @@ impl Compiler {
                 if let Some(tc) = type_constraint
                     && !is_hash
                 {
-                    let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
+                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.code.emit(OpCode::TypeCheck(tc_idx));
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {
                     let key = format!("__state_{}::{}", self.current_package, name);
-                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                    let key_idx = self.code.add_constant(Value::str(key.clone()));
                     self.code.state_locals.push((slot as usize, key.clone()));
                     self.code.emit(OpCode::StateVarInit(slot, key_idx));
                 } else {
@@ -230,12 +230,12 @@ impl Compiler {
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
                         let qualified = self.qualify_variable_name(name);
-                        let idx = self.code.add_constant(Value::Str(qualified));
+                        let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::SetGlobal(idx));
                     }
                 }
                 if let Some(tc) = type_constraint {
-                    let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
+                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
                 if *is_export {
@@ -245,7 +245,7 @@ impl Compiler {
                         let entries = export_tags
                             .iter()
                             .cloned()
-                            .map(Value::Str)
+                            .map(Value::str)
                             .collect::<Vec<Value>>();
                         Some(self.code.add_constant(Value::array(entries)))
                     };
@@ -256,7 +256,7 @@ impl Compiler {
                     if let Some(arg) = trait_arg {
                         self.compile_expr(arg);
                     }
-                    let trait_name_idx = self.code.add_constant(Value::Str(trait_name.clone()));
+                    let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                     self.code.emit(OpCode::ApplyVarTrait {
                         name_idx,
                         trait_name_idx,
@@ -274,8 +274,8 @@ impl Compiler {
                     if matches!(op, AssignOp::Bind) {
                         // For := (bind), if the RHS is a variable, set up an alias
                         if let Expr::Var(rhs_name) = expr {
-                            let target_idx = self.code.add_constant(Value::Str(bare_name));
-                            let source_idx = self.code.add_constant(Value::Str(rhs_name.clone()));
+                            let target_idx = self.code.add_constant(Value::str(bare_name));
+                            let source_idx = self.code.add_constant(Value::str(rhs_name.clone()));
                             self.code.emit(OpCode::BindCallerVar {
                                 target_idx,
                                 source_idx,
@@ -283,7 +283,7 @@ impl Compiler {
                             });
                         } else {
                             self.compile_expr(expr);
-                            let name_idx = self.code.add_constant(Value::Str(bare_name));
+                            let name_idx = self.code.add_constant(Value::str(bare_name));
                             self.code.emit(OpCode::SetCallerVar {
                                 name_idx,
                                 depth: depth as u32,
@@ -291,7 +291,7 @@ impl Compiler {
                         }
                     } else {
                         self.compile_expr(expr);
-                        let name_idx = self.code.add_constant(Value::Str(bare_name));
+                        let name_idx = self.code.add_constant(Value::str(bare_name));
                         self.code.emit(OpCode::SetCallerVar {
                             name_idx,
                             depth: depth as u32,
@@ -307,7 +307,7 @@ impl Compiler {
                     return;
                 }
                 // Emit readonly check for assignment to potentially readonly params
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::CheckReadOnly(name_idx));
                 self.compile_expr(expr);
                 self.emit_set_named_var(name);
@@ -398,7 +398,7 @@ impl Compiler {
                 // so the VM can bind $k directly without overriding $_
                 let param_idx = param
                     .as_ref()
-                    .map(|p| self.code.add_constant(Value::Str(p.clone())));
+                    .map(|p| self.code.add_constant(Value::str(p.clone())));
                 let bind_stmts =
                     Self::build_for_bind_stmts(param, param_def.as_ref(), param_idx, params);
                 if !bind_stmts.is_empty() {
@@ -549,7 +549,7 @@ impl Compiler {
                             self.compile_call_arg(expr);
                         }
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     self.code.emit(OpCode::ExecCall {
                         name_idx,
                         arity,
@@ -575,7 +575,7 @@ impl Compiler {
                                 name: n,
                                 value: Some(expr),
                             } => {
-                                self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                self.compile_expr(&Expr::Literal(Value::str(n.clone())));
                                 self.compile_expr(expr);
                                 self.code.emit(OpCode::MakePair);
                                 regular_count += 1;
@@ -584,7 +584,7 @@ impl Compiler {
                                 name: n,
                                 value: None,
                             } => {
-                                self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                self.compile_expr(&Expr::Literal(Value::str(n.clone())));
                                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                 self.code.emit(OpCode::MakePair);
                                 regular_count += 1;
@@ -598,7 +598,7 @@ impl Compiler {
                             self.compile_expr(expr);
                         }
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     self.code.emit(OpCode::ExecCallSlip {
                         name_idx,
                         regular_arity: regular_count,
@@ -616,19 +616,19 @@ impl Compiler {
                             name,
                             value: Some(expr),
                         } => {
-                            self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                            self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                             self.compile_expr(expr);
                             self.code.emit(OpCode::MakePair);
                         }
                         CallArg::Named { name, value: None } => {
-                            self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                            self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                             self.compile_expr(&Expr::Literal(Value::Bool(true)));
                             self.code.emit(OpCode::MakePair);
                         }
                         CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                     }
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.resolve()));
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 self.code.emit(OpCode::ExecCallPairs {
                     name_idx,
                     arity: rewritten_args.len() as u32,
@@ -640,7 +640,7 @@ impl Compiler {
                 self.code.emit(OpCode::Goto);
             }
             Stmt::Label { name, stmt } => {
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::Label(name_idx));
                 self.compile_stmt(stmt);
             }
@@ -709,7 +709,7 @@ impl Compiler {
                         if let Stmt::Expr(expr) = s {
                             self.compile_expr(expr);
                             if let Expr::Var(name) = expr {
-                                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                                let name_idx = self.code.add_constant(Value::str(name.clone()));
                                 self.code.emit(OpCode::TagContainerRef(name_idx));
                             }
                         } else {
@@ -729,7 +729,7 @@ impl Compiler {
                         if let Stmt::Expr(expr) = s {
                             self.compile_expr(expr);
                             if let Expr::Var(name) = expr {
-                                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                                let name_idx = self.code.add_constant(Value::str(name.clone()));
                                 self.code.emit(OpCode::TagContainerRef(name_idx));
                             }
                         } else {
@@ -812,10 +812,10 @@ impl Compiler {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
                     // Register the package name so it's accessible as a value
-                    let name_idx = self.code.add_constant(Value::Str(qualified_name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(qualified_name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     // Non-unit package declarations also produce a type object value.
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
@@ -1003,7 +1003,7 @@ impl Compiler {
                     self.compile_expr(expr);
                     let name_idx = self
                         .code
-                        .add_constant(Value::Str("__mutsu_set_newline".to_string()));
+                        .add_constant(Value::str_from("__mutsu_set_newline"));
                     self.code.emit(OpCode::ExecCall {
                         name_idx,
                         arity: 1,
@@ -1022,29 +1022,29 @@ impl Compiler {
                 self.compile_test_more_use(arg);
             }
             Stmt::Use { module, .. } if module == "Test" || module.starts_with("Test::") => {
-                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
             }
             Stmt::Use { module, .. } => {
-                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
             }
             Stmt::Import { module, tags } => {
-                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
                 let tags_idx = if tags.is_empty() {
                     None
                 } else {
-                    let entries = tags.iter().cloned().map(Value::Str).collect::<Vec<Value>>();
+                    let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                     Some(self.code.add_constant(Value::array(entries)))
                 };
                 self.code.emit(OpCode::ImportModule { name_idx, tags_idx });
             }
             Stmt::No { module } => {
-                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::NoModule(name_idx));
             }
             Stmt::Need { module } => {
-                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::NeedModule(name_idx));
             }
             Stmt::EnumDecl { .. } => {
@@ -1080,9 +1080,9 @@ impl Compiler {
                 let body_idx = self.code.add_stmt(Stmt::Block(body.clone()));
                 let param_idx = param
                     .as_ref()
-                    .map(|p| self.code.add_constant(Value::Str(p.clone())));
+                    .map(|p| self.code.add_constant(Value::str(p.clone())));
                 let target_var_idx = if let Expr::Var(name) = supply {
-                    Some(self.code.add_constant(Value::Str(name.clone())))
+                    Some(self.code.add_constant(Value::str(name.clone())))
                 } else {
                     None
                 };
@@ -1099,7 +1099,7 @@ impl Compiler {
                 is_temp,
             } => {
                 // Emit LetSave: saves current value of the variable
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let has_index = index.is_some();
                 if let Some(idx_expr) = index {
                     self.compile_expr(idx_expr);
@@ -1139,7 +1139,7 @@ impl Compiler {
                 method_args,
                 value,
             } => {
-                let name_idx = self.code.add_constant(Value::Str(var_name.clone()));
+                let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                 self.code.emit(OpCode::LetSave {
                     name_idx,
                     index_mode: false,
@@ -1149,10 +1149,10 @@ impl Compiler {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
                     args: vec![
                         Expr::Var(var_name.clone()),
-                        Expr::Literal(Value::Str(method_name.clone())),
+                        Expr::Literal(Value::str(method_name.clone())),
                         Expr::ArrayLiteral(method_args.clone()),
                         value.clone(),
-                        Expr::Literal(Value::Str(var_name.clone())),
+                        Expr::Literal(Value::str(var_name.clone())),
                     ],
                 };
                 self.compile_expr(&assign_expr);

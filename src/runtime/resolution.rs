@@ -408,7 +408,7 @@ impl Interpreter {
 
     pub(super) fn make_promise_instance(&self, status: &str, result: Value) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("status".to_string(), Value::Str(status.to_string()));
+        attrs.insert("status".to_string(), Value::str(status.to_string()));
         attrs.insert("result".to_string(), result);
         Value::make_instance(Symbol::intern("Promise"), attrs)
     }
@@ -695,7 +695,7 @@ impl Interpreter {
                 .push((data.package.resolve(), data.name.resolve()));
             self.block_stack.push(block_sub);
             let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
-                Value::Str(s) => Some(s.clone()),
+                Value::Str(s) => Some(s.to_string()),
                 _ => None,
             });
             self.prepare_definite_return_slot(return_spec.as_deref());

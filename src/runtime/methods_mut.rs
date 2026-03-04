@@ -69,7 +69,7 @@ impl Interpreter {
             Value::BigInt(n) => Value::from_bigint(n + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
-            Value::Str(s) => Value::Str(Self::string_succ(s)),
+            Value::Str(s) => Value::str(Self::string_succ(s)),
             _ => Value::Int(1),
         }
     }
@@ -84,7 +84,7 @@ impl Interpreter {
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
             Value::Str(s) => match Self::string_pred(s) {
-                Ok(prev) => Value::Str(prev),
+                Ok(prev) => Value::str(prev),
                 Err(_) => Value::Str(s.clone()),
             },
             _ => Value::Int(-1),
@@ -413,7 +413,7 @@ impl Interpreter {
             && let Some(Value::Hash(source_hash)) = attributes.get("__mutsu_hash_ref")
         {
             let mut updated = (**source_hash).clone();
-            updated.insert(key.clone(), value.clone());
+            updated.insert(key.to_string(), value.clone());
             let replacement = Value::hash(updated);
             self.overwrite_hash_bindings_by_identity(source_hash, replacement);
             return Ok(value);
@@ -780,10 +780,10 @@ impl Interpreter {
                 format!("${}", target_var)
             };
             let mut attributes = HashMap::new();
-            attributes.insert("name".to_string(), Value::Str(display_name));
+            attributes.insert("name".to_string(), Value::str(display_name));
             attributes.insert(
                 "__mutsu_var_target".to_string(),
-                Value::Str(target_var.to_string()),
+                Value::str(target_var.to_string()),
             );
             attributes.insert(
                 "dynamic".to_string(),
@@ -1274,7 +1274,7 @@ impl Interpreter {
                     let mut pull_one_squish = |this: &mut Self| -> Result<Value, RuntimeError> {
                         if !initialized {
                             let Some(first) = source.first().cloned() else {
-                                return Ok(Value::Str("IterationEnd".to_string()));
+                                return Ok(Value::str_from("IterationEnd"));
                             };
                             prev_key = if let Some(func) = as_func.clone() {
                                 this.call_sub_value(func, vec![first.clone()], true)?
@@ -1310,7 +1310,7 @@ impl Interpreter {
                                 return Ok(item);
                             }
                         }
-                        Ok(Value::Str("IterationEnd".to_string()))
+                        Ok(Value::str_from("IterationEnd"))
                     };
 
                     let ret = match method {
@@ -1319,7 +1319,8 @@ impl Interpreter {
                             let mut collected = Vec::new();
                             loop {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                if matches!(next, Value::Str(ref s) if s.as_str() == "IterationEnd")
+                                {
                                     break;
                                 }
                                 collected.push(next);
@@ -1333,18 +1334,21 @@ impl Interpreter {
                                     Value::Array(std::sync::Arc::new(next), *arr_kind);
                                 self.overwrite_array_bindings_by_identity(existing, updated_array);
                             }
-                            Value::Str("IterationEnd".to_string())
+                            Value::str_from("IterationEnd")
                         }
                         "skip-one" => {
                             let next = pull_one_squish(self)?;
-                            Value::Bool(!matches!(next, Value::Str(ref s) if s == "IterationEnd"))
+                            Value::Bool(
+                                !matches!(next, Value::Str(ref s) if s.as_str() == "IterationEnd"),
+                            )
                         }
                         "skip-at-least" => {
                             let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
                             let mut ok = true;
                             for _ in 0..want {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                if matches!(next, Value::Str(ref s) if s.as_str() == "IterationEnd")
+                                {
                                     ok = false;
                                     break;
                                 }
@@ -1355,7 +1359,8 @@ impl Interpreter {
                             let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
                             for _ in 0..want {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                if matches!(next, Value::Str(ref s) if s.as_str() == "IterationEnd")
+                                {
                                     updated.insert(
                                         "squish_scan_index".to_string(),
                                         Value::Int(scan_index as i64),
@@ -1370,7 +1375,7 @@ impl Interpreter {
                                         target_id,
                                         updated.clone(),
                                     );
-                                    return Ok(Value::Str("IterationEnd".to_string()));
+                                    return Ok(Value::str_from("IterationEnd"));
                                 }
                             }
                             pull_one_squish(self)?
@@ -1380,7 +1385,8 @@ impl Interpreter {
                             let mut collected = Vec::new();
                             for _ in 0..want {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                if matches!(next, Value::Str(ref s) if s.as_str() == "IterationEnd")
+                                {
                                     break;
                                 }
                                 collected.push(next);
@@ -1397,17 +1403,18 @@ impl Interpreter {
                             if collected.len() >= want {
                                 Value::Nil
                             } else {
-                                Value::Str("IterationEnd".to_string())
+                                Value::str_from("IterationEnd")
                             }
                         }
                         "sink-all" => {
                             loop {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next, Value::Str(ref s) if s == "IterationEnd") {
+                                if matches!(next, Value::Str(ref s) if s.as_str() == "IterationEnd")
+                                {
                                     break;
                                 }
                             }
-                            Value::Str("IterationEnd".to_string())
+                            Value::str_from("IterationEnd")
                         }
                         "can" => {
                             let method_name = args
@@ -1427,7 +1434,7 @@ impl Interpreter {
                                     | "skip-at-least-pull-one"
                             );
                             if supported {
-                                Value::array(vec![Value::Str(method_name)])
+                                Value::array(vec![Value::str(method_name)])
                             } else {
                                 Value::array(Vec::new())
                             }
@@ -1485,7 +1492,7 @@ impl Interpreter {
                             index += 1;
                             out
                         } else {
-                            Value::Str("IterationEnd".to_string())
+                            Value::str_from("IterationEnd")
                         }
                     }
                     "push-exactly" | "push-at-least" => {
@@ -1497,7 +1504,7 @@ impl Interpreter {
                             index += take;
                         }
                         if index >= len {
-                            Value::Str("IterationEnd".to_string())
+                            Value::str_from("IterationEnd")
                         } else {
                             Value::Nil
                         }
@@ -1507,11 +1514,11 @@ impl Interpreter {
                             append_to_first_array_arg(&items[index..]);
                             index = len;
                         }
-                        Value::Str("IterationEnd".to_string())
+                        Value::str_from("IterationEnd")
                     }
                     "sink-all" => {
                         index = len;
-                        Value::Str("IterationEnd".to_string())
+                        Value::str_from("IterationEnd")
                     }
                     "skip-one" => {
                         if index < len {
@@ -1542,11 +1549,11 @@ impl Interpreter {
                                 index += 1;
                                 out
                             } else {
-                                Value::Str("IterationEnd".to_string())
+                                Value::str_from("IterationEnd")
                             }
                         } else {
                             index = len;
-                            Value::Str("IterationEnd".to_string())
+                            Value::str_from("IterationEnd")
                         }
                     }
                     "can" => {
@@ -1567,7 +1574,7 @@ impl Interpreter {
                                 | "skip-at-least-pull-one"
                         );
                         if supported {
-                            return Ok(Value::array(vec![Value::Str(method_name)]));
+                            return Ok(Value::array(vec![Value::str(method_name)]));
                         } else {
                             return Ok(Value::array(Vec::new()));
                         }

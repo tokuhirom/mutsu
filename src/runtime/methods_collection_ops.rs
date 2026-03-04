@@ -939,9 +939,10 @@ impl Interpreter {
                         Some(Stmt::Expr(Expr::Literal(Value::Regex(_))))
                     )
                 {
-                    return self.eval_grep_over_items(args.first().cloned(), vec![Value::Str(s)]);
+                    return self
+                        .eval_grep_over_items(args.first().cloned(), vec![Value::Str(s.clone())]);
                 }
-                Ok(Value::Str(s))
+                Ok(Value::Str(s.clone()))
             }
             other => Ok(other),
         }
@@ -1203,7 +1204,7 @@ impl Interpreter {
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();
         attrs.insert("handle".to_string(), Value::Int(id as i64));
-        attrs.insert("host".to_string(), Value::Str(host));
+        attrs.insert("host".to_string(), Value::str(host));
         attrs.insert("port".to_string(), Value::Int(port as i64));
         Ok(Value::make_instance(
             Symbol::intern("IO::Socket::INET"),
@@ -1223,11 +1224,11 @@ impl Interpreter {
             _ => Vec::new(),
         };
         let collected_stdout = match attributes.get("collected_stdout") {
-            Some(Value::Str(s)) => s.clone(),
+            Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
         let collected_stderr = match attributes.get("collected_stderr") {
-            Some(Value::Str(s)) => s.clone(),
+            Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
 
@@ -1235,7 +1236,7 @@ impl Interpreter {
             for tap in &stdout_taps {
                 let _ = self.call_sub_value(
                     tap.clone(),
-                    vec![Value::Str(collected_stdout.clone())],
+                    vec![Value::str(collected_stdout.clone())],
                     true,
                 );
             }
@@ -1244,7 +1245,7 @@ impl Interpreter {
             for tap in &stderr_taps {
                 let _ = self.call_sub_value(
                     tap.clone(),
-                    vec![Value::Str(collected_stderr.clone())],
+                    vec![Value::str(collected_stderr.clone())],
                     true,
                 );
             }
@@ -1285,11 +1286,11 @@ impl Interpreter {
             }
             // Built-in encoding: create an Encoding::Builtin instance
             let mut attrs = HashMap::new();
-            attrs.insert("name".to_string(), Value::Str(entry.name.clone()));
+            attrs.insert("name".to_string(), Value::str(entry.name.clone()));
             let alt_names: Vec<Value> = entry
                 .alternative_names
                 .iter()
-                .map(|s| Value::Str(s.clone()))
+                .map(|s| Value::str(s.clone()))
                 .collect();
             attrs.insert("alternative-names".to_string(), Value::array(alt_names));
             Ok(Value::make_instance(
@@ -1299,7 +1300,7 @@ impl Interpreter {
         } else {
             // Throw X::Encoding::Unknown
             let mut ex_attrs = HashMap::new();
-            ex_attrs.insert("name".to_string(), Value::Str(name.clone()));
+            ex_attrs.insert("name".to_string(), Value::str(name.clone()));
             let ex = Value::make_instance(Symbol::intern("X::Encoding::Unknown"), ex_attrs);
             let mut err = RuntimeError::new(format!("Unknown encoding '{}'", name));
             err.exception = Some(Box::new(ex));
@@ -1336,7 +1337,7 @@ impl Interpreter {
             Ok(()) => Ok(Value::Nil),
             Err(conflicting_name) => {
                 let mut ex_attrs = HashMap::new();
-                ex_attrs.insert("name".to_string(), Value::Str(conflicting_name.clone()));
+                ex_attrs.insert("name".to_string(), Value::str(conflicting_name.clone()));
                 let ex = Value::make_instance(
                     Symbol::intern("X::Encoding::AlreadyRegistered"),
                     ex_attrs,
@@ -1427,7 +1428,7 @@ impl Interpreter {
                         attrs.insert("got".to_string(), Value::Int(count));
                         attrs.insert(
                             "message".to_string(),
-                            Value::Str(format!(
+                            Value::str(format!(
                                 "Expected a non-negative integer for rotor count, got {}",
                                 count
                             )),
@@ -1472,7 +1473,7 @@ impl Interpreter {
                 }
                 Value::Pair(..) | Value::ValuePair(..) => {
                     let (count_val, gap_val) = match spec {
-                        Value::Pair(k, v) => (Value::Str(k.clone()), v.as_ref().clone()),
+                        Value::Pair(k, v) => (Value::str(k.clone()), v.as_ref().clone()),
                         Value::ValuePair(k, v) => (k.as_ref().clone(), v.as_ref().clone()),
                         _ => unreachable!(),
                     };
@@ -1615,7 +1616,7 @@ impl Interpreter {
                 attrs.insert("got".to_string(), Value::Int(new_pos));
                 attrs.insert(
                     "message".to_string(),
-                    Value::Str(
+                    Value::str(
                         "Rotoring gap is too large and causes an index below zero".to_string(),
                     ),
                 );

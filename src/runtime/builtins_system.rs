@@ -329,7 +329,7 @@ impl Interpreter {
             module_value.ok_or_else(|| RuntimeError::new("require expects a module"))?;
         let module_string = match &module_value {
             Value::Package(name) => name.resolve(),
-            Value::Str(name) => name.clone(),
+            Value::Str(name) => name.to_string(),
             value @ Value::Instance { .. } => Self::missing_symbol_name_from_failure(value)
                 .unwrap_or_else(|| value.to_string_value()),
             other => other.to_string_value(),
@@ -392,7 +392,7 @@ impl Interpreter {
         }
 
         if return_is_str {
-            Ok(Value::Str(module_string))
+            Ok(Value::str(module_string))
         } else {
             let name = module_name.unwrap_or(module_string);
             Ok(Value::Package(Symbol::intern(&name)))
@@ -426,9 +426,9 @@ impl Interpreter {
         self.chroot_root = Some(canonical.clone());
         let repr = Self::stringify_path(&canonical);
         self.env
-            .insert("$*CHROOT".to_string(), Value::Str(repr.clone()));
+            .insert("$*CHROOT".to_string(), Value::str(repr.clone()));
         self.env
-            .insert("*CHROOT".to_string(), Value::Str(repr.clone()));
+            .insert("*CHROOT".to_string(), Value::str(repr.clone()));
         let cwd_val = self.make_io_path_instance(&repr);
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
@@ -461,7 +461,7 @@ impl Interpreter {
     /// Create an IO::Pipe instance wrapping captured content.
     fn make_io_pipe(content: String) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("content".to_string(), Value::Str(content));
+        attrs.insert("content".to_string(), Value::str(content));
         Value::make_instance(Symbol::intern("IO::Pipe"), attrs)
     }
 
@@ -539,7 +539,7 @@ impl Interpreter {
                 -1,
                 0,
                 0,
-                Value::Str(String::new()),
+                Value::str(String::new()),
                 None,
                 None,
             ));
@@ -563,7 +563,7 @@ impl Interpreter {
                 -1,
                 0,
                 0,
-                Value::Str(String::new()),
+                Value::str(String::new()),
                 None,
                 None,
             ));
@@ -573,7 +573,7 @@ impl Interpreter {
         let rest_args = &positional[1..];
 
         // Build the command tuple for .command attribute
-        let command_val = Value::array(positional.iter().map(|s| Value::Str(s.clone())).collect());
+        let command_val = Value::array(positional.iter().map(|s| Value::str(s.clone())).collect());
 
         let mut cmd = Command::new(program);
         Self::apply_run_args(&mut cmd, rest_args, opts.win_verbatim_args);
@@ -662,7 +662,7 @@ impl Interpreter {
                 -1,
                 0,
                 0,
-                Value::Str(String::new()),
+                Value::str(String::new()),
                 None,
                 None,
             ));
@@ -670,7 +670,7 @@ impl Interpreter {
 
         let opts = Self::extract_proc_options(args, 1);
 
-        let command_val = Value::Str(command_str.clone());
+        let command_val = Value::str(command_str.clone());
 
         let mut command = if cfg!(windows) {
             let mut cmd = Command::new("cmd");
@@ -763,7 +763,7 @@ impl Interpreter {
             .unwrap_or_default();
 
         let shell_args = vec![
-            Value::Str(command),
+            Value::str(command),
             Value::Pair("out".to_string(), Box::new(Value::Bool(true))),
         ];
         let proc_value = self.builtin_shell(&shell_args)?;
@@ -774,7 +774,7 @@ impl Interpreter {
             return self.call_method_with_values(out_pipe.clone(), "slurp", vec![]);
         }
 
-        Ok(Value::Str(String::new()))
+        Ok(Value::str(String::new()))
     }
 
     pub(super) fn builtin_kill(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -873,7 +873,7 @@ impl Interpreter {
                     let error_val = if let Some(ex) = e.exception {
                         *ex
                     } else {
-                        Value::Str(e.message)
+                        Value::str(e.message)
                     };
                     promise.break_with(error_val, output, stderr);
                 }
@@ -924,11 +924,11 @@ impl Interpreter {
                                 let mut attrs = std::collections::HashMap::new();
                                 attrs.insert(
                                     "payload".to_string(),
-                                    Value::Str(result.to_string_value()),
+                                    Value::str(result.to_string_value()),
                                 );
                                 attrs.insert(
                                     "message".to_string(),
-                                    Value::Str(result.to_string_value()),
+                                    Value::str(result.to_string_value()),
                                 );
                                 let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                                 err.exception = Some(Box::new(ex));

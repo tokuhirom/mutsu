@@ -43,7 +43,7 @@ impl Interpreter {
                 | "concretization"
                 | "curried_role"
         ) {
-            return Some(Value::Str(method_name.to_string()));
+            return Some(Value::str(method_name.to_string()));
         }
         if let Some(value) = self.classhow_lookup(invocant, method_name) {
             return Some(value);
@@ -60,7 +60,7 @@ impl Interpreter {
             && let Some(class_def) = self.classes.get(&class_name.resolve())
             && class_def.native_methods.contains(method_name)
         {
-            return Some(Value::Str(method_name.to_string()));
+            return Some(Value::str(method_name.to_string()));
         }
         None
     }
@@ -71,7 +71,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
-            "name" if args.len() == 1 => Ok(Value::Str(match &args[0] {
+            "name" if args.len() == 1 => Ok(Value::str(match &args[0] {
                 Value::Package(name) => name.resolve(),
                 Value::Instance { class_name, .. } => class_name.resolve(),
                 Value::ParametricRole {
@@ -102,7 +102,7 @@ impl Interpreter {
                 };
                 let Some(meta) = self.type_metadata.get(&invocant_name.resolve()) else {
                     if invocant_name == "Grammar" {
-                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
+                        return Ok(Self::version_from_value(Value::str_from("6.e")));
                     }
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
@@ -110,7 +110,7 @@ impl Interpreter {
                 };
                 let Some(value) = meta.get("ver").cloned() else {
                     if invocant_name == "Grammar" {
-                        return Ok(Self::version_from_value(Value::Str("6.e".to_string())));
+                        return Ok(Self::version_from_value(Value::str_from("6.e")));
                     }
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
@@ -138,7 +138,7 @@ impl Interpreter {
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
                     ));
                 };
-                Ok(Value::Str(value.to_string_value()))
+                Ok(Value::str(value.to_string_value()))
             }
             "isa" if args.len() == 2 => {
                 let Value::Package(class_name) = &args[0] else {
@@ -253,7 +253,7 @@ impl Interpreter {
             "add_method" if args.len() >= 3 => {
                 let class_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name.clone(),
+                    Value::Str(name) => name.to_string(),
                     _ => {
                         return Err(RuntimeError::new("add_method target must be a type object"));
                     }
@@ -1001,7 +1001,7 @@ impl Interpreter {
 
     pub(super) fn make_native_method_object(&self, name: &str) -> Value {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
         let sig_attrs = {
             let mut sa = std::collections::HashMap::new();
@@ -1032,7 +1032,7 @@ impl Interpreter {
         } else {
             name.to_string()
         };
-        attrs.insert("name".to_string(), Value::Str(display_name));
+        attrs.insert("name".to_string(), Value::str(display_name));
         attrs.insert("is_dispatcher".to_string(), Value::Bool(is_dispatcher));
 
         // Build a Signature object for this method

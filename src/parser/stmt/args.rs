@@ -409,13 +409,13 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                             r,
                             CallArg::Named {
                                 name,
-                                value: Some(Expr::Literal(Value::Str(words[0].to_string()))),
+                                value: Some(Expr::Literal(Value::str(words[0].to_string()))),
                             },
                         ));
                     }
                     let items = words
                         .iter()
-                        .map(|w| Expr::Literal(Value::Str(w.to_string())))
+                        .map(|w| Expr::Literal(Value::str(w.to_string())))
                         .collect();
                     return Ok((
                         r,

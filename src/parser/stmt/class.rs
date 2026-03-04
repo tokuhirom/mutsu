@@ -24,7 +24,7 @@ fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
         let mut value = Value::Bool(true);
         if let Some(inner) = rest.strip_prefix('<') {
             if let Some(end) = inner.find('>') {
-                value = Value::Str(inner[..end].to_string());
+                value = Value::str(inner[..end].to_string());
                 rest = &inner[end + 1..];
             } else {
                 return Err(PError::expected("closing '>' in trait value"));
@@ -32,7 +32,7 @@ fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
         } else if rest.starts_with('(') {
             let after = skip_balanced_parens(rest);
             let body = &rest[1..rest.len() - after.len() - 1];
-            value = Value::Str(body.trim().to_string());
+            value = Value::str(body.trim().to_string());
             rest = after;
         }
         traits.push((name.to_string(), value));
@@ -67,8 +67,8 @@ fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
     Stmt::Expr(Expr::Call {
         name: Symbol::intern("__MUTSU_SET_META__"),
         args: vec![
-            Expr::Literal(Value::Str(type_name.to_string())),
-            Expr::Literal(Value::Str(key.to_string())),
+            Expr::Literal(Value::str(type_name.to_string())),
+            Expr::Literal(Value::str(key.to_string())),
             Expr::Literal(value),
         ],
     })
@@ -347,7 +347,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
         name: Symbol::intern("__MUTSU_UNREGISTER_CLASS__"),
-        args: vec![Expr::Literal(Value::Str(user_name))],
+        args: vec![Expr::Literal(Value::str(user_name))],
     });
     Ok((rest, Stmt::Block(vec![class_decl, unregister])))
 }
@@ -434,7 +434,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         traits.iter().find_map(|(k, v)| {
             if k == "repr" {
                 if let Value::Str(s) = v {
-                    Some(s.clone())
+                    Some(s.to_string())
                 } else {
                     None
                 }

@@ -127,19 +127,19 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             builtin_srand(seed);
             Some(Ok(Value::Nil))
         }
-        "uc" => Some(Ok(Value::Str(arg.to_string_value().to_uppercase()))),
-        "lc" => Some(Ok(Value::Str(arg.to_string_value().to_lowercase()))),
-        "fc" => Some(Ok(Value::Str(super::methods_0arg::unicode_foldcase(
+        "uc" => Some(Ok(Value::str(arg.to_string_value().to_uppercase()))),
+        "lc" => Some(Ok(Value::str(arg.to_string_value().to_lowercase()))),
+        "fc" => Some(Ok(Value::str(super::methods_0arg::unicode_foldcase(
             &arg.to_string_value(),
         )))),
-        "tc" => Some(Ok(Value::Str(titlecase_string(&arg.to_string_value())))),
-        "tclc" => Some(Ok(Value::Str(crate::value::tclc_str(
+        "tc" => Some(Ok(Value::str(titlecase_string(&arg.to_string_value())))),
+        "tclc" => Some(Ok(Value::str(crate::value::tclc_str(
             &arg.to_string_value(),
         )))),
-        "wordcase" => Some(Ok(Value::Str(crate::value::wordcase_str(
+        "wordcase" => Some(Ok(Value::str(crate::value::wordcase_str(
             &arg.to_string_value(),
         )))),
-        "chomp" => Some(Ok(Value::Str(
+        "chomp" => Some(Ok(Value::str(
             arg.to_string_value().trim_end_matches('\n').to_string(),
         ))),
         "chop" => {
@@ -152,23 +152,23 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             let mut s = arg.to_string_value();
             s.pop();
-            Some(Ok(Value::Str(s)))
+            Some(Ok(Value::str(s)))
         }
-        "trim" => Some(Ok(Value::Str(arg.to_string_value().trim().to_string()))),
-        "trim-leading" => Some(Ok(Value::Str(
+        "trim" => Some(Ok(Value::str(arg.to_string_value().trim().to_string()))),
+        "trim-leading" => Some(Ok(Value::str(
             arg.to_string_value().trim_start().to_string(),
         ))),
-        "trim-trailing" => Some(Ok(Value::Str(arg.to_string_value().trim_end().to_string()))),
+        "trim-trailing" => Some(Ok(Value::str(arg.to_string_value().trim_end().to_string()))),
         "flip" => {
             let s = arg.to_string_value();
             let reversed: String = s.graphemes(true).rev().collect();
-            Some(Ok(Value::Str(reversed)))
+            Some(Ok(Value::str(reversed)))
         }
         "words" => {
             let s = arg.to_string_value();
             let parts: Vec<Value> = s
                 .split_whitespace()
-                .map(|p| Value::Str(p.to_string()))
+                .map(|p| Value::str(p.to_string()))
                 .collect();
             Some(Ok(Value::array(parts)))
         }
@@ -188,7 +188,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 ))));
             }
             if let Some(ch) = std::char::from_u32(code as u32) {
-                Some(Ok(Value::Str(ch.to_string())))
+                Some(Ok(Value::str(ch.to_string())))
             } else {
                 Some(Err(RuntimeError::new(format!(
                     "chr({}) does not map to a valid Unicode character",
@@ -210,7 +210,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             if let Some(ch) = s.chars().next() {
                 let name = unicode_char_name(ch);
-                Some(Ok(Value::Str(name)))
+                Some(Ok(Value::str(name)))
             } else {
                 Some(Ok(Value::Nil))
             }
@@ -445,7 +445,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                     reversed.reverse();
                     Value::array(reversed)
                 }
-                Value::Str(s) => Value::Str(s.chars().rev().collect()),
+                Value::Str(s) => Value::str(s.chars().rev().collect()),
                 _ => Value::Nil,
             }))
         }
@@ -545,7 +545,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             let codes: Vec<Value> = s.chars().map(|ch| Value::Int(ch as u32 as i64)).collect();
             Some(Ok(Value::array(codes)))
         }
-        "gist" => Some(Ok(Value::Str(arg.to_string_value()))),
+        "gist" => Some(Ok(Value::str(arg.to_string_value()))),
         _ => None,
     }
 }
@@ -708,7 +708,7 @@ fn native_function_2arg(
             let char_count = s.chars().count();
             let keep = char_count.saturating_sub(n);
             let result: String = s.chars().take(keep).collect();
-            Some(Ok(Value::Str(result)))
+            Some(Ok(Value::str(result)))
         }
         "join" => {
             let sep = arg1.to_string_value();
@@ -719,7 +719,7 @@ fn native_function_2arg(
                     .map(|v| v.to_string_value())
                     .collect::<Vec<_>>()
                     .join(&sep);
-                return Some(Ok(Value::Str(joined)));
+                return Some(Ok(Value::str(joined)));
             }
             match arg2 {
                 Value::Array(items, ..) => {
@@ -728,9 +728,9 @@ fn native_function_2arg(
                         .map(|v| v.to_string_value())
                         .collect::<Vec<_>>()
                         .join(&sep);
-                    Some(Ok(Value::Str(joined)))
+                    Some(Ok(Value::str(joined)))
                 }
-                _ => Some(Ok(Value::Str(String::new()))),
+                _ => Some(Ok(Value::str(String::new()))),
             }
         }
         "rotate" => {
@@ -783,14 +783,14 @@ fn native_function_2arg(
                 _ => return None,
             };
             let chars: Vec<char> = s.chars().collect();
-            Some(Ok(Value::Str(
+            Some(Ok(Value::str(
                 chars[start.min(chars.len())..].iter().collect(),
             )))
         }
         "samemark" => {
             let target = arg1.to_string_value();
             let source = arg2.to_string_value();
-            Some(Ok(Value::Str(crate::builtins::samemark_string(
+            Some(Ok(Value::str(crate::builtins::samemark_string(
                 &target, &source,
             ))))
         }
@@ -850,8 +850,8 @@ fn native_function_2arg(
         "min" => {
             if matches!(arg1, Value::Pair(name, _) if name == "by")
                 || matches!(arg2, Value::Pair(name, _) if name == "by")
-                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
-                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
+                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
             {
                 return None;
             }
@@ -860,8 +860,8 @@ fn native_function_2arg(
         "max" => {
             if matches!(arg1, Value::Pair(name, _) if name == "by")
                 || matches!(arg2, Value::Pair(name, _) if name == "by")
-                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
-                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                || matches!(arg1, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
+                || matches!(arg2, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
             {
                 return None;
             }
@@ -892,7 +892,7 @@ fn native_function_3arg(
             let chars: Vec<char> = s.chars().collect();
             let start = start.min(chars.len());
             let end = (start + len).min(chars.len());
-            Some(Ok(Value::Str(chars[start..end].iter().collect())))
+            Some(Ok(Value::str(chars[start..end].iter().collect())))
         }
         _ => None,
     }
@@ -906,7 +906,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             }
             if args.iter().any(|arg| {
                 matches!(arg, Value::Pair(name, _) if name == "by")
-                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
             }) {
                 return None;
             }
@@ -926,7 +926,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             }
             if args.iter().any(|arg| {
                 matches!(arg, Value::Pair(name, _) if name == "by")
-                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name == "by"))
+                    || matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
             }) {
                 return None;
             }
@@ -964,7 +964,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                     _ => push_chr(&mut result, arg),
                 }
             }
-            Some(Ok(Value::Str(result)))
+            Some(Ok(Value::str(result)))
         }
         "zip" => {
             // zip([@a], [@b], ...) — interleave elements from each list
