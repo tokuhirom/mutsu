@@ -742,6 +742,13 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
+        // If the block contains CATCH/CONTROL, wrap in implicit try so
+        // exceptions are handled (any Raku block can act as a try block).
+        if Self::has_catch_or_control(stmts) {
+            self.compile_try(stmts, &None);
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
@@ -1051,6 +1058,11 @@ impl Compiler {
     }
 
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
+        // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
+        if Self::has_catch_or_control(body) {
+            self.compile_try(body, &None);
+            return;
+        }
         let idx = self.code.emit(OpCode::DoBlockExpr {
             body_end: 0,
             label: label.clone(),

@@ -105,6 +105,7 @@ roast/S03-operators/minmax.t
 roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t
+roast/S03-operators/notandthen.t
 roast/S03-operators/numeric-shift.t
 roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
@@ -393,6 +394,7 @@ roast/S16-filehandles/misc.t
 roast/S16-filehandles/mkdir_rmdir.t
 roast/S16-filehandles/mode.t
 roast/S16-filehandles/unlink.t
+roast/S16-io/basic-open.t
 roast/S16-io/cwd.t
 roast/S16-io/home.t
 roast/S16-io/newline.t
