@@ -72,10 +72,10 @@ Scalar containers are done. Array/Hash container semantics need work.
 - [x] `require` at runtime (dynamic module loading)
 - [x] `unit module` / `unit class` / `unit role`
 - [x] Proper `EXPORT` sub convention (`EXPORT::TAG::symbol` namespace population)
-- [x] `CompUnit` / repository API — `CompUnit::DependencySpecification` class, `CompUnit::Repository` role, `CompUnit::Repository::FileSystem`, `$*REPO` dynamic variable
-  - Remaining: `$*REPO.need()` returning CompUnit object with `.precompiled` attribute, `.handle.globalish-package`
-- [x] Precompilation — serde-based AST cache (`src/precomp.rs`), mtime + version invalidation, `--no-precomp` flag
-  - Remaining: `no precompilation` pragma, dependency-aware invalidation, `$*REPO.need()` integration
+- [x] `CompUnit` / repository API — `CompUnit::DependencySpecification`, `CompUnit::Repository` role, `$*REPO`, `$*REPO.need()` returning CompUnit with `.precompiled`
+  - Remaining: `.handle.globalish-package`, dependency-aware invalidation
+- [x] Precompilation — serde-based AST cache, mtime + version invalidation, `--no-precomp` flag, `no precompilation` pragma
+  - Remaining: dependency-aware invalidation (recompile when transitive deps change)
 
 ### A5. Grammar/regex completion (S05: 10/98 passing)
 
