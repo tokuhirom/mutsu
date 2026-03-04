@@ -444,6 +444,7 @@ impl Interpreter {
             "__mutsu_atomic_post_inc_var" => self.builtin_atomic_post_inc_var(&args),
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
+            "__mutsu_cas_var" => self.builtin_cas_var(args),
             "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(&args),
             "__mutsu_hyper_prefix" => self.builtin_hyper_prefix(&args),
             "signal" => self.builtin_signal(&args),
@@ -1305,6 +1306,51 @@ impl Interpreter {
 
     fn builtin_atomic_pre_dec_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         self.builtin_atomic_update_unit(args, -1, false)
+    }
+
+    /// Implements cas (compare-and-swap).
+    /// 3-arg form: cas($var_name, $expected, $new) - swap if current == expected, return old
+    /// 2-arg form: cas($var_name, &code) - read old, compute new = code(old), store new, return new
+    fn builtin_cas_var(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "cas requires 2 or 3 arguments: cas($var, $expected, $new) or cas($var, &code)",
+            ));
+        }
+        let name = args[0].to_string_value();
+        self.check_readonly_for_modify(&name)?;
+        let value_key = self.atomic_value_key_for_name(&name);
+
+        if args.len() == 3 {
+            // 3-arg form: cas($var, $expected, $new)
+            let expected = &args[1];
+            let new_val = args[2].clone();
+            let current = {
+                let shared = self.shared_vars.read().unwrap();
+                self.atomic_current_value(&shared, &name, &value_key)
+            };
+            if current == *expected {
+                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+                self.env.insert(name.clone(), coerced.clone());
+                self.shared_vars.write().unwrap().insert(value_key, coerced);
+            }
+            Ok(current)
+        } else {
+            // 2-arg form: cas($var, &code)
+            let code = args[1].clone();
+            let current = {
+                let shared = self.shared_vars.read().unwrap();
+                self.atomic_current_value(&shared, &name, &value_key)
+            };
+            let new_val = self.call_sub_value(code, vec![current], false)?;
+            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+            self.env.insert(name.clone(), coerced.clone());
+            self.shared_vars
+                .write()
+                .unwrap()
+                .insert(value_key, coerced.clone());
+            Ok(coerced)
+        }
     }
 
     fn builtin_hyper_prefix(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

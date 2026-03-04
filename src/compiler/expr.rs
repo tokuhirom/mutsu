@@ -504,6 +504,25 @@ impl Compiler {
                     });
                     return;
                 }
+                // Rewrite cas($var, ...) → __mutsu_cas_var($var_name_str, ...)
+                if name == "cas"
+                    && (args.len() == 2 || args.len() == 3)
+                    && let Expr::Var(var_name) = &args[0]
+                {
+                    let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
+                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::LoadConst(name_idx));
+                    for arg in &args[1..] {
+                        self.compile_expr(arg);
+                    }
+                    let arity = args.len() as u32; // var_name + remaining args
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx: call_name_idx,
+                        arity,
+                        arg_sources_idx: None,
+                    });
+                    return;
+                }
                 // Rewrite undefine($var) → $var = Nil (assign Nil to the variable)
                 if name == "undefine" && args.len() == 1 {
                     let var_name = match &args[0] {
