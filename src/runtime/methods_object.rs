@@ -1149,10 +1149,19 @@ impl Interpreter {
                     .unwrap_or(0);
                 self.builtin_callframe(&args, depth)
             }
-            Value::Package(name) => Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
-                name
-            ))),
+            Value::Package(name) => {
+                // Built-in type objects: .new creates a default defined instance
+                match name.resolve().as_str() {
+                    "Int" => Ok(Value::Int(0)),
+                    "Str" => Ok(Value::Str(String::new())),
+                    "Num" => Ok(Value::Num(0.0)),
+                    "Bool" => Ok(Value::Bool(false)),
+                    _ => Err(RuntimeError::new(format!(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
+                        name
+                    ))),
+                }
+            }
             Value::Str(_) => Ok(Value::Str(String::new())),
             Value::Int(_) => Ok(Value::Int(0)),
             Value::Num(_) => Ok(Value::Num(0.0)),
