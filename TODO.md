@@ -142,7 +142,7 @@ Design doc: `docs/gc.md`
 
 #### Phase 3: Remaining memory issues
 
-- [ ] Scoped call frames — replace flat HashMap env with stack of frames; local variables freed on scope exit (partially done with `GetLocal`/`SetLocal` indexed slots, but env HashMap is still the source of truth for the interpreter bridge)
+- [x] Scoped call frames — locals authoritative for simple vars with lazy env sync; `SetLocal` fast path skips env writes, `locals_dirty` flag triggers deferred flush before closure captures and interpreter bridge calls (#762)
 - [ ] Cycle collector — for user-created circular object references (e.g. two instances pointing to each other); trial deletion or epoch-based approach on top of Arc
 
 ### P2. Interpreter bridge elimination
