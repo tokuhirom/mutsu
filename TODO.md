@@ -79,14 +79,14 @@ Scalar containers are done. Array/Hash container semantics need work.
 
 ### A5. Grammar/regex completion (S05: 10/98 passing)
 
-- [ ] Action classes (method dispatch on grammar rule match)
-- [ ] Grammar inheritance (`is Grammar`)
-- [ ] Full protoregex with longest-token matching
+- [x] Action classes (method dispatch on grammar rule match)
+- [x] Grammar inheritance (`is Grammar`)
+- [x] Full protoregex with longest-token matching
 - [ ] Regex modifiers (`:g`, `:i`, `:ii`, `:s`, `:ss`, `:ratchet`, `:overlap`, `:exhaustive`)
-- [ ] Interpolating closures in regex (`/ { code } /`)
-- [ ] `$/` proper binding after match
-- [ ] Match object full API (`.caps`, `.chunks`, positional captures)
-- [ ] Named capture alias (`$<name>=<rule>`)
+- [x] Interpolating closures in regex (`/ { code } /`)
+- [x] `$/` proper binding after match
+- [ ] Match object full API (`.caps`, `.chunks` missing; positional captures done)
+- [x] Named capture alias (`$<name>=<rule>`)
 - [ ] Lookbehind (`<!before>`, `<!after>`)
 
 ### A6. Class system completion (S12: 5/101 passing)
