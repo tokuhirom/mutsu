@@ -245,6 +245,16 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         }
         // If we can't find the closing '>', fall through to return the base name
     }
+    // Guillemet form: infix:«...» is equivalent to infix:<...>
+    if is_op_category
+        && let Some(after_open) = rest.strip_prefix(":\u{ab}")
+        && let Some(end_pos) = after_open.find('\u{bb}')
+    {
+        let op_symbol = after_open[..end_pos].trim();
+        let after_close = &after_open[end_pos + '\u{bb}'.len_utf8()..];
+        let full_name = format!("{}:<{}>", base, op_symbol);
+        return Ok((after_close, full_name));
+    }
     if is_op_category
         && rest.starts_with(":[")
         && let Some(after_open) = rest.strip_prefix(":['")
