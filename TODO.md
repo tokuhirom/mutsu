@@ -72,8 +72,8 @@ Scalar containers are done. Array/Hash container semantics need work.
 - [x] `require` at runtime (dynamic module loading)
 - [x] `unit module` / `unit class` / `unit role`
 - [x] Proper `EXPORT` sub convention (`EXPORT::TAG::symbol` namespace population)
-- [ ] `CompUnit` / repository API (for `zef` compatibility) — type name recognized, no API
-- [ ] Precompilation (bytecode caching for loaded modules) — not started
+- [x] `CompUnit` / repository API (`CompUnit::DependencySpecification`, `CompUnit::Repository` role, `$*REPO`)
+- [x] Precompilation (serde-based bytecode caching for loaded modules)
 
 ### A5. Grammar/regex completion (S05: 10/98 passing)
 
