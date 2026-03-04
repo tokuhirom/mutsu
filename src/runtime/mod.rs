@@ -919,6 +919,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "CompUnit::Repository::FileSystem".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["CompUnit::Repository::FileSystem".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "IO::Pipe".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -1334,7 +1346,14 @@ impl Interpreter {
             hidden_classes: HashSet::new(),
             hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
-            class_composed_roles: HashMap::new(),
+            class_composed_roles: {
+                let mut ccr = HashMap::new();
+                ccr.insert(
+                    "CompUnit::Repository::FileSystem".to_string(),
+                    vec!["CompUnit::Repository".to_string()],
+                );
+                ccr
+            },
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -1364,6 +1383,35 @@ impl Interpreter {
                         is_hidden: false,
                     },
                 );
+                // CompUnit::Repository role with required stub methods
+                {
+                    let stub_body = vec![Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_stub_die"),
+                        args: vec![],
+                    })];
+                    let stub_method = |body: Vec<Stmt>| MethodDef {
+                        params: Vec::new(),
+                        param_defs: Vec::new(),
+                        body,
+                        is_rw: false,
+                        is_private: false,
+                        return_type: None,
+                        compiled_code: None,
+                    };
+                    let mut methods = HashMap::new();
+                    for name in ["id", "need", "load", "loaded"] {
+                        methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
+                    }
+                    roles.insert(
+                        "CompUnit::Repository".to_string(),
+                        RoleDef {
+                            attributes: Vec::new(),
+                            methods,
+                            is_stub_role: false,
+                            is_hidden: false,
+                        },
+                    );
+                }
                 roles
             },
             role_candidates: HashMap::new(),
@@ -1426,6 +1474,14 @@ impl Interpreter {
         interpreter.init_endian_enum();
         interpreter.init_signal_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
+        // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
+        {
+            let mut attrs = HashMap::new();
+            attrs.insert("prefix".to_string(), Value::str_from("."));
+            let repo =
+                Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
+            interpreter.env.insert("*REPO".to_string(), repo);
+        }
         interpreter
     }
 

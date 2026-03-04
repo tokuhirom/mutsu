@@ -1284,6 +1284,36 @@ impl Interpreter {
                     }
                 }
             }
+            // Check composed roles for the instance's class (and its MRO)
+            if self.roles.contains_key(constraint) {
+                let mro = self.class_mro(&class_name.resolve());
+                let mut role_stack: Vec<String> = Vec::new();
+                let mut seen_roles = HashSet::new();
+                for cn in &mro {
+                    if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
+                        for cr in composed {
+                            let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                            role_stack.push(base.to_string());
+                        }
+                    }
+                }
+                while let Some(role_name) = role_stack.pop() {
+                    if !seen_roles.insert(role_name.clone()) {
+                        continue;
+                    }
+                    if role_name == constraint {
+                        return true;
+                    }
+                    if let Some(rparents) = self.role_parents.get(&role_name) {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.roles.contains_key(rp_base) {
+                                role_stack.push(rp_base.to_string());
+                            }
+                        }
+                    }
+                }
+            }
         }
         // Mixin allomorphic types: check both inner type and mixin type keys
         if let Value::Mixin(inner, mixins) = value {
