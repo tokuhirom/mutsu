@@ -476,6 +476,8 @@ pub struct Interpreter {
     pending_regex_error: Option<RuntimeError>,
     /// When true, module precompilation cache is enabled.
     precomp_enabled: bool,
+    /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
+    monkey_typing: bool,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -1471,6 +1473,7 @@ impl Interpreter {
             action_made: None,
             pending_regex_error: None,
             precomp_enabled: true,
+            monkey_typing: false,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1678,6 +1681,10 @@ impl Interpreter {
                     | "newline"
                     | "soft"
             ) {
+            // Track MONKEY-TYPING pragma
+            if module == "MONKEY-TYPING" || module == "MONKEY" {
+                self.monkey_typing = true;
+            }
             Ok(())
         } else if module == "Test::Tap" {
             // Handle Test::Tap as built-in
@@ -1935,6 +1942,11 @@ impl Interpreter {
     /// Enable or disable module precompilation cache.
     pub fn set_precomp_enabled(&mut self, val: bool) {
         self.precomp_enabled = val;
+    }
+
+    /// Check if MONKEY-TYPING pragma is active.
+    pub(crate) fn monkey_typing_enabled(&self) -> bool {
+        self.monkey_typing
     }
 
     pub fn exit_code(&self) -> i64 {
@@ -2515,6 +2527,7 @@ impl Interpreter {
             action_made: None,
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
+            monkey_typing: self.monkey_typing,
         };
         cloned.init_io_environment();
         cloned

@@ -520,6 +520,7 @@ pub(crate) enum OpCode {
     RegisterProtoToken(u32),
     RegisterEnum(u32),
     RegisterClass(u32),
+    AugmentClass(u32),
     RegisterRole(u32),
     RegisterSubset(u32),
     SubtestScope {

@@ -611,6 +611,31 @@ impl VM {
         }
     }
 
+    pub(super) fn exec_augment_class_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let stmt = &code.stmt_pool[idx as usize];
+        if let Stmt::AugmentClass { name, body } = stmt {
+            let name_str = name.resolve();
+            // Check MONKEY-TYPING pragma: we check if `use MONKEY-TYPING` or `use MONKEY`
+            // was issued. Since the compiler simply ignores these `use` statements,
+            // we track them at the interpreter level.
+            if !self.interpreter.monkey_typing_enabled() {
+                return Err(RuntimeError::new(
+                    "augment not allowed without 'use MONKEY-TYPING'",
+                ));
+            }
+            self.interpreter.augment_class(&name_str, body)?;
+            // Recompile augmented class methods for the fast path
+            self.interpreter.compile_class_methods(&name_str);
+            Ok(())
+        } else {
+            Err(RuntimeError::new("AugmentClass expects AugmentClass stmt"))
+        }
+    }
+
     pub(super) fn exec_register_role_op(
         &mut self,
         code: &CompiledCode,

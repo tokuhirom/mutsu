@@ -1015,9 +1015,12 @@ impl Compiler {
                 if module == "v6"
                     || module == "customtrait"
                     || module == "isms"
-                    || module == "MONKEY-TYPING"
                     || module == "nqp"
                     || module == "soft" => {}
+            Stmt::Use { module, .. } if module == "MONKEY-TYPING" || module == "MONKEY" => {
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
+                self.code.emit(OpCode::UseModule(name_idx));
+            }
             Stmt::Use { module, arg } if module == "Test::More" => {
                 self.compile_test_more_use(arg);
             }
@@ -1054,6 +1057,10 @@ impl Compiler {
             Stmt::ClassDecl { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterClass(idx));
+            }
+            Stmt::AugmentClass { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::AugmentClass(idx));
             }
             Stmt::RoleDecl { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
