@@ -1,6 +1,7 @@
 mod operators;
 mod postfix;
 mod precedence;
+mod precedence_meta_ops;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
 use super::parse_result::PResult;
