@@ -58,12 +58,12 @@ Scalar containers are done. Array/Hash container semantics need work.
 
 ### A3. Type system deepening (S02: 27/146 passing)
 
-- [ ] Allomorphic types (`IntStr`, `NumStr`, `RatStr`, `ComplexStr`)
-- [ ] Type objects vs instances (proper undefined-ness: `Int` is a type object)
-- [ ] `where` clauses on `subset` (partially done)
-- [ ] Coercion types (`Int(Str)` as type constraint, not just explicit coercion)
-- [ ] `is` trait on variables (`my $x is default(42)`)
-- [ ] Typed variable assignment enforcement at runtime
+- [x] Allomorphic types (`IntStr`, `NumStr`, `RatStr`, `ComplexStr`)
+- [x] Type objects vs instances (proper undefined-ness: `Int` is a type object)
+- [x] `where` clauses on `subset` (partially done)
+- [x] Coercion types (`Int(Str)` as type constraint, not just explicit coercion)
+- [x] `is` trait on variables (`my $x is default(42)`)
+- [x] Typed variable assignment enforcement at runtime
 
 ### A4. Module/package system (S10: 0/9, S11: 3/22 passing)
 
