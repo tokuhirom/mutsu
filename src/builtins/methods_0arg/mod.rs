@@ -93,6 +93,150 @@ fn value_raku_repr(val: &Value) -> String {
     }
 }
 
+/// Extract the `from` position from a Match object value.
+fn match_value_from(val: &Value) -> i64 {
+    if let Value::Instance { attributes, .. } = val
+        && let Some(Value::Int(n)) = attributes.get("from")
+    {
+        return *n;
+    }
+    0
+}
+
+/// Collect all captures from a Match object sorted by position.
+/// Returns a list of Pair(key, match_value) where key is Int for positional, Str for named.
+fn match_caps(attributes: &HashMap<String, Value>) -> Value {
+    let mut pairs: Vec<(i64, Value)> = Vec::new();
+
+    // Collect named capture positions to filter out shadowed positional captures
+    let mut named_positions: Vec<(i64, i64)> = Vec::new();
+    if let Some(Value::Hash(named, ..)) = attributes.get("named") {
+        for (_key, val) in named.iter() {
+            named_positions.push((match_value_from(val), match_value_to(val)));
+        }
+    }
+
+    // Collect positional captures, skipping those shadowed by named captures
+    if let Some(Value::Array(items, ..)) = attributes.get("list") {
+        for (i, val) in items.iter().enumerate() {
+            let from = match_value_from(val);
+            let to = match_value_to(val);
+            let shadowed = named_positions
+                .iter()
+                .any(|(nf, nt)| *nf == from && *nt == to);
+            if !shadowed {
+                pairs.push((from, Value::Pair(i.to_string(), Box::new(val.clone()))));
+            }
+        }
+    }
+
+    // Collect named captures
+    if let Some(Value::Hash(named, ..)) = attributes.get("named") {
+        for (key, val) in named.iter() {
+            let from = match_value_from(val);
+            pairs.push((from, Value::Pair(key.clone(), Box::new(val.clone()))));
+        }
+    }
+
+    // Sort by position
+    pairs.sort_by_key(|(from, _)| *from);
+
+    Value::array(pairs.into_iter().map(|(_, pair)| pair).collect())
+}
+
+/// Like `.caps` but also includes non-captured text between captures as `~ => text` pairs.
+fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
+    // Collect named capture positions to filter out shadowed positional captures
+    let mut named_positions: Vec<(i64, i64)> = Vec::new();
+    if let Some(Value::Hash(named, ..)) = attributes.get("named") {
+        for (_key, val) in named.iter() {
+            named_positions.push((match_value_from(val), match_value_to(val)));
+        }
+    }
+
+    // Collect all captures with their from/to positions
+    let mut captures: Vec<(i64, i64, Value)> = Vec::new();
+
+    if let Some(Value::Array(items, ..)) = attributes.get("list") {
+        for (i, val) in items.iter().enumerate() {
+            let from = match_value_from(val);
+            let to = match_value_to(val);
+            let shadowed = named_positions
+                .iter()
+                .any(|(nf, nt)| *nf == from && *nt == to);
+            if !shadowed {
+                captures.push((from, to, Value::Pair(i.to_string(), Box::new(val.clone()))));
+            }
+        }
+    }
+
+    if let Some(Value::Hash(named, ..)) = attributes.get("named") {
+        for (key, val) in named.iter() {
+            let from = match_value_from(val);
+            let to = match_value_to(val);
+            captures.push((from, to, Value::Pair(key.clone(), Box::new(val.clone()))));
+        }
+    }
+
+    // Sort by position
+    captures.sort_by_key(|(from, _, _)| *from);
+
+    let match_from = match attributes.get("from") {
+        Some(Value::Int(n)) => *n,
+        _ => 0,
+    };
+    let match_to = match attributes.get("to") {
+        Some(Value::Int(n)) => *n,
+        _ => 0,
+    };
+    let orig = attributes
+        .get("orig")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    let orig_chars: Vec<char> = orig.chars().collect();
+
+    let mut result: Vec<Value> = Vec::new();
+    let mut pos = match_from;
+
+    for (from, to, pair) in captures {
+        if from > pos {
+            // Insert non-captured text
+            let start = pos as usize;
+            let end = from as usize;
+            let text: String = orig_chars
+                .get(start..end)
+                .map(|s| s.iter().collect())
+                .unwrap_or_default();
+            result.push(Value::Pair("~".to_string(), Box::new(Value::str(text))));
+        }
+        result.push(pair);
+        pos = to;
+    }
+
+    // Trailing non-captured text
+    if pos < match_to {
+        let start = pos as usize;
+        let end = match_to as usize;
+        let text: String = orig_chars
+            .get(start..end)
+            .map(|s| s.iter().collect())
+            .unwrap_or_default();
+        result.push(Value::Pair("~".to_string(), Box::new(Value::str(text))));
+    }
+
+    Value::array(result)
+}
+
+/// Extract the `to` position from a Match object value.
+fn match_value_to(val: &Value) -> i64 {
+    if let Value::Instance { attributes, .. } = val
+        && let Some(Value::Int(n)) = attributes.get("to")
+    {
+        return *n;
+    }
+    0
+}
+
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
 /// Returns `Some(Ok(..))` / `Some(Err(..))` when handled, `None` to fall through.
@@ -588,6 +732,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "actions" => {
                 return Some(Ok(attributes.get("actions").cloned().unwrap_or(Value::Nil)));
+            }
+            "caps" => {
+                return Some(Ok(match_caps(attributes)));
+            }
+            "chunks" => {
+                return Some(Ok(match_chunks(attributes)));
             }
             _ => {
                 // Delegate unknown methods to string representation
