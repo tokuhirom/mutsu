@@ -1970,6 +1970,7 @@ impl Interpreter {
                     type_constraint,
                     is_required,
                     sigil,
+                    where_constraint: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     class_def.attributes.push((
@@ -2359,6 +2360,7 @@ impl Interpreter {
                     is_required,
                     sigil,
                     handles,
+                    where_constraint: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     if let Some(class_def) = self.classes.get_mut(name) {
@@ -2448,6 +2450,7 @@ impl Interpreter {
                     type_constraint: _,
                     is_required,
                     sigil,
+                    where_constraint: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.attributes.push((

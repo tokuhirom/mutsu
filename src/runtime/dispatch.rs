@@ -631,6 +631,7 @@ impl Interpreter {
                 is_export,
                 export_tags,
                 custom_traits,
+                where_constraint,
             } => Stmt::VarDecl {
                 name: name.clone(),
                 expr: Self::rewrite_proto_dispatch_expr(expr),
@@ -641,6 +642,7 @@ impl Interpreter {
                 is_export: *is_export,
                 export_tags: export_tags.clone(),
                 custom_traits: custom_traits.clone(),
+                where_constraint: where_constraint.clone(),
             },
             Stmt::Assign { name, expr, op } => Stmt::Assign {
                 name: name.clone(),

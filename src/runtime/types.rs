@@ -1621,7 +1621,13 @@ impl Interpreter {
             let named_params: std::collections::HashSet<&str> = filtered_params
                 .iter()
                 .filter(|p| p.named)
-                .map(|p| p.name.as_str())
+                .map(|p| {
+                    // Strip sigil for named params with array/hash sigils: :@l -> "l", :%h -> "h"
+                    p.name
+                        .strip_prefix('@')
+                        .or_else(|| p.name.strip_prefix('%'))
+                        .unwrap_or(p.name.as_str())
+                })
                 .collect();
             for arg in args {
                 if let Value::Pair(key, _) = arg
@@ -1881,6 +1887,13 @@ impl Interpreter {
                     .or_else(|| pd.name.strip_prefix("%:"))
                 {
                     rest
+                } else if pd.named {
+                    // Named params like :@l or :%h have name "@l" or "%h";
+                    // strip the sigil to match the Pair key "l" or "h".
+                    pd.name
+                        .strip_prefix('@')
+                        .or_else(|| pd.name.strip_prefix('%'))
+                        .unwrap_or(&pd.name)
                 } else {
                     &pd.name
                 };
@@ -2268,6 +2281,8 @@ impl Interpreter {
                             || pd.name == format!(":{}", key)
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
+                            // Named params with sigils: :@l has name "@l", match key "l"
+                            || (pd.named && (pd.name == format!("@{}", key) || pd.name == format!("%{}", key)))
                         {
                             return true;
                         }

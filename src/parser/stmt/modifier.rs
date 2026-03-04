@@ -30,6 +30,7 @@ fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                where_constraint: None,
             });
         }
         rewritten.extend(body.clone());
