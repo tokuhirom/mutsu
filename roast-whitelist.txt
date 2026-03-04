@@ -206,6 +206,7 @@ roast/S05-modifier/Perl_6.t
 roast/S05-modifier/Perl_7.t
 roast/S05-modifier/Perl_8.t
 roast/S05-modifier/exhaustive.t
+roast/S05-modifier/global.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t

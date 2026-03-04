@@ -1618,6 +1618,7 @@ impl Interpreter {
                 }
                 let text = target.to_string_value();
                 let mut overlap = false;
+                let mut global = false;
                 let mut anchored_pos: Option<usize> = None;
                 let mut pattern_arg: Option<&Value> = None;
                 for arg in &args {
@@ -1626,6 +1627,8 @@ impl Interpreter {
                             overlap = true;
                         } else if key == "p" || key == "pos" {
                             anchored_pos = Some(value.to_f64() as usize);
+                        } else if (key == "g" || key == "global") && value.truthy() {
+                            global = true;
                         }
                         continue;
                     }
@@ -1642,6 +1645,31 @@ impl Interpreter {
                     _ => return Ok(Value::Nil),
                 };
                 return {
+                    if global {
+                        let all = self.regex_match_all_with_captures(&pat, &text);
+                        let non_overlapping = self.select_non_overlapping_matches(all);
+                        if non_overlapping.is_empty() {
+                            self.env.insert("/".to_string(), Value::Nil);
+                            return Ok(Value::array(Vec::new()));
+                        }
+                        let matches: Vec<Value> = non_overlapping
+                            .iter()
+                            .map(|c| {
+                                Value::make_match_object_full(
+                                    c.matched.clone(),
+                                    c.from as i64,
+                                    c.to as i64,
+                                    &c.positional,
+                                    &c.named,
+                                    &c.named_subcaps,
+                                    Some(&text),
+                                )
+                            })
+                            .collect();
+                        let result = Value::array(matches);
+                        self.env.insert("/".to_string(), result.clone());
+                        return Ok(result);
+                    }
                     if overlap {
                         let all = self.regex_match_all_with_captures(&pat, &text);
                         if all.is_empty() {

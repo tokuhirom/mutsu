@@ -727,8 +727,103 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .cloned()
                     .unwrap_or_else(|| Value::array(Vec::new()))));
             }
-            "ast" => {
+            "hash" | "Hash" => {
+                return Some(Ok(attributes
+                    .get("named")
+                    .cloned()
+                    .unwrap_or_else(|| Value::hash(HashMap::new()))));
+            }
+            "keys" => {
+                // Combine positional indices and named capture keys
+                let mut keys = Vec::new();
+                if let Some(Value::Array(list, _)) = attributes.get("list") {
+                    for i in 0..list.len() {
+                        keys.push(Value::Int(i as i64));
+                    }
+                }
+                if let Some(Value::Hash(named)) = attributes.get("named") {
+                    let mut sorted: Vec<&String> = named.keys().collect();
+                    sorted.sort();
+                    for k in sorted {
+                        keys.push(Value::str(k.clone()));
+                    }
+                }
+                return Some(Ok(Value::array(keys)));
+            }
+            "values" => {
+                let mut vals = Vec::new();
+                if let Some(Value::Array(list, _)) = attributes.get("list") {
+                    vals.extend(list.iter().cloned());
+                }
+                if let Some(Value::Hash(named)) = attributes.get("named") {
+                    let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
+                    sorted.sort_by_key(|(k, _)| (*k).clone());
+                    for (_, v) in sorted {
+                        vals.push(v.clone());
+                    }
+                }
+                return Some(Ok(Value::array(vals)));
+            }
+            "pairs" => {
+                let mut pairs = Vec::new();
+                if let Some(Value::Array(list, _)) = attributes.get("list") {
+                    for (i, v) in list.iter().enumerate() {
+                        pairs.push(Value::Pair(i.to_string(), Box::new(v.clone())));
+                    }
+                }
+                if let Some(Value::Hash(named)) = attributes.get("named") {
+                    let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
+                    sorted.sort_by_key(|(k, _)| (*k).clone());
+                    for (k, v) in sorted {
+                        pairs.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    }
+                }
+                return Some(Ok(Value::array(pairs)));
+            }
+            "kv" => {
+                let mut kv = Vec::new();
+                if let Some(Value::Array(list, _)) = attributes.get("list") {
+                    for (i, v) in list.iter().enumerate() {
+                        kv.push(Value::Int(i as i64));
+                        kv.push(v.clone());
+                    }
+                }
+                if let Some(Value::Hash(named)) = attributes.get("named") {
+                    let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
+                    sorted.sort_by_key(|(k, _)| (*k).clone());
+                    for (k, v) in sorted {
+                        kv.push(Value::str(k.clone()));
+                        kv.push(v.clone());
+                    }
+                }
+                return Some(Ok(Value::array(kv)));
+            }
+            "ast" | "made" => {
                 return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
+            }
+            "prematch" => {
+                if let Some(Value::Str(orig)) = attributes.get("orig") {
+                    let from = match attributes.get("from") {
+                        Some(Value::Int(n)) => *n as usize,
+                        _ => 0,
+                    };
+                    let chars: Vec<char> = orig.chars().collect();
+                    let pre: String = chars[..from.min(chars.len())].iter().collect();
+                    return Some(Ok(Value::str(pre)));
+                }
+                return Some(Ok(Value::str(String::new())));
+            }
+            "postmatch" => {
+                if let Some(Value::Str(orig)) = attributes.get("orig") {
+                    let to = match attributes.get("to") {
+                        Some(Value::Int(n)) => *n as usize,
+                        _ => 0,
+                    };
+                    let chars: Vec<char> = orig.chars().collect();
+                    let post: String = chars[to.min(chars.len())..].iter().collect();
+                    return Some(Ok(Value::str(post)));
+                }
+                return Some(Ok(Value::str(String::new())));
             }
             "actions" => {
                 return Some(Ok(attributes.get("actions").cloned().unwrap_or(Value::Nil)));
