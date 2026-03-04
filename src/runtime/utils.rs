@@ -447,7 +447,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     let val = *n as f64 / *d as f64;
                     format!("{}", val)
                 } else {
-                    format!("<{}/{}>", n, d)
+                    // Non-terminating decimals: display as decimal with 6 places
+                    let val = *n as f64 / *d as f64;
+                    format!("{:.6}", val)
                 }
             }
         }
