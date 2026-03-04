@@ -848,9 +848,11 @@ impl VM {
         fn collection_contains_instance(value: &Value) -> bool {
             match value {
                 Value::Instance { .. } => true,
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                    items.iter().any(collection_contains_instance)
-                }
+                v if v.as_list_items().is_some() => v
+                    .as_list_items()
+                    .unwrap()
+                    .iter()
+                    .any(collection_contains_instance),
                 Value::Hash(map) => map.values().any(collection_contains_instance),
                 _ => false,
             }

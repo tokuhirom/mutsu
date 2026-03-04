@@ -914,8 +914,8 @@ impl Interpreter {
         let mut await_targets: Vec<Value> = Vec::new();
         for arg in args {
             match arg {
-                Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
-                    await_targets.extend(items.iter().cloned());
+                _ if arg.as_list_items().is_some() => {
+                    await_targets.extend(arg.as_list_items().unwrap().iter().cloned());
                 }
                 other => await_targets.push(other.clone()),
             }

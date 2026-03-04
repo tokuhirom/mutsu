@@ -122,10 +122,10 @@ impl Interpreter {
                 named.insert("denominator".to_string(), Value::Int(*d));
                 Some((Vec::new(), named))
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            _ if value.as_list_items().is_some() => {
                 let mut positional = Vec::new();
                 let mut named = HashMap::new();
-                for item in items.iter() {
+                for item in value.as_list_items().unwrap().iter() {
                     if let Value::Pair(k, v) = item {
                         named.insert(k.clone(), *v.clone());
                     } else {
@@ -2353,12 +2353,12 @@ impl Interpreter {
 
     /// Extract list items from a value, expanding ranges.
     fn extract_list_items(v: &Value) -> Vec<Value> {
-        match v {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                items.as_ref().clone()
-            }
-            r if r.is_range() => Self::value_to_list(r),
-            _ => vec![v.clone()],
+        if let Some(items) = v.as_list_items() {
+            items.as_ref().clone()
+        } else if v.is_range() {
+            Self::value_to_list(v)
+        } else {
+            vec![v.clone()]
         }
     }
 

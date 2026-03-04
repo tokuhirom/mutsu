@@ -152,8 +152,8 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                for item in items.iter() {
+            _ if value.as_list_items().is_some() => {
+                for item in value.as_list_items().unwrap().iter() {
                     self.sink_for_definite_return(item)?;
                 }
                 Ok(())

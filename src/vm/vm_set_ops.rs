@@ -143,9 +143,11 @@ impl VM {
             Value::Bag(b) => b.get(&key).is_some_and(|count| *count > 0),
             Value::Mix(m) => m.get(&key).is_some_and(|weight| *weight != 0.0),
             Value::Hash(h) => self.hash_contains(h, needle, container),
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
-                items.iter().any(|item| Self::value_matches_key(item, &key))
-            }
+            v if v.as_list_items().is_some() => v
+                .as_list_items()
+                .unwrap()
+                .iter()
+                .any(|item| Self::value_matches_key(item, &key)),
             range if range.is_range() => Self::range_contains(range, needle),
             _ => false,
         }
@@ -201,8 +203,8 @@ impl VM {
                     }
                 }
             }
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                for item in items.iter() {
+            v if v.as_list_items().is_some() => {
+                for item in v.as_list_items().unwrap().iter() {
                     Self::union_insert_set_elem(elems, item);
                 }
             }
@@ -248,9 +250,9 @@ impl VM {
                     }
                 })
                 .collect()),
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            v if v.as_list_items().is_some() => {
                 let mut elems = HashSet::new();
-                for item in items.iter() {
+                for item in v.as_list_items().unwrap().iter() {
                     Self::union_insert_set_elem(&mut elems, item);
                 }
                 Ok(elems)

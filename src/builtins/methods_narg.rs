@@ -46,13 +46,12 @@ fn is_hammer_pair(arg: &Value) -> bool {
 
 fn flatten_target(target: &Value, depth: Option<usize>, flatten_arrays: bool) -> Value {
     let mut flat = Vec::new();
-    match target {
-        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-            for item in items.iter() {
-                flatten_with_depth(item, depth, &mut flat, flatten_arrays);
-            }
+    if let Some(items) = target.as_list_items() {
+        for item in items.iter() {
+            flatten_with_depth(item, depth, &mut flat, flatten_arrays);
         }
-        other => flatten_with_depth(other, depth, &mut flat, flatten_arrays),
+    } else {
+        flatten_with_depth(target, depth, &mut flat, flatten_arrays);
     }
     Value::Seq(Arc::new(flat))
 }
@@ -207,25 +206,26 @@ pub(crate) fn native_method_1arg(
                 Value::Num(f) if *f >= 0.0 => *f as usize,
                 _ => return Some(Ok(Value::Nil)),
             };
-            match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                    Some(Ok(items.get(idx).cloned().unwrap_or(Value::Nil)))
-                }
-                Value::Str(s) => {
-                    let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
-                    Some(Ok(ch.unwrap_or(Value::Nil)))
-                }
-                Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Match" => {
-                    if let Some(Value::Array(positional, ..)) = attributes.get("list") {
-                        return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::Nil)));
+            if let Some(items) = target.as_list_items() {
+                Some(Ok(items.get(idx).cloned().unwrap_or(Value::Nil)))
+            } else {
+                match target {
+                    Value::Str(s) => {
+                        let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
+                        Some(Ok(ch.unwrap_or(Value::Nil)))
                     }
-                    Some(Ok(Value::Nil))
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Match" => {
+                        if let Some(Value::Array(positional, ..)) = attributes.get("list") {
+                            return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::Nil)));
+                        }
+                        Some(Ok(Value::Nil))
+                    }
+                    _ => None,
                 }
-                _ => None,
             }
         }
         "split" => {
@@ -277,53 +277,55 @@ pub(crate) fn native_method_1arg(
             let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
             Some(Ok(Value::array(lines)))
         }
-        "join" => match target {
-            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+        "join" => {
+            if let Some(items) = target.as_list_items() {
                 let sep = arg.to_string_value();
                 let joined = items
                     .iter()
                     .map(|v| v.to_string_value())
                     .collect::<Vec<_>>()
                     .join(&sep);
-                Some(Ok(Value::str(joined)))
+                return Some(Ok(Value::str(joined)));
             }
-            Value::Capture { positional, .. } => {
-                let sep = arg.to_string_value();
-                let joined = positional
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Some(Ok(Value::str(joined)))
+            match target {
+                Value::Capture { positional, .. } => {
+                    let sep = arg.to_string_value();
+                    let joined = positional
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    Some(Ok(Value::str(joined)))
+                }
+                Value::Pair(k, v) => {
+                    let sep = arg.to_string_value();
+                    Some(Ok(Value::str(format!(
+                        "{}{}{}",
+                        k,
+                        sep,
+                        v.to_string_value()
+                    ))))
+                }
+                Value::ValuePair(k, v) => {
+                    let sep = arg.to_string_value();
+                    Some(Ok(Value::str(format!(
+                        "{}{}{}",
+                        k.to_string_value(),
+                        sep,
+                        v.to_string_value()
+                    ))))
+                }
+                // Scalar values: .join returns the value as a string
+                Value::Str(_)
+                | Value::Int(_)
+                | Value::Num(_)
+                | Value::Rat(..)
+                | Value::Bool(_)
+                | Value::Nil => Some(Ok(Value::str(target.to_string_value()))),
+                // Other types (LazyList, etc.) fall through to the runtime handler
+                _ => None,
             }
-            Value::Pair(k, v) => {
-                let sep = arg.to_string_value();
-                Some(Ok(Value::str(format!(
-                    "{}{}{}",
-                    k,
-                    sep,
-                    v.to_string_value()
-                ))))
-            }
-            Value::ValuePair(k, v) => {
-                let sep = arg.to_string_value();
-                Some(Ok(Value::str(format!(
-                    "{}{}{}",
-                    k.to_string_value(),
-                    sep,
-                    v.to_string_value()
-                ))))
-            }
-            // Scalar values: .join returns the value as a string
-            Value::Str(_)
-            | Value::Int(_)
-            | Value::Num(_)
-            | Value::Rat(..)
-            | Value::Bool(_)
-            | Value::Nil => Some(Ok(Value::str(target.to_string_value()))),
-            // Other types (LazyList, etc.) fall through to the runtime handler
-            _ => None,
-        },
+        }
         "flat" => {
             if is_hammer_pair(arg) {
                 return Some(Ok(flatten_target(target, None, true)));
@@ -379,10 +381,10 @@ pub(crate) fn native_method_1arg(
             }
         },
         "combinations" => {
-            let items = match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                _ => runtime::value_to_list(target),
-            };
+            let items = target
+                .as_list_items()
+                .map(|items| items.to_vec())
+                .unwrap_or_else(|| runtime::value_to_list(target));
             match arg {
                 Value::Range(a, b) => Some(Ok(Value::Seq(
                     super::methods_0arg::collection::combinations_range(&items, *a, *b).into(),

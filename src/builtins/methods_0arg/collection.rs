@@ -456,24 +456,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "permutations" => {
-            let items = match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                _ => runtime::value_to_list(target),
-            };
+            let items = target
+                .as_list_items()
+                .map(|items| items.to_vec())
+                .unwrap_or_else(|| runtime::value_to_list(target));
             Some(Ok(Value::Seq(all_permutations(&items).into())))
         }
         "combinations" => {
-            let items = match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                _ => runtime::value_to_list(target),
-            };
+            let items = target
+                .as_list_items()
+                .map(|items| items.to_vec())
+                .unwrap_or_else(|| runtime::value_to_list(target));
             Some(Ok(Value::Seq(combinations_all(&items).into())))
         }
         "cache" => {
-            let items = match target {
-                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                _ => runtime::value_to_list(target),
-            };
+            let items = target
+                .as_list_items()
+                .map(|items| items.to_vec())
+                .unwrap_or_else(|| runtime::value_to_list(target));
             Some(Ok(Value::array(items)))
         }
         _ => None,
