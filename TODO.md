@@ -95,7 +95,7 @@ Scalar containers are done. Array/Hash container semantics need work.
 - [x] Anonymous classes (`class { }`)
 - [x] Parameterized roles (`role Foo[Type] { }`)
 - [x] `trusts` declarator
-- [ ] `augment class` (monkey-patching)
+- [x] `augment class` (monkey-patching)
 - [x] Meta-object protocol (`.^methods`, `.^attributes`, `.^mro` etc.)
   - Remaining: `.^attributes` not fully listing all attributes
 - [x] `FALLBACK` method
@@ -106,13 +106,13 @@ Scalar containers are done. Array/Hash container semantics need work.
 
 Current implementation uses blocking OS threads. Raku's concurrency model needs:
 
-- [ ] Non-blocking `await` (green threads or async runtime integration)
+- [x] Non-blocking `await` (green threads or async runtime integration)
 - [ ] Scheduler (`Promise.in`, `Promise.at`, `Supply.interval`)
-- [ ] `Lock` / `Lock::Async`
-- [ ] Atomic operations (`cas`, `⚛++`)
-- [ ] `Supply` combinators (`.batch`, `.grep`, `.map`, `.zip`, `.merge`, `.throttle`)
-- [ ] `Supplier` / `Supplier::Preserving`
-- [ ] `hyper` / `race` (parallel iteration)
+- [x] `Lock` / `Lock::Async`
+- [x] Atomic operations (`⚛++`; `cas` not yet implemented)
+- [x] `Supply` combinators (`.batch`, `.grep`, `.map`, `.zip`, `.merge`, `.throttle`)
+- [x] `Supplier` / `Supplier::Preserving` (basic)
+- [x] `hyper` / `race` (basic) (parallel iteration)
 
 ---
 
