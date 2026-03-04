@@ -2172,36 +2172,57 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse hyper operator: >>op<<, >>op>>, <<op<<, <<op>>
+/// Also supports Unicode variants: \u{00BB}op\u{00AB}, \u{00BB}op\u{00BB}, \u{00AB}op\u{00AB}, \u{00AB}op\u{00BB}
+/// and mixed forms like >>op\u{00AB}, \u{00BB}op<<, etc.
 fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
-    // >>op<< or >>op>>
-    if let Some(r) = input.strip_prefix(">>") {
-        let search_limit = r.len().min(8);
-        let search = &r[..search_limit];
-        let op_end = search.find("<<").or_else(|| search.find(">>"));
-        if let Some(end) = op_end {
-            let op = &r[..end];
-            if !op.is_empty() {
-                let right_marker = &r[end..end + 2];
-                let dwim_left = false;
-                let dwim_right = right_marker == ">>";
-                return Some((op.to_string(), dwim_left, dwim_right, 2 + end + 2));
-            }
+    // Determine left delimiter and dwim_left
+    let (dwim_left, left_len, after_left) = if let Some(r) = input.strip_prefix('\u{00BB}') {
+        // \u{00BB} = >> (non-DWIM left)
+        (false, '\u{00BB}'.len_utf8(), r)
+    } else if let Some(r) = input.strip_prefix('\u{00AB}') {
+        // \u{00AB} = << (DWIM left)
+        (true, '\u{00AB}'.len_utf8(), r)
+    } else if let Some(r) = input.strip_prefix(">>") {
+        (false, 2, r)
+    } else if let Some(r) = input.strip_prefix("<<") {
+        (true, 2, r)
+    } else {
+        return None;
+    };
+
+    // Search for right delimiter within the operator string
+    let search_limit = after_left.len().min(10);
+    let search = &after_left[..search_limit];
+
+    // Find the earliest right delimiter (any of >>, <<, \u{00BB}, \u{00AB})
+    let mut best: Option<(usize, bool, usize)> = None; // (byte_offset, dwim_right, marker_len)
+    for (marker, dwim_right, marker_len) in [
+        (">>", true, 2usize),
+        ("<<", false, 2),
+        ("\u{00BB}", true, '\u{00BB}'.len_utf8()),
+        ("\u{00AB}", false, '\u{00AB}'.len_utf8()),
+    ] {
+        if let Some(pos) = search.find(marker)
+            && pos > 0
+            && (best.is_none() || pos < best.unwrap().0)
+        {
+            best = Some((pos, dwim_right, marker_len));
         }
     }
-    // <<op<< or <<op>>
-    if let Some(r) = input.strip_prefix("<<") {
-        let search_limit = r.len().min(8);
-        let search = &r[..search_limit];
-        let op_end = search.find("<<").or_else(|| search.find(">>"));
-        if let Some(end) = op_end {
-            let op = &r[..end];
-            if !op.is_empty() {
-                let right_marker = &r[end..end + 2];
-                let dwim_left = true;
-                let dwim_right = right_marker == ">>";
-                return Some((op.to_string(), dwim_left, dwim_right, 2 + end + 2));
-            }
+
+    if let Some((end, dwim_right, right_marker_len)) = best {
+        let op = &after_left[..end];
+        // Reject bare `=` as the operator — that is hyper-assignment syntax
+        // (e.g. `»=»`), handled at the statement level.
+        if op == "=" {
+            return None;
         }
+        return Some((
+            op.to_string(),
+            dwim_left,
+            dwim_right,
+            left_len + end + right_marker_len,
+        ));
     }
     None
 }
