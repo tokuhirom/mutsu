@@ -448,7 +448,11 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     };
 
     // Search for right delimiter within the operator string
-    let search_limit = after_left.len().min(10);
+    let mut search_limit = after_left.len().min(10);
+    // Ensure we don't slice in the middle of a multi-byte UTF-8 character
+    while search_limit > 0 && !after_left.is_char_boundary(search_limit) {
+        search_limit -= 1;
+    }
     let search = &after_left[..search_limit];
 
     // Find the earliest right delimiter (any of >>, <<, \u{00BB}, \u{00AB})
