@@ -1,5 +1,5 @@
 use Test;
-use lib 'tmp/repo-need-test-lib';
+use lib 't/packages/repo-need-test';
 
 plan 10;
 
