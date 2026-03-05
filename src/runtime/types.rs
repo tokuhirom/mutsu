@@ -1387,6 +1387,36 @@ impl Interpreter {
         let result = (|| {
             let positional_params: Vec<&ParamDef> =
                 param_defs.iter().filter(|p| !p.named).collect();
+            let positional_arg_count = args
+                .iter()
+                .filter(|arg| {
+                    !matches!(
+                        unwrap_varref_value((*arg).clone()),
+                        Value::Pair(..) | Value::ValuePair(..)
+                    )
+                })
+                .count();
+            let mut required_positional_count = 0usize;
+            let mut positional_max_count = 0usize;
+            let mut has_variadic_positional = false;
+            for pd in &positional_params {
+                let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
+                let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
+                if pd.slurpy || is_capture_param || is_subsig_capture {
+                    has_variadic_positional = true;
+                    continue;
+                }
+                positional_max_count += 1;
+                if pd.default.is_none() && !pd.optional_marker {
+                    required_positional_count += 1;
+                }
+            }
+            if positional_arg_count < required_positional_count {
+                return false;
+            }
+            if !has_variadic_positional && positional_arg_count > positional_max_count {
+                return false;
+            }
             let mut i = 0usize;
             for pd in positional_params {
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
@@ -1451,6 +1481,15 @@ impl Interpreter {
                     } else {
                         return false;
                     }
+                }
+                if arg_for_checks.is_none()
+                    && !pd.slurpy
+                    && !is_capture_param
+                    && !is_subsig_capture
+                    && pd.default.is_none()
+                    && !pd.optional_marker
+                {
+                    return false;
                 }
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
