@@ -1595,6 +1595,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let had_ws = rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n');
     let (rest, _) = ws(rest)?;
+    if name == "int" && had_ws && !is_user_declared_sub("int") {
+        return Err(PError::expected("known function call"));
+    }
 
     // Special handling for proceed/succeed with no args
     if name == "proceed" {

@@ -1133,6 +1133,15 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if constraint == "UInt" {
+            return match value {
+                Value::Int(i) => *i >= 0,
+                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                Value::Nil => true,
+                Value::Package(name) => name.resolve() == "UInt",
+                _ => false,
+            };
+        }
         if let Some((base, _)) = constraint.split_once(':')
             && base == "Variable"
             && varref_from_value(value).is_some()

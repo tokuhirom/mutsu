@@ -518,6 +518,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
     matches!(
         constraint,
         "Int"
+            | "UInt"
             | "Num"
             | "Str"
             | "Bool"

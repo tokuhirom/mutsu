@@ -1659,6 +1659,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);
+        // Raku removed prefix/listop `int`; only `int(...)` should parse as the builtin.
+        if name == "int" && !is_user_sub && !is_user_prefix_sub {
+            return Ok((rest, Expr::BareWord(name)));
+        }
         let call_name = if is_user_prefix_sub {
             format!("prefix:<{}>", name)
         } else {
