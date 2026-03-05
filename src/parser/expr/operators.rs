@@ -142,7 +142,8 @@ impl MultiplicativeOp {
     }
 }
 
-pub(super) fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
+/// Parse only the pure concatenation operator (~), not x/xx/o.
+pub(super) fn parse_pure_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
     if r.starts_with('~')
         && !r.starts_with("~~")
         && !r.starts_with("~=")
@@ -151,14 +152,20 @@ pub(super) fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
         && !r.starts_with("~^")
     {
         Some((ConcatOp::Concat, 1))
-    } else if r.starts_with("xx") && !is_ident_char(r.as_bytes().get(2).copied()) {
+    } else {
+        None
+    }
+}
+
+/// Parse replication operators (x, xx, o) — higher precedence than ~.
+pub(super) fn parse_replication_op(r: &str) -> Option<(ConcatOp, usize)> {
+    if r.starts_with("xx") && !is_ident_char(r.as_bytes().get(2).copied()) {
         Some((ConcatOp::ListRepeat, 2))
     } else if r.starts_with('x') && !is_ident_char(r.as_bytes().get(1).copied()) {
         Some((ConcatOp::Repeat, 1))
     } else if r.starts_with('o') && !is_ident_char(r.as_bytes().get(1).copied()) {
         Some((ConcatOp::Compose, 1))
     } else if r.starts_with('\u{2218}') {
-        // ∘ (U+2218 RING OPERATOR) — function composition
         Some((ConcatOp::Compose, '\u{2218}'.len_utf8()))
     } else {
         None

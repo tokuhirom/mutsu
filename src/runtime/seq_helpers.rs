@@ -1280,6 +1280,7 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                    // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env.insert(i.to_string(), Value::str(v.clone()));
                     }
@@ -1294,6 +1295,7 @@ impl Interpreter {
                         &captures.positional,
                         &captures.named,
                         &captures.named_subcaps,
+                        &captures.positional_subcaps,
                         Some(&text),
                     );
                     // If `make` was called in a code block, set the ast attribute
@@ -1304,6 +1306,14 @@ impl Interpreter {
                     {
                         let attrs = std::sync::Arc::make_mut(attributes);
                         attrs.insert("ast".to_string(), made_val);
+                    }
+                    // Upgrade positional capture env vars ($0, $1, ...) to Match objects
+                    if let Value::Instance { ref attributes, .. } = match_obj
+                        && let Some(Value::Array(list, _)) = attributes.get("list")
+                    {
+                        for (i, v) in list.iter().enumerate() {
+                            self.env.insert(i.to_string(), v.clone());
+                        }
                     }
                     // Set named capture env vars from the match object's named hash
                     // so subcapture-aware Match objects are used (not plain strings)

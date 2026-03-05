@@ -310,6 +310,7 @@ roast/S12-introspection/WHAT.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/methods.t
 roast/S12-meta/grammarhow.t
+roast/S12-meta/primitives.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/fallback.t
@@ -570,6 +571,7 @@ roast/S32-str/pos.t
 roast/S32-str/samecase.t
 roast/S32-str/samemark.t
 roast/S32-str/sprintf-c.t
+roast/S32-str/sprintf-u.t
 roast/S32-str/starts-with.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t

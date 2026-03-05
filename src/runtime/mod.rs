@@ -266,6 +266,9 @@ pub(crate) struct RegexCaptures {
     /// value is inner captures from the subrule (parallel to entries in `named`).
     pub(crate) named_subcaps: HashMap<String, Vec<RegexCaptures>>,
     pub(crate) positional: Vec<String>,
+    /// Nested sub-captures for positional capture groups. Each entry corresponds
+    /// to the same index in `positional` and holds inner captures from nested groups.
+    pub(crate) positional_subcaps: Vec<Option<RegexCaptures>>,
     /// Character offsets (start, end) for each entry in `positional`.
     pub(crate) positional_offsets: Vec<(usize, usize)>,
     /// Unnamed capture slots by capture index (for $0, $1, ...), where `None`
@@ -350,6 +353,8 @@ enum RegexAtom {
     StartOfLine,
     /// `$$` — end of line assertion (zero-width)
     EndOfLine,
+    /// `$0`, `$1`, etc. — backreference to positional capture group
+    Backref(usize),
 }
 
 #[derive(Clone)]

@@ -329,6 +329,7 @@ pub(crate) fn native_method_1arg(
                 | Value::Num(_)
                 | Value::Rat(..)
                 | Value::Bool(_)
+                | Value::Instance { .. }
                 | Value::Nil => Some(Ok(Value::str(target.to_string_value()))),
                 // Other types (LazyList, etc.) fall through to the runtime handler
                 _ => None,

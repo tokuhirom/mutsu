@@ -1362,6 +1362,9 @@ impl Interpreter {
                         new_caps.named.entry(k).or_default().extend(v);
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
+                    new_caps
+                        .positional_subcaps
+                        .append(&mut inner_caps.positional_subcaps);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     out.push((next, new_caps));
                 }
@@ -1382,6 +1385,9 @@ impl Interpreter {
                 for v in inner_caps.positional.drain(..) {
                     new_caps.positional.push(v);
                 }
+                new_caps
+                    .positional_subcaps
+                    .append(&mut inner_caps.positional_subcaps);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 out.push((end, new_caps));
             }
@@ -1395,14 +1401,18 @@ impl Interpreter {
                 let captured: String = chars[pos..end].iter().collect();
                 let mut new_caps = current_caps.clone();
                 let mut inner_caps = inner_caps;
+                // Merge inner named captures into parent
                 for (k, v) in inner_caps.named.drain() {
                     new_caps.named.entry(k).or_default().extend(v);
                 }
-                for v in inner_caps.positional.drain(..) {
-                    new_caps.positional.push(v);
-                }
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                // Store inner captures as subcaptures of this group
+                let mut subcap = inner_caps;
+                subcap.matched = captured.clone();
+                subcap.from = pos;
+                subcap.to = end;
                 new_caps.positional.push(captured);
+                new_caps.positional_subcaps.push(Some(subcap));
                 out.push((end, new_caps));
             }
             out.sort_by_key(|(end, caps)| {
@@ -1435,6 +1445,9 @@ impl Interpreter {
                     for v in inner_caps.positional.drain(..) {
                         new_caps.positional.push(v);
                     }
+                    new_caps
+                        .positional_subcaps
+                        .append(&mut inner_caps.positional_subcaps);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     out.push((end, new_caps));
                 }
@@ -1740,6 +1753,10 @@ impl Interpreter {
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
                 return Some(pos);
             }
+            RegexAtom::Backref(_) => {
+                // Backreferences need capture context; can't match without it
+                return None;
+            }
             RegexAtom::Lookaround {
                 pattern,
                 negated,
@@ -1926,6 +1943,7 @@ impl Interpreter {
             | RegexAtom::Lookaround { .. }
             | RegexAtom::CaptureStartMarker
             | RegexAtom::CaptureEndMarker
+            | RegexAtom::Backref(_)
             | RegexAtom::VarDecl { .. }
             | RegexAtom::ClosureInterpolation { .. }
             | RegexAtom::LeftWordBoundary
@@ -1967,6 +1985,9 @@ impl Interpreter {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
                         new_caps.positional.extend(inner_caps.positional);
+                        new_caps
+                            .positional_subcaps
+                            .append(&mut inner_caps.positional_subcaps);
                         (next, new_caps)
                     });
             }
@@ -1984,6 +2005,9 @@ impl Interpreter {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
+                        new_caps
+                            .positional_subcaps
+                            .append(&mut inner_caps.positional_subcaps);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         let replace = best
                             .as_ref()
@@ -2044,7 +2068,7 @@ impl Interpreter {
                 {
                     let captured: String = chars[pos..end].iter().collect();
                     let mut new_caps = current_caps.clone();
-                    // Merge inner captures (nested capture groups)
+                    // Merge inner named captures into parent
                     for (k, v) in &inner_caps.named {
                         new_caps
                             .named
@@ -2052,11 +2076,14 @@ impl Interpreter {
                             .or_default()
                             .extend(v.clone());
                     }
-                    for v in &inner_caps.positional {
-                        new_caps.positional.push(v.clone());
-                    }
-                    // Add this capture group's match
+                    // Store inner captures as subcaptures of this group
+                    // (don't flatten into parent positional list)
+                    let mut subcap = inner_caps.clone();
+                    subcap.matched = captured.clone();
+                    subcap.from = pos;
+                    subcap.to = end;
                     new_caps.positional.push(captured);
+                    new_caps.positional_subcaps.push(Some(subcap));
                     return Some((end, new_caps));
                 }
                 return None;
@@ -2108,6 +2135,9 @@ impl Interpreter {
                         for v in &inner_caps.positional {
                             new_caps.positional.push(v.clone());
                         }
+                        new_caps
+                            .positional_subcaps
+                            .extend(inner_caps.positional_subcaps.clone());
                         for (k, v) in &inner_caps.named {
                             new_caps
                                 .named
@@ -2129,6 +2159,23 @@ impl Interpreter {
                 let mut new_caps = current_caps.clone();
                 new_caps.capture_end = Some(pos);
                 return Some((pos, new_caps));
+            }
+            RegexAtom::Backref(idx) => {
+                // Match the text previously captured by positional group $idx.
+                // TODO: With quantified captures, $0 should reference the most
+                // recent capture of the idx-th group. Currently, this uses a
+                // simple positional index which doesn't track group identity
+                // across multiple iterations of a quantified capture group.
+                let captured = current_caps.positional.get(*idx).cloned();
+                if let Some(ref_text) = captured {
+                    let ref_chars: Vec<char> = ref_text.chars().collect();
+                    if pos + ref_chars.len() <= chars.len()
+                        && chars[pos..pos + ref_chars.len()] == ref_chars[..]
+                    {
+                        return Some((pos + ref_chars.len(), current_caps.clone()));
+                    }
+                }
+                return None;
             }
             RegexAtom::VarDecl { code } => {
                 // Evaluate the variable declaration and store in env
@@ -2249,6 +2296,9 @@ impl Interpreter {
                         for v in inner_caps.positional.drain(..) {
                             new_caps.positional.push(v);
                         }
+                        new_caps
+                            .positional_subcaps
+                            .append(&mut inner_caps.positional_subcaps);
                         new_caps.code_blocks.extend(inner_caps.code_blocks);
                     }
                     return Some((end, new_caps));

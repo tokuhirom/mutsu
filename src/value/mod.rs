@@ -993,10 +993,20 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
     ) -> Self {
-        Self::make_match_object_full(matched, from, to, positional, named, &HashMap::new(), None)
+        Self::make_match_object_full(
+            matched,
+            from,
+            to,
+            positional,
+            named,
+            &HashMap::new(),
+            &[],
+            None,
+        )
     }
 
     /// Create a Match object with positional captures and original string.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_match_object_full(
         matched: String,
         from: i64,
@@ -1004,6 +1014,7 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
         named_subcaps: &HashMap<String, Vec<crate::runtime::RegexCaptures>>,
+        positional_subcaps: &[Option<crate::runtime::RegexCaptures>],
         orig: Option<&str>,
     ) -> Self {
         fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
@@ -1047,7 +1058,14 @@ impl Value {
             let pos_vals: Vec<Value> = caps
                 .positional
                 .iter()
-                .map(|s| make_capture_match(s, orig, search_start))
+                .enumerate()
+                .map(|(i, s)| {
+                    // Recursively build nested Match objects for positional subcaptures
+                    if let Some(Some(subcap)) = caps.positional_subcaps.get(i) {
+                        return make_subcap_match(subcap, orig);
+                    }
+                    make_capture_match(s, orig, search_start)
+                })
                 .collect();
             let mut sub_named: HashMap<String, Value> = HashMap::new();
             for (key, values) in &caps.named {
@@ -1096,7 +1114,15 @@ impl Value {
         let search_start = from as usize;
         let caps: Vec<Value> = positional
             .iter()
-            .map(|s| make_capture_match(s, orig, search_start))
+            .enumerate()
+            .map(|(i, s)| {
+                // If there are nested subcaptures for this positional capture,
+                // build a full Match object with subcaptures
+                if let Some(Some(subcap)) = positional_subcaps.get(i) {
+                    return make_subcap_match(subcap, orig);
+                }
+                make_capture_match(s, orig, search_start)
+            })
             .collect();
         attrs.insert("list".to_string(), Value::array(caps));
         let mut named_caps_map: HashMap<String, Value> = HashMap::new();
