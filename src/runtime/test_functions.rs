@@ -1234,10 +1234,15 @@ impl Interpreter {
         let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
 
         // Determine if we need to spawn a real subprocess
-        // (e.g., for --help, or when program is empty with CLI args)
+        // (e.g., for --help, when program is empty with CLI args,
+        //  or when the code uses Supply.interval/threads that could call
+        //  std::process::exit on die)
+        let code_needs_subprocess =
+            program.contains("Supply.interval") || program.contains("Supply.interval:");
         let needs_subprocess = !compiler_args.is_empty()
             && compiler_args.iter().any(|a| a.starts_with("--"))
-            || (program.is_empty() && run_args.is_some());
+            || (program.is_empty() && run_args.is_some())
+            || code_needs_subprocess;
 
         let (out, err, status) = if is_doc_mode {
             match crate::doc_mode::run_doc_mode(&program) {
@@ -1373,7 +1378,7 @@ impl Interpreter {
     }
 
     fn test_fn_tap_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // tap-ok($supply, @expected, $desc, :$live)
+        // tap-ok($supply, @expected, $desc, :$live, :$virtual-time, :&after-tap)
         let supply = Self::positional_value(args, 0)
             .cloned()
             .unwrap_or(Value::Nil);
@@ -1383,6 +1388,7 @@ impl Interpreter {
         let desc = Self::positional_string(args, 2);
         let expected_live = Self::named_bool(args, "live");
         let after_tap = Self::named_value(args, "after-tap");
+        let virtual_time = Self::named_bool(args, "virtual-time");
 
         let ctx = self.begin_subtest();
 
@@ -1415,84 +1421,143 @@ impl Interpreter {
 
         // 3. Tap the supply and collect values
         let mut tap_values = Vec::new();
-        if let Value::Instance { ref attributes, .. } = supply {
-            // For on-demand supplies, execute the callback to produce values
-            if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-                let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                    let mut a = HashMap::new();
-                    a.insert("emitted".to_string(), Value::array(Vec::new()));
-                    a.insert("done".to_string(), Value::Bool(false));
-                    a
-                });
-                self.supply_emit_buffer.push(Vec::new());
-                let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
-            } else {
-                let values = attributes
-                    .get("values")
-                    .and_then(|v| {
-                        if let Value::Array(a, ..) = v {
-                            Some(a.to_vec())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
-                let do_cbs = attributes
-                    .get("do_callbacks")
-                    .and_then(|v| {
-                        if let Value::Array(a, ..) = v {
-                            Some(a.to_vec())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
-                for v in &values {
-                    for cb in &do_cbs {
-                        let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+
+        // Check if this is a scheduler-based supply
+        let has_scheduler = if let Value::Instance { ref attributes, .. } = supply {
+            attributes.contains_key("scheduler")
+        } else {
+            false
+        };
+
+        if has_scheduler {
+            // Scheduler-based Supply: register counter cue and let after-tap
+            // drive emissions via progress-by
+            if let Value::Instance { ref attributes, .. } = supply {
+                let scheduler = attributes.get("scheduler").cloned().unwrap_or(Value::Nil);
+                let interval = attributes
+                    .get("scheduler_interval")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(1.0);
+                let delay = attributes
+                    .get("scheduler_delay")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0);
+
+                // Get scheduler_id from the scheduler instance
+                let scheduler_id = if let Value::Instance { ref attributes, .. } = scheduler {
+                    match attributes.get("scheduler_id") {
+                        Some(Value::Int(id)) => *id as u64,
+                        _ => 0,
                     }
-                }
-                tap_values = values;
+                } else {
+                    0
+                };
+
+                // Register counter-mode cue
+                crate::runtime::native_methods::fake_scheduler_cue_counter(
+                    scheduler_id,
+                    interval,
+                    delay,
+                );
             }
-        }
-        if let Some(after_tap_cb) = after_tap
-            && matches!(
-                after_tap_cb,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
-            )
-        {
-            self.supply_emit_buffer.push(Vec::new());
-            let _ = self.call_sub_value(after_tap_cb, vec![], false);
-            let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
-            let split_emitted = if let Value::Instance {
-                ref class_name,
-                ref attributes,
-                ..
-            } = supply
+
+            // Call after-tap which triggers progress-by, populating
+            // supply_emit_buffer with counter values
+            if let Some(after_tap_cb) = after_tap.clone()
+                && matches!(
+                    after_tap_cb,
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                )
             {
-                let is_lines = class_name == "Supply"
-                    && matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
-                if is_lines {
-                    let chomp = attributes
-                        .get("line_chomp")
-                        .map(Value::truthy)
-                        .unwrap_or(true);
-                    crate::runtime::native_methods::split_supply_chunks_into_lines(&emitted, chomp)
+                self.supply_emit_buffer.push(Vec::new());
+                let _ = self.call_sub_value(after_tap_cb, vec![], false);
+                tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+            }
+        } else {
+            // Non-scheduler supply: original logic
+            if let Value::Instance { ref attributes, .. } = supply {
+                // For on-demand supplies, execute the callback to produce values
+                if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                    let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                        let mut a = HashMap::new();
+                        a.insert("emitted".to_string(), Value::array(Vec::new()));
+                        a.insert("done".to_string(), Value::Bool(false));
+                        a
+                    });
+                    self.supply_emit_buffer.push(Vec::new());
+                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                    tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                } else {
+                    let values = attributes
+                        .get("values")
+                        .and_then(|v| {
+                            if let Value::Array(a, ..) = v {
+                                Some(a.to_vec())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+                    let do_cbs = attributes
+                        .get("do_callbacks")
+                        .and_then(|v| {
+                            if let Value::Array(a, ..) = v {
+                                Some(a.to_vec())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+                    for v in &values {
+                        for cb in &do_cbs {
+                            let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+                        }
+                    }
+                    tap_values = values;
+                }
+            }
+            if let Some(after_tap_cb) = after_tap
+                && matches!(
+                    after_tap_cb,
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                )
+            {
+                self.supply_emit_buffer.push(Vec::new());
+                let _ = self.call_sub_value(after_tap_cb, vec![], false);
+                let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                let split_emitted = if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = supply
+                {
+                    let is_lines = class_name == "Supply"
+                        && matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                    if is_lines {
+                        let chomp = attributes
+                            .get("line_chomp")
+                            .map(Value::truthy)
+                            .unwrap_or(true);
+                        crate::runtime::native_methods::split_supply_chunks_into_lines(
+                            &emitted, chomp,
+                        )
+                    } else {
+                        emitted
+                    }
                 } else {
                     emitted
-                }
-            } else {
-                emitted
-            };
-            tap_values.extend(split_emitted);
+                };
+                tap_values.extend(split_emitted);
+            }
         }
 
         // 4. isa-ok on Tap return
         self.test_ok(true, &format!("{} got a tap", desc), false)?;
 
-        // 5. done was called
-        self.test_ok(true, &format!("{} was really done", desc), false)?;
+        // 5. done was called (skipped for :virtual-time)
+        if !virtual_time {
+            self.test_ok(true, &format!("{} was really done", desc), false)?;
+        }
 
         // 6. Compare collected values with expected using is-deeply
         let expected_expanded = match &expected {
@@ -1910,7 +1975,38 @@ impl Interpreter {
     fn test_fn_doesnt_hang(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         use std::process::{Command, Stdio};
 
-        let code = Self::positional_string(args, 0);
+        let first_arg = Self::positional_value(args, 0)
+            .cloned()
+            .unwrap_or(Value::Nil);
+
+        // Determine executable and arguments.
+        // Two calling conventions:
+        //   1. doesn't-hang("code", $desc, ...)    — Str first arg
+        //   2. doesn't-hang(\($exe, '-e', $code), $desc, ...)  — Capture first arg
+        let (exe, cmd_args) = if let Value::Capture { positional, .. } = &first_arg {
+            // Capture form: first element is exe, rest are args
+            let exe_val = positional.first().cloned().unwrap_or(Value::Nil);
+            let exe_str = exe_val.to_string_value();
+            let rest: Vec<String> = positional[1..]
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect();
+            (exe_str, rest)
+        } else {
+            // String form: run as `$exe -e $code`
+            let code = first_arg.to_string_value();
+            let exe = self
+                .env
+                .get("*EXECUTABLE")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| {
+                    std::env::current_exe()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| "target/debug/mutsu".to_string())
+                });
+            (exe, vec!["-e".to_string(), code])
+        };
+
         let desc = Self::positional_string_opt(args, 1)
             .unwrap_or_else(|| "code does not hang".to_string());
         let expected_out = Self::named_value(args, "out");
@@ -1923,20 +2019,8 @@ impl Interpreter {
             })
             .unwrap_or(15);
 
-        // Get the mutsu executable path
-        let exe = self
-            .env
-            .get("*EXECUTABLE")
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| {
-                std::env::current_exe()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|_| "target/debug/mutsu".to_string())
-            });
-
         let mut child = Command::new(&exe)
-            .arg("-e")
-            .arg(&code)
+            .args(&cmd_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

@@ -558,6 +558,15 @@ impl Interpreter {
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
                     return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
+                "FakeScheduler" => {
+                    let sched_id = super::native_methods::next_fake_scheduler_id();
+                    // Initialize with current time (use 0.0 as base for
+                    // virtual time)
+                    super::native_methods::fake_scheduler_init(sched_id, 0.0);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("scheduler_id".to_string(), Value::Int(sched_id as i64));
+                    return Ok(Value::make_instance(Symbol::intern("FakeScheduler"), attrs));
+                }
                 "Proxy" => {
                     let mut fetcher = Value::Nil;
                     let mut storer = Value::Nil;

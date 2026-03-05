@@ -90,6 +90,151 @@ pub(super) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<V
     }
 }
 
+// --- FakeScheduler support (for Test::Tap) ---
+
+/// A scheduled item in a FakeScheduler.
+#[derive(Debug, Clone)]
+struct FakeScheduled {
+    deadline: f64,
+    /// Regular callback (from user code) or None for counter-mode entries.
+    callback: Option<Value>,
+    /// Counter index for counter-mode scheduled items.
+    counter_value: i64,
+}
+
+/// Per-instance state for FakeScheduler.
+#[derive(Debug, Clone)]
+struct FakeSchedulerState {
+    time: f64,
+    upcoming: Vec<FakeScheduled>,
+}
+
+type FakeSchedulerMap = std::sync::Mutex<HashMap<u64, FakeSchedulerState>>;
+
+fn fake_scheduler_map() -> &'static FakeSchedulerMap {
+    static MAP: OnceLock<FakeSchedulerMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+static FAKE_SCHEDULER_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+pub(super) fn next_fake_scheduler_id() -> u64 {
+    FAKE_SCHEDULER_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn fake_scheduler_cue(
+    scheduler_id: u64,
+    callback: Value,
+    every: Option<f64>,
+    delay: f64,
+) {
+    if let Ok(mut map) = fake_scheduler_map().lock() {
+        let state = map
+            .entry(scheduler_id)
+            .or_insert_with(|| FakeSchedulerState {
+                time: 0.0,
+                upcoming: Vec::new(),
+            });
+        if let Some(every) = every {
+            // Schedule 100 future callbacks (matching FakeScheduler behavior)
+            let mut deadline = state.time + delay;
+            for _ in 0..100 {
+                state.upcoming.push(FakeScheduled {
+                    deadline,
+                    callback: Some(callback.clone()),
+                    counter_value: -1,
+                });
+                deadline += every;
+            }
+        } else {
+            // No :every — execute immediately (but we store it for progress-by)
+            state.upcoming.push(FakeScheduled {
+                deadline: state.time + delay,
+                callback: Some(callback),
+                counter_value: -1,
+            });
+        }
+    }
+}
+
+/// Register a counter-mode cue: each scheduled item produces an incrementing
+/// integer value instead of calling a callback.
+pub(super) fn fake_scheduler_cue_counter(scheduler_id: u64, every: f64, delay: f64) {
+    if let Ok(mut map) = fake_scheduler_map().lock() {
+        let state = map
+            .entry(scheduler_id)
+            .or_insert_with(|| FakeSchedulerState {
+                time: 0.0,
+                upcoming: Vec::new(),
+            });
+        let mut deadline = state.time + delay;
+        for i in 0..100i64 {
+            state.upcoming.push(FakeScheduled {
+                deadline,
+                callback: None,
+                counter_value: i,
+            });
+            deadline += every;
+        }
+    }
+}
+
+/// Advance time, run callbacks whose deadline <= new time, and return counter
+/// values from counter-mode entries.  Regular callbacks are returned for the
+/// caller to execute.
+pub(super) fn fake_scheduler_progress_by(
+    scheduler_id: u64,
+    duration: f64,
+) -> (Vec<Value>, Vec<i64>) {
+    if let Ok(mut map) = fake_scheduler_map().lock() {
+        if let Some(state) = map.get_mut(&scheduler_id) {
+            state.time += duration;
+            let new_time = state.time;
+            let mut to_run = Vec::new();
+            let mut remaining = Vec::new();
+            for item in state.upcoming.drain(..) {
+                if item.deadline <= new_time {
+                    to_run.push(item);
+                } else {
+                    remaining.push(item);
+                }
+            }
+            to_run.sort_by(|a, b| {
+                a.deadline
+                    .partial_cmp(&b.deadline)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            state.upcoming = remaining;
+            let mut callbacks = Vec::new();
+            let mut counter_values = Vec::new();
+            for item in to_run {
+                if let Some(cb) = item.callback {
+                    callbacks.push(cb);
+                } else {
+                    counter_values.push(item.counter_value);
+                }
+            }
+            (callbacks, counter_values)
+        } else {
+            (Vec::new(), Vec::new())
+        }
+    } else {
+        (Vec::new(), Vec::new())
+    }
+}
+
+pub(super) fn fake_scheduler_init(scheduler_id: u64, time: f64) {
+    if let Ok(mut map) = fake_scheduler_map().lock() {
+        map.insert(
+            scheduler_id,
+            FakeSchedulerState {
+                time,
+                upcoming: Vec::new(),
+            },
+        );
+    }
+}
+
 pub(crate) fn split_supply_chunks_into_lines(chunks: &[Value], chomp: bool) -> Vec<Value> {
     let mut combined = String::new();
     for chunk in chunks {
@@ -714,6 +859,7 @@ impl Interpreter {
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
                 self.native_scheduler(attributes, method, args)
             }
+            "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
             "Cancellation" => self.native_cancellation(attributes, method),
             "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method)),
             "Encoding::Encoder" => Ok(Self::native_encoding_encoder(attributes, method, &args)),
@@ -824,6 +970,91 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Scheduler",
+                method
+            ))),
+        }
+    }
+
+    fn native_fake_scheduler(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let scheduler_id = match attributes.get("scheduler_id") {
+            Some(Value::Int(id)) => *id as u64,
+            _ => 0,
+        };
+        match method {
+            "cue" => {
+                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let every = Self::named_value(&args, "every").map(|v| match v {
+                    Value::Int(i) => i as f64,
+                    Value::Num(f) => f,
+                    other => other.to_string_value().parse::<f64>().unwrap_or(0.0),
+                });
+                let delay = Self::named_value(&args, "in")
+                    .map(|v| match v {
+                        Value::Int(i) => i as f64,
+                        Value::Num(f) => f,
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if class_name == "Duration" => {
+                            attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
+                        }
+                        other => other.to_string_value().parse::<f64>().unwrap_or(0.0),
+                    })
+                    .unwrap_or(0.0);
+
+                if every.is_some() {
+                    fake_scheduler_cue(scheduler_id, callback, every, delay);
+                } else {
+                    // No :every — execute immediately
+                    self.call_sub_value(callback, Vec::new(), true)?;
+                }
+                Ok(Value::Nil)
+            }
+            "progress-by" => {
+                let duration = args.first().map_or(0.0, |v| match v {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(f) => *f,
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Duration" => {
+                        attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
+                    }
+                    other => other.to_string_value().parse::<f64>().unwrap_or(0.0),
+                });
+                let (callbacks, counter_values) =
+                    fake_scheduler_progress_by(scheduler_id, duration);
+                // Execute regular callbacks
+                for cb in callbacks {
+                    self.call_sub_value(cb, Vec::new(), true)?;
+                }
+                // Push counter values to supply_emit_buffer
+                if !counter_values.is_empty()
+                    && let Some(buf) = self.supply_emit_buffer.last_mut()
+                {
+                    for v in counter_values {
+                        buf.push(Value::Int(v));
+                    }
+                }
+                Ok(Value::Nil)
+            }
+            "time" => {
+                if let Ok(map) = fake_scheduler_map().lock()
+                    && let Some(state) = map.get(&scheduler_id)
+                {
+                    return Ok(Value::Num(state.time));
+                }
+                Ok(Value::Num(0.0))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on FakeScheduler",
                 method
             ))),
         }
@@ -1523,7 +1754,7 @@ impl Interpreter {
         use std::io::Write;
         while let Ok(SupplyEvent::Emit(value)) = rx.recv() {
             Self::sleep_for_supply_delay(delay_seconds);
-            let _ = interp.call_sub_value(cb.clone(), vec![value], true);
+            let result = interp.call_sub_value(cb.clone(), vec![value], true);
             // Flush stdout
             if !interp.output.is_empty() {
                 print!("{}", interp.output);
@@ -1539,6 +1770,15 @@ impl Interpreter {
             // If the callback called exit, terminate the process
             if interp.halted {
                 std::process::exit(interp.exit_code as i32);
+            }
+            // If the callback threw an unhandled exception, terminate
+            if let Err(err) = result {
+                eprintln!(
+                    "Unhandled exception in code scheduled on thread\n{}",
+                    err.message
+                );
+                let _ = std::io::stderr().flush();
+                std::process::exit(1);
             }
         }
     }
