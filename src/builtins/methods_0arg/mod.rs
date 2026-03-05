@@ -10,9 +10,30 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::builtin_rand;
 
-/// Raku-style rounding: round half toward positive infinity (ceiling).
+///// Raku-style rounding: round half toward positive infinity (ceiling).
 fn raku_round(x: f64) -> f64 {
     (x + 0.5).floor()
+}
+
+/// Raku-style rounding that returns a Value, using BigInt for large values.
+fn raku_round_to_value(f: f64) -> Value {
+    let rounded = raku_round(f);
+    if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
+        Value::Int(rounded as i64)
+    } else {
+        use num_bigint::BigInt;
+        use num_traits::ToPrimitive;
+        let s = format!("{:.0}", rounded);
+        if let Ok(bi) = s.parse::<BigInt>() {
+            if let Some(i) = bi.to_i64() {
+                Value::Int(i)
+            } else {
+                Value::bigint(bi)
+            }
+        } else {
+            Value::Num(rounded)
+        }
+    }
 }
 use super::unicode::titlecase_string;
 
@@ -1409,6 +1430,52 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         })
                     }
                 }
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        if *n > 0 {
+                            Value::Int(1)
+                        } else if *n < 0 {
+                            Value::Int(-1)
+                        } else {
+                            Value::Num(f64::NAN)
+                        }
+                    } else {
+                        // sign is determined by n/d
+                        let sign = n.signum() * d.signum();
+                        Value::Int(sign)
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        if *n > 0 {
+                            Value::Int(1)
+                        } else if *n < 0 {
+                            Value::Int(-1)
+                        } else {
+                            Value::Num(f64::NAN)
+                        }
+                    } else {
+                        let sign = n.signum() * d.signum();
+                        Value::Int(sign)
+                    }
+                }
+                Value::BigInt(n) => {
+                    use num_bigint::Sign;
+                    Value::Int(match n.sign() {
+                        Sign::Plus => 1,
+                        Sign::Minus => -1,
+                        Sign::NoSign => 0,
+                    })
+                }
+                Value::Complex(re, im) => {
+                    // sign of a Complex number is the number divided by its absolute value
+                    let abs = (re * re + im * im).sqrt();
+                    if abs == 0.0 {
+                        Value::Complex(0.0, 0.0)
+                    } else {
+                        Value::Complex(re / abs, im / abs)
+                    }
+                }
                 Value::Enum { value, .. } => Value::Int(value.signum()),
                 _ => return None,
             };
@@ -1526,7 +1593,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
             Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => {
+                let q = *n / *d;
+                let r = *n % *d;
+                if r != 0 && (*n < 0) != (*d < 0) {
+                    Some(Ok(Value::Int(q - 1)))
+                } else {
+                    Some(Ok(Value::Int(q)))
+                }
+            }
+            Value::BigRat(n, d) if !d.is_zero() => {
+                use num_integer::Integer;
+                let (q, r) = n.div_rem(d);
+                if !r.is_zero() && n.is_negative() != d.is_negative() {
+                    Some(Ok(Value::bigint(q - 1)))
+                } else {
+                    Some(Ok(Value::bigint(q)))
+                }
+            }
+            Value::FatRat(n, d) if *d != 0 => {
                 let q = *n / *d;
                 let r = *n % *d;
                 if r != 0 && (*n < 0) != (*d < 0) {
@@ -1542,7 +1628,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
             Value::Num(f) => Some(Ok(Value::Int(f.ceil() as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => {
+                let q = *n / *d;
+                let r = *n % *d;
+                if r != 0 && (*n < 0) == (*d < 0) {
+                    Some(Ok(Value::Int(q + 1)))
+                } else {
+                    Some(Ok(Value::Int(q)))
+                }
+            }
+            Value::BigRat(n, d) if !d.is_zero() => {
+                use num_integer::Integer;
+                let (q, r) = n.div_rem(d);
+                if !r.is_zero() && n.is_negative() == d.is_negative() {
+                    Some(Ok(Value::bigint(q + 1)))
+                } else {
+                    Some(Ok(Value::bigint(q)))
+                }
+            }
+            Value::FatRat(n, d) if *d != 0 => {
                 let q = *n / *d;
                 let r = *n % *d;
                 if r != 0 && (*n < 0) == (*d < 0) {
@@ -1556,11 +1661,31 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "round" => match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
-            Value::Num(f) => Some(Ok(Value::Int(raku_round(*f) as i64))),
+            Value::Num(f) => Some(Ok(raku_round_to_value(*f))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => {
                 let f = *n as f64 / *d as f64;
-                Some(Ok(Value::Int(raku_round(f) as i64)))
+                Some(Ok(raku_round_to_value(f)))
+            }
+            Value::BigRat(n, d) if !d.is_zero() => {
+                use num_bigint::BigInt;
+                use num_integer::Integer;
+                // round = floor(x + 0.5) for Raku semantics
+                // For BigRat: floor((2n + d) / 2d)
+                let two_n: BigInt = n * 2;
+                let two_d: BigInt = d * 2;
+                let sum: BigInt = &two_n + d;
+                let (q, r) = sum.div_rem(&two_d);
+                if !r.is_zero() && sum.is_negative() != two_d.is_negative() {
+                    Some(Ok(Value::bigint(q - 1)))
+                } else {
+                    Some(Ok(Value::bigint(q)))
+                }
+            }
+            Value::FatRat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                Some(Ok(raku_round_to_value(f)))
             }
             Value::Complex(re, im) => Some(Ok(Value::Complex(raku_round(*re), raku_round(*im)))),
             _ => None,
@@ -1569,7 +1694,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
             Value::Num(f) => Some(Ok(Value::Int(f.trunc() as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
+            Value::BigRat(n, d) if !d.is_zero() => Some(Ok(Value::bigint(n / d))),
+            Value::FatRat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
             Value::Complex(re, im) => Some(Ok(Value::Complex(re.trunc(), im.trunc()))),
             _ => None,
         },
@@ -1577,8 +1705,65 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::Rat(n, d) if *d != 0 && *n % *d == 0 => Some(Ok(Value::Int(*n / *d))),
             Value::Rat(n, d) => Some(Ok(Value::Rat(*n, *d))),
-            Value::Num(f) if *f == f.floor() && f.is_finite() => Some(Ok(Value::Int(*f as i64))),
+            Value::Num(f) if f.is_finite() => {
+                // Use tolerance (1e-15) to check if approximately an integer
+                let rounded = f.round();
+                let tol = 1e-15;
+                let diff = (*f - rounded).abs();
+                let max = f.abs().max(rounded.abs());
+                let approx_int = if max == 0.0 { true } else { diff / max <= tol };
+                if approx_int {
+                    Some(Ok(Value::Int(rounded as i64)))
+                } else {
+                    Some(Ok(Value::Num(*f)))
+                }
+            }
             Value::Num(f) => Some(Ok(Value::Num(*f))),
+            Value::Complex(re, im) => {
+                // Check if imaginary part is approximately zero
+                let tol = 1e-15;
+                let im_approx_zero = if *im == 0.0 {
+                    true
+                } else {
+                    let max_mag = re.abs().max(im.abs());
+                    if max_mag == 0.0 {
+                        true
+                    } else {
+                        im.abs() / max_mag <= tol
+                    }
+                };
+                if im_approx_zero {
+                    // Narrow to real part, then try narrowing that to Int
+                    let rounded = re.round();
+                    let re_approx_int = if re.is_finite() {
+                        let diff = (*re - rounded).abs();
+                        let max = re.abs().max(rounded.abs());
+                        if max == 0.0 { true } else { diff / max <= tol }
+                    } else {
+                        false
+                    };
+                    if re_approx_int {
+                        Some(Ok(Value::Int(rounded as i64)))
+                    } else {
+                        Some(Ok(Value::Num(*re)))
+                    }
+                } else {
+                    // Check if real part is approximately zero
+                    let re_approx_zero = if *re == 0.0 {
+                        true
+                    } else {
+                        let max_mag = re.abs().max(im.abs());
+                        if max_mag == 0.0 {
+                            true
+                        } else {
+                            re.abs() / max_mag <= tol
+                        }
+                    };
+                    let new_re = if re_approx_zero { 0.0 } else { *re };
+                    let new_im = *im;
+                    Some(Ok(Value::Complex(new_re, new_im)))
+                }
+            }
             _ => Some(Ok(target.clone())),
         },
         "sqrt" => match target {

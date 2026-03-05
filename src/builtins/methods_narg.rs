@@ -583,6 +583,23 @@ pub(crate) fn native_method_1arg(
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 _ => return None,
             };
+            // Raku-style rounding: (x + 0.5).floor()
+            fn raku_round(v: f64) -> f64 {
+                (v + 0.5).floor()
+            }
+            fn round_real(x: f64, scale: f64) -> f64 {
+                if scale == 0.0 {
+                    raku_round(x)
+                } else {
+                    raku_round(x / scale) * scale
+                }
+            }
+            // Handle Complex separately
+            if let Value::Complex(re, im) = target {
+                let rr = round_real(*re, scale);
+                let ri = round_real(*im, scale);
+                return Some(Ok(Value::Complex(rr, ri)));
+            }
             let x = match target {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
@@ -590,13 +607,23 @@ pub(crate) fn native_method_1arg(
                 _ => return None,
             };
             if scale == 0.0 {
-                return Some(Ok(Value::Int(x.round() as i64)));
+                let rounded = raku_round(x);
+                return Some(Ok(
+                    if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
+                        Value::Int(rounded as i64)
+                    } else {
+                        Value::Num(rounded)
+                    },
+                ));
             }
-            let factor = (1.0 / scale).abs();
-            // Return Rat when the result has a fractional part matching the scale
-            let result = (x * factor).round() / factor;
+            let result = round_real(x, scale);
             if result == result.floor() {
-                Some(Ok(Value::Int(result as i64)))
+                let r = result.floor();
+                if r >= i64::MIN as f64 && r <= i64::MAX as f64 {
+                    Some(Ok(Value::Int(r as i64)))
+                } else {
+                    Some(Ok(Value::Num(r)))
+                }
             } else {
                 let (n, d) = f64_to_rat(result);
                 Some(Ok(Value::Rat(n, d)))

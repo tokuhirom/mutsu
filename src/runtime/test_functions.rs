@@ -371,8 +371,8 @@ impl Interpreter {
                 "===" => left == right,
                 "!===" => left != right,
                 "=:=" => left == right,
-                "\u{2245}" => {
-                    // ≅ approximately equal
+                "=~=" | "\u{2245}" => {
+                    // =~= / ≅ approximately equal
                     let (lr, li) = match &left {
                         Value::Complex(r, i) => (*r, *i),
                         _ => (super::to_float_value(&left).unwrap_or(0.0), 0.0),
