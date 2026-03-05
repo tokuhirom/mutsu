@@ -306,6 +306,8 @@ impl Interpreter {
                 let delay_seconds = Self::supply_delay_seconds(attributes);
 
                 if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                    let has_unique =
+                        matches!(attributes.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attributes
@@ -317,6 +319,18 @@ impl Interpreter {
                             tap_cb.clone(),
                             chomp,
                             delay_seconds,
+                        );
+                    } else if has_unique {
+                        let as_fn = attributes.get("unique_as").cloned();
+                        let with_fn = attributes.get("unique_with").cloned();
+                        let expires = attributes.get("unique_expires").map(|v| v.to_f64());
+                        register_supplier_unique_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            as_fn,
+                            with_fn,
+                            expires,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -511,6 +525,7 @@ impl Interpreter {
                 new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
+            "unique" => self.supply_unique(attributes, &args),
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
@@ -615,11 +630,37 @@ impl Interpreter {
                     );
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    for (tap, emitted, delay_seconds) in
-                        supplier_emit_callbacks(*supplier_id as u64, &value)
-                    {
-                        Self::sleep_for_supply_delay(delay_seconds);
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    let sid = *supplier_id as u64;
+                    let actions = supplier_emit_callbacks(sid, &value);
+                    for action in actions {
+                        match action {
+                            SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                            }
+                            SupplierEmitAction::UniqueCheck {
+                                callback,
+                                value: val,
+                                delay_seconds,
+                                as_fn,
+                                with_fn,
+                                tap_index,
+                            } => {
+                                let key = if let Some(f) = as_fn {
+                                    self.call_sub_value(f, vec![val.clone()], true)?
+                                } else {
+                                    val.clone()
+                                };
+                                // Check against seen keys
+                                let is_dup = self
+                                    .supplier_unique_check_seen(sid, tap_index, &key, &with_fn)?;
+                                if !is_dup {
+                                    supplier_unique_mark_seen(sid, tap_index, key);
+                                    Self::sleep_for_supply_delay(delay_seconds);
+                                    let _ = self.call_sub_value(callback, vec![val], true);
+                                }
+                            }
+                        }
                     }
                 }
                 Ok((Value::Nil, attrs))
@@ -695,6 +736,7 @@ impl Interpreter {
                 let delay_seconds = Self::supply_delay_seconds(&attrs);
 
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                    let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
@@ -703,6 +745,18 @@ impl Interpreter {
                             tap_cb.clone(),
                             chomp,
                             delay_seconds,
+                        );
+                    } else if has_unique {
+                        let as_fn = attrs.get("unique_as").cloned();
+                        let with_fn = attrs.get("unique_with").cloned();
+                        let expires = attrs.get("unique_expires").map(|v| v.to_f64());
+                        register_supplier_unique_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            as_fn,
+                            with_fn,
+                            expires,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -731,6 +785,7 @@ impl Interpreter {
                 }
 
                 // For on-demand supplies, execute the callback to produce values
+                let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
@@ -741,6 +796,69 @@ impl Interpreter {
                     self.supply_emit_buffer.push(Vec::new());
                     let _ = self.call_sub_value(on_demand_cb, vec![emitter], false);
                     self.supply_emit_buffer.pop().unwrap_or_default()
+                } else if has_unique {
+                    if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
+                        Arc::make_mut(items).push(tap_cb.clone());
+                    } else {
+                        attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
+                    }
+                    // For unique supplier-backed supplies, replay already-emitted
+                    // values through the unique filter at tap-time. This handles
+                    // the case where emissions happen before the tap is registered
+                    // (e.g., tap-ok's :after-tap evaluation order).
+                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        let (emitted, _done, _quit) = supplier_snapshot(*supplier_id as u64);
+                        let as_fn = attrs.get("unique_as").cloned();
+                        let with_fn = attrs.get("unique_with").cloned();
+                        let expires_secs = attrs.get("unique_expires").map(|v| v.to_f64());
+                        let mut seen_keys: Vec<(Value, std::time::Instant)> = Vec::new();
+                        let mut unique_items: Vec<Value> = Vec::new();
+                        let now = std::time::Instant::now();
+                        for item in emitted {
+                            // Expire old seen values if :expires is set
+                            if let Some(expire_secs) = expires_secs {
+                                seen_keys.retain(|(_, ts)| {
+                                    now.duration_since(*ts).as_secs_f64() < expire_secs
+                                });
+                            }
+                            let key = if let Some(ref func) = as_fn {
+                                self.call_sub_value(func.clone(), vec![item.clone()], true)?
+                            } else {
+                                item.clone()
+                            };
+                            let mut duplicate = false;
+                            for (seen, _) in &seen_keys {
+                                let is_same = if let Some(ref func) = with_fn {
+                                    self.call_sub_value(
+                                        func.clone(),
+                                        vec![seen.clone(), key.clone()],
+                                        true,
+                                    )?
+                                    .truthy()
+                                } else {
+                                    values_identical(seen, &key)
+                                };
+                                if is_same {
+                                    duplicate = true;
+                                    break;
+                                }
+                            }
+                            if !duplicate {
+                                seen_keys.push((key.clone(), now));
+                                unique_items.push(item);
+                                // Also mark as seen in the global unique filter state
+                                // so future real-time emissions know about these
+                                let sid = *supplier_id as u64;
+                                let tap_count = supplier_tap_count(sid);
+                                if tap_count > 0 {
+                                    supplier_unique_mark_seen(sid, tap_count - 1, key);
+                                }
+                            }
+                        }
+                        unique_items
+                    } else {
+                        Vec::new()
+                    }
                 } else {
                     if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
                         Arc::make_mut(items).push(tap_cb.clone());
@@ -775,10 +893,15 @@ impl Interpreter {
                 // Call done callback after all values emitted
                 if let Some(done_fn) = done_cb {
                     if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        // Check both the attribute and the global supplier state
                         let supplier_is_done = attrs
                             .get("supplier_done")
                             .map(Value::truthy)
-                            .unwrap_or(false);
+                            .unwrap_or(false)
+                            || {
+                                let (_, done, _) = supplier_snapshot(*supplier_id as u64);
+                                done
+                            };
                         if supplier_is_done {
                             let _ = self.call_sub_value(done_fn, vec![], true);
                         } else {
@@ -830,10 +953,126 @@ impl Interpreter {
                     attrs,
                 ))
             }
+            "unique" => {
+                let result = self.supply_unique(&attrs, &args)?;
+                Ok((result, attrs))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Supply",
                 method
             ))),
         }
+    }
+
+    /// Supply.unique implementation — filters duplicate values.
+    /// Supports `:as`, `:with`, and `:expires` named parameters.
+    fn supply_unique(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let as_fn = Self::named_value(args, "as");
+        let with_fn = Self::named_value(args, "with");
+        let expires = Self::named_value(args, "expires");
+
+        let values = match attributes.get("values") {
+            Some(Value::Array(items, ..)) => items.to_vec(),
+            _ => Vec::new(),
+        };
+
+        let has_supplier = attributes.get("supplier_id").is_some();
+
+        if has_supplier {
+            // For supplier-backed supplies, store unique filter params in attributes
+            // so the tap handler can apply filtering in real-time during emission.
+            let mut new_attrs = HashMap::new();
+            // Copy supplier_id and related attributes
+            if let Some(sid) = attributes.get("supplier_id") {
+                new_attrs.insert("supplier_id".to_string(), sid.clone());
+            }
+            if let Some(d) = attributes.get("supplier_done") {
+                new_attrs.insert("supplier_done".to_string(), d.clone());
+            }
+            new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+            new_attrs.insert("live".to_string(), Value::Bool(false));
+            new_attrs.insert("unique_filter".to_string(), Value::Bool(true));
+            if let Some(ref f) = as_fn {
+                new_attrs.insert("unique_as".to_string(), f.clone());
+            }
+            if let Some(ref f) = with_fn {
+                new_attrs.insert("unique_with".to_string(), f.clone());
+            }
+            if let Some(ref e) = expires {
+                new_attrs.insert("unique_expires".to_string(), e.clone());
+            }
+            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+        }
+
+        // For non-supplier or non-expires case, filter values directly
+        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut unique_items: Vec<Value> = Vec::new();
+        for item in values {
+            let key = if let Some(ref func) = as_fn {
+                self.call_sub_value(func.clone(), vec![item.clone()], true)?
+            } else {
+                item.clone()
+            };
+
+            let mut duplicate = false;
+            for seen in &seen_keys {
+                let is_same = if let Some(ref func) = with_fn {
+                    self.call_sub_value(func.clone(), vec![seen.clone(), key.clone()], true)?
+                        .truthy()
+                } else {
+                    values_identical(seen, &key)
+                };
+                if is_same {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if !duplicate {
+                seen_keys.push(key);
+                unique_items.push(item);
+            }
+        }
+
+        let mut new_attrs = HashMap::new();
+        new_attrs.insert("values".to_string(), Value::array(unique_items));
+        new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        new_attrs.insert(
+            "live".to_string(),
+            attributes
+                .get("live")
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
+        );
+        Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+    }
+
+    /// Check if a key is already in the unique filter's seen list.
+    /// Used by SupplierEmitAction::UniqueCheck when :as/:with are specified.
+    fn supplier_unique_check_seen(
+        &mut self,
+        supplier_id: u64,
+        tap_index: usize,
+        key: &Value,
+        with_fn: &Option<Value>,
+    ) -> Result<bool, RuntimeError> {
+        let seen_keys = supplier_unique_get_seen(supplier_id, tap_index);
+        for seen in &seen_keys {
+            let is_same = if let Some(func) = with_fn {
+                self.call_sub_value(func.clone(), vec![seen.clone(), key.clone()], true)?
+                    .truthy()
+            } else {
+                values_identical(seen, key)
+            };
+            if is_same {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

@@ -2112,7 +2112,11 @@ impl Interpreter {
                 return self.dispatch_sort(target, &args);
             }
             "unique" => {
-                return self.dispatch_unique(target, &args);
+                // Supply.unique is handled by native_supply
+                if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+                {
+                    return self.dispatch_unique(target, &args);
+                }
             }
             "squish" => {
                 return self.dispatch_squish(target, &args);

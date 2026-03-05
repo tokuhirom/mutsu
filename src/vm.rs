@@ -1007,18 +1007,21 @@ impl VM {
 
             // -- I/O --
             OpCode::Say(n) => {
+                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_say_op(*n)?;
                 self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::Print(n) => {
+                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_print_op(*n)?;
                 self.env_dirty = true;
                 *ip += 1;
             }
             OpCode::Note(n) => {
+                self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
                 self.env_dirty = true;
