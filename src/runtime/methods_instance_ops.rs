@@ -474,7 +474,7 @@ impl Interpreter {
                 let period_secs = if seconds.is_finite() && seconds > 0.0 {
                     seconds
                 } else {
-                    1.0
+                    0.001 // minimum timer resolution
                 };
                 // Second argument: initial delay before first emission (default 0)
                 let initial_delay = args.get(1).map_or(0.0, |value| match value {
@@ -487,6 +487,23 @@ impl Interpreter {
                 } else {
                     0.0
                 };
+
+                // Check for :scheduler named argument
+                let scheduler = Self::named_value(&args, "scheduler");
+
+                if let Some(sched) = scheduler {
+                    // Scheduler-driven Supply.interval:
+                    // Store scheduler info; the scheduler will drive emissions
+                    // when progress-by is called.
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(false));
+                    attrs.insert("scheduler".to_string(), sched);
+                    attrs.insert("scheduler_interval".to_string(), Value::Num(period_secs));
+                    attrs.insert("scheduler_delay".to_string(), Value::Num(initial_delay));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                }
 
                 let supply_id = super::native_methods::next_supply_id();
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -517,7 +534,7 @@ impl Interpreter {
                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
-                attrs.insert("live".to_string(), Value::Bool(true));
+                attrs.insert("live".to_string(), Value::Bool(false));
                 return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
             }
             if let Some(private_rest) = method.strip_prefix('!') {

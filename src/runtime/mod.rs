@@ -855,6 +855,21 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "FakeScheduler".to_string(),
+            ClassDef {
+                parents: vec!["Scheduler".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["cue", "progress-by", "time"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["FakeScheduler".to_string(), "Scheduler".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Cancellation".to_string(),
             ClassDef {
                 parents: Vec::new(),
