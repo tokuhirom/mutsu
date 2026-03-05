@@ -2705,9 +2705,7 @@ impl Interpreter {
                         .read()
                         .map(|dirty| !dirty.contains(key))
                         .unwrap_or(false);
-                    if needs_mark_dirty
-                        && let Ok(mut dirty) = self.shared_vars_dirty.write()
-                    {
+                    if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
                         dirty.insert(key.to_string());
                     }
                     return result;
@@ -2724,9 +2722,7 @@ impl Interpreter {
                     .read()
                     .map(|dirty| !dirty.contains(key))
                     .unwrap_or(false);
-                if needs_mark_dirty
-                    && let Ok(mut dirty) = self.shared_vars_dirty.write()
-                {
+                if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(key.to_string());
                 }
                 return result;
