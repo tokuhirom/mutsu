@@ -325,6 +325,7 @@ roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
 roast/S12-methods/what.t
+roast/S12-subset/multi-dispatch.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/metaoperators.t
@@ -415,6 +416,7 @@ roast/S16-io/put.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
+roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t

@@ -481,6 +481,60 @@ impl Interpreter {
                     p, err
                 ))),
             },
+            "watch" => {
+                let supply_id = super::native_methods::next_supply_id();
+                let (tx, rx) = std::sync::mpsc::channel();
+                if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+                    map.insert(supply_id, rx);
+                }
+
+                let watched_path = path_buf.clone();
+                std::thread::spawn(move || {
+                    let poll_interval = std::time::Duration::from_millis(10);
+                    let mut last_state = fs::metadata(&watched_path).ok().map(|meta| {
+                        let modified = meta
+                            .modified()
+                            .ok()
+                            .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|dur| dur.as_nanos())
+                            .unwrap_or(0);
+                        (meta.len(), modified)
+                    });
+
+                    loop {
+                        let state = fs::metadata(&watched_path).ok().map(|meta| {
+                            let modified = meta
+                                .modified()
+                                .ok()
+                                .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map(|dur| dur.as_nanos())
+                                .unwrap_or(0);
+                            (meta.len(), modified)
+                        });
+
+                        if state != last_state {
+                            // Emit the watched path on each observable filesystem change.
+                            if tx
+                                .send(super::native_methods::SupplyEvent::Emit(Value::str(
+                                    Self::stringify_path(&watched_path),
+                                )))
+                                .is_err()
+                            {
+                                break;
+                            }
+                            last_state = state;
+                        }
+
+                        std::thread::sleep(poll_interval);
+                    }
+                });
+
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Path",
                 method

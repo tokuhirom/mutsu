@@ -238,6 +238,35 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn dispatch_promise_vow_method(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let promise = attributes
+            .get("promise")
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("Promise::Vow has no backing promise"))?;
+        let Value::Promise(shared) = promise else {
+            return Err(RuntimeError::new(
+                "Promise::Vow backing value is not a Promise",
+            ));
+        };
+        match method {
+            "keep" | "break" => {
+                let target = Value::Promise(shared.clone());
+                self.dispatch_promise_method(&shared, method, args, &target)
+            }
+            "WHAT" => Ok(Value::Package(Symbol::intern("Promise::Vow"))),
+            "Str" | "gist" => Ok(Value::str("(Vow)".to_string())),
+            _ => Err(RuntimeError::new(format!(
+                "No method '{}' on Promise::Vow",
+                method
+            ))),
+        }
+    }
+
     pub(super) fn dispatch_channel_method(
         &mut self,
         ch: &SharedChannel,

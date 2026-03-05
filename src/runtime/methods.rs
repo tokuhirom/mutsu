@@ -2607,6 +2607,17 @@ impl Interpreter {
             return self.dispatch_channel_method(ch, method, args);
         }
 
+        // Promise::Vow forwards keep/break to the backing Promise.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name.resolve() == "Promise::Vow"
+        {
+            return self.dispatch_promise_vow_method(attributes, method, args);
+        }
+
         if let Value::Mixin(inner, mixins) = &target {
             if args.is_empty() {
                 let attr_key = format!("__mutsu_attr__{}", method);
