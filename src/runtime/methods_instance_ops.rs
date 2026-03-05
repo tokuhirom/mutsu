@@ -749,6 +749,23 @@ impl Interpreter {
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other.to_string_value(),
                 };
+                if pkg_name == target_name {
+                    return Ok(Value::Bool(true));
+                }
+                if let Some(mut base) = self.subsets.get(&pkg_name).map(|s| s.base.clone()) {
+                    loop {
+                        if base == target_name {
+                            return Ok(Value::Bool(true));
+                        }
+                        let Some(parent_subset) = self.subsets.get(&base) else {
+                            break;
+                        };
+                        if parent_subset.base == base {
+                            break;
+                        }
+                        base = parent_subset.base.clone();
+                    }
+                }
                 Ok(Value::Bool(
                     self.class_mro(&pkg_name).contains(&target_name),
                 ))

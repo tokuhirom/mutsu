@@ -554,6 +554,7 @@ pub(crate) enum Stmt {
         name: Symbol,
         base: String,
         predicate: Option<Expr>,
+        version: String,
     },
     Phaser {
         kind: PhaserKind,

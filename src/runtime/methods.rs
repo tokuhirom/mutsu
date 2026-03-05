@@ -836,6 +836,8 @@ impl Interpreter {
 
         if let Value::Instance { class_name, .. } = &target
             && (class_name == "Perl6::Metamodel::ClassHOW"
+                || class_name == "Perl6::Metamodel::SubsetHOW"
+                || class_name == "Perl6::Metamodel::EnumHOW"
                 || class_name == "Perl6::Metamodel::CurriedRoleHOW"
                 || class_name == "Perl6::Metamodel::ParametricRoleGroupHOW")
             && matches!(

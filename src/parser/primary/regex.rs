@@ -232,6 +232,24 @@ fn parse_trans_adverbs(input: &str) -> Option<(&str, bool, bool, bool)> {
     Some((after_slash, delete, complement, squash))
 }
 
+fn has_unescaped_statement_boundary(input: &str) -> bool {
+    let mut escaped = false;
+    for ch in input.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == ';' || ch == '\n' {
+            return true;
+        }
+    }
+    false
+}
+
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
     if adverbs.ignore_case {
         pattern = format!(":i {pattern}");
@@ -709,6 +727,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     if let Some((replacement, rest)) =
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
+                        if !is_paired
+                            && open_ch == '-'
+                            && (has_unescaped_statement_boundary(pattern)
+                                || has_unescaped_statement_boundary(replacement))
+                        {
+                            return Err(PError::expected("substitution"));
+                        }
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&pattern)?;
                         return Ok((
@@ -754,6 +779,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     if let Some((replacement, rest)) =
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
+                        if !is_paired
+                            && open_ch == '-'
+                            && (has_unescaped_statement_boundary(pattern)
+                                || has_unescaped_statement_boundary(replacement))
+                        {
+                            return Err(PError::expected("substitution"));
+                        }
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         return Ok((
                             rest,
