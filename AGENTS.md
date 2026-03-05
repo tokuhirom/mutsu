@@ -43,6 +43,7 @@ If submodules are missing, run:
 ## Commit & Pull Request Guidelines
 - Use short, imperative commit subjects; optional scope prefixes are common (for example, `parser: accept ...`, `compiler: add ...`, `Fix ...`).
 - Keep commits focused on one logical change.
+- Before pushing or opening a PR, always run `cargo fmt --all` and `cargo clippy -- -D warnings`.
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
 - Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
