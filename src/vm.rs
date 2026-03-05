@@ -1768,12 +1768,9 @@ impl VM {
     }
 
     /// Check if a value represents a "successful" block exit for `let` purposes.
-    /// A block is considered successful if it returns a defined, non-empty value.
+    /// A block is considered successful if it returns a defined value.
+    /// Type objects (Package) and Nil are undefined and count as failure.
     fn is_let_success(val: &Value) -> bool {
-        match val {
-            Value::Nil => false,
-            Value::Array(arr, _) => !arr.is_empty(),
-            _ => true,
-        }
+        crate::runtime::types::value_is_defined(val)
     }
 }

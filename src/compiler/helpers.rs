@@ -1335,10 +1335,41 @@ impl Compiler {
                         return true;
                     }
                 }
+                Stmt::Expr(expr) => {
+                    if Self::expr_has_real_let_deep(expr) {
+                        return true;
+                    }
+                }
+                Stmt::Call { args, .. } => {
+                    for arg in args {
+                        if let crate::ast::CallArg::Positional(expr) = arg
+                            && Self::expr_has_real_let_deep(expr)
+                        {
+                            return true;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
         false
+    }
+
+    /// Check if an expression contains actual `let` (not `temp`) deep inside.
+    fn expr_has_real_let_deep(expr: &Expr) -> bool {
+        match expr {
+            Expr::DoBlock { body, .. } => Self::has_real_let_deep(body),
+            Expr::Try { body, .. } => Self::has_real_let_deep(body),
+            Expr::Call { args, .. } => args.iter().any(Self::expr_has_real_let_deep),
+            Expr::MethodCall { args, target, .. }
+            | Expr::DynamicMethodCall { args, target, .. }
+            | Expr::HyperMethodCall { args, target, .. }
+            | Expr::HyperMethodCallDynamic { args, target, .. } => {
+                Self::expr_has_real_let_deep(target)
+                    || args.iter().any(Self::expr_has_real_let_deep)
+            }
+            _ => false,
+        }
     }
 
     /// Check if a block directly contains a `use`/`no` statement (non-recursive).
@@ -1587,13 +1618,15 @@ impl Compiler {
             expr: Expr::Literal(Value::Bool(true)),
             op: AssignOp::Assign,
         });
-        loop_body.extend(enter_ph);
+        // NEXT phasers run in LIFO (reverse declaration) order per Raku spec
+        next_ph.reverse();
         let body_main = if next_ph.is_empty() {
             body_main
         } else {
             Self::rewrite_next_targets_in_stmts(&body_main, label, &next_ph, false)
         };
 
+        // FIRST runs before ENTER on the first iteration (per Raku spec)
         if !first_ph.is_empty() {
             let mut then_branch = first_ph;
             then_branch.push(Stmt::Assign {
@@ -1608,6 +1641,7 @@ impl Compiler {
                 binding_var: None,
             });
         }
+        loop_body.extend(enter_ph);
         if let Some(result_var) = result_var.clone() {
             if let Some((last, prefix)) = body_main.split_last() {
                 loop_body.extend(prefix.iter().cloned());
@@ -1636,6 +1670,7 @@ impl Compiler {
         } else {
             loop_body.extend(body_main);
         }
+        // next_ph was already reversed above for LIFO order
         loop_body.extend(next_ph);
         loop_body.extend(leave_ph);
         if let Some(result_var) = result_var.clone() {
