@@ -175,7 +175,10 @@ impl VM {
         // When assigning Nil to a typed container element, use the type object
         let val = if matches!(val, Value::Nil) {
             if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
-                Value::Package(Symbol::intern(&constraint))
+                let nominal = self
+                    .interpreter
+                    .nominal_type_object_name_for_constraint(&constraint);
+                Value::Package(Symbol::intern(&nominal))
             } else {
                 val
             }
@@ -492,6 +495,13 @@ impl VM {
                 self.stack.push(def.clone());
                 return Ok(());
             }
+            if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
+                let nominal = self
+                    .interpreter
+                    .nominal_type_object_name_for_constraint(&constraint);
+                self.stack.push(Value::Package(Symbol::intern(&nominal)));
+                return Ok(());
+            }
         }
         self.stack.push(val);
         Ok(())
@@ -511,9 +521,10 @@ impl VM {
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
                 {
-                    return Err(RuntimeError::new(
-                        "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
-                    ));
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                        constraint
+                    )));
                 }
                 if !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
@@ -559,9 +570,10 @@ impl VM {
             && !name.starts_with('@')
         {
             if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
-                return Err(RuntimeError::new(
-                    "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
-                ));
+                return Err(RuntimeError::new(format!(
+                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                    constraint
+                )));
             }
             if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
             {
@@ -698,7 +710,10 @@ impl VM {
             let name = &code.locals[idx];
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 let val = if matches!(val, Value::Nil) {
-                    Value::Package(Symbol::intern(&constraint))
+                    let nominal = self
+                        .interpreter
+                        .nominal_type_object_name_for_constraint(&constraint);
+                    Value::Package(Symbol::intern(&nominal))
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
                     return Err(RuntimeError::new(
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
@@ -735,7 +750,10 @@ impl VM {
         {
             if matches!(val, Value::Nil) {
                 // Assigning Nil to a typed variable resets it to the type object
-                val = Value::Package(Symbol::intern(&constraint));
+                let nominal = self
+                    .interpreter
+                    .nominal_type_object_name_for_constraint(&constraint);
+                val = Value::Package(Symbol::intern(&nominal));
             } else if !self.interpreter.type_matches_value(&constraint, &val) {
                 return Err(RuntimeError::new(
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),

@@ -1465,12 +1465,14 @@ impl Interpreter {
         name: &str,
         base: &str,
         predicate: Option<&Expr>,
+        version: &str,
     ) {
         self.subsets.insert(
             name.to_string(),
             SubsetDef {
                 base: base.to_string(),
                 predicate: predicate.cloned(),
+                version: version.to_string(),
             },
         );
         self.env

@@ -1073,6 +1073,21 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest = r;
     }
 
+    // Optional where-constraint on pointy parameters: `-> $x where Int|Bool { ... }`
+    let (r, _) = ws(rest)?;
+    let (rest, where_constraint) = if let Some(r) = keyword("where", r) {
+        let (r, _) = ws1(r)?;
+        let (r, constraint) = if r.starts_with('{') {
+            let (r, body) = crate::parser::primary::parse_block_body(r)?;
+            (r, Expr::AnonSub { body, is_rw: false })
+        } else {
+            expression(r)?
+        };
+        (r, Some(Box::new(constraint)))
+    } else {
+        (r, None)
+    };
+
     // Prefix name with sigil for proper runtime binding
     let param_name = match original_sigil {
         b'@' => format!("@{}", name),
@@ -1096,7 +1111,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             sub_signature: None,
             outer_sub_signature: None,
             code_signature: None,
-            where_constraint: None,
+            where_constraint,
             traits,
             optional_marker,
             is_invocant: false,

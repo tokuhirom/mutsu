@@ -591,7 +591,10 @@ impl VM {
         // When assigning Nil to a typed variable, reset to the type object
         let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
             if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
-                Value::Package(Symbol::intern(&constraint))
+                let nominal = self
+                    .interpreter
+                    .nominal_type_object_name_for_constraint(&constraint);
+                Value::Package(Symbol::intern(&nominal))
             } else {
                 val
             }
@@ -984,9 +987,10 @@ impl VM {
             return Ok(());
         }
         if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
-            return Err(RuntimeError::new(
-                "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
-            ));
+            return Err(RuntimeError::new(format!(
+                "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                constraint
+            )));
         }
         // Native integer type check: validate value is an integer in range
         if crate::runtime::native_types::is_native_int_type(base_constraint) {

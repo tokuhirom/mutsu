@@ -766,6 +766,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_my_subset_decl_as_single_statement() {
+        let (rest, stmts) = program("my subset S-Int of Int;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(
+            matches!(&stmts[0], Stmt::SubsetDecl { name, base, .. } if name.resolve() == "S-Int" && base == "Int")
+        );
+    }
+
+    #[test]
+    fn parse_method_arg_hyphenated_subset_name() {
+        let src = "use Test; { my subset S-Int of Int; my subset S-Str of Str; nok S-Int.isa(S-Str), 'isa subset'; }";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn parse_pointy_param_where_constraint() {
+        let (rest, stmts) = program("-> $ where Int|Bool { }(one True);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
     fn parse_plan_skip_all() {
         let (rest, stmts) = program("use Test;\nplan skip-all => \"msg\";").unwrap();
         assert_eq!(rest, "");

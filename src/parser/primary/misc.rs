@@ -962,6 +962,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             && first.default.is_none()
             && !first.optional_marker
             && first.type_constraint.is_none()
+            && first.where_constraint.is_none()
             && first.sub_signature.is_none()
             && first.outer_sub_signature.is_none()
             && first.code_signature.is_none();

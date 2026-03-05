@@ -175,6 +175,7 @@ struct RoleCandidateDef {
 struct SubsetDef {
     base: String,
     predicate: Option<Expr>,
+    version: String,
 }
 
 #[derive(Debug, Clone)]
