@@ -564,71 +564,9 @@ impl Interpreter {
         right: &Value,
     ) -> Result<Value, RuntimeError> {
         let to_num = |v: &Value| -> f64 {
-            let mut cur = v;
-            while let Value::Mixin(inner, _) = cur {
-                cur = inner;
-            }
-            match cur {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) => {
-                    if *d == 0 {
-                        f64::NAN
-                    } else {
-                        *n as f64 / *d as f64
-                    }
-                }
-                Value::FatRat(n, d) => {
-                    if *d == 0 {
-                        f64::NAN
-                    } else {
-                        *n as f64 / *d as f64
-                    }
-                }
-                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                Value::Bool(b) => {
-                    if *b {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
-                _ => 0.0,
-            }
+            crate::runtime::to_float_value(v).unwrap_or(crate::runtime::to_int(v) as f64)
         };
-        let to_int = |v: &Value| -> i64 {
-            let mut cur = v;
-            while let Value::Mixin(inner, _) = cur {
-                cur = inner;
-            }
-            match cur {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
-                Value::Rat(n, d) => {
-                    if *d == 0 {
-                        0
-                    } else {
-                        n / d
-                    }
-                }
-                Value::FatRat(n, d) => {
-                    if *d == 0 {
-                        0
-                    } else {
-                        n / d
-                    }
-                }
-                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
-                Value::Bool(b) => {
-                    if *b {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                _ => 0,
-            }
-        };
+        let to_int = |v: &Value| -> i64 { crate::runtime::to_int(v) };
         let is_fractional =
             |v: &Value| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _));
         // Handle R (reverse) meta-prefix: swap operands and recurse with inner op

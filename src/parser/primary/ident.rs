@@ -1663,6 +1663,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         if name == "int" && !is_user_sub && !is_user_prefix_sub {
             return Ok((rest, Expr::BareWord(name)));
         }
+        let is_imported_sub = crate::parser::stmt::simple::is_imported_function(&name);
         let call_name = if is_user_prefix_sub {
             format!("prefix:<{}>", name)
         } else {
@@ -1675,6 +1676,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
             }
         } else if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone()) {
+            return Ok((r2, expr));
+        } else if is_imported_sub
+            && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone())
+        {
             return Ok((r2, expr));
         }
         if hyphen_forward_call && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
@@ -1697,7 +1702,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next.is_ascii_digit()
             || starts_with_term_keyword(r)
             || hyphen_forward_call
-            || is_user_sub)
+            || is_user_sub
+            || is_imported_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
             let (r2, invocant_colon_call) =

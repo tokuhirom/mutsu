@@ -210,6 +210,11 @@ fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(
 
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left, right) {
+        (Value::Package(name), Value::Int(0)) | (Value::Int(0), Value::Package(name))
+            if name.resolve() == "int" =>
+        {
+            true
+        }
         (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
@@ -221,7 +226,26 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             a_inner.eqv(b_inner) && a_mix == b_mix
         }
         (Value::Mixin(_, _), _) | (_, Value::Mixin(_, _)) => false,
-        (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+        (
+            Value::Instance {
+                class_name: a_class,
+                id: a_id,
+                ..
+            },
+            Value::Instance {
+                class_name: b_class,
+                id: b_id,
+                ..
+            },
+        ) => {
+            let a_name = a_class.resolve();
+            let b_name = b_class.resolve();
+            if a_name == b_name && (a_name == "Stash" || a_name == "Supply") {
+                left.eqv(right)
+            } else {
+                a_id == b_id
+            }
+        }
         _ => left.eqv(right),
     }
 }
@@ -1403,6 +1427,9 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             attributes,
             ..
         } if class_name == "Match" => attributes.get("str").and_then(to_float_value),
+        Value::Instance { attributes, .. } => {
+            attributes.get("__mutsu_int_value").and_then(to_float_value)
+        }
         Value::Hash(map) => Some(map.len() as f64),
         _ => None,
     }
@@ -1526,6 +1553,27 @@ pub(crate) fn to_int(v: &Value) -> i64 {
                 })
         }
         Value::Num(f) => *f as i64,
+        Value::Range(a, b) => {
+            if b >= a {
+                b - a + 1
+            } else {
+                0
+            }
+        }
+        Value::RangeExcl(a, b) | Value::RangeExclStart(a, b) => {
+            if b > a {
+                b - a
+            } else {
+                0
+            }
+        }
+        Value::RangeExclBoth(a, b) => {
+            if *b > *a + 1 {
+                b - a - 1
+            } else {
+                0
+            }
+        }
         Value::Rat(n, d) => {
             if *d != 0 {
                 n / d
@@ -1535,6 +1583,11 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         }
         Value::Complex(r, _) => *r as i64,
         Value::Str(s) => s.parse().unwrap_or(0),
+        Value::Array(items, ..) => items.len() as i64,
+        Value::Hash(items) => items.len() as i64,
+        Value::Seq(items) => items.len() as i64,
+        Value::Slip(items) => items.len() as i64,
+        Value::Instance { attributes, .. } => attributes.get("__mutsu_int_value").map_or(0, to_int),
         _ => 0,
     }
 }

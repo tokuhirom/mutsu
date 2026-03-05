@@ -1138,7 +1138,10 @@ impl Interpreter {
                 Value::Int(i) => *i >= 0,
                 Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
                 Value::Nil => true,
-                Value::Package(name) => name.resolve() == "UInt",
+                Value::Package(name) => {
+                    let name = name.resolve();
+                    name == "UInt" || name == "Int"
+                }
                 _ => false,
             };
         }

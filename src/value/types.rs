@@ -1,18 +1,6 @@
 use super::*;
 
 impl Value {
-    /// Bit-exact identity (Raku `===` operator).
-    /// Unlike PartialEq, this distinguishes 0e0 from -0e0 and different NaN payloads.
-    pub(crate) fn strict_identical(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),
-            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
-                ar.to_bits() == br.to_bits() && ai.to_bits() == bi.to_bits()
-            }
-            _ => self == other,
-        }
-    }
-
     /// Type-strict structural equivalence (Raku `eqv` operator).
     /// See raku-doc: Language/operators.rakudoc "infix eqv"
     ///
