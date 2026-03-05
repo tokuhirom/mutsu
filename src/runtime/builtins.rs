@@ -283,6 +283,7 @@ impl Interpreter {
             "kv" => self.builtin_kv(&args),
             "pairs" => self.builtin_pairs(&args),
             "abs" => self.builtin_abs(&args),
+            "sign" => self.builtin_sign(&args),
             "val" => Ok(super::builtins_collection::builtin_val(&args)),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
@@ -1738,6 +1739,7 @@ impl Interpreter {
                 | "quietly"
                 | "exit"
                 | "abs"
+                | "sign"
                 | "val"
                 | "sqrt"
                 | "floor"

@@ -216,6 +216,13 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         }
         "is-prime" => Some(super::methods_0arg::coercion::value_is_prime(arg)),
+        "sign" => {
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
+            // Delegate to the .sign method implementation
+            super::methods_0arg::native_method_0arg(arg, Symbol::intern("sign"))
+        }
         "abs" => Some(Ok(match arg {
             Value::Int(i) => Value::Int(i.abs()),
             Value::Num(f) => Value::Num(f.abs()),
@@ -289,13 +296,35 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             if matches!(arg, Value::Instance { .. }) {
                 return None;
             }
+            // Raku-style rounding: (x + 0.5).floor() — round half toward +Inf
+            fn raku_round_to_value(f: f64) -> Value {
+                let rounded = (f + 0.5).floor();
+                if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
+                    Value::Int(rounded as i64)
+                } else {
+                    // Use BigInt for values outside i64 range
+                    use num_bigint::BigInt;
+                    use num_traits::ToPrimitive;
+                    // Convert via string to avoid precision loss
+                    let s = format!("{:.0}", rounded);
+                    if let Ok(bi) = s.parse::<BigInt>() {
+                        if let Some(i) = bi.to_i64() {
+                            Value::Int(i)
+                        } else {
+                            Value::bigint(bi)
+                        }
+                    } else {
+                        Value::Num(rounded)
+                    }
+                }
+            }
             Some(Ok(match arg {
                 Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-                Value::Num(f) => Value::Int(f.round() as i64),
+                Value::Num(f) => raku_round_to_value(*f),
                 Value::Int(i) => Value::Int(*i),
                 Value::Rat(n, d) if *d != 0 => {
                     let f = *n as f64 / *d as f64;
-                    Value::Int(f.round() as i64)
+                    raku_round_to_value(f)
                 }
                 _ => Value::Int(0),
             }))
@@ -840,11 +869,15 @@ fn native_function_2arg(
         "round" => {
             let x = runtime::to_float_value(arg1)?;
             let scale = runtime::to_float_value(arg2)?;
+            // Raku-style rounding: (x + 0.5).floor()
+            fn raku_round_f64(x: f64) -> f64 {
+                (x + 0.5).floor()
+            }
             if scale == 0.0 {
-                Some(Ok(Value::Int(x.round() as i64)))
+                Some(Ok(Value::Int(raku_round_f64(x) as i64)))
             } else {
                 let factor = (1.0 / scale).abs();
-                Some(Ok(Value::Num((x * factor).round() / factor)))
+                Some(Ok(Value::Num(raku_round_f64(x * factor) / factor)))
             }
         }
         "min" => {

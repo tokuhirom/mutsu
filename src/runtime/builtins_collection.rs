@@ -219,6 +219,22 @@ impl Interpreter {
             None => Value::Int(0),
         })
     }
+
+    pub(super) fn builtin_sign(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let val = args
+            .first()
+            .ok_or_else(|| RuntimeError::new("sign requires an argument"))?;
+        // Delegate to the .sign method via the native_method_0arg path
+        match crate::builtins::methods_0arg::native_method_0arg(
+            val,
+            crate::symbol::Symbol::intern("sign"),
+        ) {
+            Some(result) => result,
+            None => Err(RuntimeError::new(
+                "Cannot call sign on this value".to_string(),
+            )),
+        }
+    }
 }
 
 /// Raku `val()` builtin: convert a string into an allomorphic type.
