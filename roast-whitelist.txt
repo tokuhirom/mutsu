@@ -564,6 +564,7 @@ roast/S32-str/lines.t
 roast/S32-str/ords.t
 roast/S32-str/pos.t
 roast/S32-str/samemark.t
+roast/S32-str/sprintf-c.t
 roast/S32-str/starts-with.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t

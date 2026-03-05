@@ -910,16 +910,11 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "append" => {
-                    // Collect all values that will be inserted for type checking
-                    let mut flat_values = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Array(vals, kind) if !kind.is_itemized() => {
-                                flat_values.extend(vals.iter().cloned())
-                            }
-                            other => flat_values.push(other.clone()),
-                        }
-                    }
+                    // Raku's append uses the "one-arg rule": if exactly one
+                    // non-itemized Array/List argument is passed, its elements
+                    // are flattened. With multiple arguments, each is appended
+                    // as-is (no recursive flattening).
+                    let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &flat_values)?;
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
@@ -1107,14 +1102,7 @@ impl Interpreter {
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         if method == "append" {
-                            for arg in &args {
-                                match arg {
-                                    Value::Array(inner, k) if k.is_real_array() => {
-                                        items.extend(inner.iter().cloned())
-                                    }
-                                    other => items.push(other.clone()),
-                                }
-                            }
+                            items.extend(flatten_append_args(args));
                         } else {
                             items.extend(args);
                         }
@@ -1125,14 +1113,7 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     if method == "append" {
-                        for arg in &args {
-                            match arg {
-                                Value::Array(inner, kind) if kind.is_real_array() => {
-                                    items.extend(inner.iter().cloned())
-                                }
-                                other => items.push(other.clone()),
-                            }
-                        }
+                        items.extend(flatten_append_args(args));
                     } else {
                         items.extend(args);
                     }

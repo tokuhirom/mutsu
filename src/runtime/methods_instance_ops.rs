@@ -909,12 +909,7 @@ impl Interpreter {
                     }
                 }
                 "append" => {
-                    for arg in args {
-                        match arg {
-                            Value::Array(vals, _) => items.extend(vals.iter().cloned()),
-                            other => items.push(other.clone()),
-                        }
-                    }
+                    items.extend(flatten_append_args(args.to_vec()));
                 }
                 "prepend" => {
                     let mut new_items: Vec<Value> = Vec::new();
