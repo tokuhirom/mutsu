@@ -623,12 +623,23 @@ pub(in crate::parser) fn match_user_declared_infix_symbol_op(
 }
 
 /// Register a user-declared term symbol.
-/// The canonical name must be in `term:<...>` form.
+/// The canonical name can be in `term:<...>` form or a plain identifier
+/// (for sigilless variables declared with `my \name`).
 pub(in crate::parser) fn register_user_term_symbol(name: &str) {
-    let Some(symbol) = name
+    let symbol = if let Some(s) = name
         .strip_prefix("term:<")
         .and_then(|s| s.strip_suffix('>'))
-    else {
+    {
+        s.to_string()
+    } else if !name.starts_with('$')
+        && !name.starts_with('@')
+        && !name.starts_with('%')
+        && !name.starts_with('&')
+    {
+        // Plain identifier (sigilless variable): use name as both symbol and canonical name
+        name.to_string()
+    } else {
+        // Sigiled variables ($x, @x, %x) are not term symbols
         return;
     };
     SCOPES.with(|s| {
@@ -638,7 +649,7 @@ pub(in crate::parser) fn register_user_term_symbol(name: &str) {
             .expect("scope stack should never be empty");
         current
             .term_symbols
-            .insert(symbol.to_string(), TermBinding::Value(name.to_string()));
+            .insert(symbol, TermBinding::Value(name.to_string()));
     });
 }
 
@@ -689,18 +700,19 @@ pub(in crate::parser) fn match_user_declared_term_symbol(
                 {
                     continue;
                 }
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
-                {
-                    match binding {
-                        TermBinding::Value(canonical) => {
-                            best = Some((canonical.clone(), consumed, false));
-                        }
-                        TermBinding::Callable(canonical) => {
-                            best = Some((canonical.clone(), consumed, true));
-                        }
+                let candidate = match binding {
+                    TermBinding::Value(canonical) => (canonical.clone(), consumed, false),
+                    TermBinding::Callable(canonical) => (canonical.clone(), consumed, true),
+                };
+                let replace = match &best {
+                    None => true,
+                    Some((_, best_len, best_callable)) => {
+                        consumed > *best_len
+                            || (consumed == *best_len && candidate.2 && !*best_callable)
                     }
+                };
+                if replace {
+                    best = Some(candidate);
                 }
             }
         }

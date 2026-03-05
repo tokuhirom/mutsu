@@ -134,6 +134,11 @@ pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Some((name, consumed_len, callable)) =
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
     {
+        // If the declared callable is immediately followed by `(`, defer to
+        // identifier_or_call so `name(...)` parses as a single call expression.
+        if callable && input[consumed_len..].starts_with('(') {
+            return Err(PError::expected("declared term symbol"));
+        }
         let expr = if callable {
             Expr::Call {
                 name: Symbol::intern(&name),

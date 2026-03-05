@@ -189,6 +189,7 @@ impl Value {
             Value::Proxy { .. } => true,
             Value::CustomType { .. } => false,
             Value::CustomTypeInstance { .. } => true,
+            Value::Scalar(inner) => inner.truthy(),
         }
     }
 
@@ -287,6 +288,7 @@ impl Value {
             Value::CustomTypeInstance { type_name: tn, .. } => {
                 return tn.resolve() == type_name;
             }
+            Value::Scalar(inner) => return inner.isa_check(type_name),
         };
         if my_type == type_name {
             return true;

@@ -25,6 +25,9 @@ impl Interpreter {
     fn union_insert_set_elem(elems: &mut std::collections::HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
+            Value::Scalar(inner) => {
+                Self::union_insert_set_elem(elems, inner);
+            }
             Value::Set(items) => {
                 elems.extend(items.iter().cloned());
             }
@@ -83,6 +86,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
+            Value::Scalar(inner) => Self::union_set_keys(inner),
             Value::Set(s) => Ok((**s).clone()),
             Value::Bag(b) => Ok(b.keys().cloned().collect()),
             Value::Mix(m) => Ok(m.keys().cloned().collect()),
@@ -133,6 +137,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
+            Value::Scalar(inner) => Self::union_bag_counts(inner),
             Value::Bag(b) => Ok((**b).clone()),
             Value::Mix(m) => Ok(m
                 .iter()
@@ -158,6 +163,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
+            Value::Scalar(inner) => Self::union_mix_weights(inner),
             Value::Mix(m) => Ok((**m).clone()),
             Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
