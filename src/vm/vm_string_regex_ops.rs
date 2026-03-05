@@ -269,27 +269,29 @@ impl VM {
                 Value::array(results)
             }
             "Z" => {
-                let left_list = runtime::value_to_list(&left);
-                let right_list = runtime::value_to_list(&right);
-                let len = left_list.len().min(right_list.len());
+                // Use lazy index-based iteration for ranges to avoid
+                // materializing huge/infinite lists like 1..*.
+                let left_iter = ZipIter::from_value(&left);
+                let right_iter = ZipIter::from_value(&right);
+                let len = left_iter.len().min(right_iter.len()).min(MAX_ZIP_EXPAND);
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for i in 0..len {
-                        results.push(Value::array(vec![
-                            left_list[i].clone(),
-                            right_list[i].clone(),
-                        ]));
+                        results.push(Value::array(vec![left_iter.nth(i), right_iter.nth(i)]));
                     }
                 } else if op == "=>" {
                     for i in 0..len {
-                        let key = left_list[i].to_string_value();
-                        results.push(Value::Pair(key, Box::new(right_list[i].clone())));
+                        let key = left_iter.nth(i).to_string_value();
+                        results.push(Value::Pair(key, Box::new(right_iter.nth(i))));
                     }
                 } else {
-                    let nested_left = if left_list.len() == 2 {
-                        match &left_list[1] {
+                    // Check for 3-way zip reduction case ([Z+] a, b, c)
+                    // where left has exactly 2 elements and the second is a list.
+                    let nested_left = if left_iter.len() == 2 {
+                        let second = left_iter.nth(1);
+                        match &second {
                             Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
-                                Some(runtime::value_to_list(&left_list[1]))
+                                Some((left_iter.nth(0), runtime::value_to_list(&second)))
                             }
                             _ => None,
                         }
@@ -297,11 +299,11 @@ impl VM {
                         None
                     };
                     for i in 0..len {
-                        if let Some(extra) = &nested_left {
+                        if let Some((ref first, ref extra)) = nested_left {
                             let mut v = self.eval_reduction_operator_values(
                                 &op,
-                                &left_list[0],
-                                &right_list[i],
+                                first,
+                                &right_iter.nth(i),
                             )?;
                             if let Some(extra_i) = extra.get(i) {
                                 v = self.eval_reduction_operator_values(&op, &v, extra_i)?;
@@ -310,8 +312,8 @@ impl VM {
                         } else {
                             results.push(self.eval_reduction_operator_values(
                                 &op,
-                                &left_list[i],
-                                &right_list[i],
+                                &left_iter.nth(i),
+                                &right_iter.nth(i),
                             )?);
                         }
                     }
@@ -704,6 +706,109 @@ impl VM {
                             name
                         )))
                     }
+                }
+            }
+        }
+    }
+}
+
+/// Maximum elements to produce from Z (zip) when iterating over ranges.
+/// This caps the output for infinite ranges (e.g., `1..* Z** 1..*`).
+/// Kept small because the meta-operator (e.g. `**`) may be expensive
+/// for large values. The caller (e.g., `.[^5]`) will further limit.
+// TODO: Ideally Z should return a lazy Seq and only compute elements on demand.
+const MAX_ZIP_EXPAND: usize = 1_000;
+
+/// Helper for lazy index-based iteration over values in Z (zip) operations.
+/// Avoids materializing huge ranges like `1..*` into million-element Vecs.
+enum ZipIter {
+    /// Inclusive integer range: elements are start, start+1, ..., end
+    IntRange { start: i64, count: usize },
+    /// Exclusive-end integer range: elements are start, start+1, ..., end-1
+    IntRangeExcl { start: i64, count: usize },
+    /// Already-materialized list
+    List(Vec<Value>),
+    /// A list that ends with `*` (Whatever): the last real element is repeated
+    /// to extend the list to any requested length.
+    ExtendedList {
+        items: Vec<Value>,
+        /// The last real element (before `*`), used for extension
+        fill: Value,
+    },
+}
+
+impl ZipIter {
+    fn from_value(val: &Value) -> Self {
+        match val {
+            Value::Range(a, b) => {
+                let count = if *b >= *a {
+                    ((*b - *a + 1) as usize).min(MAX_ZIP_EXPAND)
+                } else {
+                    0
+                };
+                ZipIter::IntRange { start: *a, count }
+            }
+            Value::RangeExcl(a, b) => {
+                let count = if *b > *a {
+                    ((*b - *a) as usize).min(MAX_ZIP_EXPAND)
+                } else {
+                    0
+                };
+                ZipIter::IntRangeExcl { start: *a, count }
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = *a + 1;
+                let count = if *b >= start {
+                    ((*b - start + 1) as usize).min(MAX_ZIP_EXPAND)
+                } else {
+                    0
+                };
+                ZipIter::IntRange { start, count }
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = *a + 1;
+                let count = if *b > start {
+                    ((*b - start) as usize).min(MAX_ZIP_EXPAND)
+                } else {
+                    0
+                };
+                ZipIter::IntRangeExcl { start, count }
+            }
+            _ => {
+                let list = runtime::value_to_list(val);
+                // Check for trailing Whatever (*) — extends the list by
+                // repeating the last real element.
+                if list.len() >= 2 && matches!(list.last(), Some(Value::Whatever)) {
+                    let items: Vec<Value> = list[..list.len() - 1].to_vec();
+                    let fill = items.last().cloned().unwrap_or(Value::Nil);
+                    ZipIter::ExtendedList { items, fill }
+                } else {
+                    ZipIter::List(list)
+                }
+            }
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            ZipIter::IntRange { count, .. } | ZipIter::IntRangeExcl { count, .. } => *count,
+            ZipIter::List(v) => v.len(),
+            // Extended lists can match any length from the other side
+            ZipIter::ExtendedList { .. } => usize::MAX,
+        }
+    }
+
+    fn nth(&self, i: usize) -> Value {
+        match self {
+            ZipIter::IntRange { start, .. } | ZipIter::IntRangeExcl { start, .. } => {
+                Value::Int(*start + i as i64)
+            }
+            ZipIter::List(v) => v[i].clone(),
+            ZipIter::ExtendedList { items, fill } => {
+                if i < items.len() {
+                    items[i].clone()
+                } else {
+                    fill.clone()
                 }
             }
         }
