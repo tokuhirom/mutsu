@@ -157,14 +157,21 @@ impl Interpreter {
                     name
                 )));
             }
-        } else if !allow_redeclare
-            && !allow_lexical_shadow
-            && ((has_multi && !has_proto) || (has_single && !existing_is_stub))
-        {
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared",
-                name
-            )));
+        } else if !allow_redeclare {
+            // Defining a plain sub when multi candidates exist (without proto) is always
+            // an error, even in inner scopes, because it creates an ambiguous dispatch.
+            if has_multi && !has_proto {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared",
+                    name
+                )));
+            }
+            if !allow_lexical_shadow && has_single && !existing_is_stub {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared",
+                    name
+                )));
+            }
         }
         let def = new_def;
         if let Some(assoc) = associativity {
