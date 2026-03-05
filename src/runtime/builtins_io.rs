@@ -12,6 +12,51 @@ fn check_null_in_path(path: &str) -> Result<(), RuntimeError> {
     }
 }
 
+fn io_exception_error(class_name: &str, message: String) -> RuntimeError {
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern(class_name),
+        HashMap::new(),
+    )));
+    err
+}
+
+#[cfg(unix)]
+fn has_required_mode_bits(path: &Path, read: bool, write: bool, execute: bool) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = match fs::metadata(path) {
+        Ok(meta) => meta.permissions().mode() & 0o777,
+        Err(_) => return false,
+    };
+    (!read || (mode & 0o444) != 0)
+        && (!write || (mode & 0o222) != 0)
+        && (!execute || (mode & 0o111) != 0)
+}
+
+#[cfg(not(unix))]
+fn has_required_mode_bits(_path: &Path, _read: bool, _write: bool, _execute: bool) -> bool {
+    true
+}
+
+fn parse_io_requirements(args: &[Value]) -> (bool, bool, bool, bool) {
+    let mut require_dir = true;
+    let mut require_read = false;
+    let mut require_write = false;
+    let mut require_exec = false;
+    for arg in args {
+        if let Value::Pair(key, val) = arg {
+            match key.as_str() {
+                "d" => require_dir = val.truthy(),
+                "r" => require_read = val.truthy(),
+                "w" => require_write = val.truthy(),
+                "x" => require_exec = val.truthy(),
+                _ => {}
+            }
+        }
+    }
+    (require_dir, require_read, require_write, require_exec)
+}
+
 impl Interpreter {
     fn dir_test_matches(&mut self, test: &Value, entry_name: &str, dir_path: &Path) -> bool {
         if let Value::Bool(b) = test {
@@ -219,18 +264,58 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_copy(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let source = args
+        let mut positional = Vec::new();
+        let mut createonly = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "createonly" => {
+                    createonly = value.truthy();
+                }
+                _ => positional.push(arg),
+            }
+        }
+        let source = positional
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("copy requires a source path"))?;
-        let dest = args
+        let dest = positional
             .get(1)
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("copy requires a destination path"))?;
+        check_null_in_path(&source)?;
+        check_null_in_path(&dest)?;
         let src_buf = self.resolve_path(&source);
         let dest_buf = self.resolve_path(&dest);
-        fs::copy(&src_buf, &dest_buf)
-            .map_err(|err| RuntimeError::new(format!("Failed to copy '{}': {}", source, err)))?;
+        if createonly && dest_buf.exists() {
+            return Err(io_exception_error(
+                "X::IO::Copy",
+                format!("Failed to copy '{}': destination already exists", source),
+            ));
+        }
+        if src_buf.is_dir() {
+            return Err(io_exception_error(
+                "X::IO::Copy",
+                format!("Failed to copy '{}': source is a directory", source),
+            ));
+        }
+        if src_buf.exists() && dest_buf.exists() {
+            let same_file = fs::canonicalize(&src_buf).ok() == fs::canonicalize(&dest_buf).ok();
+            if same_file {
+                return Err(io_exception_error(
+                    "X::IO::Copy",
+                    format!(
+                        "Failed to copy '{}': source and destination are the same file",
+                        source
+                    ),
+                ));
+            }
+        }
+        fs::copy(&src_buf, &dest_buf).map_err(|err| {
+            io_exception_error(
+                "X::IO::Copy",
+                format!("Failed to copy '{}': {}", source, err),
+            )
+        })?;
         Ok(Value::Bool(true))
     }
 
@@ -315,6 +400,7 @@ impl Interpreter {
         let arg = args
             .first()
             .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
+        let (require_dir, require_read, require_write, require_exec) = parse_io_requirements(args);
         let effective_arg = if let Value::Capture { positional, named } = arg {
             if named.is_empty() && positional.len() == 1 {
                 positional[0].clone()
@@ -352,26 +438,33 @@ impl Interpreter {
         } else {
             self.resolve_path(&Self::stringify_path(&path_buf))
         };
-        if !absolute_target.is_dir() {
-            let mut err = RuntimeError::new(format!(
-                "Failed to chdir to '{}': no such directory",
-                requested
+        if !absolute_target.exists() {
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!(
+                    "Failed to chdir to '{}': no such file or directory",
+                    requested
+                ),
             ));
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::IO::Chdir"),
-                HashMap::new(),
-            )));
-            return Err(err);
+        }
+        if require_dir && !absolute_target.is_dir() {
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!("Failed to chdir to '{}': not a directory", requested),
+            ));
+        }
+        if !has_required_mode_bits(&absolute_target, require_read, require_write, require_exec) {
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!("Failed to chdir to '{}': permission denied", requested),
+            ));
         }
         let canonical = fs::canonicalize(&absolute_target).unwrap_or(absolute_target);
         if let Err(chdir_err) = std::env::set_current_dir(&canonical) {
-            let mut err =
-                RuntimeError::new(format!("Failed to chdir to '{}': {}", requested, chdir_err));
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::IO::Chdir"),
-                HashMap::new(),
-            )));
-            return Err(err);
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!("Failed to chdir to '{}': {}", requested, chdir_err),
+            ));
         }
         let cwd_val = self.make_io_path_instance(&Self::stringify_path(&canonical));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
@@ -380,26 +473,82 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_indir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let path = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("indir requires a path"))?;
-        let path_buf = self.resolve_path(&path);
-        if !path_buf.is_dir() {
-            return Err(RuntimeError::new(format!(
-                "indir path is not a directory: {}",
-                path
-            )));
+        let (require_dir, require_read, require_write, require_exec) = parse_io_requirements(args);
+        let mut path_arg: Option<Value> = None;
+        let mut body_arg: Option<Value> = None;
+        for arg in args {
+            if matches!(arg, Value::Pair(_, _)) {
+                continue;
+            }
+            if path_arg.is_none() {
+                path_arg = Some(arg.clone());
+            } else {
+                body_arg = Some(arg.clone());
+            }
+        }
+        let path_arg = path_arg.ok_or_else(|| RuntimeError::new("indir requires a path"))?;
+        let mut requested = path_arg.to_string_value();
+        let mut requested_cwd_opt: Option<String> = None;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &path_arg
+            && class_name == "IO::Path"
+        {
+            requested = attributes
+                .get("path")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            requested_cwd_opt = attributes.get("cwd").map(|v| v.to_string_value());
+        }
+        check_null_in_path(&requested)?;
+        let path_buf = if Path::new(&requested).is_absolute() {
+            self.resolve_path(&requested)
+        } else if let Some(cwd) = &requested_cwd_opt {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&requested)))
+        } else {
+            self.resolve_path(&requested)
+        };
+        let absolute_target = if path_buf.is_absolute() {
+            path_buf
+        } else {
+            self.resolve_path(&Self::stringify_path(&path_buf))
+        };
+        if !absolute_target.exists() {
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!(
+                    "Failed to chdir to '{}': no such file or directory",
+                    requested
+                ),
+            ));
+        }
+        if require_dir && !absolute_target.is_dir() {
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!("Failed to chdir to '{}': not a directory", requested),
+            ));
+        }
+        if !has_required_mode_bits(&absolute_target, require_read, require_write, require_exec) {
+            return Err(io_exception_error(
+                "X::IO::Chdir",
+                format!("Failed to chdir to '{}': permission denied", requested),
+            ));
         }
         let saved = self.env.get("$*CWD").cloned();
-        let cwd_val = self.make_io_path_instance(&Self::stringify_path(&path_buf));
+        let canonical = fs::canonicalize(&absolute_target).unwrap_or(absolute_target);
+        let cwd_val = self.make_io_path_instance(&Self::stringify_path(&canonical));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
-        let result = if let Some(body) = args.get(1) {
-            if matches!(body, Value::Sub(_)) {
-                self.call_sub_value(body.clone(), vec![], false)
+        let result = if let Some(body) = body_arg {
+            if matches!(
+                body,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            ) {
+                self.call_sub_value(body.clone(), vec![], true)
             } else {
-                Ok(body.clone())
+                Ok(body)
             }
         } else {
             Ok(Value::Nil)

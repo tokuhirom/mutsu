@@ -923,47 +923,177 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let func = match args.first() {
+        fn as_items(value: &Value) -> Option<Vec<Value>> {
+            match value {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    Some(items.iter().cloned().collect())
+                }
+                _ => None,
+            }
+        }
+
+        fn mapper_path(value: Value) -> Vec<Value> {
+            as_items(&value).unwrap_or_else(|| vec![value])
+        }
+
+        fn mapper_categories(value: Value) -> Vec<Vec<Value>> {
+            if let Some(items) = as_items(&value) {
+                if items.is_empty() {
+                    return Vec::new();
+                }
+                let mut out = Vec::new();
+                for item in items {
+                    out.push(mapper_path(item));
+                }
+                out
+            } else {
+                vec![vec![value]]
+            }
+        }
+
+        fn insert_nested_bucket(
+            buckets: &mut HashMap<String, Value>,
+            path: &[Value],
+            item: Value,
+        ) -> Result<(), RuntimeError> {
+            if path.is_empty() {
+                return Ok(());
+            }
+            let key = path[0].to_string_value();
+            if path.len() == 1 {
+                let entry = buckets
+                    .entry(key)
+                    .or_insert_with(|| Value::real_array(Vec::new()));
+                match entry {
+                    Value::Array(values, ..) => {
+                        Arc::make_mut(values).push(item);
+                        Ok(())
+                    }
+                    Value::Hash(_) => Err(RuntimeError::new("X::Invalid::ComputedValue")),
+                    _ => {
+                        *entry = Value::real_array(vec![item]);
+                        Ok(())
+                    }
+                }
+            } else {
+                let entry = buckets
+                    .entry(key)
+                    .or_insert_with(|| Value::hash(HashMap::new()));
+                match entry {
+                    Value::Hash(map) => {
+                        let map = Arc::make_mut(map);
+                        insert_nested_bucket(map, &path[1..], item)
+                    }
+                    Value::Array(..) => Err(RuntimeError::new("X::Invalid::ComputedValue")),
+                    _ => {
+                        *entry = Value::hash(HashMap::new());
+                        if let Value::Hash(map) = entry {
+                            let map = Arc::make_mut(map);
+                            insert_nested_bucket(map, &path[1..], item)
+                        } else {
+                            Ok(())
+                        }
+                    }
+                }
+            }
+        }
+
+        let mapper = match args.first() {
             Some(value) => value.clone(),
             None => return Ok(Value::hash(HashMap::new())),
         };
-        let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
-        // Flatten list/array arguments into individual items
-        let mut items = Vec::new();
+
+        let mut as_mapper: Option<Value> = None;
+        let mut into_target: Option<Value> = None;
+        let mut positional: Vec<Value> = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Array(values, ..) => items.extend(values.iter().cloned()),
-                v if v.is_range() => {
-                    items.extend(crate::runtime::utils::value_to_list(v));
+                Value::Pair(key, value) if key == "as" => as_mapper = Some(*value.clone()),
+                Value::Pair(key, value) if key == "into" => into_target = Some(*value.clone()),
+                _ => positional.push(arg.clone()),
+            }
+        }
+
+        // Flatten list/array arguments into individual items.
+        let mut items = Vec::new();
+        for arg in &positional {
+            match arg {
+                Value::Array(values, ..) | Value::Seq(values) | Value::Slip(values) => {
+                    items.extend(values.iter().cloned())
                 }
+                v if v.is_range() => items.extend(crate::runtime::utils::value_to_list(v)),
                 other => items.push(other.clone()),
             }
         }
+
+        let mut buckets: HashMap<String, Value> = match into_target.as_ref() {
+            Some(Value::Hash(map)) => map.as_ref().clone(),
+            _ => HashMap::new(),
+        };
+        let mut bag_counts: Option<HashMap<String, i64>> = match into_target.as_ref() {
+            Some(Value::Bag(b)) => Some(b.as_ref().clone()),
+            _ => None,
+        };
+
         for item in &items {
-            let keys = match self.call_lambda_with_arg(&func, item.clone()) {
-                Ok(Value::Array(values, ..)) => values.to_vec(),
-                Ok(value) => vec![value],
-                Err(_) => vec![Value::Nil],
-            };
-            let target_keys = if name == "classify" {
-                if keys.is_empty() {
-                    vec![Value::Nil]
-                } else {
-                    vec![keys[0].clone()]
+            let mapped = match &mapper {
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => self
+                    .call_sub_value(mapper.clone(), vec![item.clone()], true)
+                    .unwrap_or(Value::Nil),
+                Value::Hash(map) => map
+                    .get(&item.to_string_value())
+                    .cloned()
+                    .unwrap_or(Value::Nil),
+                Value::Array(values, ..) => {
+                    let idx = crate::runtime::to_int(item);
+                    if idx < 0 {
+                        Value::Nil
+                    } else {
+                        values.get(idx as usize).cloned().unwrap_or(Value::Nil)
+                    }
                 }
-            } else {
-                keys
+                _ => Value::Nil,
             };
-            for key in target_keys {
-                let bucket_key = key.to_string_value();
-                buckets.entry(bucket_key).or_default().push(item.clone());
+            let mapped = match mapped {
+                Value::LazyList(ll) => Value::array(self.force_lazy_list_bridge(&ll)?),
+                other => other,
+            };
+
+            let mapped_item = if let Some(as_fn) = as_mapper.clone() {
+                self.call_sub_value(as_fn, vec![item.clone()], true)
+                    .unwrap_or(item.clone())
+            } else {
+                item.clone()
+            };
+
+            if let Some(counts) = bag_counts.as_mut() {
+                let path = mapper_path(mapped);
+                if let Some(first) = path.first() {
+                    *counts.entry(first.to_string_value()).or_insert(0) += 1;
+                }
+                continue;
+            }
+
+            let paths = if name == "categorize" {
+                mapper_categories(mapped)
+            } else {
+                let path = mapper_path(mapped);
+                if path.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![path]
+                }
+            };
+            for path in paths {
+                insert_nested_bucket(&mut buckets, &path, mapped_item.clone())?;
             }
         }
-        let hash_map = buckets
-            .into_iter()
-            .map(|(k, v)| (k, Value::array(v)))
-            .collect();
-        Ok(Value::hash(hash_map))
+
+        if let Some(counts) = bag_counts {
+            return Ok(Value::bag(counts));
+        }
+
+        Ok(Value::hash(buckets))
     }
 
     /// `cross(@a, @b, ...)` — Cartesian product of lists.

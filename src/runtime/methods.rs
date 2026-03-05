@@ -963,6 +963,12 @@ impl Interpreter {
             "are" => {
                 return self.dispatch_are(target, &args);
             }
+            "classify" | "categorize" => {
+                let mut call_args = Vec::with_capacity(args.len() + 1);
+                call_args.extend(args.iter().cloned());
+                call_args.push(target);
+                return self.builtin_classify(method, &call_args);
+            }
             "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") =>
             {
                 let mut positional: Vec<Value> = Vec::new();

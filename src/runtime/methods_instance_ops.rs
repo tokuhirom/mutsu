@@ -1032,12 +1032,25 @@ impl Interpreter {
     }
 
     fn are_value_matches_type(&mut self, value: &Value, expected_type: &str) -> bool {
-        match value {
-            Value::Package(actual_type) => {
-                actual_type == expected_type || expected_type == "Any" || expected_type == "Mu"
+        if expected_type == "Cool" {
+            // `Cool` in are() should accept list/type-object values except clearly non-Cool ones.
+            if let Value::Instance { class_name, .. } = value {
+                let cls = class_name.resolve();
+                if cls == "Date" || cls == "DateTime" || cls == "Mu" {
+                    return false;
+                }
             }
-            _ => self.type_matches_value(expected_type, value),
+            if let Value::Package(name) = value {
+                let cls = name.resolve();
+                if cls == "Date" || cls == "DateTime" || cls == "Mu" {
+                    return false;
+                }
+            }
+            if matches!(value, Value::Array(_, _) | Value::Seq(_) | Value::Slip(_)) {
+                return true;
+            }
         }
+        self.type_matches_value(expected_type, value)
     }
 
     fn are_actual_type_name(value: &Value) -> String {
