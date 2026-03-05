@@ -55,7 +55,9 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         let spec = chars.next().unwrap_or('s');
         let width_num = width.parse::<usize>().unwrap_or(0);
         let prec_num = precision.parse::<usize>().ok();
-        let zero_pad = flags.contains('0') && !flags.contains('-');
+        // For %s, the 0 flag is ignored when precision is specified (Raku/C behavior)
+        let zero_pad =
+            flags.contains('0') && !flags.contains('-') && !(spec == 's' && prec_num.is_some());
         let left_align = flags.contains('-');
         let plus_sign = flags.contains('+');
         let hash_flag = flags.contains('#');
