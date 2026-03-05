@@ -370,6 +370,7 @@ impl Interpreter {
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
                 "===" => left == right,
                 "!===" => left != right,
+                "eqv" => left.eqv(&right),
                 "=:=" => left == right,
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal

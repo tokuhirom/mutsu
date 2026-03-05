@@ -662,6 +662,8 @@ fn raku_value(v: &Value) -> String {
             };
             format!("{} => {}", key_repr, raku_value(value))
         }
+        Value::Nil => "Nil".to_string(),
+        Value::Package(name) => name.resolve().to_string(),
         other => other.to_string_value(),
     }
 }
@@ -2267,6 +2269,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
+        },
+        "of" => match target {
+            Value::Hash(_) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
+                Some(Ok(Value::Package(Symbol::intern("Mu"))))
+            }
+            Value::Array(..) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            _ => None,
         },
         "tclc" => Some(Ok(Value::str(crate::value::tclc_str(
             &target.to_string_value(),
