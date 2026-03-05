@@ -156,6 +156,8 @@ impl Interpreter {
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
+            "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
+            "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
@@ -164,7 +166,16 @@ impl Interpreter {
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
-                Box::new(args.first().cloned().unwrap_or(Value::Nil)),
+                Box::new(Value::Array(
+                    std::sync::Arc::new(vec![
+                        args.first().cloned().unwrap_or(Value::Nil),
+                        args.get(1).cloned().unwrap_or(Value::Array(
+                            std::sync::Arc::new(Vec::new()),
+                            crate::value::ArrayKind::List,
+                        )),
+                    ]),
+                    crate::value::ArrayKind::List,
+                )),
             )),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
@@ -1167,6 +1178,50 @@ impl Interpreter {
         let call_args = Self::sub_call_args_from_value(args.get(1));
         let value = args[2].clone();
         self.assign_callable_lvalue_with_values(callable, call_args, value)
+    }
+
+    fn builtin_star_lvalue_rhs(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_star_lvalue_rhs expects target name and rhs value",
+            ));
+        }
+        let target_name = args[0].to_string_value();
+        let marker_key = format!("__mutsu_bound_array_len::{target_name}");
+        let Some(limit) = self.env.get(&marker_key).and_then(|v| match v {
+            Value::Int(i) if *i >= 0 => usize::try_from(*i).ok(),
+            _ => None,
+        }) else {
+            return Ok(args[1].clone());
+        };
+
+        let mut items = crate::runtime::value_to_list(&args[1]);
+        if items.len() > limit {
+            items.truncate(limit);
+        }
+        Ok(Value::real_array(items))
+    }
+
+    fn builtin_record_bound_array_len(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 1 {
+            return Err(RuntimeError::new(
+                "__mutsu_record_bound_array_len expects target name",
+            ));
+        }
+        let target_name = args[0].to_string_value();
+        if !target_name.starts_with('@') {
+            return Ok(Value::Nil);
+        }
+        let bound_len = self
+            .env
+            .get(&target_name)
+            .map(|v| crate::runtime::value_to_list(v).len() as i64)
+            .unwrap_or(0);
+        self.env.insert(
+            format!("__mutsu_bound_array_len::{target_name}"),
+            Value::Int(bound_len),
+        );
+        Ok(Value::Nil)
     }
 
     fn atomic_var_name_arg(args: &[Value]) -> Result<String, RuntimeError> {
