@@ -521,14 +521,14 @@ fn try_custom_infix_at_level<'a>(
 
 /// String concatenation: ~
 pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = additive_expr(input)?;
+    let (mut rest, mut left) = replication_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
         // Hyper operators: >>op<<, >>op>>, <<op<<, <<op>>
         if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = additive_expr(r).map_err(|err| {
+            let (r, right) = replication_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
             left = Expr::HyperOp {
@@ -550,19 +550,48 @@ pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
                 &mut left,
                 PREC_STRUCTURAL,
                 PREC_ADDITIVE - 1,
-                additive_expr,
+                replication_expr,
             )? {
                 rest = new_rest;
                 continue;
             }
         }
-        if let Some((op, len)) = parse_concat_op(r) {
+        if let Some((op, len)) = parse_pure_concat_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = replication_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after concatenation operator",
+                    r.len(),
+                )
+            })?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+/// Replication: x, xx, o (function composition)
+/// These bind tighter than ~ (concatenation) but looser than + (additive).
+fn replication_expr(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = additive_expr(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op, len)) = parse_replication_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = additive_expr(r).map_err(|err| {
                 enrich_expected_error(
                     err,
-                    "expected expression after concatenation operator",
+                    "expected expression after replication operator",
                     r.len(),
                 )
             })?;

@@ -598,6 +598,22 @@ impl Interpreter {
                 anchor_end = true;
                 break;
             }
+            // $0, $1, ... — backreference to positional capture group
+            if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                let mut digits = String::new();
+                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                    digits.push(chars.next().unwrap());
+                }
+                if let Ok(idx) = digits.parse::<usize>() {
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::Backref(idx),
+                        quant: RegexQuant::One,
+                        named_capture: pending_named_capture.take(),
+                        ratchet,
+                    });
+                    continue;
+                }
+            }
             if c == '$' && chars.peek() == Some(&'<') {
                 chars.next();
                 let mut capture_name = String::new();

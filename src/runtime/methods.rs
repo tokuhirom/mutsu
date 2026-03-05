@@ -1678,6 +1678,7 @@ impl Interpreter {
                                     &c.positional,
                                     &c.named,
                                     &c.named_subcaps,
+                                    &c.positional_subcaps,
                                     Some(&text),
                                 )
                             })
@@ -1726,9 +1727,6 @@ impl Interpreter {
                         let matched = captures.matched.clone();
                         let from = captures.from as i64;
                         let to = captures.to as i64;
-                        for (i, v) in captures.positional.iter().enumerate() {
-                            self.env.insert(i.to_string(), Value::str(v.clone()));
-                        }
                         // Execute code blocks from regex for side effects
                         self.execute_regex_code_blocks(&captures.code_blocks);
                         let match_obj = Value::make_match_object_full(
@@ -1738,8 +1736,17 @@ impl Interpreter {
                             &captures.positional,
                             &captures.named,
                             &captures.named_subcaps,
+                            &captures.positional_subcaps,
                             Some(&text),
                         );
+                        // Set positional capture env vars ($0, $1, ...) from match object
+                        if let Value::Instance { ref attributes, .. } = match_obj
+                            && let Some(Value::Array(list, _)) = attributes.get("list")
+                        {
+                            for (i, v) in list.iter().enumerate() {
+                                self.env.insert(i.to_string(), v.clone());
+                            }
+                        }
                         // Set named capture env vars from match object
                         if let Value::Instance { ref attributes, .. } = match_obj
                             && let Some(Value::Hash(named_hash)) = attributes.get("named")
