@@ -143,7 +143,7 @@ impl Interpreter {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let rendered = super::format_sprintf(&fmt, args.get(1));
+        let rendered = super::sprintf::format_sprintf_args(&fmt, &args[1..]);
         Ok(Value::str(rendered))
     }
 
