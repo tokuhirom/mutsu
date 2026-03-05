@@ -402,6 +402,14 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        if method == "out-buffer"
+            && let Value::Instance { class_name, .. } = &target
+            && class_name == "IO::Handle"
+            && method_args.is_empty()
+        {
+            let _ = self.call_method_with_values(target.clone(), method, vec![value.clone()])?;
+            return Ok(value);
+        }
         if method == "value"
             && let Value::Instance {
                 class_name,

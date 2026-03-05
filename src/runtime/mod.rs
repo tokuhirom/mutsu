@@ -247,6 +247,8 @@ struct IoHandleState {
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
     closed: bool,
+    out_buffer_capacity: Option<usize>,
+    out_buffer_pending: Vec<u8>,
     #[allow(dead_code)]
     bin: bool,
 }
@@ -1002,8 +1004,25 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "put", "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
+                    "close",
+                    "get",
+                    "getc",
+                    "lines",
+                    "words",
+                    "read",
+                    "write",
+                    "print",
+                    "say",
+                    "put",
+                    "flush",
+                    "seek",
+                    "tell",
+                    "eof",
+                    "encoding",
+                    "opened",
+                    "slurp",
+                    "out-buffer",
+                    "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())

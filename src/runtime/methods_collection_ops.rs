@@ -1212,6 +1212,8 @@ impl Interpreter {
             file: None,
             socket: Some(stream),
             closed: false,
+            out_buffer_capacity: None,
+            out_buffer_pending: Vec::new(),
             bin: false,
         };
         self.handles.insert(id, state);
