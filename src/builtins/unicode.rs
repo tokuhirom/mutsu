@@ -16,17 +16,22 @@ pub(crate) fn unicode_titlecase_first(ch: char) -> String {
 }
 
 pub(crate) fn titlecase_string(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    use unicode_segmentation::UnicodeSegmentation;
+
     let mut result = String::new();
-    let mut first = true;
-    for ch in s.chars() {
-        if first {
-            result.push_str(&unicode_titlecase_first(ch));
-            first = false;
-        } else {
-            result.push(ch);
+    let mut graphemes = s.graphemes(true);
+    if let Some(first_grapheme) = graphemes.next() {
+        let mut chars = first_grapheme.chars();
+        if let Some(first_char) = chars.next() {
+            result.push_str(&unicode_titlecase_first(first_char));
+            result.extend(chars);
         }
     }
-    result
+    for g in graphemes {
+        result.push_str(g);
+    }
+    result.nfc().collect()
 }
 
 /// Apply the case pattern of `pattern` to `source`.
