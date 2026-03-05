@@ -1,4 +1,5 @@
 roast/6.d/S32-str/sprintf-e.t
+roast/6.d/S32-str/sprintf-f.t
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/array.t
 roast/S01-perl-5-integration/basic.t

@@ -89,6 +89,12 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         let zero_pad =
             flags.contains('0') && !flags.contains('-') && !(spec == 's' && prec_num.is_some());
         let left_align = flags.contains('-');
+        // In Raku, for float specifiers (f/F/e/E), when both '-' and '0' flags are
+        // present, zero-padding takes priority over left-align. Additionally, if the
+        // formatted number has no sign prefix, one leading zero is shifted from the
+        // integer part to the fractional part (precision is effectively incremented).
+        let float_minus_zero =
+            matches!(spec, 'f' | 'F' | 'e' | 'E') && flags.contains('-') && flags.contains('0');
         let plus_sign = flags.contains('+');
         let space_flag = flags.contains(' ');
         let hash_flag = flags.contains('#');
@@ -255,7 +261,13 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 None => String::new(),
             },
         };
-        apply_width(&mut out, &rendered, width_num, left_align, zero_pad);
+        if float_minus_zero && width_num > 0 {
+            // Raku quirk: -0 combo on floats uses zero-padding (0 wins over -)
+            // then shifts one leading zero into the fractional part when no sign prefix
+            apply_float_minus_zero(&mut out, &rendered, width_num);
+        } else {
+            apply_width(&mut out, &rendered, width_num, left_align, zero_pad);
+        }
     }
     out
 }
@@ -316,6 +328,61 @@ fn apply_width(
         }
     } else {
         out.push_str(rendered);
+    }
+}
+
+/// Handle Raku's quirky behavior when both '-' and '0' flags are present on float specifiers.
+/// Zero-padding takes priority over left-align, and if the number has no sign prefix,
+/// one leading zero is shifted from the integer part to the fractional part.
+fn apply_float_minus_zero(out: &mut String, rendered: &str, width: usize) {
+    let len = rendered.chars().count();
+    if width <= len {
+        out.push_str(rendered);
+        return;
+    }
+    let pad_len = width - len;
+    let has_sign = matches!(
+        rendered.as_bytes().first(),
+        Some(b'+') | Some(b'-') | Some(b' ')
+    );
+
+    // First, apply zero-padding (same as apply_width with zero_pad=true)
+    let mut padded = String::with_capacity(width);
+    if has_sign {
+        padded.push(rendered.chars().next().unwrap());
+        for _ in 0..pad_len {
+            padded.push('0');
+        }
+        padded.push_str(&rendered[1..]);
+    } else {
+        for _ in 0..pad_len {
+            padded.push('0');
+        }
+        padded.push_str(rendered);
+    }
+
+    // Then, if no sign prefix, shift one leading zero to the fractional part.
+    // This effectively increments precision by 1 while keeping total width the same.
+    if !has_sign && should_shift_zero(&padded) {
+        // Remove leading zero, append '0' to fractional part
+        let mut shifted = String::with_capacity(width);
+        shifted.push_str(&padded[1..]);
+        shifted.push('0');
+        out.push_str(&shifted);
+        return;
+    }
+
+    out.push_str(&padded);
+}
+
+/// Check if a zero-padded float string has a leading zero that can be shifted
+/// to the fractional part (e.g., "0001.00" -> true, "1.00" -> false).
+fn should_shift_zero(padded: &str) -> bool {
+    if let Some(dot_pos) = padded.find('.') {
+        let int_part = &padded[..dot_pos];
+        int_part.len() >= 2 && int_part.starts_with('0')
+    } else {
+        false
     }
 }
 
