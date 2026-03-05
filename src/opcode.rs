@@ -131,6 +131,7 @@ pub(crate) enum OpCode {
     SetCont,
     SetUnion,
     SetIntersect,
+    SetMultiply,
     SetDiff,
     SetSymDiff,
     SetSubset,

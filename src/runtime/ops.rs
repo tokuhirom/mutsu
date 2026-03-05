@@ -197,6 +197,214 @@ impl Interpreter {
         Ok(Value::set(l))
     }
 
+    fn multiply_pair_i64(value: &Value) -> i64 {
+        match value {
+            Value::Int(i) => *i,
+            Value::Num(n) => *n as i64,
+            _ => 1,
+        }
+    }
+
+    fn multiply_pair_f64(value: &Value) -> f64 {
+        match value {
+            Value::Int(i) => *i as f64,
+            Value::Num(n) => *n,
+            Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+            Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+            _ => 1.0,
+        }
+    }
+
+    fn multiply_bag_counts(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Bag(b) => Ok((**b).clone()),
+            Value::Mix(m) => Ok(m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()),
+            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1)).collect()),
+            Value::Hash(h) => Ok(h
+                .iter()
+                .filter_map(|(k, v)| {
+                    let c = match v {
+                        Value::Int(i) => *i,
+                        Value::Num(n) => *n as i64,
+                        Value::Bool(b) => i64::from(*b),
+                        _ => i64::from(v.truthy()),
+                    };
+                    if c > 0 { Some((k.clone(), c)) } else { None }
+                })
+                .collect()),
+            _ if value.as_list_items().is_some() => {
+                let mut counts = std::collections::HashMap::new();
+                for item in value.as_list_items().unwrap().iter() {
+                    match item {
+                        Value::Pair(k, v) => {
+                            *counts.entry(k.clone()).or_insert(0) += Self::multiply_pair_i64(v);
+                        }
+                        Value::ValuePair(k, v) => {
+                            let key = k.to_string_value();
+                            *counts.entry(key).or_insert(0) += Self::multiply_pair_i64(v);
+                        }
+                        other => {
+                            *counts.entry(other.to_string_value()).or_insert(0) += 1;
+                        }
+                    }
+                }
+                Ok(counts)
+            }
+            range if range.is_range() => {
+                let mut counts = std::collections::HashMap::new();
+                for item in Self::value_to_list(range) {
+                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                }
+                Ok(counts)
+            }
+            Value::Pair(k, v) => {
+                let mut counts = std::collections::HashMap::new();
+                let c = Self::multiply_pair_i64(v);
+                if c > 0 {
+                    counts.insert(k.clone(), c);
+                }
+                Ok(counts)
+            }
+            Value::ValuePair(k, v) => {
+                let mut counts = std::collections::HashMap::new();
+                let c = Self::multiply_pair_i64(v);
+                if c > 0 {
+                    counts.insert(k.to_string_value(), c);
+                }
+                Ok(counts)
+            }
+            other => {
+                let mut counts = std::collections::HashMap::new();
+                counts.insert(other.to_string_value(), 1);
+                Ok(counts)
+            }
+        }
+    }
+
+    fn multiply_mix_weights(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Mix(m) => Ok((**m).clone()),
+            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
+            Value::Hash(h) => Ok(h
+                .iter()
+                .filter_map(|(k, v)| {
+                    let w = match v {
+                        Value::Int(i) => *i as f64,
+                        Value::Num(n) => *n,
+                        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                        Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                        Value::Bool(b) => {
+                            if *b {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                        _ => {
+                            if v.truthy() {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
+                    };
+                    if w != 0.0 { Some((k.clone(), w)) } else { None }
+                })
+                .collect()),
+            _ if value.as_list_items().is_some() => {
+                let mut weights = std::collections::HashMap::new();
+                for item in value.as_list_items().unwrap().iter() {
+                    match item {
+                        Value::Pair(k, v) => {
+                            *weights.entry(k.clone()).or_insert(0.0) += Self::multiply_pair_f64(v);
+                        }
+                        Value::ValuePair(k, v) => {
+                            let key = k.to_string_value();
+                            *weights.entry(key).or_insert(0.0) += Self::multiply_pair_f64(v);
+                        }
+                        other => {
+                            *weights.entry(other.to_string_value()).or_insert(0.0) += 1.0;
+                        }
+                    }
+                }
+                Ok(weights)
+            }
+            range if range.is_range() => {
+                let mut weights = std::collections::HashMap::new();
+                for item in Self::value_to_list(range) {
+                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                }
+                Ok(weights)
+            }
+            Value::Pair(k, v) => {
+                let mut weights = std::collections::HashMap::new();
+                let w = Self::multiply_pair_f64(v);
+                if w != 0.0 {
+                    weights.insert(k.clone(), w);
+                }
+                Ok(weights)
+            }
+            Value::ValuePair(k, v) => {
+                let mut weights = std::collections::HashMap::new();
+                let w = Self::multiply_pair_f64(v);
+                if w != 0.0 {
+                    weights.insert(k.to_string_value(), w);
+                }
+                Ok(weights)
+            }
+            other => {
+                let mut weights = std::collections::HashMap::new();
+                weights.insert(other.to_string_value(), 1.0);
+                Ok(weights)
+            }
+        }
+    }
+
+    fn apply_set_multiply(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        if matches!(left, Value::Instance { class_name, .. } if class_name == "Failure")
+            || matches!(right, Value::Instance { class_name, .. } if class_name == "Failure")
+        {
+            return Err(RuntimeError::new("Exception"));
+        }
+        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+            let l = Self::multiply_mix_weights(left)?;
+            let r = Self::multiply_mix_weights(right)?;
+            let mut result = std::collections::HashMap::new();
+            for (k, lv) in l {
+                if let Some(rv) = r.get(&k) {
+                    let product = lv * rv;
+                    if product != 0.0 {
+                        result.insert(k, product);
+                    }
+                }
+            }
+            return Ok(Value::mix(result));
+        }
+        let l = Self::multiply_bag_counts(left)?;
+        let r = Self::multiply_bag_counts(right)?;
+        let mut result = std::collections::HashMap::new();
+        for (k, lv) in l {
+            if let Some(rv) = r.get(&k) {
+                let product = lv * rv;
+                if product > 0 {
+                    result.insert(k, product);
+                }
+            }
+        }
+        Ok(Value::bag(result))
+    }
+
     fn reduction_repeat_error(class_name: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.to_string()));
@@ -807,6 +1015,7 @@ impl Interpreter {
                 Ok(Value::array(items))
             }
             "(|)" | "∪" => Self::apply_set_union(left, right),
+            "(.)" | "⊍" => Self::apply_set_multiply(left, right),
             "(-)" | "∖" => Ok(set_diff_values(left, right)),
             "(&)" | "∩" => Ok(set_intersect_values(left, right)),
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),

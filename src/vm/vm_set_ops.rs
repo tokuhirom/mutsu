@@ -519,6 +519,30 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_set_multiply_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+        if Self::is_lazy_value(&left) || Self::is_lazy_value(&right) {
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str_from("Cannot coerce a lazy list onto a Set"),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
+            let mut err = RuntimeError::new("Cannot coerce a lazy list onto a Set");
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+
+        let result = runtime::Interpreter::apply_reduction_op("(.)", &left, &right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
     pub(super) fn exec_set_diff_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

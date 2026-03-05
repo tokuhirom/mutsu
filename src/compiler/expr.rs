@@ -1872,6 +1872,7 @@ impl Compiler {
             TokenKind::SetCont => Some(OpCode::SetCont),
             TokenKind::SetUnion => Some(OpCode::SetUnion),
             TokenKind::SetIntersect => Some(OpCode::SetIntersect),
+            TokenKind::SetMultiply => Some(OpCode::SetMultiply),
             TokenKind::SetDiff => Some(OpCode::SetDiff),
             TokenKind::SetSymDiff => Some(OpCode::SetSymDiff),
             TokenKind::SetSubset => Some(OpCode::SetSubset),

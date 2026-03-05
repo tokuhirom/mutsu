@@ -797,6 +797,10 @@ impl VM {
                 self.exec_set_intersect_op()?;
                 *ip += 1;
             }
+            OpCode::SetMultiply => {
+                self.exec_set_multiply_op()?;
+                *ip += 1;
+            }
             OpCode::SetDiff => {
                 self.exec_set_diff_op();
                 *ip += 1;
