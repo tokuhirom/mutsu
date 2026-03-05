@@ -1,5 +1,5 @@
 use super::super::helpers::{is_ident_char, ws};
-use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_tag};
+use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
 
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -208,7 +208,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 
     let r = &r[1..];
     let (r, _) = ws(r)?;
-    let (r, rhs) = assign_not_expr_mode(r, mode)?;
+    let (r, rhs) = parse_assignment_rhs_mode(r, mode)?;
 
     match expr {
         Expr::Var(name) => Ok((
@@ -256,12 +256,90 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         )),
         Expr::CallOn { target, args } => Ok((
             r,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![*target, Expr::ArrayLiteral(args), rhs],
+            if args.is_empty() {
+                if let Expr::ArrayLiteral(items) = *target.clone() {
+                    if let Some(expr) = list_lvalue_assign_expr(items, rhs.clone()) {
+                        expr
+                    } else {
+                        Expr::Call {
+                            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                            args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                        }
+                    }
+                } else {
+                    Expr::Call {
+                        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                        args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                    }
+                }
+            } else {
+                Expr::Call {
+                    name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                    args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                }
             },
         )),
         _ => Ok((rest, expr)),
+    }
+}
+
+fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
+    let mut saw_whatever = false;
+    let mut lvalues: Vec<Expr> = Vec::new();
+    for item in items {
+        if matches!(item, Expr::Whatever) {
+            saw_whatever = true;
+            continue;
+        }
+        lvalues.push(item);
+    }
+    if !saw_whatever || lvalues.len() != 1 {
+        return None;
+    }
+    match lvalues.into_iter().next()? {
+        Expr::Var(name) => Some(Expr::AssignExpr {
+            name,
+            expr: Box::new(rhs),
+        }),
+        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(rhs),
+        }),
+        Expr::HashVar(name) => Some(Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(rhs),
+        }),
+        Expr::Index { target, index } => Some(Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(rhs),
+        }),
+        _ => None,
+    }
+}
+
+fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (rest, first) = assign_not_expr_mode(input, mode)?;
+    let (r, _) = ws(rest)?;
+    if !r.starts_with(',') || r.starts_with(",,") {
+        return Ok((rest, first));
+    }
+
+    let mut items = vec![first];
+    let mut cursor = r;
+    loop {
+        let (r2, _) = parse_char(cursor, ',')?;
+        let (r2, _) = ws(r2)?;
+        if r2.is_empty() || r2.starts_with(';') || r2.starts_with('}') || r2.starts_with(')') {
+            return Ok((r2, Expr::ArrayLiteral(items)));
+        }
+        let (r3, next) = assign_not_expr_mode(r2, mode)?;
+        items.push(next);
+        let (r3, _) = ws(r3)?;
+        if !r3.starts_with(',') || r3.starts_with(",,") {
+            return Ok((r3, Expr::ArrayLiteral(items)));
+        }
+        cursor = r3;
     }
 }
 

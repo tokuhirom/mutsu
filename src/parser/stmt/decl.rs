@@ -1169,6 +1169,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             };
             rest = r_after;
         }
+        let bound_name = name.clone();
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -1180,6 +1181,17 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
+        };
+        let stmt = if is_array {
+            Stmt::SyntheticBlock(vec![
+                stmt,
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_record_bound_array_len"),
+                    args: vec![Expr::Literal(Value::str(bound_name))],
+                }),
+            ])
+        } else {
+            stmt
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
