@@ -24,6 +24,20 @@ use crate::value::{
 };
 use num_traits::Signed;
 
+/// Flatten arguments for `append` using Raku's "one-arg rule":
+/// if exactly one non-itemized Array/List argument is passed, its elements
+/// are flattened into the result. With multiple arguments, each is appended as-is.
+fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
+    if args.len() == 1 {
+        match &args[0] {
+            Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
+            _ => args,
+        }
+    } else {
+        args
+    }
+}
+
 /// Split a string by commas while respecting bracket/paren depth.
 /// Returns the trimmed, non-empty parts.
 fn split_balanced_comma_list(input: &str) -> Vec<String> {
