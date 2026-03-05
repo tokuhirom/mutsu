@@ -900,6 +900,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_one_junction_operator_without_spaces() {
+        let (rest, expr) = expression("3^2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::Caret,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_fat_arrow_chains_right_associatively() {
         let (rest, expr) = expression("1 => 2 => 3 => 4").unwrap();
         assert_eq!(rest, "");
