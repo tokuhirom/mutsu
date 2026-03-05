@@ -202,6 +202,7 @@ impl Interpreter {
                 .and_then(|c| c.methods.get(method_name))
                 .cloned()
             {
+                let any_multi = overloads.iter().any(|d| d.is_multi);
                 for def in overloads {
                     if def.is_private {
                         continue;
@@ -211,9 +212,13 @@ impl Interpreter {
                     }
                 }
                 // Method name is present on this class, but no candidate matched.
-                // Do not continue to parent classes; this preserves dispatch
-                // consistency for hidden/interface cases.
-                return None;
+                // For multi methods, continue searching parent classes since
+                // all candidates across the MRO participate in dispatch.
+                // For non-multi methods, stop here — a subclass override
+                // hides the parent's version.
+                if !any_multi {
+                    return None;
+                }
             }
         }
         None

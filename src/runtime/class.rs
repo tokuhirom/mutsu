@@ -149,10 +149,9 @@ impl Interpreter {
         let Some((owner_class, method_def)) =
             self.resolve_method_with_owner(receiver_class_name, method_name, &args)
         else {
-            return Err(RuntimeError::new(format!(
-                "No matching candidates for method: {}",
-                method_name
-            )));
+            return Err(super::methods_signature::make_multi_no_match_error(
+                method_name,
+            ));
         };
         let all_candidates =
             self.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
@@ -346,7 +345,12 @@ impl Interpreter {
                 }
             }
         }
+        // Push onto routine_stack so that `return` inside the method body
+        // compiles as `Return` (not `ReturnFromNonRoutine`).
+        self.routine_stack
+            .push((owner_class.to_string(), String::new()));
         let block_result = self.run_block(&method_def.body);
+        self.routine_stack.pop();
         let implicit_return = self.env.get("_").cloned();
         let result = match block_result {
             Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),

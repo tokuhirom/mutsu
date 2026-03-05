@@ -641,9 +641,7 @@ impl Interpreter {
 
         let method_def = self
             .resolve_method(&class_name.resolve(), method, &method_args)
-            .ok_or_else(|| {
-                RuntimeError::new(format!("No matching candidates for method: {method}"))
-            })?;
+            .ok_or_else(|| super::methods_signature::make_multi_no_match_error(method))?;
         if !method_def.is_rw {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: method '{}' is not rw",
@@ -1661,10 +1659,7 @@ impl Interpreter {
                         return Ok(assigned);
                     }
                     // Signal to assign_method_lvalue to handle via Proxy
-                    return Err(RuntimeError::new(format!(
-                        "No matching candidates for method: {}",
-                        method
-                    )));
+                    return Err(super::methods_signature::make_multi_no_match_error(method));
                 } else {
                     // Check if there's a user-defined method with is_rw
                     let has_rw_method = self
@@ -1672,10 +1667,7 @@ impl Interpreter {
                         .is_some_and(|m| m.is_rw);
                     if has_rw_method {
                         // Signal to assign_method_lvalue to handle via Proxy
-                        return Err(RuntimeError::new(format!(
-                            "No matching candidates for method: {}",
-                            method
-                        )));
+                        return Err(super::methods_signature::make_multi_no_match_error(method));
                     }
                     // Public accessor exists but is not rw — reject assignment
                     let is_public_accessor = if class_attrs.is_empty() {

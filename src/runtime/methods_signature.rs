@@ -45,6 +45,17 @@ pub(super) fn make_method_not_found_error(
     err
 }
 
+/// Create a structured X::Multi::NoMatch error.
+pub(super) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
+    let msg = format!("No matching candidates for method: {}", method_name);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 impl Interpreter {
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
