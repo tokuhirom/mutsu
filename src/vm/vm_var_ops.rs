@@ -1033,8 +1033,28 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
-        // Check if we're deleting HOME from %*ENV — need to sync $*HOME to Nil
+        // Sync OS environment and $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
+            // Remove from OS environment
+            #[cfg(not(target_family = "wasm"))]
+            match &idx {
+                Value::Array(keys, ..) => {
+                    for k in keys.iter() {
+                        let key_str = k.to_string_value();
+                        // SAFETY: mutsu is single-threaded
+                        unsafe {
+                            std::env::remove_var(&key_str);
+                        }
+                    }
+                }
+                _ => {
+                    let key_str = idx.to_string_value();
+                    // SAFETY: mutsu is single-threaded
+                    unsafe {
+                        std::env::remove_var(&key_str);
+                    }
+                }
+            }
             let deletes_home = match &idx {
                 Value::Array(keys, ..) => keys.iter().any(|k| k.to_string_value() == "HOME"),
                 _ => idx.to_string_value() == "HOME",

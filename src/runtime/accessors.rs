@@ -1066,6 +1066,34 @@ impl Interpreter {
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
         let package_name = package.trim_end_matches("::");
 
+        // PROCESS:: pseudo-package: exposes process-level dynamic variables
+        // like $*PROGRAM, $*PID, %*ENV, @*ARGS, etc.
+        // PROCESS::<$PROGRAM> looks up key "$PROGRAM" in the stash.
+        if package_name == "PROCESS" {
+            let mut symbols: HashMap<String, Value> = HashMap::new();
+            for (key, val) in self.env.iter() {
+                // Dynamic variables stored as "*NAME" map to "$NAME" in the stash
+                if let Some(name) = key.strip_prefix('*')
+                    && !name.contains("::")
+                {
+                    symbols.insert(format!("${name}"), val.clone());
+                }
+                // Hash dynamic variables stored as "%*NAME" map to "%NAME" in the stash
+                if let Some(name) = key.strip_prefix("%*")
+                    && !name.contains("::")
+                {
+                    symbols.insert(format!("%{name}"), val.clone());
+                }
+                // Array dynamic variables stored as "@*NAME" map to "@NAME" in the stash
+                if let Some(name) = key.strip_prefix("@*")
+                    && !name.contains("::")
+                {
+                    symbols.insert(format!("@{name}"), val.clone());
+                }
+            }
+            return Self::make_stash_instance(package, symbols);
+        }
+
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
             let mut symbols: HashMap<String, Value> = HashMap::new();
             if let Some(subs) = self.exported_subs.get(module) {
