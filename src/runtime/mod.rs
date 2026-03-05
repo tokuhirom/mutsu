@@ -2610,6 +2610,8 @@ impl Interpreter {
                 file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
                 socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
                 closed: handle.closed,
+                out_buffer_capacity: handle.out_buffer_capacity,
+                out_buffer_pending: handle.out_buffer_pending.clone(),
                 bin: handle.bin,
             };
             cloned_handles.insert(*id, cloned);
