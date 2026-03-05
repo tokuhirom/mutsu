@@ -136,6 +136,14 @@ pub(crate) fn native_method_1arg(
                 &source_str,
             ))))
         }
+        "samecase" => {
+            let source_str = target.to_string_value();
+            let pattern_str = arg.to_string_value();
+            Some(Ok(Value::str(crate::builtins::samecase_string(
+                &source_str,
+                &pattern_str,
+            ))))
+        }
         "Rat" => {
             // .Rat(epsilon) — just ignore epsilon and convert like .Rat
             let result = match target {
@@ -459,6 +467,11 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::Seq(batches.into())))
         }
         "rindex" => {
+            // Fall through to runtime dispatch for arrays (list of needles)
+            // and type objects
+            if matches!(arg, Value::Array(..) | Value::Package(_) | Value::Pair(..)) {
+                return None;
+            }
             let s = target.to_string_value();
             let needle = arg.to_string_value();
             match s.rfind(&needle) {

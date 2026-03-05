@@ -52,13 +52,26 @@ pub(crate) fn split_lines_with_chomp(input: &str, chomp: bool) -> Vec<String> {
     split_lines_impl(input, chomp)
 }
 
+/// Remove exactly one trailing newline sequence (\r\n, \n, or \r).
+pub(crate) fn chomp_one(s: &str) -> String {
+    if let Some(stripped) = s.strip_suffix("\r\n") {
+        stripped.to_string()
+    } else if let Some(stripped) = s.strip_suffix('\n') {
+        stripped.to_string()
+    } else if let Some(stripped) = s.strip_suffix('\r') {
+        stripped.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 pub(crate) use arith::{
     arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub,
 };
 pub(crate) use functions::native_function;
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{native_method_1arg, native_method_2arg};
-pub(crate) use unicode::{samemark_string, unicode_titlecase_first};
+pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
 
 fn normalized_mod(value: BigInt, modulus: &BigInt) -> BigInt {
     let mut r = value % modulus;

@@ -1831,6 +1831,9 @@ impl Interpreter {
             "index" => {
                 return self.dispatch_index(target, &args);
             }
+            "rindex" => {
+                return self.dispatch_rindex(target, &args);
+            }
             "substr-eq" => {
                 return self.dispatch_substr_eq(target, &args);
             }

@@ -494,6 +494,138 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn dispatch_rindex(
+        &self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(Value::Package(type_name)) = args.first() {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller rindex({}:U)",
+                type_name
+            )));
+        }
+        let mut positional: Vec<Value> = Vec::new();
+        for arg in args {
+            if !matches!(arg, Value::Pair(..)) {
+                positional.push(arg.clone());
+            }
+        }
+        // Handle list of needles
+        let needles: Vec<String> = if let Some(Value::Array(items, ..)) = positional.first() {
+            items.iter().map(|v| v.to_string_value()).collect()
+        } else {
+            vec![
+                positional
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+            ]
+        };
+        let text = target.to_string_value();
+        let char_len = text.chars().count() as i64;
+        // Optional position argument (maximum char index to consider)
+        let max_pos = if let Some(pos_val) = positional.get(1) {
+            // Check for negative values first (returns Failure, not exception)
+            let is_negative = match pos_val {
+                Value::Int(i) => *i < 0,
+                Value::Num(f) => *f < 0.0,
+                _ => false,
+            };
+            if is_negative {
+                let got = pos_val.clone();
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::str("Attempt to use negative position with rindex".to_string()),
+                );
+                ex_attrs.insert("got".to_string(), got);
+                let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
+                let mut failure_attrs = std::collections::HashMap::new();
+                failure_attrs.insert("exception".to_string(), exception);
+                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                return Ok(Value::make_instance(
+                    Symbol::intern("Failure"),
+                    failure_attrs,
+                ));
+            }
+            // For large out-of-range values, return a Failure wrapping X::OutOfRange
+            let pos = match self.value_to_position(pos_val) {
+                Ok(p) => p,
+                Err(_) => {
+                    let got = pos_val.clone();
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str("Position out of range".to_string()),
+                    );
+                    ex_attrs.insert("got".to_string(), got);
+                    let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ));
+                }
+            };
+            if pos > char_len {
+                return Ok(Value::Nil);
+            }
+            Some(pos as usize)
+        } else {
+            None
+        };
+        // For empty needle, return max_pos or char_len
+        if needles.len() == 1 && needles[0].is_empty() {
+            return match max_pos {
+                Some(p) => Ok(Value::Int(p as i64)),
+                None => Ok(Value::Int(char_len)),
+            };
+        }
+        let mut best: Option<usize> = None;
+        for needle in &needles {
+            // Search the entire string with rfind
+            let pos = {
+                let chars: Vec<char> = text.chars().collect();
+                let n_chars: Vec<char> = needle.chars().collect();
+                if n_chars.is_empty() {
+                    match max_pos {
+                        Some(p) => Some(p),
+                        None => Some(chars.len()),
+                    }
+                } else if n_chars.len() > chars.len() {
+                    None
+                } else {
+                    // max_start: the highest starting position where a match can begin
+                    let max_start = match max_pos {
+                        Some(p) => p.min(chars.len() - n_chars.len()),
+                        None => chars.len() - n_chars.len(),
+                    };
+                    let mut found = None;
+                    for i in (0..=max_start).rev() {
+                        if chars[i..i + n_chars.len()] == n_chars[..] {
+                            found = Some(i);
+                            break;
+                        }
+                    }
+                    found
+                }
+            };
+            if let Some(char_pos) = pos {
+                best = Some(match best {
+                    Some(prev) => prev.max(char_pos),
+                    None => char_pos,
+                });
+            }
+        }
+        match best {
+            Some(char_pos) => Ok(Value::Int(char_pos as i64)),
+            None => Ok(Value::Nil),
+        }
+    }
+
     pub(super) fn index_ignorecase(&self, hay: &str, needle: &str) -> Option<usize> {
         let hay_lower = hay.to_lowercase();
         let needle_lower = needle.to_lowercase();

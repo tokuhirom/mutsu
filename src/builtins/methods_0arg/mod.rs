@@ -1838,9 +1838,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 },
             ))))
         }
-        "chomp" => Some(Ok(Value::str(
-            target.to_string_value().trim_end_matches('\n').to_string(),
-        ))),
+        "chomp" => Some(Ok(Value::str(crate::builtins::chomp_one(
+            &target.to_string_value(),
+        )))),
         "chop" => {
             if let Value::Package(type_name) = target {
                 return Some(Err(RuntimeError::new(format!(
