@@ -828,6 +828,9 @@ impl Interpreter {
                 "xx" => {
                     const EAGER_LIMIT: usize = 10_000;
                     const LAZY_CACHE: usize = 4_096;
+                    // Callable LHS is expensive (each iteration calls eval_call_on_value),
+                    // so use a much smaller cache to avoid timeouts on `callable xx *`.
+                    const LAZY_CACHE_CALLABLE: usize = 256;
                     if let Value::Package(name) = rhs
                         && name == "Int"
                         && !self.warning_suppressed()
@@ -837,12 +840,21 @@ impl Interpreter {
                             name
                         ));
                     }
+                    let is_callable = matches!(
+                        acc,
+                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    );
+                    let lazy_cache = if is_callable {
+                        LAZY_CACHE_CALLABLE
+                    } else {
+                        LAZY_CACHE
+                    };
                     let count = Self::parse_repeat_count(rhs)?;
                     let (repeat, lazy) = match count {
                         Some(n) if n <= 0 => (0usize, false),
                         Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
-                        Some(n) => ((n as usize).min(LAZY_CACHE), true),
-                        None => (LAZY_CACHE, true),
+                        Some(n) => ((n as usize).min(lazy_cache), true),
+                        None => (lazy_cache, true),
                     };
                     let mut items = Vec::with_capacity(repeat);
                     if let Value::Slip(slip_items) = &acc {
