@@ -32,34 +32,65 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             }
         }
         let mut width = String::new();
-        while let Some(d) = chars.peek().copied() {
-            if d.is_ascii_digit() {
-                width.push(d);
-                chars.next();
-            } else {
-                break;
-            }
-        }
-        let mut precision = String::new();
-        if chars.peek() == Some(&'.') {
+        if chars.peek() == Some(&'*') {
+            // Width from argument
             chars.next();
+            let w = match args.get(arg_index) {
+                Some(Value::Int(i)) => *i as usize,
+                Some(Value::Num(f)) => *f as usize,
+                _ => 0,
+            };
+            arg_index += 1;
+            width = w.to_string();
+        } else {
             while let Some(d) = chars.peek().copied() {
                 if d.is_ascii_digit() {
-                    precision.push(d);
+                    width.push(d);
                     chars.next();
                 } else {
                     break;
                 }
             }
         }
+        let mut precision = String::new();
+        let mut has_precision = false;
+        if chars.peek() == Some(&'.') {
+            chars.next();
+            has_precision = true;
+            if chars.peek() == Some(&'*') {
+                // Variable precision from argument
+                chars.next();
+                let p = match args.get(arg_index) {
+                    Some(Value::Int(i)) => *i as usize,
+                    Some(Value::Num(f)) => *f as usize,
+                    _ => 0,
+                };
+                arg_index += 1;
+                precision = p.to_string();
+            } else {
+                while let Some(d) = chars.peek().copied() {
+                    if d.is_ascii_digit() {
+                        precision.push(d);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
         let spec = chars.next().unwrap_or('s');
         let width_num = width.parse::<usize>().unwrap_or(0);
-        let prec_num = precision.parse::<usize>().ok();
+        let prec_num = if has_precision {
+            Some(precision.parse::<usize>().unwrap_or(0))
+        } else {
+            None
+        };
         // For %s, the 0 flag is ignored when precision is specified (Raku/C behavior)
         let zero_pad =
             flags.contains('0') && !flags.contains('-') && !(spec == 's' && prec_num.is_some());
         let left_align = flags.contains('-');
         let plus_sign = flags.contains('+');
+        let space_flag = flags.contains(' ');
         let hash_flag = flags.contains('#');
         let arg = args.get(arg_index);
         arg_index += 1;
@@ -120,11 +151,14 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             },
             'd' | 'i' => {
                 let i = bigint_val();
-                if plus_sign && i >= BigInt::from(0) {
-                    format!("+{}", i)
+                let is_neg = i < BigInt::from(0);
+                let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                let abs = if is_neg {
+                    format!("{}", -&i)
                 } else {
                     format!("{}", i)
-                }
+                };
+                format!("{}{}", prefix, abs)
             }
             'u' => {
                 let i = bigint_val();
@@ -186,21 +220,23 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             'f' | 'F' => {
                 let f = float_val();
                 let p = prec_num.unwrap_or(6);
-                if plus_sign && f >= 0.0 {
-                    format!("+{:.*}", p, f)
+                let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                let abs = f.abs();
+                format!("{}{:.*}", prefix, p, abs)
+            }
+            'e' | 'E' => {
+                let f = float_val();
+                let p = prec_num.unwrap_or(6);
+                let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                let abs = f.abs();
+                let formatted = if spec == 'e' {
+                    normalize_sci_exponent(&format!("{:.*e}", p, abs))
                 } else {
-                    format!("{:.*}", p, f)
-                }
-            }
-            'e' => {
-                let f = float_val();
-                let p = prec_num.unwrap_or(6);
-                normalize_sci_exponent(&format!("{:.*e}", p, f))
-            }
-            'E' => {
-                let f = float_val();
-                let p = prec_num.unwrap_or(6);
-                normalize_sci_exponent(&format!("{:.*E}", p, f))
+                    normalize_sci_exponent(&format!("{:.*E}", p, abs))
+                };
+                format!("{}{}", prefix, formatted)
             }
             'g' | 'G' => {
                 let f = float_val();
@@ -219,23 +255,68 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 None => String::new(),
             },
         };
-        let rendered_width = rendered.chars().count();
-        if width_num > rendered_width {
-            let pad_len = width_num - rendered_width;
-            let pad_char = if zero_pad { '0' } else { ' ' };
-            let pad: String = std::iter::repeat_n(pad_char, pad_len).collect();
-            if left_align {
-                out.push_str(&rendered);
-                out.push_str(&pad);
-            } else {
-                out.push_str(&pad);
-                out.push_str(&rendered);
-            }
-        } else {
-            out.push_str(&rendered);
-        }
+        apply_width(&mut out, &rendered, width_num, left_align, zero_pad);
     }
     out
+}
+
+/// Returns the sign prefix for a numeric value.
+/// - Negative: "-"
+/// - Positive with plus_sign flag: "+"
+/// - Positive with space_flag (and no plus_sign): " "
+/// - Otherwise: ""
+fn sign_prefix(is_neg: bool, plus_sign: bool, space_flag: bool) -> &'static str {
+    if is_neg {
+        "-"
+    } else if plus_sign {
+        "+"
+    } else if space_flag {
+        " "
+    } else {
+        ""
+    }
+}
+
+/// Apply width formatting with proper zero-padding (sign before zeros).
+fn apply_width(
+    out: &mut String,
+    rendered: &str,
+    width_num: usize,
+    left_align: bool,
+    zero_pad: bool,
+) {
+    let rendered_width = rendered.chars().count();
+    if width_num > rendered_width {
+        let pad_len = width_num - rendered_width;
+        if left_align {
+            out.push_str(rendered);
+            for _ in 0..pad_len {
+                out.push(' ');
+            }
+        } else if zero_pad {
+            // Sign/space prefix goes before zeros
+            let first = rendered.chars().next();
+            if matches!(first, Some('+') | Some('-') | Some(' ')) {
+                out.push(first.unwrap());
+                for _ in 0..pad_len {
+                    out.push('0');
+                }
+                out.push_str(&rendered[1..]);
+            } else {
+                for _ in 0..pad_len {
+                    out.push('0');
+                }
+                out.push_str(rendered);
+            }
+        } else {
+            for _ in 0..pad_len {
+                out.push(' ');
+            }
+            out.push_str(rendered);
+        }
+    } else {
+        out.push_str(rendered);
+    }
 }
 
 /// Normalize Rust scientific notation (e.g. `1.5e1`) to C-style (`1.5e+01`).

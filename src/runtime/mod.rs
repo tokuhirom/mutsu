@@ -122,7 +122,7 @@ mod run;
 mod seq_helpers;
 mod sequence;
 mod signal_watcher;
-mod sprintf;
+pub(super) mod sprintf;
 mod subtest;
 mod system;
 mod test_functions;
