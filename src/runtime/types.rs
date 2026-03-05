@@ -1574,6 +1574,60 @@ impl Interpreter {
                     }
                 }
             }
+            // Build map of named args for checking required params and where constraints
+            let named_args: Vec<(String, Value)> = args
+                .iter()
+                .filter_map(|a| {
+                    let a = unwrap_varref_value(a.clone());
+                    if let Value::Pair(key, val) = a {
+                        Some((key, *val))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for pd in param_defs.iter().filter(|pd| pd.named) {
+                let name = &pd.name;
+                let arg_val = named_args
+                    .iter()
+                    .find(|(k, _)| k == name || *k == format!(":{}", name))
+                    .map(|(_, v)| v.clone());
+
+                // Check required named params have corresponding args
+                if pd.required && pd.default.is_none() && arg_val.is_none() {
+                    return false;
+                }
+
+                // Check type constraint on named param
+                if let Some(constraint) = &pd.type_constraint
+                    && let Some(ref val) = arg_val
+                    && !self.type_matches_value(constraint, val)
+                {
+                    return false;
+                }
+
+                // Check where constraint on named param
+                if let Some(where_expr) = &pd.where_constraint
+                    && let Some(ref val) = arg_val
+                {
+                    let saved = self.env.clone();
+                    self.env.insert("_".to_string(), val.clone());
+                    let ok = match where_expr.as_ref() {
+                        Expr::AnonSub { body, .. } => self
+                            .eval_block_value(body)
+                            .map(|v| v.truthy())
+                            .unwrap_or(false),
+                        expr => self
+                            .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            .map(|v| self.smart_match(val, &v))
+                            .unwrap_or(false),
+                    };
+                    self.env = saved;
+                    if !ok {
+                        return false;
+                    }
+                }
+            }
             true
         })();
         self.env = saved_env;

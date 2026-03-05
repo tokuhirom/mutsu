@@ -179,15 +179,18 @@ impl Interpreter {
                 found_multi_candidates = true;
             }
             // Sort candidates: where-constrained first, then sub-signatures (more specific),
-            // then by key name for stable ordering
+            // then more named params (narrower), then by key name for stable ordering
             candidates.sort_by(|a, b| {
                 let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
                 let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
                 let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
                 let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                let a_named_count = a.1.param_defs.iter().filter(|p| p.named).count();
+                let b_named_count = b.1.param_defs.iter().filter(|p| p.named).count();
                 b_has_where
                     .cmp(&a_has_where)
                     .then(b_has_subsig.cmp(&a_has_subsig))
+                    .then(b_named_count.cmp(&a_named_count))
                     .then(a.0.cmp(&b.0))
             });
             for (_, def) in candidates {
@@ -480,6 +483,39 @@ impl Interpreter {
             Err(e) => {
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
+                // Convert binding type-check errors to X::TypeCheck::Argument for proto calls
+                if e.message
+                    .contains("X::TypeCheck::Binding::Parameter: Type check failed")
+                {
+                    let type_names: Vec<String> = args
+                        .iter()
+                        .filter(|a| !matches!(a, Value::Pair(..)))
+                        .map(|a| super::value_type_name(a).to_string())
+                        .collect();
+                    let mut err = RuntimeError::new(format!(
+                        "X::TypeCheck::Argument: Calling {}({}) will never work with proto signature ({})",
+                        proto_name,
+                        type_names.join(", "),
+                        def.param_defs
+                            .iter()
+                            .map(|p| {
+                                if let Some(tc) = &p.type_constraint {
+                                    format!("{} {}", tc, p.name)
+                                } else {
+                                    p.name.clone()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    err.exception = Some(Box::new(Value::make_instance(
+                        Symbol::intern("X::TypeCheck::Argument"),
+                        attrs,
+                    )));
+                    return Err(err);
+                }
                 return Err(e);
             }
         };
