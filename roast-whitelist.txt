@@ -572,9 +572,14 @@ roast/S32-str/ords.t
 roast/S32-str/pos.t
 roast/S32-str/samecase.t
 roast/S32-str/samemark.t
+roast/S32-str/sprintf-b.t
 roast/S32-str/sprintf-c.t
+roast/S32-str/sprintf-e.t
+roast/S32-str/sprintf-f.t
+roast/S32-str/sprintf-o.t
 roast/S32-str/sprintf-s.t
 roast/S32-str/sprintf-u.t
+roast/S32-str/sprintf-x.t
 roast/S32-str/starts-with.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t

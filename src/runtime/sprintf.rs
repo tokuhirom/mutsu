@@ -85,9 +85,12 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         } else {
             None
         };
-        // For %s, the 0 flag is ignored when precision is specified (Raku/C behavior)
-        let zero_pad =
-            flags.contains('0') && !flags.contains('-') && !(spec == 's' && prec_num.is_some());
+        // The 0 flag is ignored when:
+        // - the '-' flag is also present, or
+        // - precision is specified for %s or integer specifiers (b/B/d/i/o/x/X/u)
+        let prec_cancels_zero = prec_num.is_some()
+            && matches!(spec, 's' | 'b' | 'B' | 'd' | 'i' | 'o' | 'x' | 'X' | 'u');
+        let zero_pad = flags.contains('0') && !flags.contains('-') && !prec_cancels_zero;
         let left_align = flags.contains('-');
         // In Raku, for float specifiers (f/F/e/E), when both '-' and '0' flags are
         // present, zero-padding takes priority over left-align. Additionally, if the
@@ -174,53 +177,93 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                     i.to_str_radix(10)
                 }
             }
-            'x' => {
+            'x' | 'X' => {
                 let i = bigint_val();
-                if i < BigInt::from(0) {
-                    format!("{}", i)
-                } else {
-                    let body = i.to_str_radix(16);
-                    if hash_flag {
-                        format!("0x{}", body)
-                    } else {
-                        body
+                let is_neg = i < BigInt::from(0);
+                let is_zero = i == BigInt::from(0);
+                let abs_val = if is_neg { -&i } else { i };
+                let mut digits = abs_val.to_str_radix(16);
+                if spec == 'X' {
+                    digits = digits.to_uppercase();
+                }
+                if let Some(p) = prec_num {
+                    if p == 0 && digits == "0" {
+                        digits.clear();
+                    } else if digits.len() < p {
+                        digits = format!("{:0>width$}", digits, width = p);
                     }
                 }
-            }
-            'X' => {
-                let i = bigint_val();
-                if i < BigInt::from(0) {
-                    format!("{}", i)
+                if digits.is_empty() {
+                    String::new()
                 } else {
-                    let body = i.to_str_radix(16).to_uppercase();
-                    if hash_flag {
-                        format!("0X{}", body)
+                    // Raku: hash prefix goes before the sign for %x/%X
+                    let neg_sign = if is_neg { "-" } else { "" };
+                    let hash_prefix = if hash_flag && !is_zero {
+                        if spec == 'X' { "0X" } else { "0x" }
                     } else {
-                        body
-                    }
+                        ""
+                    };
+                    format!("{}{}{}", hash_prefix, neg_sign, digits)
                 }
             }
             'o' => {
                 let i = bigint_val();
-                if i < BigInt::from(0) {
-                    format!("{}", i)
+                let is_neg = i < BigInt::from(0);
+                let is_zero = i == BigInt::from(0);
+                let abs_val = if is_neg { -&i } else { i };
+                let mut digits = abs_val.to_str_radix(8);
+                if let Some(p) = prec_num {
+                    if p == 0 && digits == "0" {
+                        digits.clear();
+                    } else if digits.len() < p {
+                        digits = format!("{:0>width$}", digits, width = p);
+                    }
+                }
+                if digits.is_empty() {
+                    String::new()
                 } else {
-                    let body = i.to_str_radix(8);
-                    if hash_flag {
-                        format!("0o{}", body)
+                    let neg_sign = if is_neg { "-" } else { "" };
+                    // %#o: for non-negative, ensure leading "0" (C-style).
+                    // For negative, prefix "0" goes before the minus sign.
+                    if hash_flag && !is_zero {
+                        if is_neg {
+                            format!("0{}{}", neg_sign, digits)
+                        } else if !digits.starts_with('0') {
+                            format!("0{}", digits)
+                        } else {
+                            digits
+                        }
                     } else {
-                        body
+                        format!("{}{}", neg_sign, digits)
                     }
                 }
             }
-            'b' => {
+            'b' | 'B' => {
                 let i = bigint_val();
-                if i < BigInt::from(0) {
-                    format!("{}", i)
-                } else if hash_flag {
-                    format!("0b{}", i.to_str_radix(2))
+                let is_neg = i < BigInt::from(0);
+                let is_zero = i == BigInt::from(0);
+                let sign = sign_prefix(is_neg, plus_sign, space_flag);
+                let abs_val = if is_neg { -&i } else { i };
+                let mut digits = abs_val.to_str_radix(2);
+                // Apply precision: minimum number of binary digits
+                if let Some(p) = prec_num {
+                    if p == 0 && digits == "0" {
+                        digits.clear();
+                    } else if digits.len() < p {
+                        digits = format!("{:0>width$}", digits, width = p);
+                    }
+                }
+                // When precision makes digits empty, suppress all prefixes
+                if digits.is_empty() {
+                    String::new()
                 } else {
-                    i.to_str_radix(2)
+                    // Hash prefix only for non-zero values
+                    let hash_prefix = if hash_flag && !is_zero {
+                        if spec == 'B' { "0B" } else { "0b" }
+                    } else {
+                        ""
+                    };
+                    format!("{}{}{}", sign, hash_prefix, digits)
                 }
             }
             'f' | 'F' => {
@@ -261,12 +304,16 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 None => String::new(),
             },
         };
+        // For %o/%x/%X, zero-padding is plain left-fill (no prefix splitting)
+        let plain_zero = matches!(spec, 'o' | 'x' | 'X');
         if float_minus_zero && width_num > 0 {
             // Raku quirk: -0 combo on floats uses zero-padding (0 wins over -)
             // then shifts one leading zero into the fractional part when no sign prefix
             apply_float_minus_zero(&mut out, &rendered, width_num);
         } else {
-            apply_width(&mut out, &rendered, width_num, left_align, zero_pad);
+            apply_width(
+                &mut out, &rendered, width_num, left_align, zero_pad, plain_zero,
+            );
         }
     }
     out
@@ -289,13 +336,16 @@ fn sign_prefix(is_neg: bool, plus_sign: bool, space_flag: bool) -> &'static str 
     }
 }
 
-/// Apply width formatting with proper zero-padding (sign before zeros).
+/// Apply width formatting with proper zero-padding.
+/// When `plain_zero` is true, zero-padding is simple left-fill (for %o/%x/%X).
+/// When false, sign and base prefix are placed before the zeros (for %b/%B/%d/etc).
 fn apply_width(
     out: &mut String,
     rendered: &str,
     width_num: usize,
     left_align: bool,
     zero_pad: bool,
+    plain_zero: bool,
 ) {
     let rendered_width = rendered.chars().count();
     if width_num > rendered_width {
@@ -306,19 +356,27 @@ fn apply_width(
                 out.push(' ');
             }
         } else if zero_pad {
-            // Sign/space prefix goes before zeros
-            let first = rendered.chars().next();
-            if matches!(first, Some('+') | Some('-') | Some(' ')) {
-                out.push(first.unwrap());
-                for _ in 0..pad_len {
-                    out.push('0');
-                }
-                out.push_str(&rendered[1..]);
-            } else {
+            if plain_zero {
+                // Simple left zero-fill, no prefix splitting
                 for _ in 0..pad_len {
                     out.push('0');
                 }
                 out.push_str(rendered);
+            } else {
+                // Sign and base prefix go before zeros.
+                let prefix_len = zero_pad_prefix_len(rendered);
+                if prefix_len > 0 {
+                    out.push_str(&rendered[..prefix_len]);
+                    for _ in 0..pad_len {
+                        out.push('0');
+                    }
+                    out.push_str(&rendered[prefix_len..]);
+                } else {
+                    for _ in 0..pad_len {
+                        out.push('0');
+                    }
+                    out.push_str(rendered);
+                }
             }
         } else {
             for _ in 0..pad_len {
@@ -329,6 +387,31 @@ fn apply_width(
     } else {
         out.push_str(rendered);
     }
+}
+
+/// Determine the length of the prefix (sign + base indicator) that should
+/// appear before zero-padding.  E.g. "+0b" → 3, "-" → 1, "0x" → 2, "" → 0.
+fn zero_pad_prefix_len(s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let mut pos = 0;
+    // Optional sign character
+    if matches!(bytes.first(), Some(b'+' | b'-' | b' ')) {
+        pos = 1;
+    }
+    // Optional base prefix: 0b, 0B, 0x, 0X, 0o, 0O
+    if pos + 1 < bytes.len() && bytes[pos] == b'0' {
+        let next = bytes[pos + 1];
+        if next == b'b'
+            || next == b'B'
+            || next == b'x'
+            || next == b'X'
+            || next == b'o'
+            || next == b'O'
+        {
+            pos += 2;
+        }
+    }
+    pos
 }
 
 /// Handle Raku's quirky behavior when both '-' and '0' flags are present on float specifiers.
