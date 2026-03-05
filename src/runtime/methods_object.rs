@@ -862,7 +862,7 @@ impl Interpreter {
                         Value::make_instance(Symbol::intern("Backtrace::Frame"), frame_attrs);
                     return Ok(Value::array(vec![frame]));
                 }
-                "Lock" | "Lock::Async" => {
+                "Lock" | "Lock::Async" | "Lock::Soft" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
@@ -1326,6 +1326,24 @@ impl Interpreter {
                     "Str" => Ok(Value::str(String::new())),
                     "Num" => Ok(Value::Num(0.0)),
                     "Bool" => Ok(Value::Bool(false)),
+                    "Semaphore" => {
+                        let permits = args
+                            .first()
+                            .map(|v| match v {
+                                Value::Int(i) => *i,
+                                Value::Num(f) => *f as i64,
+                                other => other.to_string_value().parse::<i64>().unwrap_or(1),
+                            })
+                            .unwrap_or(1)
+                            .max(0);
+                        let mut attrs = HashMap::new();
+                        attrs.insert("permits".to_string(), Value::Int(permits));
+                        attrs.insert(
+                            "lock-id".to_string(),
+                            Value::Int(super::native_methods::next_lock_id() as i64),
+                        );
+                        Ok(Value::make_instance(name, attrs))
+                    }
                     _ => Err(RuntimeError::new(format!(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
                         name
