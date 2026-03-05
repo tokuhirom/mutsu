@@ -969,6 +969,17 @@ impl Interpreter {
                 call_args.push(target);
                 return self.builtin_classify(method, &call_args);
             }
+            "classify-list" | "categorize-list" => {
+                let classify_name = if method == "classify-list" {
+                    "classify"
+                } else {
+                    "categorize"
+                };
+                let mut call_args = Vec::with_capacity(args.len() + 1);
+                call_args.extend(args.iter().cloned());
+                call_args.push(Value::Pair("into".to_string(), Box::new(target)));
+                return self.builtin_classify(classify_name, &call_args);
+            }
             "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") =>
             {
                 let mut positional: Vec<Value> = Vec::new();
