@@ -604,11 +604,14 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("regex closing delimiter"));
     }
 
-    // ... — stub operator (Yada-Yada)
+    // ... / … — stub operator (Yada-Yada)
     // Must be checked before the sequence operator. Only matches as a primary
     // expression (statement start), not in infix position.
-    if let Some(r) = input.strip_prefix("...") {
-        // Make sure it's not "...^" (sequence exclude-end) — that's handled in infix
+    if let Some(r) = input
+        .strip_prefix("...")
+        .or_else(|| input.strip_prefix("…"))
+    {
+        // Make sure it's not "...^"/"…^" (sequence exclude-end) — that's handled in infix.
         if !r.starts_with('^') {
             let (r, _) = ws(r)?;
             let (r, msg) = if r.starts_with(';')
