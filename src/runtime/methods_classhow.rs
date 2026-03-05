@@ -758,6 +758,7 @@ impl Interpreter {
                 "ords",
                 "pred",
                 "rindex",
+                "samecase",
                 "split",
                 "starts-with",
                 "substr",

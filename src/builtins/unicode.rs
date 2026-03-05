@@ -29,6 +29,34 @@ pub(crate) fn titlecase_string(s: &str) -> String {
     result
 }
 
+/// Apply the case pattern of `pattern` to `source`.
+/// Each character in the result takes the upper/lower case of the corresponding
+/// character in `pattern`. When `pattern` is shorter, the last case applies to
+/// all remaining characters.
+pub(crate) fn samecase_string(source: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return source.to_string();
+    }
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    let mut result = String::new();
+    for (pat_idx, ch) in source.chars().enumerate() {
+        let pat_ch = pattern_chars[pat_idx.min(pattern_chars.len() - 1)];
+        if pat_ch.is_uppercase() {
+            for c in ch.to_uppercase() {
+                result.push(c);
+            }
+        } else if pat_ch.is_lowercase() {
+            for c in ch.to_lowercase() {
+                result.push(c);
+            }
+        } else {
+            // Non-cased pattern character: keep source as-is
+            result.push(ch);
+        }
+    }
+    result
+}
+
 pub(crate) fn samemark_string(target: &str, source: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     use unicode_segmentation::UnicodeSegmentation;

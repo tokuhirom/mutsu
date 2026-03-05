@@ -139,9 +139,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "wordcase" => Some(Ok(Value::str(crate::value::wordcase_str(
             &arg.to_string_value(),
         )))),
-        "chomp" => Some(Ok(Value::str(
-            arg.to_string_value().trim_end_matches('\n').to_string(),
-        ))),
+        "chomp" => Some(Ok(Value::str(crate::builtins::chomp_one(
+            &arg.to_string_value(),
+        )))),
         "chop" => {
             // Type objects (Package) should throw
             if let Value::Package(type_name) = arg {
@@ -798,6 +798,10 @@ fn native_function_2arg(
             }))
         }
         "rindex" => {
+            // Fall through to runtime for arrays (list of needles)
+            if matches!(arg2, Value::Array(..)) {
+                return None;
+            }
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.rfind(&needle) {
@@ -821,6 +825,13 @@ fn native_function_2arg(
             let source = arg2.to_string_value();
             Some(Ok(Value::str(crate::builtins::samemark_string(
                 &target, &source,
+            ))))
+        }
+        "samecase" => {
+            let source = arg1.to_string_value();
+            let pattern = arg2.to_string_value();
+            Some(Ok(Value::str(crate::builtins::samecase_string(
+                &source, &pattern,
             ))))
         }
         "log" => {
