@@ -1858,27 +1858,6 @@ impl Interpreter {
         )
     }
 
-    pub(super) fn call_lambda_with_arg(
-        &mut self,
-        func: &Value,
-        item: Value,
-    ) -> Result<Value, RuntimeError> {
-        if let Value::Sub(data) = func {
-            let saved_env = self.env.clone();
-            for (k, v) in &data.env {
-                self.env.insert(k.clone(), v.clone());
-            }
-            if let Some(p) = data.params.first() {
-                self.env.insert(p.clone(), item.clone());
-            }
-            self.env.insert("_".to_string(), item.clone());
-            let result = self.eval_block_value(&data.body);
-            self.env = saved_env;
-            return result;
-        }
-        Err(RuntimeError::new("Expected callable"))
-    }
-
     fn callable_produce_arity(&self, callable: &Value) -> usize {
         let (params, param_defs) = self.callable_signature(callable);
         if !param_defs.is_empty() {
