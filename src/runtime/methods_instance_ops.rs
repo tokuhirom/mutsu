@@ -886,6 +886,9 @@ impl Interpreter {
                     }
                 }
                 "pop" => {
+                    if items.is_empty() {
+                        return Ok(make_empty_array_failure("pop"));
+                    }
                     return Ok(items.pop().unwrap_or(Value::Nil));
                 }
                 "shift" => {

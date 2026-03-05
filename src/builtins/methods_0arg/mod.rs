@@ -471,6 +471,34 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
     matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
 }
 
+/// Return the gist (compact display) representation of a Range value.
+/// Unlike .Str which iterates and joins with spaces, .gist shows range notation (e.g. "1..5").
+fn range_gist_string(value: &Value) -> String {
+    match value {
+        Value::Range(a, b) => format!("{}..{}", a, b),
+        Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
+        Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
+        Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let prefix = if *excl_start { "^" } else { "" };
+            let sep = if *excl_end { "..^" } else { ".." };
+            format!(
+                "{}{}{}{}",
+                prefix,
+                start.to_string_value(),
+                sep,
+                end.to_string_value()
+            )
+        }
+        _ => value.to_string_value(),
+    }
+}
+
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
         ArrayKind::Array => format!("[{}]", inner),
@@ -1799,6 +1827,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                                 .collect();
                             format!("{{{}}}", parts.join(" "))
                         }
+                        other if other.is_range() => range_gist_string(other),
                         other => other.to_string_value(),
                     }
                 }
@@ -1826,6 +1855,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                                 .collect();
                             format!("{{{}}}", parts.join(" "))
                         }
+                        other if other.is_range() => range_gist_string(other),
                         other => other.to_string_value(),
                     }
                 }
@@ -1899,6 +1929,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .collect();
                     Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
                 }
+            }
+            _ if target.is_range() && method == "gist" => {
+                Some(Ok(Value::str(range_gist_string(target))))
             }
             _ => Some(Ok(Value::str(target.to_string_value()))),
         },
