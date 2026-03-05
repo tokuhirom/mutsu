@@ -293,6 +293,7 @@ impl Interpreter {
                     is_rw: false,
                     is_private: false,
                     is_multi: false,
+                    is_my: false,
                     return_type: None,
                     compiled_code: None,
                 };

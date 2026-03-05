@@ -530,6 +530,7 @@ pub(crate) enum Stmt {
         is_rw: bool,
         is_private: bool,
         is_our: bool,
+        is_my: bool,
         return_type: Option<String>,
     },
     RoleDecl {

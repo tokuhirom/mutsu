@@ -848,6 +848,13 @@ impl Interpreter {
                         updated,
                     );
                     return Ok(vec![result]);
+                } else {
+                    // Private method not found -- return structured X::Method::NotFound
+                    return Err(make_method_not_found_error(
+                        private_rest,
+                        &class_name.resolve(),
+                        true,
+                    ));
                 }
             }
 

@@ -1089,6 +1089,19 @@ pub(super) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
+    method_decl_body_with_my(input, multi, is_our, false)
+}
+
+pub(super) fn method_decl_body_my(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
+    method_decl_body_with_my(input, multi, is_our, true)
+}
+
+fn method_decl_body_with_my(
+    input: &str,
+    multi: bool,
+    is_our: bool,
+    is_my: bool,
+) -> PResult<'_, Stmt> {
     let (rest, is_private) = if let Some(rest) = input.strip_prefix('!') {
         (rest, true)
     } else {
@@ -1131,6 +1144,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResul
             is_rw: traits.is_rw,
             is_private,
             is_our,
+            is_my,
             return_type,
         },
     ))

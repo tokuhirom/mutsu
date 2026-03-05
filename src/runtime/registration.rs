@@ -440,6 +440,188 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Validate that all `self!method()` calls in the class body reference
+    /// private methods that actually exist on the class (compile-time check).
+    pub(super) fn validate_private_method_existence(
+        &self,
+        class_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let class_def = match self.classes.get(class_name) {
+            Some(cd) => cd.clone(),
+            None => return Ok(()),
+        };
+        for overloads in class_def.methods.values() {
+            for method_def in overloads {
+                self.check_private_calls_exist(class_name, &class_def, &method_def.body)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_private_calls_exist(
+        &self,
+        class_name: &str,
+        class_def: &ClassDef,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        for stmt in stmts {
+            self.check_private_calls_exist_stmt(class_name, class_def, stmt)?;
+        }
+        Ok(())
+    }
+
+    fn check_private_calls_exist_stmt(
+        &self,
+        class_name: &str,
+        class_def: &ClassDef,
+        stmt: &Stmt,
+    ) -> Result<(), RuntimeError> {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+                self.check_private_calls_exist_expr(class_name, class_def, e)?;
+            }
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                self.check_private_calls_exist_expr(class_name, class_def, expr)?;
+            }
+            Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+                for e in exprs {
+                    self.check_private_calls_exist_expr(class_name, class_def, e)?;
+                }
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.check_private_calls_exist_expr(class_name, class_def, cond)?;
+                self.check_private_calls_exist(class_name, class_def, then_branch)?;
+                self.check_private_calls_exist(class_name, class_def, else_branch)?;
+            }
+            Stmt::While { cond, body, .. } => {
+                self.check_private_calls_exist_expr(class_name, class_def, cond)?;
+                self.check_private_calls_exist(class_name, class_def, body)?;
+            }
+            Stmt::For { iterable, body, .. } => {
+                self.check_private_calls_exist_expr(class_name, class_def, iterable)?;
+                self.check_private_calls_exist(class_name, class_def, body)?;
+            }
+            Stmt::Block(body)
+            | Stmt::Default(body)
+            | Stmt::Catch(body)
+            | Stmt::Control(body)
+            | Stmt::When { body, .. }
+            | Stmt::Given { body, .. }
+            | Stmt::Phaser { body, .. } => {
+                self.check_private_calls_exist(class_name, class_def, body)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn check_private_calls_exist_expr(
+        &self,
+        class_name: &str,
+        class_def: &ClassDef,
+        expr: &Expr,
+    ) -> Result<(), RuntimeError> {
+        match expr {
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                ..
+            } => {
+                self.check_private_calls_exist_expr(class_name, class_def, target)?;
+                for arg in args {
+                    self.check_private_calls_exist_expr(class_name, class_def, arg)?;
+                }
+                // Check self!method() calls
+                if *modifier == Some('!')
+                    && matches!(target.as_ref(), Expr::BareWord(w) if w == "self")
+                {
+                    let method_name = name.resolve();
+                    // Skip owner-qualified calls (e.g., Class::method)
+                    if !method_name.contains("::") {
+                        let has_method = class_def
+                            .methods
+                            .get(&method_name)
+                            .is_some_and(|overloads| overloads.iter().any(|md| md.is_private));
+                        if !has_method {
+                            return Err(super::methods_signature::make_method_not_found_error(
+                                &method_name,
+                                class_name,
+                                true,
+                            ));
+                        }
+                    }
+                }
+            }
+            Expr::Binary { left, right, .. }
+            | Expr::MetaOp { left, right, .. }
+            | Expr::HyperOp { left, right, .. } => {
+                self.check_private_calls_exist_expr(class_name, class_def, left)?;
+                self.check_private_calls_exist_expr(class_name, class_def, right)?;
+            }
+            Expr::Unary { expr, .. }
+            | Expr::PostfixOp { expr, .. }
+            | Expr::Reduction { expr, .. }
+            | Expr::AssignExpr { expr, .. } => {
+                self.check_private_calls_exist_expr(class_name, class_def, expr)?;
+            }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.check_private_calls_exist_expr(class_name, class_def, cond)?;
+                self.check_private_calls_exist_expr(class_name, class_def, then_expr)?;
+                self.check_private_calls_exist_expr(class_name, class_def, else_expr)?;
+            }
+            Expr::Index { target, index } => {
+                self.check_private_calls_exist_expr(class_name, class_def, target)?;
+                self.check_private_calls_exist_expr(class_name, class_def, index)?;
+            }
+            Expr::Call { args, .. }
+            | Expr::ArrayLiteral(args)
+            | Expr::BracketArray(args)
+            | Expr::StringInterpolation(args) => {
+                for arg in args {
+                    self.check_private_calls_exist_expr(class_name, class_def, arg)?;
+                }
+            }
+            Expr::Block(body)
+            | Expr::AnonSub { body, .. }
+            | Expr::AnonSubParams { body, .. }
+            | Expr::Lambda { body, .. }
+            | Expr::Gather(body) => {
+                self.check_private_calls_exist(class_name, class_def, body)?;
+            }
+            Expr::DoBlock { body, .. } => {
+                self.check_private_calls_exist(class_name, class_def, body)?;
+            }
+            Expr::DoStmt(stmt) => {
+                self.check_private_calls_exist_stmt(class_name, class_def, stmt)?;
+            }
+            Expr::Try { body, catch } => {
+                self.check_private_calls_exist(class_name, class_def, body)?;
+                if let Some(catch) = catch.as_ref() {
+                    self.check_private_calls_exist(class_name, class_def, catch)?;
+                }
+            }
+            Expr::CallOn { target, args } => {
+                self.check_private_calls_exist_expr(class_name, class_def, target)?;
+                for arg in args {
+                    self.check_private_calls_exist_expr(class_name, class_def, arg)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub(crate) fn has_function(&self, name: &str) -> bool {
         self.has_declared_function(name)
     }

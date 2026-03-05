@@ -86,6 +86,7 @@ fn substitute_type_params_in_method(
         is_rw: method.is_rw,
         is_private: method.is_private,
         is_multi: method.is_multi,
+        is_my: method.is_my,
         return_type: method.return_type.clone(),
         compiled_code: method.compiled_code.clone(),
     }
@@ -448,11 +449,18 @@ impl Interpreter {
                     }
                 }
                 for (mname, overloads) in &role.methods {
+                    // Skip methods declared with `my` scope -- they are role-private
+                    // and should not be composed into consuming classes.
+                    let non_my_overloads: Vec<&MethodDef> =
+                        overloads.iter().filter(|md| !md.is_my).collect();
+                    if non_my_overloads.is_empty() {
+                        continue;
+                    }
                     let composed: Vec<MethodDef> = if type_subs.is_empty() {
-                        overloads.clone()
+                        non_my_overloads.into_iter().cloned().collect()
                     } else {
-                        overloads
-                            .iter()
+                        non_my_overloads
+                            .into_iter()
                             .map(|md| substitute_type_params_in_method(md, &type_subs))
                             .collect()
                     };
@@ -531,11 +539,17 @@ impl Interpreter {
                                 }
                             }
                             for (mname, overloads) in &parent_role.methods {
+                                // Skip methods declared with `my` scope -- role-private
+                                let non_my_overloads: Vec<&MethodDef> =
+                                    overloads.iter().filter(|md| !md.is_my).collect();
+                                if non_my_overloads.is_empty() {
+                                    continue;
+                                }
                                 let composed: Vec<MethodDef> = if parent_type_subs.is_empty() {
-                                    overloads.clone()
+                                    non_my_overloads.into_iter().cloned().collect()
                                 } else {
-                                    overloads
-                                        .iter()
+                                    non_my_overloads
+                                        .into_iter()
                                         .map(|md| {
                                             substitute_type_params_in_method(md, &parent_type_subs)
                                         })
@@ -785,6 +799,7 @@ impl Interpreter {
                                     is_rw: false,
                                     is_private: false,
                                     is_multi: false,
+                                    is_my: false,
                                     return_type: None,
                                     compiled_code: None,
                                 });
@@ -801,6 +816,7 @@ impl Interpreter {
                     is_rw,
                     is_private,
                     is_our,
+                    is_my,
                     return_type,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
@@ -823,6 +839,7 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
+                        is_my: *is_my,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1006,6 +1023,11 @@ impl Interpreter {
             restore_previous_state(self);
             return Err(err);
         }
+        // Validate that all self!method() calls reference existing private methods
+        if let Err(err) = self.validate_private_method_existence(name) {
+            restore_previous_state(self);
+            return Err(err);
+        }
         Ok(())
     }
 
@@ -1090,6 +1112,7 @@ impl Interpreter {
                     multi,
                     is_rw,
                     is_private,
+                    is_my,
                     return_type,
                     ..
                 } => {
@@ -1111,6 +1134,7 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
+                        is_my: *is_my,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1178,6 +1202,7 @@ impl Interpreter {
                                         is_rw: false,
                                         is_private: false,
                                         is_multi: false,
+                                        is_my: false,
                                         return_type: None,
                                         compiled_code: None,
                                     });
@@ -1260,6 +1285,7 @@ impl Interpreter {
                                 is_rw: false,
                                 is_private: false,
                                 is_multi: false,
+                                is_my: false,
                                 return_type: None,
                                 compiled_code: None,
                             });
@@ -1334,10 +1360,16 @@ impl Interpreter {
                         }
                     }
                     for (mname, overloads) in role.methods {
+                        // Skip methods declared with `my` scope -- role-private
+                        let non_my_overloads: Vec<MethodDef> =
+                            overloads.into_iter().filter(|md| !md.is_my).collect();
+                        if non_my_overloads.is_empty() {
+                            continue;
+                        }
                         let composed: Vec<MethodDef> = if type_subs.is_empty() {
-                            overloads
+                            non_my_overloads
                         } else {
-                            overloads
+                            non_my_overloads
                                 .iter()
                                 .map(|md| substitute_type_params_in_method(md, &type_subs))
                                 .collect()
@@ -1355,6 +1387,7 @@ impl Interpreter {
                     is_rw,
                     is_private,
                     is_our: _,
+                    is_my,
                     return_type,
                 } => {
                     if *multi
@@ -1381,6 +1414,7 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
+                        is_my: *is_my,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
