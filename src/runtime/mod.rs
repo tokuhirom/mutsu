@@ -600,6 +600,18 @@ impl Interpreter {
         env.insert("*PID".to_string(), Value::Int(current_process_id()));
         env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
+        // Populate %*ENV with all OS environment variables so that
+        // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly.
+        {
+            let mut env_hash = HashMap::new();
+            for (key, value) in std::env::vars() {
+                env_hash.insert(key, Value::str(value));
+            }
+            env.insert(
+                "%*ENV".to_string(),
+                Value::Hash(std::sync::Arc::new(env_hash)),
+            );
+        }
         env.insert(
             "*SCHEDULER".to_string(),
             Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),

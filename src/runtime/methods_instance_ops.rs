@@ -716,6 +716,11 @@ impl Interpreter {
                 Value::Sub(data) => Ok(Value::str(data.name.resolve())),
                 _ => Ok(Value::Nil),
             },
+            "package" if args.is_empty() => match target {
+                Value::Sub(data) => Ok(Value::Package(data.package)),
+                Value::Routine { package, .. } => Ok(Value::Package(package)),
+                _ => Ok(Value::Nil),
+            },
             "isa" if args.len() == 1 && matches!(&target, Value::Package(_)) => {
                 let pkg_name = match &target {
                     Value::Package(name) => name.resolve(),

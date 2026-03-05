@@ -339,6 +339,13 @@ impl VM {
                         .env_mut()
                         .insert(var_name.clone(), Value::hash(hash));
                 }
+                // Sync OS environment when %*ENV is modified
+                if var_name == "%*ENV" {
+                    // SAFETY: mutsu is single-threaded
+                    unsafe {
+                        std::env::set_var(&key, val.to_string_value());
+                    }
+                }
                 // Sync $*HOME when %*ENV<HOME> changes
                 if var_name == "%*ENV" && key == "HOME" {
                     let home_str = val.to_string_value();
