@@ -1062,6 +1062,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "DISTROnames",
+                    "KERNELnames",
                     "compiler",
                     "backend",
                     "name",
@@ -1080,6 +1081,37 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Perl".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Kernel".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "name",
+                    "auth",
+                    "version",
+                    "signature",
+                    "desc",
+                    "release",
+                    "hardware",
+                    "arch",
+                    "bits",
+                    "hostname",
+                    "signals",
+                    "signal",
+                    "gist",
+                    "raku",
+                    "Str",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["Kernel".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },

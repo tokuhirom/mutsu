@@ -701,6 +701,7 @@ impl Interpreter {
             "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
+            "Kernel" => self.native_kernel(attributes, method, args),
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Compiler" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),
@@ -1229,6 +1230,83 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Distro",
+                method
+            ))),
+        }
+    }
+
+    // --- Kernel ---
+
+    fn native_kernel(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "name" | "auth" | "desc" | "release" | "hardware" | "arch" | "bits" | "hostname"
+            | "version" | "signature" | "signals" => {
+                Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+            }
+            "signal" => {
+                // .signal(SIGHUP), .signal("SIGHUP"), .signal("HUP"), .signal(Int)
+                let arg = args.first().cloned().unwrap_or(Value::Nil);
+                let signal_names = [
+                    "", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1",
+                    "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP",
+                    "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO",
+                    "PWR", "SYS",
+                ];
+                match &arg {
+                    Value::Int(n) => Ok(Value::Int(*n)),
+                    Value::Str(s) => {
+                        let name = s
+                            .strip_prefix("SIG")
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| s.to_string());
+                        for (i, sn) in signal_names.iter().enumerate() {
+                            if *sn == name {
+                                return Ok(Value::Int(i as i64));
+                            }
+                        }
+                        Ok(Value::Int(0))
+                    }
+                    Value::Enum { key, .. } => {
+                        let key_str = key.resolve();
+                        let name = key_str.strip_prefix("SIG").unwrap_or(&key_str);
+                        for (i, sn) in signal_names.iter().enumerate() {
+                            if *sn == name {
+                                return Ok(Value::Int(i as i64));
+                            }
+                        }
+                        Ok(Value::Int(0))
+                    }
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            "gist" | "Str" => {
+                let n = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::str(n))
+            }
+            "raku" | "perl" => {
+                let n = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let auth = attributes
+                    .get("auth")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::str(format!(
+                    "Kernel.new(release => Str, hardware => Str, arch => Str, bits => Int, name => \"{}\", auth => \"{}\", version => Version, signature => Blob, desc => Str)",
+                    n, auth
+                )))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Kernel",
                 method
             ))),
         }
