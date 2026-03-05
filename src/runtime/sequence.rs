@@ -334,25 +334,32 @@ impl Interpreter {
                         f64::NAN
                     };
                     if !r1.is_nan() && !r2.is_nan() && (r1 - r2).abs() < 1e-12 {
-                        // Check if we can use rational ratio (when seeds are all Int)
-                        let all_int = seeds[seeds.len() - 3..]
+                        // Check if we can use rational ratio (when seeds are Int or Rat)
+                        let all_int_or_rat = seeds[seeds.len() - 3..]
                             .iter()
-                            .all(|v| matches!(v, Value::Int(_)));
-                        if all_int {
-                            let a = if let Value::Int(i) = &seeds[seeds.len() - 3] {
-                                *i
-                            } else {
-                                0
+                            .all(|v| matches!(v, Value::Int(_) | Value::Rat(..)));
+                        if all_int_or_rat {
+                            // Extract rational representation (num, den) from each seed
+                            let to_rat = |v: &Value| -> (i64, i64) {
+                                match v {
+                                    Value::Int(i) => (*i, 1),
+                                    Value::Rat(n, d) => (*n, *d),
+                                    _ => (0, 1),
+                                }
                             };
-                            let b = if let Value::Int(i) = &seeds[seeds.len() - 2] {
-                                *i
-                            } else {
-                                0
-                            };
-                            if a != 0 {
-                                // Ratio is b/a as a fraction
-                                let g = num_integer::Integer::gcd(&b, &a);
-                                SeqMode::GeometricRat(b / g, a / g)
+                            let (a_num, a_den) = to_rat(&seeds[seeds.len() - 3]);
+                            let (b_num, b_den) = to_rat(&seeds[seeds.len() - 2]);
+                            // Ratio = (b_num/b_den) / (a_num/a_den) = (b_num * a_den) / (b_den * a_num)
+                            if a_num != 0 {
+                                let r_num = b_num * a_den;
+                                let r_den = b_den * a_num;
+                                let g = num_integer::Integer::gcd(&r_num, &r_den);
+                                let (r_num, r_den) = if r_den / g < 0 {
+                                    (-r_num / g, -r_den / g)
+                                } else {
+                                    (r_num / g, r_den / g)
+                                };
+                                SeqMode::GeometricRat(r_num, r_den)
                             } else {
                                 SeqMode::Geometric(r2)
                             }
@@ -1327,16 +1334,18 @@ impl Interpreter {
                 if all_results.is_empty() {
                     all_results.extend(items.iter().cloned());
                 } else if !items.is_empty() {
-                    // Skip the first element of subsequent segments if it matches
-                    // the last element of the accumulated result (avoid duplication)
-                    let start = if !all_results.is_empty()
+                    // When segments overlap at a boundary, replace the last element
+                    // of the previous segment with the first element of the new segment.
+                    // This preserves the type from the new segment's seed (e.g., Int(8)
+                    // from seed [8,9] instead of Rat(8,1) from the geometric segment).
+                    if !all_results.is_empty()
                         && Self::seq_values_equal(all_results.last().unwrap(), &items[0])
                     {
-                        1
+                        *all_results.last_mut().unwrap() = items[0].clone();
+                        all_results.extend(items[1..].iter().cloned());
                     } else {
-                        0
-                    };
-                    all_results.extend(items[start..].iter().cloned());
+                        all_results.extend(items.iter().cloned());
+                    }
                 }
             }
 
