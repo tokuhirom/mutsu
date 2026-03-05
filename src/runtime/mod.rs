@@ -185,6 +185,7 @@ pub(crate) struct MethodDef {
     pub(crate) is_rw: bool,
     pub(crate) is_private: bool,
     pub(crate) is_multi: bool,
+    pub(crate) is_my: bool,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
 }
@@ -1531,6 +1532,7 @@ impl Interpreter {
                         is_rw: false,
                         is_private: false,
                         is_multi: false,
+                        is_my: false,
                         return_type: None,
                         compiled_code: None,
                     };

@@ -17,7 +17,9 @@ use super::{
 };
 
 use super::super::parse_result::take_while_opt;
-use super::{class_decl_body, method_decl_body, parse_comma_or_expr, sub_decl_body};
+use super::{
+    class_decl_body, method_decl_body, method_decl_body_my, parse_comma_or_expr, sub_decl_body,
+};
 
 fn strip_type_smiley_suffix(type_name: &str) -> &str {
     type_name
@@ -480,13 +482,21 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // my/our method name(...) { ... }
     if let Some(r) = keyword("method", rest) {
         let (r, _) = ws1(r)?;
-        return method_decl_body(r, false, is_our);
+        if is_our {
+            return method_decl_body(r, false, true);
+        } else {
+            return method_decl_body_my(r, false, false);
+        }
     }
 
     // my/our submethod name(...) { ... }
     if let Some(r) = keyword("submethod", rest) {
         let (r, _) = ws1(r)?;
-        return method_decl_body(r, false, is_our);
+        if is_our {
+            return method_decl_body(r, false, true);
+        } else {
+            return method_decl_body_my(r, false, false);
+        }
     }
 
     // my class Name is Parent { ... }

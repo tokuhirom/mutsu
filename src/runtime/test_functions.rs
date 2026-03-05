@@ -1020,10 +1020,19 @@ impl Interpreter {
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),
+                    Value::Sub(_) | Value::Routine { .. } => {
+                        // Smart-match: call the block with the actual value as topic
+                        let call_arg = actual_val.clone().unwrap_or(Value::Nil);
+                        match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
+                            Ok(result_val) => result_val.truthy(),
+                            Err(_) => false,
+                        }
+                    }
                     _ => actual_str == expected_val.to_string_value(),
                 };
                 let expected_display = match expected_val {
                     Value::Regex(pattern) => format!("/{}/", pattern),
+                    Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
                     _ => expected_val.to_string_value(),
                 };
                 self.test_ok(
