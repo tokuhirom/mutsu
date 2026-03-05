@@ -583,11 +583,6 @@ impl SharedChannel {
         let (lock, _) = &*self.inner;
         !lock.lock().unwrap().send_closed
     }
-
-    pub(crate) fn drained_closed(&self) -> bool {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().drained_closed
-    }
 }
 
 impl PartialEq for SharedChannel {
