@@ -1258,11 +1258,15 @@ impl Interpreter {
         let name = args[0].to_string_value();
         let value = self.atomic_assign_coerced_value(&name, args[1].clone())?;
         let value_key = self.atomic_value_key_for_name(&name);
-        self.env.insert(name, value.clone());
+        self.env.insert(name.clone(), value.clone());
         self.shared_vars
             .write()
             .unwrap()
-            .insert(value_key, value.clone());
+            .insert(value_key.clone(), value.clone());
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(value_key);
+            dirty.insert(name);
+        }
         Ok(value)
     }
 
@@ -1280,7 +1284,12 @@ impl Interpreter {
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current, delta)?;
         self.env.insert(name.clone(), next.clone());
-        shared.insert(value_key, next.clone());
+        shared.insert(value_key.clone(), next.clone());
+        drop(shared);
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(value_key);
+            dirty.insert(name);
+        }
         Ok(next)
     }
 
@@ -1297,7 +1306,12 @@ impl Interpreter {
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
         self.env.insert(name.clone(), next.clone());
-        shared.insert(value_key, next.clone());
+        shared.insert(value_key.clone(), next.clone());
+        drop(shared);
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(value_key);
+            dirty.insert(name);
+        }
         if return_old { Ok(current) } else { Ok(next) }
     }
 
@@ -1341,7 +1355,14 @@ impl Interpreter {
             if current == *expected {
                 let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
                 self.env.insert(name.clone(), coerced.clone());
-                self.shared_vars.write().unwrap().insert(value_key, coerced);
+                self.shared_vars
+                    .write()
+                    .unwrap()
+                    .insert(value_key.clone(), coerced);
+                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                    dirty.insert(value_key);
+                    dirty.insert(name);
+                }
             }
             Ok(current)
         } else {
@@ -1357,7 +1378,11 @@ impl Interpreter {
             self.shared_vars
                 .write()
                 .unwrap()
-                .insert(value_key, coerced.clone());
+                .insert(value_key.clone(), coerced.clone());
+            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                dirty.insert(value_key);
+                dirty.insert(name);
+            }
             Ok(coerced)
         }
     }

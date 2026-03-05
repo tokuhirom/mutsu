@@ -300,6 +300,16 @@ impl Compiler {
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }
+                        Stmt::If {
+                            cond,
+                            then_branch,
+                            else_branch,
+                            ..
+                        } => {
+                            self.compile_if_value(cond, then_branch, else_branch);
+                            self.code.emit(OpCode::SetTopic);
+                            continue;
+                        }
                         Stmt::VarDecl { name, .. } => {
                             // VarDecl as last statement: compile normally, then
                             // load the declared variable back and set as topic

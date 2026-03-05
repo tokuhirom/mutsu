@@ -89,7 +89,15 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
-        // Check shared_vars for cross-thread visibility (only when threading is active)
+        // Check local env first so that function parameters and lexical
+        // variables take precedence over shared_vars.  Without this,
+        // recursive `start` blocks read stale parameter values from
+        // shared_vars instead of the locally-bound ones.
+        if let Some(val) = self.interpreter.env().get(name) {
+            return Some(val.clone());
+        }
+        // Fall back to shared_vars for cross-thread visibility of variables
+        // that were explicitly updated by other threads.
         if let Some(v) = self.interpreter.get_shared_var(name) {
             return Some(v);
         }
@@ -97,9 +105,6 @@ impl VM {
         if let Some(resolved) = self.interpreter.resolve_binding(name)
             && let Some(val) = self.interpreter.env().get(resolved)
         {
-            return Some(val.clone());
-        }
-        if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
