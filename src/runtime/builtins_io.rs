@@ -303,14 +303,19 @@ impl Interpreter {
             if same_file {
                 return Err(io_exception_error(
                     "X::IO::Copy",
-                    format!("Failed to copy '{}': source and destination are the same file", source),
+                    format!(
+                        "Failed to copy '{}': source and destination are the same file",
+                        source
+                    ),
                 ));
             }
         }
-        fs::copy(&src_buf, &dest_buf)
-            .map_err(|err| {
-                io_exception_error("X::IO::Copy", format!("Failed to copy '{}': {}", source, err))
-            })?;
+        fs::copy(&src_buf, &dest_buf).map_err(|err| {
+            io_exception_error(
+                "X::IO::Copy",
+                format!("Failed to copy '{}': {}", source, err),
+            )
+        })?;
         Ok(Value::Bool(true))
     }
 
@@ -436,7 +441,10 @@ impl Interpreter {
         if !absolute_target.exists() {
             return Err(io_exception_error(
                 "X::IO::Chdir",
-                format!("Failed to chdir to '{}': no such file or directory", requested),
+                format!(
+                    "Failed to chdir to '{}': no such file or directory",
+                    requested
+                ),
             ));
         }
         if require_dir && !absolute_target.is_dir() {
@@ -510,7 +518,10 @@ impl Interpreter {
         if !absolute_target.exists() {
             return Err(io_exception_error(
                 "X::IO::Chdir",
-                format!("Failed to chdir to '{}': no such file or directory", requested),
+                format!(
+                    "Failed to chdir to '{}': no such file or directory",
+                    requested
+                ),
             ));
         }
         if require_dir && !absolute_target.is_dir() {
@@ -531,7 +542,10 @@ impl Interpreter {
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
         let result = if let Some(body) = body_arg {
-            if matches!(body, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }) {
+            if matches!(
+                body,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            ) {
                 self.call_sub_value(body.clone(), vec![], true)
             } else {
                 Ok(body)
