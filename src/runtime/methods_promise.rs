@@ -2,6 +2,42 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn as_exception_value(value: Value) -> Value {
+        match value {
+            Value::Instance { class_name, .. }
+                if class_name.resolve().contains("Exception")
+                    || class_name.resolve().starts_with("X::") =>
+            {
+                value
+            }
+            other => {
+                let msg = other.to_string_value();
+                let mut attrs = HashMap::new();
+                attrs.insert("payload".to_string(), Value::str(msg.clone()));
+                attrs.insert("message".to_string(), Value::str(msg));
+                Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+            }
+        }
+    }
+
+    fn channel_send_closed_error() -> RuntimeError {
+        let mut err = RuntimeError::new("Cannot send on a closed channel");
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Channel::SendOnClosed"),
+            HashMap::new(),
+        )));
+        err
+    }
+
+    fn channel_receive_closed_error() -> RuntimeError {
+        let mut err = RuntimeError::new("Cannot receive on a closed channel");
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Channel::ReceiveOnClosed"),
+            HashMap::new(),
+        )));
+        err
+    }
+
     pub(super) fn dispatch_promise_method(
         &mut self,
         shared: &SharedPromise,
@@ -210,29 +246,58 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "send" => {
+                if !ch.can_send() {
+                    return Err(Self::channel_send_closed_error());
+                }
                 let value = args.into_iter().next().unwrap_or(Value::Nil);
                 ch.send(value);
                 Ok(Value::Nil)
             }
-            "receive" => Ok(ch.receive()),
-            "poll" => Ok(ch.poll().unwrap_or(Value::Nil)),
+            "receive" => match ch.receive_result() {
+                Ok(Value::Nil) => Err(Self::channel_receive_closed_error()),
+                Ok(value) => Ok(value),
+                Err(cause) => {
+                    let ex = Self::as_exception_value(cause);
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex));
+                    Err(err)
+                }
+            },
+            "poll" => match ch.poll_result() {
+                Ok(Some(value)) => Ok(value),
+                Ok(None) => Ok(Value::Nil),
+                Err(_) => Ok(Value::Nil),
+            },
             "close" => {
                 ch.close();
+                Ok(Value::Nil)
+            }
+            "fail" => {
+                let reason = args
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| Value::str_from("Died"));
+                ch.fail(Self::as_exception_value(reason));
                 Ok(Value::Nil)
             }
             "list" | "List" | "Seq" => {
                 // Drain the channel into a list (blocks until closed)
                 let mut items = Vec::new();
                 loop {
-                    let val = ch.receive();
-                    if val == Value::Nil && ch.closed() {
-                        break;
+                    match ch.receive_result() {
+                        Ok(Value::Nil) => break,
+                        Ok(value) => items.push(value),
+                        Err(cause) => {
+                            let ex = Self::as_exception_value(cause);
+                            let mut err = RuntimeError::new(ex.to_string_value());
+                            err.exception = Some(Box::new(ex));
+                            return Err(err);
+                        }
                     }
-                    items.push(val);
                 }
                 Ok(Value::array(items))
             }
-            "closed" => Ok(Value::Bool(ch.closed())),
+            "closed" => Ok(Value::Promise(ch.closed_promise())),
             "Bool" => Ok(Value::Bool(true)),
             "WHAT" => Ok(Value::Package(Symbol::intern("Channel"))),
             "Str" | "gist" => Ok(Value::str_from("Channel")),

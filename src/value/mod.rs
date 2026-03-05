@@ -475,7 +475,10 @@ impl PartialEq for SharedPromise {
 #[derive(Debug)]
 struct ChannelState {
     queue: std::collections::VecDeque<Value>,
-    closed: bool,
+    send_closed: bool,
+    drained_closed: bool,
+    failure: Option<Value>,
+    closed_promise: SharedPromise,
 }
 
 #[derive(Debug, Clone)]
@@ -485,11 +488,15 @@ pub(crate) struct SharedChannel {
 
 impl SharedChannel {
     pub(crate) fn new() -> Self {
+        let closed_promise = SharedPromise::new();
         Self {
             inner: Arc::new((
                 Mutex::new(ChannelState {
                     queue: std::collections::VecDeque::new(),
-                    closed: false,
+                    send_closed: false,
+                    drained_closed: false,
+                    failure: None,
+                    closed_promise,
                 }),
                 Condvar::new(),
             )),
@@ -499,40 +506,82 @@ impl SharedChannel {
     pub(crate) fn send(&self, value: Value) {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
+        if state.send_closed {
+            return;
+        }
         state.queue.push_back(value);
         cvar.notify_one();
     }
 
-    pub(crate) fn receive(&self) -> Value {
+    fn finish_if_drained(state: &mut ChannelState) {
+        if state.send_closed && state.queue.is_empty() && !state.drained_closed {
+            state.drained_closed = true;
+            if let Some(err) = state.failure.clone() {
+                let _ = state.closed_promise.try_break(err);
+            } else {
+                let _ = state.closed_promise.try_keep(Value::Nil);
+            }
+        }
+    }
+
+    pub(crate) fn receive_result(&self) -> Result<Value, Value> {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
         loop {
             if let Some(val) = state.queue.pop_front() {
-                return val;
+                Self::finish_if_drained(&mut state);
+                return Ok(val);
             }
-            if state.closed {
-                return Value::Nil;
+            if state.drained_closed {
+                if let Some(err) = state.failure.clone() {
+                    return Err(err);
+                }
+                return Ok(Value::Nil);
             }
             state = cvar.wait(state).unwrap();
         }
     }
 
-    pub(crate) fn poll(&self) -> Option<Value> {
+    pub(crate) fn poll_result(&self) -> Result<Option<Value>, Value> {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
-        state.queue.pop_front()
+        if let Some(val) = state.queue.pop_front() {
+            Self::finish_if_drained(&mut state);
+            return Ok(Some(val));
+        }
+        if state.drained_closed
+            && let Some(err) = state.failure.clone()
+        {
+            return Err(err);
+        }
+        Ok(None)
     }
 
     pub(crate) fn close(&self) {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
-        state.closed = true;
+        state.send_closed = true;
+        Self::finish_if_drained(&mut state);
         cvar.notify_all();
     }
 
-    pub(crate) fn closed(&self) -> bool {
+    pub(crate) fn fail(&self, error: Value) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.send_closed = true;
+        state.failure = Some(error);
+        Self::finish_if_drained(&mut state);
+        cvar.notify_all();
+    }
+
+    pub(crate) fn closed_promise(&self) -> SharedPromise {
         let (lock, _) = &*self.inner;
-        lock.lock().unwrap().closed
+        lock.lock().unwrap().closed_promise.clone()
+    }
+
+    pub(crate) fn can_send(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        !lock.lock().unwrap().send_closed
     }
 }
 

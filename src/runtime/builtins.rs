@@ -446,6 +446,7 @@ impl Interpreter {
             // Concurrency (single-threaded simulation)
             "start" => self.builtin_start(args),
             "await" => self.builtin_await(&args),
+            "full-barrier" => Ok(Value::Nil),
             "atomic-fetch" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
