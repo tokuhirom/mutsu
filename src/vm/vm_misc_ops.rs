@@ -1014,7 +1014,7 @@ impl VM {
         {
             // Unknown user-defined type — reject it
             return Err(RuntimeError::new(format!(
-                "Type '{}' is not declared",
+                "X::Undeclared: Type '{}' is not declared",
                 constraint
             )));
         }

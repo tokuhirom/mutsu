@@ -281,6 +281,11 @@ impl Interpreter {
             }
         };
 
+        // Detect stub body: `class Foo { ... }` — body is a stub operator call
+        let is_stub_body = body.len() == 1
+            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                if *fn_name == "__mutsu_stub_die");
+
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap
         const BUILTIN_TYPES: &[&str] = &[
@@ -358,6 +363,14 @@ impl Interpreter {
                 && !BUILTIN_TYPES.contains(&base_parent)
                 && !self.roles.contains_key(base_parent)
             {
+                // Use X::InvalidType for `does` parents, X::Inheritance::UnknownParent
+                // for `is` parents.
+                if does_parents.contains(parent) {
+                    return Err(RuntimeError::new(format!(
+                        "X::InvalidType: Invalid typename '{}'",
+                        parent
+                    )));
+                }
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
                     name, parent
@@ -702,20 +715,18 @@ impl Interpreter {
                     .insert(trusted_class.resolve());
             }
         }
-        // Detect stub class: `class Foo { ... }` — body is a stub operator call.
-        // Register the class but skip body execution.
-        let is_stub = body.len() == 1
-            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                if *fn_name == "__mutsu_stub_die");
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         self.classes.insert(name.to_string(), class_def.clone());
-        if is_stub {
+        if is_stub_body {
+            self.class_stubs.insert(name.to_string());
             self.classes.insert(name.to_string(), class_def);
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(());
         }
+        // Clear stub status now that the class has a real body.
+        self.class_stubs.remove(name);
         let saved_package = self.current_package.clone();
         let saved_env = self.env.clone();
         self.current_package = name.to_string();
