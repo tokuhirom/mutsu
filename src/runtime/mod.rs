@@ -187,6 +187,8 @@ pub(crate) struct MethodDef {
     pub(crate) is_private: bool,
     pub(crate) is_multi: bool,
     pub(crate) is_my: bool,
+    /// Role where this method was originally declared when composed into a class.
+    pub(crate) role_origin: Option<String>,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
 }
@@ -1558,6 +1560,7 @@ impl Interpreter {
                         is_private: false,
                         is_multi: false,
                         is_my: false,
+                        role_origin: None,
                         return_type: None,
                         compiled_code: None,
                     };

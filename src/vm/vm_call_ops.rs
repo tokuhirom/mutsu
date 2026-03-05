@@ -583,6 +583,77 @@ impl VM {
                 .interpreter
                 .call_method_with_values(target, method, args);
         }
+        // Private method fast path: resolve private candidate and run compiled code
+        // when caller context clearly allows direct dispatch.
+        if method.starts_with('!') {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name {
+                let resolved = self
+                    .interpreter
+                    .resolve_private_method_for_vm(&cn, method, &args);
+                if let Some((owner_class, method_def)) = resolved {
+                    let caller_allowed = self
+                        .interpreter
+                        .can_fast_dispatch_private_method_vm(&owner_class);
+                    if caller_allowed && let Some(ref cc) = method_def.compiled_code {
+                        let cc = cc.clone();
+                        let target_id = match &target {
+                            Value::Instance { id, .. } => Some(*id),
+                            _ => None,
+                        };
+                        let attributes = match &target {
+                            Value::Instance { attributes, .. } => (**attributes).clone(),
+                            _ => std::collections::HashMap::new(),
+                        };
+                        let invocant_for_dispatch = if attributes.is_empty() {
+                            Value::Package(crate::symbol::Symbol::intern(&cn))
+                        } else {
+                            target.clone()
+                        };
+                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                            &cn,
+                            method,
+                            &args,
+                            invocant_for_dispatch,
+                        );
+                        let invocant = Some(target);
+                        let empty_fns = HashMap::new();
+                        let method_result = self.call_compiled_method(
+                            &cn,
+                            &owner_class,
+                            method,
+                            &method_def,
+                            &cc,
+                            attributes,
+                            args,
+                            invocant,
+                            &empty_fns,
+                        );
+                        if pushed_dispatch {
+                            self.interpreter.pop_method_dispatch();
+                        }
+                        let (result, new_attrs) = method_result?;
+                        if let Some(id) = target_id {
+                            self.interpreter.overwrite_instance_bindings_by_identity(
+                                &cn,
+                                id,
+                                new_attrs.clone(),
+                            );
+                            if let Value::Proxy { ref fetcher, .. } = result {
+                                return self
+                                    .interpreter
+                                    .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                            }
+                        }
+                        return Ok(result);
+                    }
+                }
+            }
+        }
         // Only attempt compiled path for Instance or Package targets
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -669,6 +740,75 @@ impl VM {
             return self
                 .interpreter
                 .call_method_mut_with_values(target_name, target, method, args);
+        }
+        if method.starts_with('!') {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name {
+                let resolved = self
+                    .interpreter
+                    .resolve_private_method_for_vm(&cn, method, &args);
+                if let Some((owner_class, method_def)) = resolved {
+                    let caller_allowed = self
+                        .interpreter
+                        .can_fast_dispatch_private_method_vm(&owner_class);
+                    if caller_allowed && let Some(ref cc) = method_def.compiled_code {
+                        let cc = cc.clone();
+                        let target_id = match &target {
+                            Value::Instance { id, .. } => Some(*id),
+                            _ => None,
+                        };
+                        let attributes = match &target {
+                            Value::Instance { attributes, .. } => (**attributes).clone(),
+                            _ => std::collections::HashMap::new(),
+                        };
+                        let invocant_for_dispatch = if attributes.is_empty() {
+                            Value::Package(crate::symbol::Symbol::intern(&cn))
+                        } else {
+                            target.clone()
+                        };
+                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                            &cn,
+                            method,
+                            &args,
+                            invocant_for_dispatch,
+                        );
+                        let invocant = Some(target);
+                        let empty_fns = HashMap::new();
+                        let method_result = self.call_compiled_method(
+                            &cn,
+                            &owner_class,
+                            method,
+                            &method_def,
+                            &cc,
+                            attributes,
+                            args,
+                            invocant,
+                            &empty_fns,
+                        );
+                        if pushed_dispatch {
+                            self.interpreter.pop_method_dispatch();
+                        }
+                        let (result, new_attrs) = method_result?;
+                        if let Some(id) = target_id {
+                            self.interpreter.overwrite_instance_bindings_by_identity(
+                                &cn,
+                                id,
+                                new_attrs.clone(),
+                            );
+                            if let Value::Proxy { ref fetcher, .. } = result {
+                                return self
+                                    .interpreter
+                                    .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                            }
+                        }
+                        return Ok(result);
+                    }
+                }
+            }
         }
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
