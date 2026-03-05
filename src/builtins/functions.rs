@@ -216,6 +216,8 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         }
         "is-prime" => Some(super::methods_0arg::coercion::value_is_prime(arg)),
+        "lsb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("lsb")),
+        "msb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("msb")),
         "sign" => {
             if matches!(arg, Value::Instance { .. }) {
                 return None;

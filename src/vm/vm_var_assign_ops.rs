@@ -699,8 +699,13 @@ impl VM {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            if matches!(val, Value::Nil)
+                && let Some(def) = self.interpreter.var_default(name)
+            {
+                val = def.clone();
+            }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
                 {
@@ -745,6 +750,12 @@ impl VM {
         } else {
             val
         };
+        if matches!(val, Value::Nil)
+            && !matches!(self.locals[idx], Value::Nil)
+            && let Some(def) = self.interpreter.var_default(name)
+        {
+            val = def.clone();
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
@@ -886,8 +897,14 @@ impl VM {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            if matches!(val, Value::Nil)
+                && !matches!(self.locals[idx], Value::Nil)
+                && let Some(def) = self.interpreter.var_default(name)
+            {
+                val = def.clone();
+            }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 let val = if matches!(val, Value::Nil) {
                     let nominal = self
@@ -930,6 +947,11 @@ impl VM {
         } else {
             raw_val
         };
+        if matches!(val, Value::Nil)
+            && let Some(def) = self.interpreter.var_default(name)
+        {
+            val = def.clone();
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')

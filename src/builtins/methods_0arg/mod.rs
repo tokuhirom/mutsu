@@ -44,6 +44,147 @@ pub(crate) mod temporal_dispatch;
 
 use std::collections::HashMap;
 
+fn parse_raku_int_from_str(s: &str) -> Option<Value> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let normalized = trimmed.replace('\u{2212}', "-");
+    let (sign, body) = if let Some(rest) = normalized.strip_prefix('-') {
+        (-1_i32, rest)
+    } else if let Some(rest) = normalized.strip_prefix('+') {
+        (1_i32, rest)
+    } else {
+        (1_i32, normalized.as_str())
+    };
+    let body_no_underscores = body.replace('_', "");
+    if body_no_underscores.is_empty() {
+        return None;
+    }
+    if let Some((radix, digits)) = body_no_underscores
+        .strip_prefix("0x")
+        .or_else(|| body_no_underscores.strip_prefix("0X"))
+        .map(|digits| (16_u32, digits))
+        .or_else(|| {
+            body_no_underscores
+                .strip_prefix("0o")
+                .or_else(|| body_no_underscores.strip_prefix("0O"))
+                .map(|digits| (8_u32, digits))
+        })
+        .or_else(|| {
+            body_no_underscores
+                .strip_prefix("0b")
+                .or_else(|| body_no_underscores.strip_prefix("0B"))
+                .map(|digits| (2_u32, digits))
+        })
+        .or_else(|| {
+            body_no_underscores
+                .strip_prefix("0d")
+                .or_else(|| body_no_underscores.strip_prefix("0D"))
+                .map(|digits| (10_u32, digits))
+        })
+    {
+        if digits.is_empty() {
+            return None;
+        }
+        let mut n = num_bigint::BigInt::parse_bytes(digits.as_bytes(), radix)?;
+        if sign < 0 {
+            n = -n;
+        }
+        return Some(Value::from_bigint(n));
+    }
+
+    let signed_no_underscores = if sign < 0 {
+        format!("-{}", body_no_underscores)
+    } else {
+        body_no_underscores
+    };
+    if let Ok(n) = signed_no_underscores.parse::<num_bigint::BigInt>() {
+        return Some(Value::from_bigint(n));
+    }
+
+    if let Ok(f) = signed_no_underscores.parse::<f64>()
+        && f.is_finite()
+    {
+        let truncated = f.trunc();
+        let digits = format!("{:.0}", truncated);
+        if let Ok(n) = digits.parse::<num_bigint::BigInt>() {
+            return Some(Value::from_bigint(n));
+        }
+    }
+    None
+}
+
+fn int_lsb_value(target: &Value) -> Option<Value> {
+    match target {
+        Value::Int(i) => {
+            if *i == 0 {
+                Some(Value::Nil)
+            } else {
+                Some(Value::Int(i.unsigned_abs().trailing_zeros() as i64))
+            }
+        }
+        Value::BigInt(n) => {
+            if n.is_zero() {
+                return Some(Value::Nil);
+            }
+            let one = num_bigint::BigInt::from(1u8);
+            let mut x = n.as_ref().abs();
+            let mut pos = 0_i64;
+            while (&x & &one).is_zero() {
+                x >>= 1;
+                pos += 1;
+            }
+            Some(Value::Int(pos))
+        }
+        _ => None,
+    }
+}
+
+fn int_msb_value(target: &Value) -> Option<Value> {
+    match target {
+        Value::Int(i) => {
+            if *i == 0 {
+                return Some(Value::Nil);
+            }
+            if *i > 0 {
+                return Some(Value::Int((63 - i.leading_zeros()) as i64));
+            }
+            if *i == -1 {
+                return Some(Value::Int(0));
+            }
+            let m = i.unsigned_abs().saturating_sub(1);
+            let bitlen = (64 - m.leading_zeros()) as i64;
+            Some(Value::Int(bitlen))
+        }
+        Value::BigInt(n) => {
+            if n.is_zero() {
+                return Some(Value::Nil);
+            }
+            if n.sign() == num_bigint::Sign::Minus {
+                if **n == num_bigint::BigInt::from(-1i8) {
+                    return Some(Value::Int(0));
+                }
+                let mut x = n.as_ref().abs() - num_bigint::BigInt::from(1u8);
+                let mut bitlen = 0_i64;
+                while !x.is_zero() {
+                    x >>= 1;
+                    bitlen += 1;
+                }
+                return Some(Value::Int(bitlen));
+            }
+            let mut x = n.as_ref().clone();
+            let mut msb = -1_i64;
+            while !x.is_zero() {
+                x >>= 1;
+                msb += 1;
+            }
+            Some(Value::Int(msb))
+        }
+        _ => None,
+    }
+}
+
 /// Produce Raku-compatible `.raku` representation for a Match object.
 fn match_raku_repr(attributes: &HashMap<String, Value>) -> String {
     let orig = attributes
@@ -1099,10 +1240,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Num(f) => Value::Int(*f as i64),
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::Str(s) => {
-                    if let Ok(i) = s.trim().parse::<i64>() {
-                        Value::Int(i)
-                    } else if let Ok(f) = s.trim().parse::<f64>() {
-                        Value::Int(f as i64)
+                    if let Some(v) = parse_raku_int_from_str(s) {
+                        v
                     } else {
                         return Some(Err(RuntimeError::new(format!(
                             "X::Str::Numeric: Cannot convert string '{}' to a number",
@@ -1364,6 +1503,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "lsb" => int_lsb_value(target).map(Ok),
+        "msb" => int_msb_value(target).map(Ok),
         "rand" => {
             let max = match target {
                 Value::Int(n) => *n as f64,

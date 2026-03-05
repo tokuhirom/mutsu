@@ -1173,6 +1173,14 @@ impl Interpreter {
                         }
                     }
                 }
+                let int_ctor_val =
+                    if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
+                        return Err(RuntimeError::new("Cannot convert type object to Int"));
+                    } else {
+                        positional_ctor_args
+                            .first()
+                            .map_or(0, crate::runtime::to_int)
+                    };
                 if class_mro.iter().any(|name| name == "Array")
                     && !attrs.contains_key("__array_items")
                     && !positional_ctor_args.is_empty()
@@ -1181,6 +1189,11 @@ impl Interpreter {
                         "__array_items".to_string(),
                         Value::array(positional_ctor_args),
                     );
+                }
+                if class_mro.iter().any(|name| name == "Int")
+                    && !attrs.contains_key("__mutsu_int_value")
+                {
+                    attrs.insert("__mutsu_int_value".to_string(), Value::Int(int_ctor_val));
                 }
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
@@ -1322,7 +1335,13 @@ impl Interpreter {
             Value::Package(name) => {
                 // Built-in type objects: .new creates a default defined instance
                 match name.resolve().as_str() {
-                    "Int" => Ok(Value::Int(0)),
+                    "Int" => {
+                        if matches!(args.first(), Some(Value::Package(_))) {
+                            return Err(RuntimeError::new("Cannot convert type object to Int"));
+                        }
+                        let int_val = args.first().map_or(0, crate::runtime::to_int);
+                        Ok(Value::Int(int_val))
+                    }
                     "Str" => Ok(Value::str(String::new())),
                     "Num" => Ok(Value::Num(0.0)),
                     "Bool" => Ok(Value::Bool(false)),
