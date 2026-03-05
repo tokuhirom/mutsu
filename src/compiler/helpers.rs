@@ -784,7 +784,12 @@ impl Compiler {
         self.pop_dynamic_scope_lexical(saved);
     }
 
-    fn compile_if_value(&mut self, cond: &Expr, then_branch: &[Stmt], else_branch: &[Stmt]) {
+    pub(super) fn compile_if_value(
+        &mut self,
+        cond: &Expr,
+        then_branch: &[Stmt],
+        else_branch: &[Stmt],
+    ) {
         self.compile_expr(cond);
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
         self.compile_stmts_value(then_branch);

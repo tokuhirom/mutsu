@@ -498,6 +498,10 @@ pub struct Interpreter {
     /// True when this interpreter participates in cross-thread variable sharing.
     /// Set by `clone_for_thread` on both parent and child.
     shared_vars_active: bool,
+    /// Keys in shared_vars that were explicitly updated (not just initialized by
+    /// `clone_for_thread`). `sync_shared_vars_to_env` only syncs these keys so
+    /// that function parameters aren't overwritten with stale values.
+    shared_vars_dirty: Arc<RwLock<HashSet<String>>>,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: Vec<EncodingEntry>,
@@ -1587,6 +1591,7 @@ impl Interpreter {
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
+            shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
             pending_proxy_subclass_attr: None,
@@ -2642,6 +2647,7 @@ impl Interpreter {
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
+            shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             pending_proxy_subclass_attr: None,
@@ -2690,7 +2696,12 @@ impl Interpreter {
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
-                return Value::Array(Arc::clone(arc_items), *kind);
+                let result = Value::Array(Arc::clone(arc_items), *kind);
+                drop(sv);
+                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                    dirty.insert(key.to_string());
+                }
+                return result;
             }
         }
         // Fallback for non-shared arrays: use Arc::make_mut for COW
@@ -2742,16 +2753,26 @@ impl Interpreter {
             let mut sv = self.shared_vars.write().unwrap();
             if sv.contains_key(key) {
                 sv.insert(key.to_string(), value);
+                // Mark this key as explicitly updated so sync_shared_vars_to_env
+                // knows to propagate it (vs keys only initialized by clone_for_thread).
+                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                    dirty.insert(key.to_string());
+                }
             }
         }
     }
 
     /// Sync shared variables back from shared_vars into the local env.
-    /// Called after await/sleep to pick up mutations from other threads.
+    /// Only syncs keys that were explicitly updated via `set_shared_var`
+    /// (tracked in `shared_vars_dirty`), so that function parameters
+    /// initialized by `clone_for_thread` are not overwritten with stale values.
     pub(crate) fn sync_shared_vars_to_env(&mut self) {
+        let dirty = self.shared_vars_dirty.read().unwrap();
         let sv = self.shared_vars.read().unwrap();
-        for (key, val) in sv.iter() {
-            self.env.insert(key.clone(), val.clone());
+        for key in dirty.iter() {
+            if let Some(val) = sv.get(key) {
+                self.env.insert(key.clone(), val.clone());
+            }
         }
     }
 
