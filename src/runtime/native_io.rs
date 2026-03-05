@@ -730,18 +730,26 @@ impl Interpreter {
                 Ok(Value::str(String::new()))
             }
             "write" | "print" => {
-                let content = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
+                let mut content = String::new();
+                for arg in &args {
+                    content.push_str(&self.render_str_value(arg));
+                }
                 self.write_to_handle_value(&target_val, &content, false)?;
                 Ok(Value::Bool(true))
             }
-            "say" | "put" => {
-                let content = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
+            "say" => {
+                let mut content = String::new();
+                for arg in &args {
+                    content.push_str(&self.render_gist_value(arg));
+                }
+                self.write_to_handle_value(&target_val, &content, true)?;
+                Ok(Value::Bool(true))
+            }
+            "put" => {
+                let mut content = String::new();
+                for arg in &args {
+                    content.push_str(&self.render_str_value(arg));
+                }
                 self.write_to_handle_value(&target_val, &content, true)?;
                 Ok(Value::Bool(true))
             }

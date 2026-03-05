@@ -508,13 +508,15 @@ impl Interpreter {
         let mut content = String::new();
         if args.is_empty() && name == "note" {
             content.push_str("Noted");
-        } else if name == "note" {
+        } else if name == "note" || name == "say" {
+            // say and note use .gist for rendering
             for arg in args {
                 content.push_str(&self.render_gist_value(arg));
             }
         } else {
+            // print and put use .Str (method dispatch for custom types)
             for arg in args {
-                content.push_str(&arg.to_string_value());
+                content.push_str(&self.render_str_value(arg));
             }
         }
         let (handle, newline) = match name {
@@ -523,7 +525,7 @@ impl Interpreter {
             _ => ("$*ERR", true),
         };
         self.write_to_named_handle(handle, &content, newline)?;
-        Ok(Value::Nil)
+        Ok(Value::Bool(true))
     }
 
     pub(super) fn builtin_prompt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

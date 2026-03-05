@@ -1050,18 +1050,17 @@ impl Interpreter {
                 return Ok(Value::Seq(std::sync::Arc::new(items)));
             }
             "say" if args.is_empty() => {
-                let s = format!("{}\n", crate::runtime::gist_value(&target));
-                self.emit_output(&s);
-                return Ok(Value::Nil);
+                let gist = self.render_gist_value(&target);
+                self.write_to_named_handle("$*OUT", &gist, true)?;
+                return Ok(Value::Bool(true));
             }
             "print" if args.is_empty() => {
-                self.emit_output(&target.to_string_value());
-                return Ok(Value::Nil);
+                self.write_to_named_handle("$*OUT", &target.to_string_value(), false)?;
+                return Ok(Value::Bool(true));
             }
             "put" if args.is_empty() => {
-                let s = format!("{}\n", crate::runtime::gist_value(&target));
-                self.emit_output(&s);
-                return Ok(Value::Nil);
+                self.write_to_named_handle("$*OUT", &target.to_string_value(), true)?;
+                return Ok(Value::Bool(true));
             }
             "shape" if args.is_empty() => {
                 if let Some(shape) = Self::infer_array_shape(&target) {

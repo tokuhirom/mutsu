@@ -2064,11 +2064,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let inner = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
                 Some(Ok(Value::str(format!("{}({})", kind_str, inner))))
             }
-            Value::Pair(_, _) | Value::ValuePair(_, _) => {
+            Value::Pair(k, v) => {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(raku_value(target))))
                 } else {
-                    Some(Ok(Value::str(target.to_string_value())))
+                    // gist: use " => " separator
+                    Some(Ok(Value::str(format!(
+                        "{} => {}",
+                        k,
+                        runtime::gist_value(v)
+                    ))))
+                }
+            }
+            Value::ValuePair(k, v) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::str(raku_value(target))))
+                } else {
+                    // gist: use " => " separator
+                    Some(Ok(Value::str(format!(
+                        "{} => {}",
+                        runtime::gist_value(k),
+                        runtime::gist_value(v)
+                    ))))
                 }
             }
             Value::BigInt(i) => {
