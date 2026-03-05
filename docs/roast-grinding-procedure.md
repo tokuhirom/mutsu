@@ -238,6 +238,39 @@ Work on 3-5 test files per PR to keep PRs reviewable.
 2. Monitor PRs: `gh pr list --state open`
 3. After each round of PRs merges, re-run `./scripts/roast-history.sh` to find cascade improvements.
 
+### Mandatory Worktree Isolation (Do This First)
+
+Do not assume subagents are automatically isolated. Create dedicated git worktrees manually for each parallel slot.
+
+1. Save current mixed work safely before dispatch:
+   ```bash
+   git switch -c wip/roast-mixed-$(date +%Y%m%d-%H%M)
+   git add -A
+   git commit -m "wip: preserve mixed roast subagent state"
+   git switch roast
+   ```
+2. Create one worktree per active group:
+   ```bash
+   mkdir -p ../wt
+   git worktree add ../wt/roast-io -b roast/phase2-io
+   git worktree add ../wt/roast-list -b roast/phase2-list
+   git worktree add ../wt/roast-concurrency -b roast/phase2-concurrency
+   ```
+3. Dispatch each subagent with an explicit `workdir` in its assigned worktree.
+4. In each worktree, enforce "allowed files" for that group and block edits outside scope.
+5. When a subagent finishes, merge/cherry-pick only that worktree's commit(s), then either:
+   - reuse the same worktree for the next batch in that group, or
+   - remove it with `git worktree remove <path>` and create a fresh one.
+
+Quick health check before dispatch:
+```bash
+git worktree list
+git -C ../wt/roast-io status --short
+git -C ../wt/roast-list status --short
+git -C ../wt/roast-concurrency status --short
+```
+All active worktrees should be clean before starting a new batch.
+
 ---
 
 ## Phase 3: Timeouts & Errors (28 files)
