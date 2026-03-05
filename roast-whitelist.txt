@@ -321,6 +321,7 @@ roast/S12-methods/indirect_notation.t
 roast/S12-methods/instance.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/private.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t

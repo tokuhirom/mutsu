@@ -334,6 +334,26 @@ impl Interpreter {
         None
     }
 
+    pub(crate) fn resolve_private_method_for_vm(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
+        let private_rest = method.strip_prefix('!')?;
+        if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+            self.resolve_private_method_with_owner(class_name, owner_class, pm_name, arg_values)
+        } else {
+            self.resolve_private_method_any_owner(class_name, private_rest, arg_values)
+        }
+    }
+
+    pub(crate) fn can_fast_dispatch_private_method_vm(&self, owner_class: &str) -> bool {
+        self.method_class_stack
+            .last()
+            .is_some_and(|caller| caller == owner_class)
+    }
+
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
         if !self.classes.contains_key(class_name)
             && let Some((base, _)) = class_name.split_once('[')

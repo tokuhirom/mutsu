@@ -294,6 +294,7 @@ impl Interpreter {
                     is_private: false,
                     is_multi: false,
                     is_my: false,
+                    role_origin: None,
                     return_type: None,
                     compiled_code: None,
                 };
