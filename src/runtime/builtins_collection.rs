@@ -1078,7 +1078,11 @@ impl Interpreter {
                 mapper_categories(mapped)
             } else {
                 let path = mapper_path(mapped);
-                if path.is_empty() { Vec::new() } else { vec![path] }
+                if path.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![path]
+                }
             };
             for path in paths {
                 insert_nested_bucket(&mut buckets, &path, mapped_item.clone())?;

@@ -273,7 +273,10 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             "fail" => {
-                let reason = args.into_iter().next().unwrap_or_else(|| Value::str_from("Died"));
+                let reason = args
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| Value::str_from("Died"));
                 ch.fail(Self::as_exception_value(reason));
                 Ok(Value::Nil)
             }

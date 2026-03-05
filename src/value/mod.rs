@@ -549,7 +549,9 @@ impl SharedChannel {
             Self::finish_if_drained(&mut state);
             return Ok(Some(val));
         }
-        if state.drained_closed && let Some(err) = state.failure.clone() {
+        if state.drained_closed
+            && let Some(err) = state.failure.clone()
+        {
             return Err(err);
         }
         Ok(None)
