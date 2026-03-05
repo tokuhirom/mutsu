@@ -303,6 +303,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                         .collect(),
                 ))),
+                Value::Pair(_, _) | Value::ValuePair(_, _) => {
+                    Some(Ok(Value::array(vec![target.clone()])))
+                }
                 Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
                 v if v.is_range() => Some(Ok(Value::array(positional_pairs(
                     &crate::runtime::utils::value_to_list(v),
