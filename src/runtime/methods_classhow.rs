@@ -292,6 +292,7 @@ impl Interpreter {
                     body: sub_data.body.clone(),
                     is_rw: false,
                     is_private: false,
+                    is_multi: false,
                     return_type: None,
                     compiled_code: None,
                 };

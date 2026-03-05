@@ -85,6 +85,7 @@ fn substitute_type_params_in_method(
         body: method.body.clone(),
         is_rw: method.is_rw,
         is_private: method.is_private,
+        is_multi: method.is_multi,
         return_type: method.return_type.clone(),
         compiled_code: method.compiled_code.clone(),
     }
@@ -783,6 +784,7 @@ impl Interpreter {
                                     })],
                                     is_rw: false,
                                     is_private: false,
+                                    is_multi: false,
                                     return_type: None,
                                     compiled_code: None,
                                 });
@@ -820,6 +822,7 @@ impl Interpreter {
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        is_multi: *multi,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1107,6 +1110,7 @@ impl Interpreter {
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        is_multi: *multi,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1173,6 +1177,7 @@ impl Interpreter {
                                         })],
                                         is_rw: false,
                                         is_private: false,
+                                        is_multi: false,
                                         return_type: None,
                                         compiled_code: None,
                                     });
@@ -1254,6 +1259,7 @@ impl Interpreter {
                                 })],
                                 is_rw: false,
                                 is_private: false,
+                                is_multi: false,
                                 return_type: None,
                                 compiled_code: None,
                             });
@@ -1374,6 +1380,7 @@ impl Interpreter {
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        is_multi: *multi,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
