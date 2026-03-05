@@ -83,11 +83,16 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_flip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        use unicode_normalization::UnicodeNormalization;
+        use unicode_segmentation::UnicodeSegmentation;
         let val = args
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        Ok(Value::str(val.chars().rev().collect()))
+        // Flip by grapheme clusters, then normalize to NFC so combining sequences
+        // are emitted in canonical composed form when possible.
+        let reversed = val.graphemes(true).rev().collect::<String>();
+        Ok(Value::str(reversed.nfc().collect::<String>()))
     }
 
     pub(super) fn builtin_lc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
