@@ -33,7 +33,7 @@ const REDUCTION_OPS: &[&str] = &[
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
     "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max",
     "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
-    "o", "∘",
+    "o", "∘", "⊍",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -111,11 +111,13 @@ fn is_valid_reduction_op(op: &str) -> bool {
         "(-)"
             | "(|)"
             | "(&)"
+            | "(.)"
             | "(^)"
             | "(elem)"
             | "(cont)"
             | "∪"
             | "∩"
+            | "⊍"
             | "∖"
             | "⊖"
             | "∈"

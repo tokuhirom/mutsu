@@ -269,7 +269,13 @@ pub(crate) fn native_method_0arg(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.resolve();
     let method = method.as_str();
-    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner
+
+    // Scalar containers are transparent for method dispatch.
+    if let Value::Scalar(inner) = target {
+        return native_method_0arg(inner, method_sym);
+    }
+
+    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
@@ -656,6 +662,8 @@ fn raku_value(v: &Value) -> String {
             };
             format!("{} => {}", key_repr, raku_value(value))
         }
+        Value::Nil => "Nil".to_string(),
+        Value::Package(name) => name.resolve().to_string(),
         other => other.to_string_value(),
     }
 }
@@ -1309,8 +1317,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
-                // LazyList needs interpreter to force; fall through to runtime
-                Value::LazyList(_) => return None,
+                // LazyList is lazy — .elems returns a Failure
+                Value::LazyList(_) => {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str("Cannot .elems a lazy list".to_string()),
+                    );
+                    let exception =
+                        Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    return Some(Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    )));
+                }
                 _ => Value::Int(1),
             };
             Some(Ok(result))
@@ -1825,6 +1848,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
         "lazy" => {
             if is_value_lazy(target) {
+                if let Value::LazyList(list) = target {
+                    let mut env = list.env.clone();
+                    env.insert(
+                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                        Value::Bool(true),
+                    );
+                    let cache = list.cache.lock().unwrap().clone();
+                    return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                        crate::value::LazyList {
+                            body: list.body.clone(),
+                            env,
+                            cache: std::sync::Mutex::new(cache),
+                        },
+                    ))));
+                }
                 return Some(Ok(target.clone()));
             }
             let items = if let Some(items) = target.as_list_items() {
@@ -1832,10 +1870,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             } else {
                 return Some(Ok(target.clone()));
             };
+            let mut env = crate::env::Env::new();
+            env.insert(
+                "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                Value::Bool(true),
+            );
             Some(Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList {
                     body: vec![],
-                    env: crate::env::Env::new(),
+                    env,
                     cache: std::sync::Mutex::new(Some(items)),
                 },
             ))))
@@ -2227,6 +2270,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
+        "of" => match target {
+            Value::Hash(_) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
+                Some(Ok(Value::Package(Symbol::intern("Mu"))))
+            }
+            Value::Array(..) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            _ => None,
+        },
         "tclc" => Some(Ok(Value::str(crate::value::tclc_str(
             &target.to_string_value(),
         )))),
@@ -2501,7 +2552,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "item" => match target {
             Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
-            other => Some(Ok(other.clone())),
+            other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         },
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array

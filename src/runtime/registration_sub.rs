@@ -2,6 +2,57 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn default_check_constraint_base(constraint: &str) -> &str {
+        let mut end = constraint.len();
+        for (idx, ch) in constraint.char_indices() {
+            if ch == '[' || ch == '(' || ch == ':' {
+                end = idx;
+                break;
+            }
+        }
+        &constraint[..end]
+    }
+
+    fn static_default_value_for_typecheck(&mut self, expr: &Expr) -> Option<Value> {
+        match expr {
+            Expr::Literal(v) => Some(v.clone()),
+            Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => {
+                self.eval_block_value(&[Stmt::Expr(expr.clone())]).ok()
+            }
+            _ => None,
+        }
+    }
+
+    fn validate_static_default_typechecks(
+        &mut self,
+        param_defs: &[ParamDef],
+    ) -> Result<(), RuntimeError> {
+        for pd in param_defs {
+            let Some(constraint) = &pd.type_constraint else {
+                continue;
+            };
+            let base_constraint = Self::default_check_constraint_base(constraint);
+            if !self.has_type(base_constraint) {
+                continue;
+            }
+            let Some(default_expr) = &pd.default else {
+                continue;
+            };
+            let Some(default_value) = self.static_default_value_for_typecheck(default_expr) else {
+                continue;
+            };
+            if !self.type_matches_value(constraint, &default_value) {
+                return Err(RuntimeError::new(format!(
+                    "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter '{}'; expected {}, got {}",
+                    pd.name,
+                    constraint,
+                    super::value_type_name(&default_value)
+                )));
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_decl(
         &mut self,
@@ -81,6 +132,7 @@ impl Interpreter {
         } else {
             (param_defs.to_vec(), false)
         };
+        self.validate_static_default_typechecks(&effective_param_defs)?;
         let new_def = FunctionDef {
             package: Symbol::intern(&self.current_package),
             name: Symbol::intern(name),

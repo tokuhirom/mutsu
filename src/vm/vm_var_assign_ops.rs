@@ -3,6 +3,110 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    const LAZY_ASSIGN_PRESERVE_MARKER: &str = "__mutsu_preserve_lazy_on_array_assign";
+    const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
+
+    fn assignment_rhs_values(&mut self, val: &Value) -> Result<Vec<Value>, RuntimeError> {
+        Ok(match val {
+            Value::Array(v, ..) => v.as_ref().clone(),
+            Value::Seq(v) | Value::Slip(v) => v.iter().cloned().collect(),
+            Value::Range(a, b) => {
+                let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < *a {
+                    Vec::new()
+                } else {
+                    (*a..=end).map(Value::Int).collect()
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end <= *a {
+                    Vec::new()
+                } else {
+                    (*a..end).map(Value::Int).collect()
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = a.saturating_add(1);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < start {
+                    Vec::new()
+                } else {
+                    (start..=end).map(Value::Int).collect()
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = a.saturating_add(1);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end <= start {
+                    Vec::new()
+                } else {
+                    (start..end).map(Value::Int).collect()
+                }
+            }
+            Value::LazyList(list) => self.interpreter.force_lazy_list_bridge(list)?,
+            _ => vec![val.clone()],
+        })
+    }
+
+    fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
+        match idx {
+            Value::Range(a, b) => {
+                let start = (*a).max(0);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < start {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..=end)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            Value::RangeExcl(a, b) => {
+                let start = (*a).max(0);
+                let end_excl = (*b)
+                    .max(0)
+                    .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if start >= end_excl {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..end_excl)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = a.saturating_add(1).max(0);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < start {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..=end)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = a.saturating_add(1).max(0);
+                let end_excl = (*b)
+                    .max(0)
+                    .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if start >= end_excl {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..end_excl)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn exec_string_concat_op(&mut self, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n;
@@ -201,6 +305,7 @@ impl VM {
         }
         match &idx {
             Value::Array(keys, ..) => {
+                let mut vals = self.assignment_rhs_values(&val)?;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
@@ -228,10 +333,6 @@ impl VM {
                             }
                         }
                         // Assign each value to the corresponding index
-                        let vals = match &val {
-                            Value::Array(v, ..) => (**v).clone(),
-                            _ => vec![val.clone()],
-                        };
                         for (i, key) in keys.iter().enumerate() {
                             let v = vals.get(i).cloned().unwrap_or(Value::Nil);
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
@@ -247,10 +348,6 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let mut vals = match &val {
-                    Value::Array(v, ..) => (**v).clone(),
-                    _ => vec![val.clone()],
-                };
                 if vals.is_empty() {
                     vals.push(Value::Nil);
                 }
@@ -283,6 +380,12 @@ impl VM {
                         &val,
                     )));
                 }
+                let range_slice = if let Some(indices) = Self::slice_indices_from_index(&idx) {
+                    Some((indices, self.assignment_rhs_values(&val)?))
+                } else {
+                    None
+                };
+                let mut range_initialized_marks: Vec<String> = Vec::new();
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -305,6 +408,28 @@ impl VM {
                                     std::slice::from_ref(&idx),
                                     val.clone(),
                                 )?;
+                            } else if let Some((slice_indices, vals)) = &range_slice {
+                                if let Value::Array(items, ..) = container {
+                                    let arr = Arc::make_mut(items);
+                                    if let Some(max_idx) = slice_indices.last().copied()
+                                        && max_idx >= arr.len()
+                                    {
+                                        arr.resize(
+                                            max_idx + 1,
+                                            Value::Package(Symbol::intern("Any")),
+                                        );
+                                    }
+                                }
+                                for (offset, i) in slice_indices.iter().enumerate() {
+                                    let key = Value::Int(*i as i64);
+                                    let v = vals.get(offset).cloned().unwrap_or(Value::Nil);
+                                    Self::assign_array_multidim(
+                                        container,
+                                        std::slice::from_ref(&key),
+                                        v,
+                                    )?;
+                                    range_initialized_marks.push(Self::encode_bound_index(&key));
+                                }
                             } else if let Some(i) = Self::index_to_usize(&idx) {
                                 if let Value::Array(items, ..) = container {
                                     let is_self_array_ref = matches!(
@@ -341,6 +466,9 @@ impl VM {
                     self.interpreter
                         .env_mut()
                         .insert(var_name.clone(), Value::hash(hash));
+                }
+                for encoded in range_initialized_marks {
+                    self.mark_initialized_index(&var_name, encoded);
                 }
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
@@ -549,19 +677,16 @@ impl VM {
 
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
-        let val = if name.starts_with('@') {
-            if let Value::LazyList(ref list) = val {
-                Value::array(self.interpreter.force_lazy_list_bridge(list)?)
-            } else {
-                val
-            }
-        } else {
-            val
-        };
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(val)
+            match val {
+                Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
+                    Some(Value::Bool(true)) => Value::LazyList(list),
+                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                },
+                other => runtime::coerce_to_array(other),
+            }
         } else {
             val
         };
@@ -740,7 +865,13 @@ impl VM {
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(raw_val)
+            match raw_val {
+                Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
+                    Some(Value::Bool(true)) => Value::LazyList(list),
+                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                },
+                other => runtime::coerce_to_array(other),
+            }
         } else {
             raw_val
         };

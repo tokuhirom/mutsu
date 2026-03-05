@@ -92,6 +92,10 @@ pub(crate) fn native_method_1arg(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.resolve();
     let method = method.as_str();
+
+    if let Value::Scalar(inner) = target {
+        return native_method_1arg(inner, method_sym, arg);
+    }
     match method {
         "chop" => {
             // Type objects (Package) should throw
@@ -322,6 +326,15 @@ pub(crate) fn native_method_1arg(
                         sep,
                         v.to_string_value()
                     ))))
+                }
+                Value::Hash(map) => {
+                    let sep = arg.to_string_value();
+                    let joined = map
+                        .iter()
+                        .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    Some(Ok(Value::str(joined)))
                 }
                 // Scalar values: .join returns the value as a string
                 Value::Str(_)
@@ -1079,6 +1092,10 @@ pub(crate) fn native_method_2arg(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.resolve();
     let method = method.as_str();
+
+    if let Value::Scalar(inner) = target {
+        return native_method_2arg(inner, method_sym, arg1, arg2);
+    }
     if method == "flat" {
         let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
             (Some(depth), is_hammer_pair(arg2))
