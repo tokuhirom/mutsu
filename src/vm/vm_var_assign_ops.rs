@@ -340,6 +340,7 @@ impl VM {
                         .insert(var_name.clone(), Value::hash(hash));
                 }
                 // Sync OS environment when %*ENV is modified
+                #[cfg(not(target_family = "wasm"))]
                 if var_name == "%*ENV" {
                     // SAFETY: mutsu is single-threaded
                     unsafe {

@@ -604,6 +604,7 @@ impl Interpreter {
         // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly.
         {
             let mut env_hash = HashMap::new();
+            #[cfg(not(target_family = "wasm"))]
             for (key, value) in std::env::vars() {
                 env_hash.insert(key, Value::str(value));
             }

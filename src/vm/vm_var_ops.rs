@@ -1036,6 +1036,7 @@ impl VM {
         // Sync OS environment and $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
             // Remove from OS environment
+            #[cfg(not(target_family = "wasm"))]
             match &idx {
                 Value::Array(keys, ..) => {
                     for k in keys.iter() {
