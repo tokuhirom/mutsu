@@ -79,7 +79,7 @@ impl VM {
         let mut parts = Vec::new();
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
-            parts.push(runtime::gist_value(&v));
+            parts.push(self.interpreter.render_gist_value(&v));
         }
         let line = parts.join("");
         self.interpreter

@@ -1039,6 +1039,14 @@ impl Interpreter {
             .unwrap_or_else(|_| crate::runtime::gist_value(value))
     }
 
+    /// Stringify a value by calling .Str method (used by put/print).
+    /// Falls back to to_string_value() if .Str method dispatch fails.
+    pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
+        self.call_method_with_values(value.clone(), "Str", vec![])
+            .map(|result| result.to_string_value())
+            .unwrap_or_else(|_| value.to_string_value())
+    }
+
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {
         self.get_dynamic_handle(name).and_then(|value| match value {
             Value::Str(s) => Some(s.to_string()),
