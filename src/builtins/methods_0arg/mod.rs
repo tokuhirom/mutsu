@@ -1083,6 +1083,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
                 Value::Complex(r, _) => Value::Int(*r as i64),
+                Value::Hash(h) => Value::Int(h.len() as i64),
+                Value::Array(items, ..) => Value::Int(items.len() as i64),
                 _ => return None,
             };
             Some(Ok(result))
@@ -1168,6 +1170,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
                 Value::Complex(r, _) => Value::Num(*r),
                 Value::Array(items, ..) => Value::Int(items.len() as i64),
+                Value::Hash(h) => Value::Int(h.len() as i64),
                 _ => return None,
             };
             Some(Ok(result))

@@ -1927,6 +1927,13 @@ impl Interpreter {
                 return self.dispatch_to_mix(target);
             }
             "Map" | "Hash" if args.is_empty() => {
+                // Type objects return the corresponding type object
+                if matches!(&target, Value::Package(_)) {
+                    return Ok(Value::Package(Symbol::intern(method)));
+                }
+                if method == "Map" {
+                    return self.dispatch_to_map(target);
+                }
                 return self.dispatch_to_hash(target);
             }
             "any" | "all" | "one" | "none" if args.is_empty() => {

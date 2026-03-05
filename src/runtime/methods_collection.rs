@@ -201,6 +201,11 @@ impl Interpreter {
         Ok(Value::mix(weights))
     }
 
+    pub(super) fn dispatch_to_map(&self, target: Value) -> Result<Value, RuntimeError> {
+        // Map is stored as Hash internally in mutsu; .Map on a Hash returns it as-is
+        self.dispatch_to_hash(target)
+    }
+
     pub(super) fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
         match target {
             Value::Hash(_) => Ok(target),
