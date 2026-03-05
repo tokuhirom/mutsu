@@ -272,9 +272,25 @@ impl VM {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-        let (val, bind_mode) = match raw_val {
-            Value::Pair(name, value) if name == "__mutsu_bind_index_value" => (*value, true),
-            other => (other, false),
+        let (val, bind_mode, bind_sources) = match raw_val {
+            Value::Pair(name, payload) if name == "__mutsu_bind_index_value" => match *payload {
+                Value::Array(items, ..) if items.len() >= 2 => {
+                    let value = items.first().cloned().unwrap_or(Value::Nil);
+                    let sources = match items.get(1) {
+                        Some(Value::Array(srcs, ..)) => srcs
+                            .iter()
+                            .map(|src| match src {
+                                Value::Str(s) if !s.is_empty() => Some((**s).clone()),
+                                _ => None,
+                            })
+                            .collect(),
+                        _ => Vec::new(),
+                    };
+                    (value, true, sources)
+                }
+                other => (other, true, Vec::new()),
+            },
+            other => (other, false, Vec::new()),
         };
         // When assigning Nil to a typed container element, use the type object
         let val = if matches!(val, Value::Nil) {
@@ -357,13 +373,32 @@ impl VM {
                         Value::hash(std::collections::HashMap::new()),
                     );
                 }
+                let mut pending_source_updates: Vec<(String, Value)> = Vec::new();
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
-                        let v = vals[i % vals.len()].clone();
-                        h.insert(k, v);
+                        let v = if bind_mode {
+                            vals.get(i).cloned().unwrap_or(Value::Nil)
+                        } else {
+                            vals[i % vals.len()].clone()
+                        };
+                        if bind_mode && let Some(Some(source_name)) = bind_sources.get(i) {
+                            pending_source_updates.push((source_name.clone(), v.clone()));
+                            h.insert(
+                                k,
+                                Value::Pair(
+                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
+                                    Box::new(Value::str(source_name.clone())),
+                                ),
+                            );
+                        } else {
+                            h.insert(k, v);
+                        }
                     }
+                }
+                for (source_name, source_value) in pending_source_updates {
+                    self.interpreter.env_mut().insert(source_name, source_value);
                 }
             }
             _ => {
@@ -386,16 +421,33 @@ impl VM {
                     None
                 };
                 let mut range_initialized_marks: Vec<String> = Vec::new();
+                let mut pending_source_update: Option<(String, Value)> = None;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
-                            if let Value::Hash(source_hash) = &val
-                                && Arc::ptr_eq(hash, source_hash)
+                            let is_self_hash_ref = matches!(
+                                &val,
+                                Value::Hash(source_hash) if Arc::ptr_eq(hash, source_hash)
+                            );
+                            let h = Arc::make_mut(hash);
+                            if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
+                                pending_source_update = Some((source_name.clone(), val.clone()));
+                                h.insert(
+                                    key.clone(),
+                                    Value::Pair(
+                                        super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
+                                        Box::new(Value::str(source_name.clone())),
+                                    ),
+                                );
+                            } else if let Some(Value::Pair(marker, source_name)) = h.get(&key)
+                                && marker == super::vm_var_ops::BOUND_HASH_REF_SENTINEL
                             {
-                                Arc::make_mut(hash)
-                                    .insert(key.clone(), Self::self_hash_ref_marker());
+                                let source_name = source_name.to_string_value();
+                                pending_source_update = Some((source_name, val.clone()));
+                            } else if is_self_hash_ref {
+                                h.insert(key.clone(), Self::self_hash_ref_marker());
                             } else {
-                                Arc::make_mut(hash).insert(key.clone(), val.clone());
+                                h.insert(key.clone(), val.clone());
                             }
                         }
                         Value::Array(..) => {
@@ -466,6 +518,9 @@ impl VM {
                     self.interpreter
                         .env_mut()
                         .insert(var_name.clone(), Value::hash(hash));
+                }
+                if let Some((source_name, source_value)) = pending_source_update {
+                    self.interpreter.env_mut().insert(source_name, source_value);
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
