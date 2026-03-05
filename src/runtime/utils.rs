@@ -674,8 +674,9 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
             kind: crate::value::JunctionKind::One,
             values: std::sync::Arc::new(Vec::new()),
         },
-        // Set operators: empty set
+        // Set operators
         "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
+        "(.)" | "⊍" => Value::bag(HashMap::new()),
         // Comma/zip: empty list
         "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), ArrayKind::List),
         _ => Value::Nil,

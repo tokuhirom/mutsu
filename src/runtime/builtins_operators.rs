@@ -344,6 +344,8 @@ impl Interpreter {
                 | "∪"
                 | "(&)"
                 | "∩"
+                | "(.)"
+                | "⊍"
                 | "(^)"
                 | "⊖"
                 | "(elem)"
@@ -429,6 +431,12 @@ impl Interpreter {
                 return Ok(Value::str(crate::runtime::utils::coerce_to_str(&args[0])));
             }
             // Set operators with single arg: coerce to appropriate set type
+            if op == "(.)" || op == "⊍" {
+                if matches!(args[0], Value::Mix(_)) {
+                    return self.dispatch_to_mix(args[0].clone());
+                }
+                return self.dispatch_to_bag(args[0].clone());
+            }
             if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
                 return Ok(coerce_value_to_quanthash(&args[0]));
             }
@@ -985,6 +993,7 @@ impl Interpreter {
             "+^" => TokenKind::BitXor,
             "(|)" | "∪" => TokenKind::SetUnion,
             "(&)" | "∩" => TokenKind::SetIntersect,
+            "(.)" | "⊍" => TokenKind::SetMultiply,
             "(-)" | "∖" => TokenKind::SetDiff,
             "(^)" | "⊖" => TokenKind::SetSymDiff,
             "(elem)" | "∈" => TokenKind::SetElem,
