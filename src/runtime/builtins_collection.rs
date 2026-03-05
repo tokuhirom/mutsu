@@ -1066,8 +1066,9 @@ impl Interpreter {
 
         for item in &items {
             let mapped = match &mapper {
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => self
-                    .call_sub_value(mapper.clone(), vec![item.clone()], true)?,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                    self.call_sub_value(mapper.clone(), vec![item.clone()], true)?
+                }
                 Value::Hash(map) => map
                     .get(&item.to_string_value())
                     .cloned()
@@ -1098,7 +1099,11 @@ impl Interpreter {
                     mapper_categories(mapped)
                 } else {
                     let path = mapper_path(mapped);
-                    if path.is_empty() { Vec::new() } else { vec![path] }
+                    if path.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![path]
+                    }
                 };
                 for path in paths {
                     if path.len() != 1 {
@@ -1126,7 +1131,11 @@ impl Interpreter {
                 mapper_categories(mapped)
             } else {
                 let path = mapper_path(mapped);
-                if path.is_empty() { Vec::new() } else { vec![path] }
+                if path.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![path]
+                }
             };
             for path in paths {
                 insert_nested_bucket(&mut buckets, &path, mapped_item.clone(), name)?;
