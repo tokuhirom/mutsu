@@ -247,6 +247,8 @@ struct IoHandleState {
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
     closed: bool,
+    out_buffer_capacity: Option<usize>,
+    out_buffer_pending: Vec<u8>,
     #[allow(dead_code)]
     bin: bool,
 }
@@ -1003,8 +1005,25 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "put", "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
+                    "close",
+                    "get",
+                    "getc",
+                    "lines",
+                    "words",
+                    "read",
+                    "write",
+                    "print",
+                    "say",
+                    "put",
+                    "flush",
+                    "seek",
+                    "tell",
+                    "eof",
+                    "encoding",
+                    "opened",
+                    "slurp",
+                    "out-buffer",
+                    "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -2591,6 +2610,8 @@ impl Interpreter {
                 file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
                 socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
                 closed: handle.closed,
+                out_buffer_capacity: handle.out_buffer_capacity,
+                out_buffer_pending: handle.out_buffer_pending.clone(),
                 bin: handle.bin,
             };
             cloned_handles.insert(*id, cloned);

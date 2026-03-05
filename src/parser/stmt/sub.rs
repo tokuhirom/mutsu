@@ -108,10 +108,24 @@ fn constraint_base_type(constraint: &str) -> &str {
     &constraint[..end]
 }
 
-fn default_type_matches_constraint(constraint: &str, default_type: &str) -> Option<bool> {
+fn default_type_matches_constraint(
+    constraint: &str,
+    default_type: &str,
+    default_value: Option<&Value>,
+) -> Option<bool> {
     let base = constraint_base_type(constraint);
     if matches!(base, "Any" | "Mu" | "Cool") {
         return Some(true);
+    }
+    if base == "UInt" {
+        if let Some(value) = default_value {
+            return Some(match value {
+                Value::Int(n) => *n >= 0,
+                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                _ => false,
+            });
+        }
+        return Some(default_type == "Int");
     }
     if base == default_type {
         return Some(true);
@@ -141,7 +155,11 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
         if let (Some(constraint), Some(default_expr)) = (&pd.type_constraint, &pd.default)
             && let Some(default_type) = static_default_type(default_expr)
             && matches!(
-                default_type_matches_constraint(constraint, &default_type),
+                default_type_matches_constraint(
+                    constraint,
+                    &default_type,
+                    literal_value_from_expr(default_expr).as_ref(),
+                ),
                 Some(false)
             )
         {

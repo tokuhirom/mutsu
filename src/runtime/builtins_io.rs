@@ -114,6 +114,21 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("slurp requires a path argument"))?;
         check_null_in_path(&path)?;
+        let bin = args
+            .iter()
+            .skip(1)
+            .any(|arg| matches!(arg, Value::Pair(name, value) if name == "bin" && value.truthy()));
+        if bin {
+            let bytes = fs::read(&path)
+                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
+            let byte_vals: Vec<Value> = bytes
+                .into_iter()
+                .map(|b| Value::Int(i64::from(b)))
+                .collect();
+            let mut attrs = HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            return Ok(Value::make_instance(Symbol::intern("Buf"), attrs));
+        }
         let content = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
         Ok(Value::str(content))
@@ -155,7 +170,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
         check_null_in_path(&path)?;
-        let (read, write, append, bin, line_chomp, line_separators) =
+        let (read, write, append, bin, line_chomp, line_separators, out_buffer_capacity) =
             self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
         self.open_file_handle(
@@ -166,6 +181,7 @@ impl Interpreter {
             bin,
             line_chomp,
             line_separators,
+            out_buffer_capacity,
         )
     }
 
