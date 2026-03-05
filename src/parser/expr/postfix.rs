@@ -1526,8 +1526,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 };
                 continue;
             }
-            // Hyper indexing: expr»[idx] (or expr>>[idx]) => expr».AT-POS(idx)
-            if let Some(r) = after_hyper.strip_prefix('[') {
+            // Hyper indexing: expr»[idx] / expr».[idx] (or >> forms) => expr».AT-POS(idx)
+            let hyper_index_input = after_hyper
+                .strip_prefix(".[")
+                .map(|r| (r, true))
+                .or_else(|| after_hyper.strip_prefix('[').map(|r| (r, false)));
+            if let Some((r, _dotted)) = hyper_index_input {
                 let (r, _) = ws(r)?;
                 if let Some(after) = r.strip_prefix(']') {
                     rest = after;

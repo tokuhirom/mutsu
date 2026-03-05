@@ -3,6 +3,7 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
+pub(super) const BOUND_HASH_REF_SENTINEL: &str = "__mutsu_bound_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
 impl VM {
@@ -75,10 +76,18 @@ impl VM {
         )
     }
 
-    fn resolve_hash_entry(items: &Arc<HashMap<String, Value>>, key: &str) -> Value {
+    fn resolve_hash_entry(&self, items: &Arc<HashMap<String, Value>>, key: &str) -> Value {
         match items.get(key) {
             Some(Value::Pair(name, _)) if name == SELF_HASH_REF_SENTINEL => {
                 Value::Hash(items.clone())
+            }
+            Some(Value::Pair(name, source)) if name == BOUND_HASH_REF_SENTINEL => {
+                let source_name = source.to_string_value();
+                self.interpreter
+                    .env()
+                    .get(&source_name)
+                    .cloned()
+                    .unwrap_or(Value::Nil)
             }
             Some(value) => value.clone(),
             None => Value::Nil,
@@ -728,7 +737,7 @@ impl VM {
                 Value::array(
                     keys.iter()
                         .map(|k| {
-                            let v = Self::resolve_hash_entry(&items, &k.to_string_value());
+                            let v = self.resolve_hash_entry(&items, &k.to_string_value());
                             if matches!(v, Value::Nil) {
                                 default.clone()
                             } else {
@@ -740,17 +749,17 @@ impl VM {
             }
             (Value::Hash(items), Value::Str(key)) => {
                 let default = self.typed_container_default(&Value::Hash(items.clone()));
-                let v = Self::resolve_hash_entry(&items, &key);
+                let v = self.resolve_hash_entry(&items, &key);
                 if matches!(v, Value::Nil) { default } else { v }
             }
             (Value::Hash(items), Value::Int(key)) => {
                 let default = self.typed_container_default(&Value::Hash(items.clone()));
-                let v = Self::resolve_hash_entry(&items, &key.to_string());
+                let v = self.resolve_hash_entry(&items, &key.to_string());
                 if matches!(v, Value::Nil) { default } else { v }
             }
             (Value::Hash(items), key) => {
                 let default = self.typed_container_default(&Value::Hash(items.clone()));
-                let v = Self::resolve_hash_entry(&items, &key.to_string_value());
+                let v = self.resolve_hash_entry(&items, &key.to_string_value());
                 if matches!(v, Value::Nil) { default } else { v }
             }
             (

@@ -411,6 +411,46 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
     }
 }
 
+fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
+    let mut saw_whatever = false;
+    let mut lvalues: Vec<Expr> = Vec::new();
+    for item in items {
+        if matches!(item, Expr::Whatever) {
+            saw_whatever = true;
+            continue;
+        }
+        lvalues.push(item);
+    }
+
+    if lvalues.len() != 1 {
+        return None;
+    }
+    if !saw_whatever {
+        return None;
+    }
+
+    match lvalues.into_iter().next()? {
+        Expr::Var(name) => Some(Expr::AssignExpr {
+            name,
+            expr: Box::new(rhs),
+        }),
+        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(rhs),
+        }),
+        Expr::HashVar(name) => Some(Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(rhs),
+        }),
+        Expr::Index { target, index } => Some(Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(rhs),
+        }),
+        _ => None,
+    }
+}
+
 fn compound_index_assign_expr<F>(target: Expr, index: Expr, build_assigned_value: F) -> Expr
 where
     F: FnOnce(Expr) -> Expr,
@@ -669,7 +709,28 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             }
         }
         Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
-        Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
+        Expr::CallOn { target, args } => {
+            if args.is_empty() {
+                if let Expr::ArrayLiteral(items) = *target.clone() {
+                    if let Some(expr) = list_lvalue_assign_expr(items, rhs.clone()) {
+                        expr
+                    } else {
+                        callable_lvalue_assign_expr(*target, args, rhs)
+                    }
+                } else {
+                    callable_lvalue_assign_expr(*target, args, rhs)
+                }
+            } else {
+                callable_lvalue_assign_expr(*target, args, rhs)
+            }
+        }
+        Expr::ArrayLiteral(items) => {
+            if let Some(expr) = list_lvalue_assign_expr(items, rhs) {
+                expr
+            } else {
+                return Err(PError::expected("assignment expression"));
+            }
+        }
         _ => return Err(PError::expected("assignment expression")),
     };
     if is_atomic {

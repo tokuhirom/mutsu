@@ -900,6 +900,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_one_junction_operator_without_spaces() {
+        let (rest, expr) = expression("3^2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::Caret,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_fat_arrow_chains_right_associatively() {
         let (rest, expr) = expression("1 => 2 => 3 => 4").unwrap();
         assert_eq!(rest, "");
@@ -1662,6 +1675,76 @@ mod tests {
                 assert!(args.is_empty());
             }
             _ => panic!("expected hyper postfix increment"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_index_without_dot() {
+        let (rest, expr) = expression("%h{*}»[1]").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "AT-POS");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(*target, Expr::Index { .. }));
+            }
+            _ => panic!("expected hyper index call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_index_with_dot() {
+        let (rest, expr) = expression("%h{*}».[1]").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "AT-POS");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(*target, Expr::Index { .. }));
+            }
+            _ => panic!("expected hyper dot-index call"),
+        }
+    }
+
+    #[test]
+    fn parse_array_slice_assignment_with_comma_rhs() {
+        let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::IndexAssign { value, .. } => match *value {
+                Expr::ArrayLiteral(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert!(matches!(items[0], Expr::Literal(Value::Int(10))));
+                    assert!(matches!(items[1], Expr::Literal(Value::Int(20))));
+                }
+                other => panic!("expected ArrayLiteral RHS, got {other:?}"),
+            },
+            _ => panic!("expected IndexAssign expression"),
+        }
+    }
+
+    #[test]
+    fn parse_hash_slice_assignment_with_comma_rhs() {
+        let (rest, expr) = expression("%h{1,2} = \"one\", \"two\"").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::IndexAssign { value, .. } => match *value {
+                Expr::ArrayLiteral(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert!(
+                        matches!(items[0], Expr::Literal(Value::Str(ref s)) if s.as_str() == "one")
+                    );
+                    assert!(
+                        matches!(items[1], Expr::Literal(Value::Str(ref s)) if s.as_str() == "two")
+                    );
+                }
+                other => panic!("expected ArrayLiteral RHS, got {other:?}"),
+            },
+            _ => panic!("expected IndexAssign expression"),
         }
     }
 
