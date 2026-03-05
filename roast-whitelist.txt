@@ -66,6 +66,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/int-uint.t
+roast/S02-types/lazy-lists.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_arrays.t
@@ -417,6 +418,7 @@ roast/S16-io/put.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
+roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t

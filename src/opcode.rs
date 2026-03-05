@@ -131,6 +131,7 @@ pub(crate) enum OpCode {
     SetCont,
     SetUnion,
     SetIntersect,
+    SetMultiply,
     SetDiff,
     SetSymDiff,
     SetSubset,
@@ -264,6 +265,8 @@ pub(crate) enum OpCode {
         body_end: u32,
     },
     MakeGather(u32),
+    /// Force eager evaluation of the top-of-stack value (LazyList → Array)
+    Eager,
     CallOnValue {
         arity: u32,
         arg_sources_idx: Option<u32>,

@@ -1695,18 +1695,19 @@ impl VM {
         _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let block_cc = match code_val {
+        let (block_cc, captured_env) = match code_val {
             Value::Sub(data) => {
                 // Targeted sync: refresh shared vars for keys the closure captures
                 self.interpreter.sync_shared_vars_for_keys(data.env.keys());
-                match &data.compiled_code {
+                let block_cc = match &data.compiled_code {
                     Some(cc) => cc.clone(),
                     None => {
                         let compiler = crate::compiler::Compiler::new();
                         let (compiled, _) = compiler.compile(&data.body);
                         Arc::new(compiled)
                     }
-                }
+                };
+                (block_cc, Some(&data.env))
             }
             _ => {
                 return self.interpreter.call_protect_block(code_val);
@@ -1719,9 +1720,13 @@ impl VM {
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
-        for (i, name) in block_cc.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(name) {
-                self.locals[i] = val.clone();
+        if let Some(captured) = captured_env {
+            for (i, name) in block_cc.locals.iter().enumerate() {
+                if captured.contains_key(name)
+                    && let Some(val) = self.interpreter.env().get(name)
+                {
+                    self.locals[i] = val.clone();
+                }
             }
         }
 
@@ -1737,10 +1742,14 @@ impl VM {
         }
 
         // Sync locals back to env
-        for (i, name) in block_cc.locals.iter().enumerate() {
-            self.interpreter
-                .env_mut()
-                .insert(name.clone(), self.locals[i].clone());
+        if let Some(captured) = captured_env {
+            for (i, name) in block_cc.locals.iter().enumerate() {
+                if captured.contains_key(name) {
+                    self.interpreter
+                        .env_mut()
+                        .insert(name.clone(), self.locals[i].clone());
+                }
+            }
         }
 
         // Get return value before restoring state

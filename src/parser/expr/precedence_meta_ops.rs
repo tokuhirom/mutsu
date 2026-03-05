@@ -68,6 +68,7 @@ pub(super) fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
         "~^" => Some(TokenKind::Ident("~^".to_string())),
         "(|)" | "∪" => Some(TokenKind::SetUnion),
         "(&)" | "∩" => Some(TokenKind::SetIntersect),
+        "(.)" | "⊍" => Some(TokenKind::SetMultiply),
         "(^)" | "⊖" => Some(TokenKind::SetSymDiff),
         "(elem)" | "∈" => Some(TokenKind::SetElem),
         "(cont)" | "∋" => Some(TokenKind::SetCont),
@@ -130,20 +131,22 @@ const KNOWN_OPS: &[&str] = &[
     "...^", "...", "…^", "…", "**", "==", "!=", "<=", ">=", "<=>", "===", "~~", "%%", "//", "||",
     "&&", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|",
     "?^", "cmp", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and", "or", "not",
-    "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(^)", "(elem)", "(cont)", "∪", "∩", "⊖",
-    "∈", "∋",
+    "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(.)", "(^)", "(elem)", "(cont)", "∪", "∩",
+    "⊍", "⊖", "∈", "∋",
 ];
 
 fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
     const META_SET_OPS: &[(&str, &str)] = &[
         ("(|)", "(|)"),
         ("(&)", "(&)"),
+        ("(.)", "(.)"),
         ("(-)", "(-)"),
         ("(^)", "(^)"),
         ("(elem)", "(elem)"),
         ("(cont)", "(cont)"),
         ("∪", "∪"),
         ("∩", "∩"),
+        ("⊍", "(.)"),
         ("∖", "(-)"),
         ("⊖", "⊖"),
         ("∈", "∈"),
@@ -323,6 +326,10 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetIntersect, 3))
     } else if input.starts_with('∩') {
         Some((TokenKind::SetIntersect, '∩'.len_utf8()))
+    } else if input.starts_with("(.)") {
+        Some((TokenKind::SetMultiply, 3))
+    } else if input.starts_with('⊍') {
+        Some((TokenKind::SetMultiply, '⊍'.len_utf8()))
     } else if input.starts_with("(-)") {
         Some((TokenKind::SetDiff, 3))
     } else if input.starts_with('∖') {

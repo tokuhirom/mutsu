@@ -796,7 +796,23 @@ impl Interpreter {
             };
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             let fetch_rw = data.is_rw && !data.is_raw;
-            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, fetch_rw));
+            return finalized.and_then(|v| {
+                let v = if let Value::LazyList(list) = v {
+                    let mut env = list.env.clone();
+                    env.insert(
+                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                        Value::Bool(true),
+                    );
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+                        body: list.body.clone(),
+                        env,
+                        cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),
+                    }))
+                } else {
+                    v
+                };
+                self.maybe_fetch_rw_proxy(v, fetch_rw)
+            });
         }
         Err(RuntimeError::new("Callable expected"))
     }

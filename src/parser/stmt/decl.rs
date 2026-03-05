@@ -253,8 +253,61 @@ fn register_term_symbol_from_decl_name(name: &str) {
     if let Some(callable_name) = name.strip_prefix('&') {
         super::simple::register_user_callable_term_symbol(callable_name);
     } else {
-        super::simple::register_user_term_symbol(name);
+        // Don't register keywords as term symbols — they must be handled
+        // by the keyword-specific paths in identifier_or_call, not as
+        // bare words via declared_term_symbol. E.g. `my $sub` should not
+        // cause `sub` to be treated as a bare word on the RHS.
+        if !is_parser_keyword(name) {
+            super::simple::register_user_term_symbol(name);
+        }
     }
+}
+
+fn is_parser_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "loop"
+            | "repeat"
+            | "try"
+            | "do"
+            | "gather"
+            | "sub"
+            | "method"
+            | "my"
+            | "our"
+            | "has"
+            | "class"
+            | "role"
+            | "module"
+            | "use"
+            | "need"
+            | "import"
+            | "require"
+            | "return"
+            | "last"
+            | "next"
+            | "redo"
+            | "die"
+            | "say"
+            | "print"
+            | "put"
+            | "note"
+            | "with"
+            | "without"
+            | "supply"
+            | "react"
+            | "whenever"
+            | "start"
+            | "quietly"
+            | "sink"
+            | "let"
+    )
 }
 
 /// Parse a `use` statement.
@@ -724,7 +777,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, n) = ident(rest)?;
         (r, n)
     };
-    register_term_symbol_from_decl_name(&name);
+    let term_decl_name = if sigil == b'$' {
+        format!("${name}")
+    } else {
+        name.clone()
+    };
+    register_term_symbol_from_decl_name(&term_decl_name);
 
     let (rest, _) = ws(rest)?;
 

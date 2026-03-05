@@ -1575,6 +1575,10 @@ impl Compiler {
                     self.code.emit(OpCode::MakeGather(idx));
                 }
             }
+            Expr::Eager(inner) => {
+                self.compile_expr(inner);
+                self.code.emit(OpCode::Eager);
+            }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::ContainerizePair);
@@ -1872,6 +1876,7 @@ impl Compiler {
             TokenKind::SetCont => Some(OpCode::SetCont),
             TokenKind::SetUnion => Some(OpCode::SetUnion),
             TokenKind::SetIntersect => Some(OpCode::SetIntersect),
+            TokenKind::SetMultiply => Some(OpCode::SetMultiply),
             TokenKind::SetDiff => Some(OpCode::SetDiff),
             TokenKind::SetSymDiff => Some(OpCode::SetSymDiff),
             TokenKind::SetSubset => Some(OpCode::SetSubset),
@@ -1898,6 +1903,7 @@ impl Compiler {
                     || name == "pick"
                     || name == "roll"
                     || name == "take"
+                    || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(
             expr,

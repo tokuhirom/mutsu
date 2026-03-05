@@ -99,6 +99,7 @@ enum SerValue {
         base_name: Symbol,
         type_args: Vec<SerValue>,
     },
+    Scalar(Box<SerValue>),
     Nil,
     Whatever,
     HyperWhatever,
@@ -283,6 +284,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 type_args: ser_args?,
             })
         }
+        Value::Scalar(inner) => Ok(SerValue::Scalar(Box::new(value_to_ser(inner)?))),
         Value::Nil => Ok(SerValue::Nil),
         Value::Whatever => Ok(SerValue::Whatever),
         Value::HyperWhatever => Ok(SerValue::HyperWhatever),
@@ -444,6 +446,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             base_name,
             type_args: type_args.into_iter().map(ser_to_value).collect(),
         },
+        SerValue::Scalar(inner) => Value::Scalar(Box::new(ser_to_value(*inner))),
         SerValue::Nil => Value::Nil,
         SerValue::Whatever => Value::Whatever,
         SerValue::HyperWhatever => Value::HyperWhatever,

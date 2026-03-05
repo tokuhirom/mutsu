@@ -988,6 +988,7 @@ impl Interpreter {
                     "spurt",
                     "unlink",
                     "starts-with",
+                    "watch",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -2572,6 +2573,31 @@ impl Interpreter {
             }
         }
         self.shared_vars_active = true;
+        let mut referenced_handle_ids = std::collections::HashSet::new();
+        for value in self.env.values() {
+            if let Some(id) = Self::handle_id_from_value(value) {
+                referenced_handle_ids.insert(id);
+            }
+        }
+        let mut cloned_handles = HashMap::new();
+        for (id, handle) in &self.handles {
+            if handle.closed || !referenced_handle_ids.contains(id) {
+                continue;
+            }
+            let cloned = IoHandleState {
+                target: handle.target,
+                mode: handle.mode,
+                path: handle.path.clone(),
+                line_separators: handle.line_separators.clone(),
+                line_chomp: handle.line_chomp,
+                encoding: handle.encoding.clone(),
+                file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
+                socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
+                closed: handle.closed,
+                bin: handle.bin,
+            };
+            cloned_handles.insert(*id, cloned);
+        }
         let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
@@ -2590,8 +2616,8 @@ impl Interpreter {
             proto_functions: self.proto_functions.clone(),
             token_defs: self.token_defs.clone(),
             lib_paths: self.lib_paths.clone(),
-            handles: HashMap::new(),
-            next_handle_id: 1,
+            handles: cloned_handles,
+            next_handle_id: self.next_handle_id,
             program_path: self.program_path.clone(),
             current_package: self.current_package.clone(),
             routine_stack: Vec::new(),
@@ -2696,12 +2722,36 @@ impl Interpreter {
             // shared_vars first when shared_vars_active is true.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
+            if let Some(shared_value) = sv.remove(key) {
+                if let Value::Array(mut arc_items, kind) = shared_value {
+                    let items = Arc::make_mut(&mut arc_items);
+                    items.extend(values);
+                    let result = Value::Array(Arc::clone(&arc_items), kind);
+                    sv.insert(key.to_string(), Value::Array(arc_items, kind));
+                    drop(sv);
+                    let needs_mark_dirty = self
+                        .shared_vars_dirty
+                        .read()
+                        .map(|dirty| !dirty.contains(key))
+                        .unwrap_or(false);
+                    if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(key.to_string());
+                    }
+                    return result;
+                }
+                sv.insert(key.to_string(), shared_value);
+            }
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                let needs_mark_dirty = self
+                    .shared_vars_dirty
+                    .read()
+                    .map(|dirty| !dirty.contains(key))
+                    .unwrap_or(false);
+                if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(key.to_string());
                 }
                 return result;
