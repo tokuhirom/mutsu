@@ -711,6 +711,7 @@ impl Interpreter {
                     "collate",
                     "lines",
                     "merge",
+                    "unique",
                     "Supply",
                     "Promise",
                     "schedule-on",

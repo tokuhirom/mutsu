@@ -188,12 +188,21 @@ pub(super) fn supplier_quit(supplier_id: u64, reason: Value) {
 }
 
 #[derive(Clone)]
+struct UniqueFilterState {
+    as_fn: Option<Value>,
+    with_fn: Option<Value>,
+    expires_seconds: Option<f64>,
+    seen: Vec<(Value, std::time::Instant)>,
+}
+
+#[derive(Clone)]
 struct SupplierTapSubscription {
     callback: Value,
     line_mode: bool,
     line_chomp: bool,
     line_buffer: String,
     delay_seconds: f64,
+    unique_filter: Option<UniqueFilterState>,
 }
 
 #[derive(Clone, Default)]
@@ -368,6 +377,7 @@ pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds:
                 line_chomp: true,
                 line_buffer: String::new(),
                 delay_seconds,
+                unique_filter: None,
             });
     }
 }
@@ -388,28 +398,82 @@ pub(super) fn register_supplier_lines_tap(
                 line_chomp: chomp,
                 line_buffer: String::new(),
                 delay_seconds,
+                unique_filter: None,
             });
     }
+}
+
+/// Result of checking a supplier emit callback.
+/// Normal: callback, value, delay
+/// UniqueFiltered: callback, value, delay, as_fn, with_fn (need interpreter to check)
+pub(super) enum SupplierEmitAction {
+    Call(Value, Value, f64),
+    UniqueCheck {
+        callback: Value,
+        value: Value,
+        delay_seconds: f64,
+        as_fn: Option<Value>,
+        with_fn: Option<Value>,
+        tap_index: usize,
+    },
 }
 
 pub(super) fn supplier_emit_callbacks(
     supplier_id: u64,
     emitted_value: &Value,
-) -> Vec<(Value, Value, f64)> {
-    let mut callbacks = Vec::new();
+) -> Vec<SupplierEmitAction> {
+    let mut actions = Vec::new();
     if let Ok(mut map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get_mut(&supplier_id)
     {
-        for tap in &mut subs.taps {
+        for (idx, tap) in subs.taps.iter_mut().enumerate() {
             if tap.line_mode {
                 tap.line_buffer.push_str(&emitted_value.to_string_value());
                 for line in
                     take_complete_lines_from_buffer(&mut tap.line_buffer, tap.line_chomp, false)
                 {
-                    callbacks.push((tap.callback.clone(), Value::str(line), tap.delay_seconds));
+                    actions.push(SupplierEmitAction::Call(
+                        tap.callback.clone(),
+                        Value::str(line),
+                        tap.delay_seconds,
+                    ));
+                }
+            } else if let Some(ref mut uf) = tap.unique_filter {
+                // Expire old seen values if :expires is set
+                if let Some(expire_secs) = uf.expires_seconds {
+                    let now = std::time::Instant::now();
+                    uf.seen
+                        .retain(|(_, ts)| now.duration_since(*ts).as_secs_f64() < expire_secs);
+                }
+
+                if uf.as_fn.is_some() || uf.with_fn.is_some() {
+                    // Need interpreter to evaluate :as / :with
+                    actions.push(SupplierEmitAction::UniqueCheck {
+                        callback: tap.callback.clone(),
+                        value: emitted_value.clone(),
+                        delay_seconds: tap.delay_seconds,
+                        as_fn: uf.as_fn.clone(),
+                        with_fn: uf.with_fn.clone(),
+                        tap_index: idx,
+                    });
+                } else {
+                    // Simple unique check (no :as, no :with) — use value equality
+                    let already_seen = uf
+                        .seen
+                        .iter()
+                        .any(|(s, _)| values_identical(s, emitted_value));
+                    if !already_seen {
+                        uf.seen
+                            .push((emitted_value.clone(), std::time::Instant::now()));
+                        actions.push(SupplierEmitAction::Call(
+                            tap.callback.clone(),
+                            emitted_value.clone(),
+                            tap.delay_seconds,
+                        ));
+                    }
                 }
             } else {
-                callbacks.push((
+                actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
                     emitted_value.clone(),
                     tap.delay_seconds,
@@ -417,7 +481,72 @@ pub(super) fn supplier_emit_callbacks(
             }
         }
     }
-    callbacks
+    actions
+}
+
+/// After the interpreter has evaluated :as/:with for a unique check, call this
+/// to update the seen list if the value is unique.
+pub(super) fn supplier_unique_mark_seen(supplier_id: u64, tap_index: usize, key: Value) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+        && let Some(tap) = subs.taps.get_mut(tap_index)
+        && let Some(ref mut uf) = tap.unique_filter
+    {
+        uf.seen.push((key, std::time::Instant::now()));
+    }
+}
+
+/// Get a copy of the seen keys from a unique filter tap.
+/// Used by the interpreter to check :with comparisons.
+pub(super) fn supplier_unique_get_seen(supplier_id: u64, tap_index: usize) -> Vec<Value> {
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+        && let Some(tap) = subs.taps.get(tap_index)
+        && let Some(ref uf) = tap.unique_filter
+    {
+        uf.seen.iter().map(|(v, _)| v.clone()).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+pub(super) fn register_supplier_unique_tap(
+    supplier_id: u64,
+    tap: Value,
+    delay_seconds: f64,
+    as_fn: Option<Value>,
+    with_fn: Option<Value>,
+    expires_seconds: Option<f64>,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: tap,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds,
+                unique_filter: Some(UniqueFilterState {
+                    as_fn,
+                    with_fn,
+                    expires_seconds,
+                    seen: Vec::new(),
+                }),
+            });
+    }
+}
+
+/// Returns the number of taps currently registered for a supplier.
+pub(super) fn supplier_tap_count(supplier_id: u64) -> usize {
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        subs.taps.len()
+    } else {
+        0
+    }
 }
 
 pub(super) fn flush_supplier_line_taps(supplier_id: u64) -> Vec<(Value, Value)> {

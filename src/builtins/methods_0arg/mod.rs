@@ -1587,6 +1587,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(Value::array(result)))
             }
             Value::LazyList(_) => None,
+            // Supply.unique is handled by native_supply
+            Value::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => Some(Ok(target.clone())),
         },
         "floor" => match target {
