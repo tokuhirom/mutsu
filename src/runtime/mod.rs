@@ -2693,12 +2693,40 @@ impl Interpreter {
             // shared_vars first when shared_vars_active is true.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
+            if let Some(shared_value) = sv.remove(key) {
+                if let Value::Array(mut arc_items, kind) = shared_value {
+                    let items = Arc::make_mut(&mut arc_items);
+                    items.extend(values);
+                    let result = Value::Array(Arc::clone(&arc_items), kind);
+                    sv.insert(key.to_string(), Value::Array(arc_items, kind));
+                    drop(sv);
+                    let needs_mark_dirty = self
+                        .shared_vars_dirty
+                        .read()
+                        .map(|dirty| !dirty.contains(key))
+                        .unwrap_or(false);
+                    if needs_mark_dirty
+                        && let Ok(mut dirty) = self.shared_vars_dirty.write()
+                    {
+                        dirty.insert(key.to_string());
+                    }
+                    return result;
+                }
+                sv.insert(key.to_string(), shared_value);
+            }
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                let needs_mark_dirty = self
+                    .shared_vars_dirty
+                    .read()
+                    .map(|dirty| !dirty.contains(key))
+                    .unwrap_or(false);
+                if needs_mark_dirty
+                    && let Ok(mut dirty) = self.shared_vars_dirty.write()
+                {
                     dirty.insert(key.to_string());
                 }
                 return result;

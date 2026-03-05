@@ -394,6 +394,10 @@ impl Interpreter {
         }
         if args.len() == 1 {
             if op == "(|)" || op == "∪" {
+                let arg0 = match &args[0] {
+                    Value::Scalar(inner) => inner.as_ref(),
+                    other => other,
+                };
                 let is_lazy_union_input = |value: &Value| match value {
                     Value::LazyList(_) => true,
                     Value::GenericRange { start, end, .. } => {
@@ -411,16 +415,13 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-                return match &args[0] {
-                    Value::Instance { class_name, .. } if class_name == "Failure" => {
-                        Err(RuntimeError::new("Exception"))
-                    }
-                    value if is_lazy_union_input(value) => {
-                        Err(RuntimeError::new("X::Cannot::Lazy"))
-                    }
-                    Value::Bag(_) | Value::Mix(_) | Value::Set(_) => Ok(args[0].clone()),
-                    other => Ok(Value::set(crate::runtime::utils::coerce_to_set(other))),
-                };
+                if matches!(arg0, Value::Instance { class_name, .. } if class_name == "Failure") {
+                    return Err(RuntimeError::new("Exception"));
+                }
+                if is_lazy_union_input(arg0) {
+                    return Err(RuntimeError::new("X::Cannot::Lazy"));
+                }
+                return Ok(coerce_value_to_quanthash(arg0));
             }
             if is_chain_comparison_op(op) {
                 return Ok(Value::Bool(true));

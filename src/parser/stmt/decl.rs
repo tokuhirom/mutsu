@@ -266,14 +266,47 @@ fn register_term_symbol_from_decl_name(name: &str) {
 fn is_parser_keyword(name: &str) -> bool {
     matches!(
         name,
-        "if" | "unless" | "for" | "while" | "until" | "given" | "when"
-            | "loop" | "repeat" | "try" | "do" | "gather" | "sub"
-            | "method" | "my" | "our" | "has" | "class" | "role"
-            | "module" | "use" | "need" | "import" | "require"
-            | "return" | "last" | "next" | "redo" | "die"
-            | "say" | "print" | "put" | "note" | "with" | "without"
-            | "supply" | "react" | "whenever" | "start" | "quietly"
-            | "sink" | "let"
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "loop"
+            | "repeat"
+            | "try"
+            | "do"
+            | "gather"
+            | "sub"
+            | "method"
+            | "my"
+            | "our"
+            | "has"
+            | "class"
+            | "role"
+            | "module"
+            | "use"
+            | "need"
+            | "import"
+            | "require"
+            | "return"
+            | "last"
+            | "next"
+            | "redo"
+            | "die"
+            | "say"
+            | "print"
+            | "put"
+            | "note"
+            | "with"
+            | "without"
+            | "supply"
+            | "react"
+            | "whenever"
+            | "start"
+            | "quietly"
+            | "sink"
+            | "let"
     )
 }
 
@@ -744,7 +777,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, n) = ident(rest)?;
         (r, n)
     };
-    register_term_symbol_from_decl_name(&name);
+    let term_decl_name = if sigil == b'$' {
+        format!("${name}")
+    } else {
+        name.clone()
+    };
+    register_term_symbol_from_decl_name(&term_decl_name);
 
     let (rest, _) = ws(rest)?;
 

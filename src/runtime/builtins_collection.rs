@@ -657,6 +657,9 @@ impl Interpreter {
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
         match val {
+            Value::Array(items, kind) if kind.is_itemized() => {
+                out.push(Value::Array(std::sync::Arc::clone(items), *kind))
+            }
             Value::Array(items, ..) | Value::Slip(items) | Value::Seq(items) => {
                 for item in items.iter() {
                     Self::flat_into(item, out);
@@ -1244,6 +1247,7 @@ impl Interpreter {
                 {
                     vec![arg.clone()]
                 }
+                Value::Array(items, kind) if kind.is_itemized() => vec![arg.clone()],
                 Value::Array(items, _) => items.iter().cloned().collect(),
                 Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
                 Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),

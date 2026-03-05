@@ -1320,14 +1320,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let mut ex_attrs = std::collections::HashMap::new();
                     ex_attrs.insert(
                         "message".to_string(),
-                        Value::Str("Cannot .elems a lazy list".to_string()),
+                        Value::str("Cannot .elems a lazy list".to_string()),
                     );
-                    let exception = Value::make_instance("X::Cannot::Lazy".to_string(), ex_attrs);
+                    let exception =
+                        Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
                     let mut failure_attrs = std::collections::HashMap::new();
                     failure_attrs.insert("exception".to_string(), exception);
                     failure_attrs.insert("handled".to_string(), Value::Bool(false));
                     return Some(Ok(Value::make_instance(
-                        "Failure".to_string(),
+                        Symbol::intern("Failure"),
                         failure_attrs,
                     )));
                 }
@@ -1845,6 +1846,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
         "lazy" => {
             if is_value_lazy(target) {
+                if let Value::LazyList(list) = target {
+                    let mut env = list.env.clone();
+                    env.insert(
+                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                        Value::Bool(true),
+                    );
+                    let cache = list.cache.lock().unwrap().clone();
+                    return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                        crate::value::LazyList {
+                            body: list.body.clone(),
+                            env,
+                            cache: std::sync::Mutex::new(cache),
+                        },
+                    ))));
+                }
                 return Some(Ok(target.clone()));
             }
             let items = if let Some(items) = target.as_list_items() {
@@ -1852,10 +1868,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             } else {
                 return Some(Ok(target.clone()));
             };
+            let mut env = crate::env::Env::new();
+            env.insert(
+                "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                Value::Bool(true),
+            );
             Some(Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList {
                     body: vec![],
-                    env: crate::env::Env::new(),
+                    env,
                     cache: std::sync::Mutex::new(Some(items)),
                 },
             ))))

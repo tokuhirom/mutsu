@@ -337,7 +337,7 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
         rest,
         Expr::MethodCall {
             target: Box::new(inner),
-            name: "item".to_string(),
+            name: Symbol::intern("item"),
             args: vec![],
             modifier: None,
             quoted: false,

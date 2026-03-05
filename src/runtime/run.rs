@@ -736,7 +736,11 @@ mod tests {
         );
         assert!(result.is_ok(), "run failed: {:?}", result.err());
         assert!(interp.output.contains("1..1"), "output: {}", interp.output);
-        assert!(interp.output.contains("ok 1 - q-bracket eval"), "output: {}", interp.output);
+        assert!(
+            interp.output.contains("ok 1 - q-bracket eval"),
+            "output: {}",
+            interp.output
+        );
     }
 
     // END phasers must run even after die() or exit().

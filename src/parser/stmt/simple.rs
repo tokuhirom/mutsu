@@ -700,18 +700,19 @@ pub(in crate::parser) fn match_user_declared_term_symbol(
                 {
                     continue;
                 }
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
-                {
-                    match binding {
-                        TermBinding::Value(canonical) => {
-                            best = Some((canonical.clone(), consumed, false));
-                        }
-                        TermBinding::Callable(canonical) => {
-                            best = Some((canonical.clone(), consumed, true));
-                        }
+                let candidate = match binding {
+                    TermBinding::Value(canonical) => (canonical.clone(), consumed, false),
+                    TermBinding::Callable(canonical) => (canonical.clone(), consumed, true),
+                };
+                let replace = match &best {
+                    None => true,
+                    Some((_, best_len, best_callable)) => {
+                        consumed > *best_len
+                            || (consumed == *best_len && candidate.2 && !*best_callable)
                     }
+                };
+                if replace {
+                    best = Some(candidate);
                 }
             }
         }

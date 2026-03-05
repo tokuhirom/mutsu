@@ -998,6 +998,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 /// - Other scalars → Set with one element
 pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
     match val {
+        Value::Scalar(inner) => coerce_value_to_quanthash(inner),
         Value::Set(_) | Value::Bag(_) | Value::Mix(_) => val.clone(),
         Value::Hash(h) => {
             let mut set = HashSet::new();
