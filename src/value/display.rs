@@ -261,10 +261,48 @@ impl Value {
             Value::Str(s) => (**s).clone(),
             Value::Bool(true) => "True".to_string(),
             Value::Bool(false) => "False".to_string(),
-            Value::Range(a, b) => format!("{}..{}", a, b),
-            Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
-            Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
-            Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
+            Value::Range(a, b) => {
+                // .Str on a finite range iterates elements and joins with spaces.
+                // For infinite/very large ranges, fall back to range notation.
+                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+                    format!("{}..{}", a, b)
+                } else {
+                    (*a..=*b)
+                        .map(|i| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+                    format!("{}..^{}", a, b)
+                } else {
+                    (*a..*b)
+                        .map(|i| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+                    format!("^{}..{}", a, b)
+                } else {
+                    (*a + 1..=*b)
+                        .map(|i| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+                    format!("^{}..^{}", a, b)
+                } else {
+                    (*a + 1..*b)
+                        .map(|i| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                }
+            }
             Value::GenericRange {
                 start,
                 end,

@@ -7,6 +7,20 @@ use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
+
+/// Create a Failure value for operations on empty arrays (pop, shift, etc.)
+pub(crate) fn make_empty_array_failure(op: &str) -> Value {
+    let mut ex_attrs = HashMap::new();
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str(format!("Cannot {op} from an empty Array")),
+    );
+    let exception = Value::make_instance(Symbol::intern("X::Cannot::Empty"), ex_attrs);
+    let mut failure_attrs = HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
 type GrepViewBinding = (Arc<Vec<Value>>, Vec<usize>, ArrayKind);
 type GrepViewMap = HashMap<usize, GrepViewBinding>;
 
@@ -466,6 +480,21 @@ pub(crate) fn gist_value(value: &Value) -> String {
         Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
         Value::Version { .. } => format!("v{}", value.to_string_value()),
         Value::Nil => "Nil".to_string(),
+        // Range gist shows the range notation, not the expanded elements
+        Value::Range(a, b) => format!("{}..{}", a, b),
+        Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
+        Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
+        Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let prefix = if *excl_start { "^" } else { "" };
+            let sep = if *excl_end { "..^" } else { ".." };
+            format!("{}{}{}{}", prefix, gist_value(start), sep, gist_value(end))
+        }
         _ => value.to_string_value(),
     }
 }
@@ -1426,6 +1455,22 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         (Value::Num(a), Value::Int(b)) => a
             .partial_cmp(&(*b as f64))
             .unwrap_or(std::cmp::Ordering::Equal) as i32,
+        (Value::Num(a), Value::Rat(n, d)) => {
+            let rat_f = if *d != 0 {
+                *n as f64 / *d as f64
+            } else {
+                f64::NAN
+            };
+            a.partial_cmp(&rat_f).unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
+        (Value::Rat(n, d), Value::Num(b)) => {
+            let rat_f = if *d != 0 {
+                *n as f64 / *d as f64
+            } else {
+                f64::NAN
+            };
+            rat_f.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
         (Value::Num(n), Value::Str(s)) => {
             if let Some(ord) = compare_infinite_num_against_nonnumeric_str(*n, s) {
                 ord

@@ -585,9 +585,14 @@ impl Interpreter {
     pub(super) fn builtin_pop(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         Ok(match args.first().cloned() {
             Some(Value::Array(mut items, ..)) => {
-                Arc::make_mut(&mut items).pop().unwrap_or(Value::Nil)
+                let items_mut = Arc::make_mut(&mut items);
+                if items_mut.is_empty() {
+                    make_empty_array_failure("pop")
+                } else {
+                    items_mut.pop().unwrap_or(Value::Nil)
+                }
             }
-            _ => Value::Nil,
+            _ => make_empty_array_failure("pop"),
         })
     }
 

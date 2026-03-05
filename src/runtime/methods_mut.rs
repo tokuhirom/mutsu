@@ -949,14 +949,22 @@ impl Interpreter {
                 "pop" => {
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        let out = items.pop().unwrap_or(Value::Nil);
+                        let out = if items.is_empty() {
+                            make_empty_array_failure("pop")
+                        } else {
+                            items.pop().unwrap_or(Value::Nil)
+                        };
                         return Ok(out);
                     }
                     let mut items = match target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let out = items.pop().unwrap_or(Value::Nil);
+                    let out = if items.is_empty() {
+                        make_empty_array_failure("pop")
+                    } else {
+                        items.pop().unwrap_or(Value::Nil)
+                    };
                     self.env.insert(key, Value::real_array(items));
                     return Ok(out);
                 }
@@ -1127,14 +1135,22 @@ impl Interpreter {
                 "pop" => {
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        let out = items.pop().unwrap_or(Value::Nil);
+                        let out = if items.is_empty() {
+                            make_empty_array_failure("pop")
+                        } else {
+                            items.pop().unwrap_or(Value::Nil)
+                        };
                         return Ok(out);
                     }
                     let mut items = match &target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let out = items.pop().unwrap_or(Value::Nil);
+                    let out = if items.is_empty() {
+                        make_empty_array_failure("pop")
+                    } else {
+                        items.pop().unwrap_or(Value::Nil)
+                    };
                     self.env
                         .insert(key, Value::Array(Arc::new(items), array_flag));
                     return Ok(out);

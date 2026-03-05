@@ -2079,6 +2079,22 @@ impl Interpreter {
             "minpairs" | "maxpairs" if args.is_empty() => {
                 return self.dispatch_minmaxpairs(target, method);
             }
+            "pop" if args.is_empty() => {
+                // pop on a non-variable array value (e.g. [1,2,3].pop)
+                match target {
+                    Value::Array(mut items, ..) => {
+                        let items_mut = Arc::make_mut(&mut items);
+                        return Ok(if items_mut.is_empty() {
+                            make_empty_array_failure("pop")
+                        } else {
+                            items_mut.pop().unwrap_or(Value::Nil)
+                        });
+                    }
+                    _ => {
+                        return Ok(make_empty_array_failure("pop"));
+                    }
+                }
+            }
             "sort" => {
                 return self.dispatch_sort(target, &args);
             }
