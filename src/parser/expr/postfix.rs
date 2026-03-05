@@ -1377,10 +1377,28 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            // Empty hash subscript (%h{}) follows the same lookup path as %h{*}.
-            let (r, index) = if let Some(r) = r.strip_prefix('}') {
-                (r, Expr::Whatever)
-            } else {
+            // Empty hash subscript (%h{}) is a zen slice — returns the hash itself
+            // (which iterates as pairs), unlike %h{*} which returns values.
+            // However, %h{}:exists and %h{}:delete need Index{Whatever} for adverb handling.
+            if let Some(r) = r.strip_prefix('}') {
+                let (r_adv, _) = ws(r)?;
+                if r_adv.starts_with(":exists")
+                    || r_adv.starts_with(":!exists")
+                    || r_adv.starts_with(":delete")
+                {
+                    // Keep as Index with Whatever so adverb processing works
+                    expr = Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(Expr::Whatever),
+                    };
+                    rest = r;
+                    continue;
+                }
+                expr = Expr::ZenSlice(Box::new(expr));
+                rest = r;
+                continue;
+            }
+            let (r, index) = {
                 let (r, index) = parse_bracket_indices(r)?;
                 let (r, _) = ws(r)?;
                 let (r, _) = parse_char(r, '}')?;

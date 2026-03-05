@@ -269,6 +269,10 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if input.starts_with("not")
         && !is_ident_char(input.as_bytes().get(3).copied())
         && !input[3..].starts_with('(')
+        && !{
+            let trimmed = input[3..].trim_start();
+            trimmed.starts_with("=>") && !trimmed.starts_with("==>")
+        }
     {
         let r = &input[3..];
         let (r, _) = ws(r)?;

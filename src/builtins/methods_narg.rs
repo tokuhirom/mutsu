@@ -323,6 +323,15 @@ pub(crate) fn native_method_1arg(
                         v.to_string_value()
                     ))))
                 }
+                Value::Hash(map) => {
+                    let sep = arg.to_string_value();
+                    let joined = map
+                        .iter()
+                        .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    Some(Ok(Value::str(joined)))
+                }
                 // Scalar values: .join returns the value as a string
                 Value::Str(_)
                 | Value::Int(_)

@@ -289,6 +289,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Value::Seq(items) | Value::Slip(items) => Some(Ok(Value::array(items.to_vec()))),
             Value::Channel(_) => None, // fall through to runtime for drain
+            Value::Hash(map) => {
+                let pairs: Vec<Value> = map
+                    .iter()
+                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                    .collect();
+                Some(Ok(Value::array(pairs)))
+            }
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "Range" => match target {
