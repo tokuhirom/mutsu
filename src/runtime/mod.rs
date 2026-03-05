@@ -2767,9 +2767,19 @@ impl Interpreter {
     /// (tracked in `shared_vars_dirty`), so that function parameters
     /// initialized by `clone_for_thread` are not overwritten with stale values.
     pub(crate) fn sync_shared_vars_to_env(&mut self) {
-        let dirty = self.shared_vars_dirty.read().unwrap();
+        // Collect dirty keys first, then drop the lock before acquiring
+        // shared_vars lock.  This avoids a lock-ordering deadlock:
+        // set_shared_var acquires shared_vars then shared_vars_dirty,
+        // so we must not hold shared_vars_dirty while acquiring shared_vars.
+        let dirty_keys: Vec<String> = {
+            let dirty = self.shared_vars_dirty.read().unwrap();
+            dirty.iter().cloned().collect()
+        };
+        if dirty_keys.is_empty() {
+            return;
+        }
         let sv = self.shared_vars.read().unwrap();
-        for key in dirty.iter() {
+        for key in &dirty_keys {
             if let Some(val) = sv.get(key) {
                 self.env.insert(key.clone(), val.clone());
             }
