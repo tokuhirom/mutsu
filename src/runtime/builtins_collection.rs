@@ -951,10 +951,22 @@ impl Interpreter {
             }
         }
 
+        fn mixed_level_error(name: &str) -> RuntimeError {
+            RuntimeError::new(format!(
+                "X::Invalid::ComputedValue: mixed-level {}",
+                if name == "categorize" {
+                    "categorization"
+                } else {
+                    "classification"
+                }
+            ))
+        }
+
         fn insert_nested_bucket(
             buckets: &mut HashMap<String, Value>,
             path: &[Value],
             item: Value,
+            name: &str,
         ) -> Result<(), RuntimeError> {
             if path.is_empty() {
                 return Ok(());
@@ -969,7 +981,7 @@ impl Interpreter {
                         Arc::make_mut(values).push(item);
                         Ok(())
                     }
-                    Value::Hash(_) => Err(RuntimeError::new("X::Invalid::ComputedValue")),
+                    Value::Hash(_) => Err(mixed_level_error(name)),
                     _ => {
                         *entry = Value::real_array(vec![item]);
                         Ok(())
@@ -982,14 +994,14 @@ impl Interpreter {
                 match entry {
                     Value::Hash(map) => {
                         let map = Arc::make_mut(map);
-                        insert_nested_bucket(map, &path[1..], item)
+                        insert_nested_bucket(map, &path[1..], item, name)
                     }
-                    Value::Array(..) => Err(RuntimeError::new("X::Invalid::ComputedValue")),
+                    Value::Array(..) => Err(mixed_level_error(name)),
                     _ => {
                         *entry = Value::hash(HashMap::new());
                         if let Value::Hash(map) = entry {
                             let map = Arc::make_mut(map);
-                            insert_nested_bucket(map, &path[1..], item)
+                            insert_nested_bucket(map, &path[1..], item, name)
                         } else {
                             Ok(())
                         }
@@ -998,29 +1010,42 @@ impl Interpreter {
             }
         }
 
-        let mapper = match args.first() {
-            Some(value) => value.clone(),
-            None => return Ok(Value::hash(HashMap::new())),
-        };
-
+        let mut mapper: Option<Value> = None;
         let mut as_mapper: Option<Value> = None;
+        let mut into_target_raw: Option<Value> = None;
         let mut into_target: Option<Value> = None;
         let mut positional: Vec<Value> = Vec::new();
-        for arg in args.iter().skip(1) {
-            match arg {
-                Value::Pair(key, value) if key == "as" => as_mapper = Some(*value.clone()),
-                Value::Pair(key, value) if key == "into" => into_target = Some(*value.clone()),
-                _ => positional.push(arg.clone()),
+        for arg in args {
+            let fetched_arg = self.auto_fetch_proxy(arg)?;
+            match &fetched_arg {
+                Value::Pair(key, value) if key == "as" => {
+                    as_mapper = Some(self.auto_fetch_proxy(value)?)
+                }
+                Value::Pair(key, value) if key == "into" => {
+                    into_target_raw = Some(*value.clone());
+                    into_target = Some(self.auto_fetch_proxy(value)?);
+                }
+                _ => {
+                    if mapper.is_none() {
+                        mapper = Some(fetched_arg);
+                    } else {
+                        positional.push(fetched_arg);
+                    }
+                }
             }
         }
+        let Some(mapper) = mapper else {
+            return Ok(into_target.unwrap_or_else(|| Value::hash(HashMap::new())));
+        };
 
-        // Flatten list/array arguments into individual items.
+        // Flatten list/array arguments into individual items and force lazy inputs.
         let mut items = Vec::new();
         for arg in &positional {
             match arg {
                 Value::Array(values, ..) | Value::Seq(values) | Value::Slip(values) => {
                     items.extend(values.iter().cloned())
                 }
+                Value::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),
                 v if v.is_range() => items.extend(crate::runtime::utils::value_to_list(v)),
                 other => items.push(other.clone()),
             }
@@ -1034,12 +1059,16 @@ impl Interpreter {
             Some(Value::Bag(b)) => Some(b.as_ref().clone()),
             _ => None,
         };
+        let mut mix_counts: Option<HashMap<String, f64>> = match into_target.as_ref() {
+            Some(Value::Mix(m)) => Some(m.as_ref().clone()),
+            _ => None,
+        };
 
         for item in &items {
             let mapped = match &mapper {
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => self
-                    .call_sub_value(mapper.clone(), vec![item.clone()], true)
-                    .unwrap_or(Value::Nil),
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                    self.call_sub_value(mapper.clone(), vec![item.clone()], true)?
+                }
                 Value::Hash(map) => map
                     .get(&item.to_string_value())
                     .cloned()
@@ -1059,17 +1088,41 @@ impl Interpreter {
                 other => other,
             };
 
-            let mapped_item = if let Some(as_fn) = as_mapper.clone() {
-                self.call_sub_value(as_fn, vec![item.clone()], true)
-                    .unwrap_or(item.clone())
+            let mapped_item = if let Some(as_fn) = &as_mapper {
+                self.call_sub_value(as_fn.clone(), vec![item.clone()], true)?
             } else {
                 item.clone()
             };
 
-            if let Some(counts) = bag_counts.as_mut() {
-                let path = mapper_path(mapped);
-                if let Some(first) = path.first() {
-                    *counts.entry(first.to_string_value()).or_insert(0) += 1;
+            if bag_counts.is_some() || mix_counts.is_some() {
+                let paths = if name == "categorize" {
+                    mapper_categories(mapped)
+                } else {
+                    let path = mapper_path(mapped);
+                    if path.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![path]
+                    }
+                };
+                for path in paths {
+                    if path.len() != 1 {
+                        return Err(RuntimeError::new(format!(
+                            "X::Invalid::ComputedValue: multi-level {}",
+                            if name == "categorize" {
+                                "categorization"
+                            } else {
+                                "classification"
+                            }
+                        )));
+                    }
+                    let key = path[0].to_string_value();
+                    if let Some(counts) = bag_counts.as_mut() {
+                        *counts.entry(key.clone()).or_insert(0) += 1;
+                    }
+                    if let Some(counts) = mix_counts.as_mut() {
+                        *counts.entry(key).or_insert(0.0) += 1.0;
+                    }
                 }
                 continue;
             }
@@ -1085,12 +1138,32 @@ impl Interpreter {
                 }
             };
             for path in paths {
-                insert_nested_bucket(&mut buckets, &path, mapped_item.clone())?;
+                insert_nested_bucket(&mut buckets, &path, mapped_item.clone(), name)?;
+            }
+        }
+
+        if into_target_raw
+            .as_ref()
+            .is_some_and(|value| matches!(value, Value::Proxy { .. }))
+        {
+            let mut updated: Option<Value> = None;
+            if let Some(counts) = bag_counts.clone() {
+                updated = Some(Value::bag(counts));
+            } else if let Some(counts) = mix_counts.clone() {
+                updated = Some(Value::mix(counts));
+            } else if into_target.is_some() {
+                updated = Some(Value::hash(buckets.clone()));
+            }
+            if let Some(new_value) = updated {
+                let _ = self.assign_proxy_lvalue(into_target_raw.unwrap(), new_value)?;
             }
         }
 
         if let Some(counts) = bag_counts {
             return Ok(Value::bag(counts));
+        }
+        if let Some(counts) = mix_counts {
+            return Ok(Value::mix(counts));
         }
 
         Ok(Value::hash(buckets))
