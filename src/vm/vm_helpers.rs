@@ -695,6 +695,23 @@ impl VM {
         {
             return self.eval_reduction_operator_values(inner_op, right, left);
         }
+        // Z-prefixed meta-operator: zip two lists element-wise with the inner op.
+        if let Some(inner_op) = op.strip_prefix('Z')
+            && !inner_op.is_empty()
+        {
+            let left_list = runtime::value_to_list(left);
+            let right_list = runtime::value_to_list(right);
+            let len = left_list.len().min(right_list.len());
+            let mut results = Vec::new();
+            for i in 0..len {
+                results.push(self.eval_reduction_operator_values(
+                    inner_op,
+                    &left_list[i],
+                    &right_list[i],
+                )?);
+            }
+            return Ok(Value::array(results));
+        }
         let normalized_op = if op == "∘" { "o" } else { op };
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
