@@ -149,6 +149,7 @@ pub(crate) enum Expr {
     Exists {
         target: Box<Expr>,
         negated: bool,
+        delete: bool,
         arg: Option<Box<Expr>>,
         adverb: ExistsAdverb,
     },

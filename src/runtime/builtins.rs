@@ -942,6 +942,18 @@ impl Interpreter {
             .get(3)
             .map(Value::to_string_value)
             .filter(|s| !s.is_empty());
+        let mut delete_after = false;
+        for extra in args.iter().skip(4) {
+            match extra {
+                Value::Pair(key, value) if key == "delete" => {
+                    delete_after = value.truthy();
+                }
+                Value::ValuePair(key, value) if key.to_string_value() == "delete" => {
+                    delete_after = value.truthy();
+                }
+                _ => {}
+            }
+        }
 
         let (kind, keep_missing) = match mode.as_str() {
             "kv" => ("kv", false),
@@ -1023,6 +1035,17 @@ impl Interpreter {
                 }
             }
             _ => return Ok(Value::Nil),
+        }
+
+        if delete_after
+            && let Some(var_name) = var_name.as_ref()
+            && let Some(container) = self.env.get_mut(var_name)
+            && let Value::Hash(map) = container
+        {
+            let h = std::sync::Arc::make_mut(map);
+            for idx in &indices {
+                h.remove(&idx.to_string_value());
+            }
         }
 
         if !is_multi {
