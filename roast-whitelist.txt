@@ -34,6 +34,7 @@ roast/S02-literals/version.t
 roast/S02-magicals/78258.t
 roast/S02-magicals/DISTRO.t
 roast/S02-magicals/GROUP.t
+roast/S02-magicals/KERNEL.t
 roast/S02-magicals/PERL.t
 roast/S02-magicals/RAKU.t
 roast/S02-magicals/USER.t

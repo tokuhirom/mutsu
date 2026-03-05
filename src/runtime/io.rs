@@ -610,6 +610,9 @@ impl Interpreter {
         let vm = Self::make_vm_instance();
         self.env.insert("$*VM".to_string(), vm.clone());
         self.env.insert("*VM".to_string(), vm);
+        let kernel = Self::make_kernel_instance();
+        self.env.insert("*KERNEL".to_string(), kernel.clone());
+        self.env.insert("?KERNEL".to_string(), kernel);
     }
 
     pub(super) fn create_handle(
@@ -853,6 +856,20 @@ impl Interpreter {
                 Value::str_from("browser"),
             ]),
         );
+        attrs.insert(
+            "KERNELnames".to_string(),
+            Value::array(vec![
+                Value::str_from("darwin"),
+                Value::str_from("linux"),
+                Value::str_from("freebsd"),
+                Value::str_from("openbsd"),
+                Value::str_from("netbsd"),
+                Value::str_from("dragonfly"),
+                Value::str_from("sunos"),
+                Value::str_from("win32"),
+                Value::str_from("browser"),
+            ]),
+        );
         Value::make_instance(Symbol::intern("Perl"), attrs)
     }
 
@@ -875,6 +892,95 @@ impl Interpreter {
         attrs.insert("precomp-ext".to_string(), Value::str_from("mutsu"));
         attrs.insert("precomp-target".to_string(), Value::str_from("mutsu"));
         Value::make_instance(Symbol::intern("VM"), attrs)
+    }
+
+    pub(super) fn make_kernel_instance() -> Value {
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+
+        // Kernel name (e.g., "linux", "darwin", "win32")
+        let name = match os {
+            "macos" => "darwin".to_string(),
+            "windows" => "win32".to_string(),
+            _ => os.to_string(),
+        };
+
+        // Kernel release (e.g., "6.18.7-76061807-generic")
+        let release = Command::new("uname")
+            .arg("-r")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+
+        // Hardware (e.g., "x86_64")
+        let hardware = Command::new("uname")
+            .arg("-m")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| arch.to_string());
+
+        // Architecture (mapped from Rust's ARCH constant)
+        let arch_str = match arch {
+            "x86_64" => "x86_64",
+            "x86" => "i386",
+            "aarch64" => "aarch64",
+            "arm" => "arm",
+            _ => arch,
+        }
+        .to_string();
+
+        // Bits
+        let bits: i64 = if arch == "x86_64" || arch == "aarch64" || arch == "powerpc64" {
+            64
+        } else {
+            32
+        };
+
+        // Hostname
+        let hostname = Command::new("hostname")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+
+        // Version from release string
+        let version = Self::parse_version_string(&release);
+
+        // Build signals list (first 32 standard POSIX signals)
+        let signal_names = [
+            "", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV",
+            "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN",
+            "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS",
+        ];
+        let signals: Vec<Value> = (0..32)
+            .map(|i| {
+                if i < signal_names.len() && !signal_names[i].is_empty() {
+                    Value::str(format!("SIG{}", signal_names[i]))
+                } else {
+                    Value::Nil
+                }
+            })
+            .collect();
+
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::str(name));
+        attrs.insert("auth".to_string(), Value::str_from("unknown"));
+        attrs.insert("version".to_string(), version);
+        attrs.insert(
+            "signature".to_string(),
+            Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
+        );
+        attrs.insert("desc".to_string(), Value::Str(String::new().into()));
+        attrs.insert("release".to_string(), Value::str(release));
+        attrs.insert("hardware".to_string(), Value::str(hardware));
+        attrs.insert("arch".to_string(), Value::str(arch_str));
+        attrs.insert("bits".to_string(), Value::Int(bits));
+        attrs.insert("hostname".to_string(), Value::str(hostname));
+        attrs.insert("signals".to_string(), Value::array(signals));
+
+        Value::make_instance(Symbol::intern("Kernel"), attrs)
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
