@@ -789,6 +789,16 @@ impl Interpreter {
                 "dynamic".to_string(),
                 Value::Bool(self.is_var_dynamic(target_var)),
             );
+            // Add .default: explicit `is default(...)` value, or type object
+            // for typed variables, or (Any) for untyped.
+            let default_val = if let Some(def) = self.var_default(target_var) {
+                def.clone()
+            } else if let Some(tc) = self.var_type_constraint(target_var) {
+                Value::Package(Symbol::intern(&tc))
+            } else {
+                Value::Package(Symbol::intern("Any"))
+            };
+            attributes.insert("default".to_string(), default_val);
             let meta = Value::make_instance(Symbol::intern(class_name), attributes);
             self.set_var_meta_value(target_var, meta.clone());
             return Ok(meta);
