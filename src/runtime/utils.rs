@@ -66,13 +66,22 @@ pub(crate) fn get_grep_view_binding(
 /// Check if an array is a shaped (multidimensional) array.
 /// A shaped array is one explicitly created as multidimensional via `:shape`.
 pub(crate) fn is_shaped_array(value: &Value) -> bool {
+    if let Value::Array(_, kind) = value
+        && *kind == ArrayKind::Shaped
+    {
+        return true;
+    }
     shaped_array_shape(value).is_some()
 }
 
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
-    let Value::Array(items, ..) = value else {
+    let Value::Array(items, kind) = value else {
         return None;
     };
+    // Only arrays explicitly created as shaped can be shaped
+    if *kind != ArrayKind::Shaped {
+        return None;
+    }
     let key = shaped_array_key(items);
 
     fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {

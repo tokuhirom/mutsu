@@ -1140,6 +1140,18 @@ impl VM {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
+            OpCode::MultiDimIndex(ndims) => {
+                self.exec_multi_dim_index_op(*ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssign { name_idx, ndims } => {
+                self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssignGeneric(ndims) => {
+                self.exec_multi_dim_index_assign_generic_op(*ndims)?;
+                *ip += 1;
+            }
             OpCode::HyperSlice(adverb) => {
                 self.exec_hyper_slice_op(*adverb)?;
                 *ip += 1;

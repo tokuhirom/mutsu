@@ -405,7 +405,10 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
         }
     }
-    if matches!(expr, Expr::Index { .. }) && rest.starts_with('=') && !rest.starts_with("==") {
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
+        && rest.starts_with('=')
+        && !rest.starts_with("==")
+    {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
@@ -416,6 +419,14 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
+        if let Expr::MultiDimIndex { target, dimensions } = expr {
+            let stmt = Stmt::Expr(Expr::MultiDimIndexAssign {
+                target,
+                dimensions,
+                value: Box::new(value),
+            });
+            return parse_statement_modifier(rest, stmt);
+        }
         if let Expr::Index { target, index } = expr {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"

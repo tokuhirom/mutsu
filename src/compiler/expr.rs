@@ -983,6 +983,15 @@ impl Compiler {
                     self.code.emit(OpCode::Index);
                 }
             }
+            // Multi-dimensional indexing: @a[$x;$y;$z]
+            Expr::MultiDimIndex { target, dimensions } => {
+                self.compile_expr(target);
+                for dim in dimensions {
+                    self.compile_expr(dim);
+                }
+                self.code
+                    .emit(OpCode::MultiDimIndex(dimensions.len() as u32));
+            }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {
                 self.compile_expr(target);
@@ -1161,13 +1170,49 @@ impl Compiler {
                         }
                         _ => {}
                     }
-                    // Non-index, non-env: use ExistsExpr
-                    if !matches!(target.as_ref(), Expr::Index { .. } | Expr::ZenSlice(_)) {
+                    // Non-index, non-env, non-multidim: use ExistsExpr
+                    if !matches!(
+                        target.as_ref(),
+                        Expr::Index { .. } | Expr::ZenSlice(_) | Expr::MultiDimIndex { .. }
+                    ) {
                         self.compile_expr(target);
                         self.code.emit(OpCode::ExistsExpr);
                         return;
                     }
                 }
+                // MultiDimIndex targets: compile as a call to
+                // __mutsu_multidim_exists_adverb(target, negated, adverb, dim0, dim1, ...)
+                if let Expr::MultiDimIndex {
+                    target: mdtarget,
+                    dimensions,
+                } = target.as_ref()
+                {
+                    let adverb_str = match adverb {
+                        ExistsAdverb::Kv => "kv",
+                        ExistsAdverb::NotKv => "not-kv",
+                        ExistsAdverb::P => "p",
+                        ExistsAdverb::NotP => "not-p",
+                        ExistsAdverb::InvalidK => "k",
+                        ExistsAdverb::InvalidNotK => "not-k",
+                        ExistsAdverb::InvalidV => "v",
+                        ExistsAdverb::None => "none",
+                        ExistsAdverb::NotV => "not-v",
+                    };
+                    // Build args: target, negated_bool, adverb_name, dim0, dim1, ...
+                    let mut call_args = vec![
+                        mdtarget.as_ref().clone(),
+                        Expr::Literal(Value::Bool(*negated)),
+                        Expr::Literal(Value::str(adverb_str.to_string())),
+                    ];
+                    call_args.extend(dimensions.iter().cloned());
+                    let call = Expr::Call {
+                        name: crate::symbol::Symbol::intern("__mutsu_multidim_exists_adverb"),
+                        args: call_args,
+                    };
+                    self.compile_expr(&call);
+                    return;
+                }
+
                 // Rich case: use ExistsIndexAdv opcode
                 let is_zen = matches!(target.as_ref(), Expr::ZenSlice(_));
                 let mut flags: u32 = 0;
@@ -1759,6 +1804,34 @@ impl Compiler {
                     self.compile_expr(index);
                     self.compile_expr(value);
                     self.code.emit(OpCode::IndexAssignGeneric);
+                }
+            }
+            // Multi-dimensional index assignment: @a[$x;$y;$z] = value
+            Expr::MultiDimIndexAssign {
+                target,
+                dimensions,
+                value,
+            } => {
+                // Compile as a runtime call: __mutsu_multidim_assign(target_var, dim0, dim1, ..., value)
+                if let Some(var_name) = Self::index_assign_target_name(target) {
+                    self.compile_expr(value);
+                    for dim in dimensions {
+                        self.compile_expr(dim);
+                    }
+                    let name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::MultiDimIndexAssign {
+                        name_idx,
+                        ndims: dimensions.len() as u32,
+                    });
+                } else {
+                    // Fallback: compile target, dims, value, use generic handler
+                    self.compile_expr(target);
+                    for dim in dimensions {
+                        self.compile_expr(dim);
+                    }
+                    self.compile_expr(value);
+                    self.code
+                        .emit(OpCode::MultiDimIndexAssignGeneric(dimensions.len() as u32));
                 }
             }
             Expr::IndirectTypeLookup(inner) => {

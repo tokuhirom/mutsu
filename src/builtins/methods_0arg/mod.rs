@@ -669,7 +669,7 @@ fn range_gist_string(value: &Value) -> String {
 
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => format!("$({})", inner),
@@ -678,7 +678,7 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
 
 fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => format!("$({})", inner),
