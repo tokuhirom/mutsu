@@ -882,7 +882,14 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             r
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
+        if r2.starts_with('$')
+            || r2.starts_with('@')
+            || r2.starts_with('%')
+            || r2.starts_with('&')
+            || r2.starts_with('*')
+            || (r2.starts_with(':')
+                && r2.len() > 1
+                && matches!(r2.as_bytes()[1], b'$' | b'@' | b'%' | b'&'))
         {
             type_constraint = Some(tc);
             r2
@@ -1009,6 +1016,16 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
 
+    // Named parameter prefix: :$x, :@l, :%h
+    let mut named = false;
+    if rest.starts_with(':')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'$' | b'@' | b'%' | b'&')
+    {
+        named = true;
+        rest = &rest[1..];
+    }
+
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (rest, name) = var_name(rest)?;
 
@@ -1102,7 +1119,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             default,
             multi_invocant: true,
             required: required_marker,
-            named: false,
+            named,
             slurpy,
             double_slurpy,
             sigilless: false,
