@@ -433,9 +433,13 @@ impl VM {
         let topic = self.stack.pop().unwrap();
         let body_start = *ip + 1;
         let end = body_end as usize;
+        let stack_base = self.stack.len();
 
         let saved_topic = self.interpreter.env().get("_").cloned();
         let saved_when = self.interpreter.when_matched();
+        let saved_topic_source = self.topic_source_var.take();
+        let container_binding = self.container_ref_var.take();
+        self.topic_source_var = container_binding.clone();
         self.interpreter.env_mut().insert("_".to_string(), topic);
         self.interpreter.set_when_matched(false);
 
@@ -443,6 +447,7 @@ impl VM {
         while inner_ip < end {
             if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
                 if e.is_succeed {
+                    self.stack.truncate(stack_base);
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
                     }
@@ -452,6 +457,7 @@ impl VM {
                     } else {
                         self.interpreter.env_mut().remove("_");
                     }
+                    self.topic_source_var = saved_topic_source;
                     *ip = end;
                     return Ok(());
                 }
@@ -461,11 +467,17 @@ impl VM {
                 } else {
                     self.interpreter.env_mut().remove("_");
                 }
+                self.topic_source_var = saved_topic_source;
                 return Err(e);
             }
             if self.interpreter.when_matched() || self.interpreter.is_halted() {
                 break;
             }
+        }
+        if self.stack.len() > stack_base {
+            let last = self.stack.pop().unwrap_or(Value::Nil);
+            self.stack.truncate(stack_base);
+            self.stack.push(last);
         }
 
         self.interpreter.set_when_matched(saved_when);
@@ -474,6 +486,7 @@ impl VM {
         } else {
             self.interpreter.env_mut().remove("_");
         }
+        self.topic_source_var = saved_topic_source;
         *ip = end;
         Ok(())
     }
@@ -556,7 +569,46 @@ impl VM {
                 .get("_")
                 .cloned()
                 .unwrap_or(Value::Nil);
-            self.interpreter.smart_match_values(&topic, &cond_val)
+            match cond_val {
+                Value::Sub(_) | Value::Routine { .. } => {
+                    let (_params, param_defs) = self.interpreter.callable_signature(&cond_val);
+                    if !param_defs.is_empty() {
+                        let mut positional_required = 0usize;
+                        let mut positional_total = 0usize;
+                        for pd in &param_defs {
+                            if pd.named || pd.traits.iter().any(|t| t == "invocant") {
+                                continue;
+                            }
+                            if pd.slurpy || pd.double_slurpy {
+                                positional_total = positional_total.max(1);
+                                continue;
+                            }
+                            positional_total += 1;
+                            if pd.required || (!pd.optional_marker && pd.default.is_none()) {
+                                positional_required += 1;
+                            }
+                        }
+                        if positional_required > 1 {
+                            return Err(RuntimeError::new(
+                                "when condition Callable with arity > 1 is not allowed",
+                            ));
+                        }
+                        let call_args = if positional_total == 0 {
+                            vec![]
+                        } else {
+                            vec![topic.clone()]
+                        };
+                        self.interpreter
+                            .call_sub_value(cond_val.clone(), call_args, false)
+                            .map(|v| v.truthy())?
+                    } else {
+                        // Builtin/proto callables without explicit signature metadata:
+                        // keep smartmatch behavior.
+                        self.interpreter.smart_match_values(&topic, &cond_val)
+                    }
+                }
+                _ => self.interpreter.smart_match_values(&topic, &cond_val),
+            }
         };
         if matches {
             let mut did_proceed = false;

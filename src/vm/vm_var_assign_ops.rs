@@ -632,6 +632,13 @@ impl VM {
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
+            if var_name == "_"
+                && let Some(ref source_var) = self.topic_source_var
+            {
+                let source_name = source_var.clone();
+                self.set_env_with_main_alias(&source_name, updated.clone());
+                self.update_local_if_exists(code, &source_name, &updated);
+            }
             // Re-register container default for `is default(...)` after mutation,
             // since Arc::make_mut may have changed the pointer identity.
             if let Some(def) = self.interpreter.var_default(&var_name).cloned() {
