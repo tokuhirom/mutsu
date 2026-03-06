@@ -1613,10 +1613,15 @@ impl Interpreter {
                 }
 
                 // A Package on the LHS is a type object - check type hierarchy
-                if let Value::Package(_) = left {
+                if let Value::Package(lhs_name) = left {
                     let type_ok = self.type_matches_value(base_type, left);
                     if !type_ok {
-                        return false;
+                        let rhs_type_obj = Value::Package(Symbol::intern(base_type));
+                        let reverse_type_ok =
+                            self.type_matches_value(&lhs_name.resolve(), &rhs_type_obj);
+                        if !reverse_type_ok {
+                            return false;
+                        }
                     }
                     // Check definedness constraint
                     return match smiley {

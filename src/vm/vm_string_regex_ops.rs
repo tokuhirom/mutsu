@@ -48,6 +48,13 @@ fn samemark_per_word(target: &str, source: &str) -> String {
 }
 
 impl VM {
+    fn should_retry_with_canonical_infix_name(name: &str) -> bool {
+        matches!(
+            name,
+            "(<=)" | "⊆" | "(>=)" | "⊇" | "(<)" | "⊂" | "(>)" | "⊃" | "⊈" | "⊉"
+        )
+    }
+
     pub(super) fn exec_subst_op(
         &mut self,
         code: &CompiledCode,
@@ -618,6 +625,12 @@ impl VM {
         {
             return Ok(v);
         }
+        if Self::should_retry_with_canonical_infix_name(name)
+            && let Some(op_name) = infix_name
+            && let Ok(v) = self.interpreter.call_function(op_name, call_args.clone())
+        {
+            return Ok(v);
+        }
         match self.interpreter.call_function(name, call_args.clone()) {
             Ok(v) => Ok(v),
             Err(err) => {
@@ -629,6 +642,12 @@ impl VM {
                     || err.message.starts_with("Unexpected named argument '");
                 if is_empty_sig_rejection {
                     if let Ok(v) = self.interpreter.call_function(name, Vec::new()) {
+                        return Ok(v);
+                    }
+                    if Self::should_retry_with_canonical_infix_name(name)
+                        && let Some(op_name) = infix_name
+                        && let Ok(v) = self.interpreter.call_function(op_name, Vec::new())
+                    {
                         return Ok(v);
                     }
                     if let Some(op_name) = infix_name {

@@ -100,23 +100,21 @@ impl Interpreter {
                         ));
                     }
                 };
-                let Some(meta) = self.type_metadata.get(&invocant_name.resolve()) else {
-                    if invocant_name == "Grammar" {
-                        return Ok(Self::version_from_value(Value::str_from("6.e")));
-                    }
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                    ));
-                };
-                let Some(value) = meta.get("ver").cloned() else {
-                    if invocant_name == "Grammar" {
-                        return Ok(Self::version_from_value(Value::str_from("6.e")));
-                    }
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                    ));
-                };
-                Ok(Self::version_from_value(value))
+                let name = invocant_name.resolve();
+                if let Some(meta) = self.type_metadata.get(&name)
+                    && let Some(value) = meta.get("ver").cloned()
+                {
+                    return Ok(Self::version_from_value(value));
+                }
+                if let Some(subset) = self.subsets.get(&name) {
+                    return Ok(Self::version_from_value(Value::str(subset.version.clone())));
+                }
+                if invocant_name == "Grammar" {
+                    return Ok(Self::version_from_value(Value::str_from("6.e")));
+                }
+                Err(RuntimeError::new(
+                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
+                ))
             }
             "auth" if args.len() == 1 => {
                 let invocant_name = match &args[0] {
@@ -151,8 +149,24 @@ impl Interpreter {
                 if is_same {
                     return Ok(Value::Bool(true));
                 }
-                let mro = self.class_mro(&class_name.resolve());
+                let class_resolved = class_name.resolve();
                 let other_resolved = other_name.resolve();
+                if let Some(subset) = self.subsets.get(&class_resolved) {
+                    let mut base = subset.base.clone();
+                    loop {
+                        if base == other_resolved {
+                            return Ok(Value::Bool(true));
+                        }
+                        let Some(parent_subset) = self.subsets.get(&base) else {
+                            break;
+                        };
+                        if parent_subset.base == base {
+                            break;
+                        }
+                        base = parent_subset.base.clone();
+                    }
+                }
+                let mro = self.class_mro(&class_name.resolve());
                 Ok(Value::Bool(mro.iter().any(|p| p == &other_resolved)))
             }
             "mro" if !args.is_empty() => {
@@ -294,6 +308,7 @@ impl Interpreter {
                     is_private: false,
                     is_multi: false,
                     is_my: false,
+                    role_origin: None,
                     return_type: None,
                     compiled_code: None,
                 };

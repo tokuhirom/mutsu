@@ -1,6 +1,28 @@
 use super::*;
+use num_traits::ToPrimitive;
 
 impl Interpreter {
+    pub(super) fn parse_out_buffer_size(value: &Value) -> Option<usize> {
+        match value {
+            Value::Int(i) if *i >= 0 => Some(*i as usize),
+            Value::BigInt(i) if i.sign() != num_bigint::Sign::Minus => i.to_usize(),
+            _ => None,
+        }
+    }
+
+    pub(super) fn flush_file_handle_buffer(state: &mut IoHandleState) -> Result<(), RuntimeError> {
+        if state.out_buffer_pending.is_empty() {
+            return Ok(());
+        }
+        let Some(file) = state.file.as_mut() else {
+            return Err(RuntimeError::new("IO::Handle is not attached to a file"));
+        };
+        file.write_all(&state.out_buffer_pending)
+            .map_err(|err| RuntimeError::new(format!("Failed to write to file: {}", err)))?;
+        state.out_buffer_pending.clear();
+        Ok(())
+    }
+
     pub(super) fn default_line_separators(&self) -> Vec<Vec<u8>> {
         match self.newline_mode {
             NewlineMode::Lf => vec![b"\r\n".to_vec(), b"\n".to_vec()],
@@ -92,8 +114,37 @@ impl Interpreter {
                 if matches!(state.mode, IoHandleMode::Read) {
                     return Err(RuntimeError::new("Handle not open for writing"));
                 }
-                if let Some(file) = state.file.as_mut() {
-                    file.write_all(payload.as_bytes()).map_err(|err| {
+                let Some(_) = state.file.as_mut() else {
+                    return Err(RuntimeError::new("IO::Handle is not attached to a file"));
+                };
+                let payload_bytes = payload.as_bytes();
+                if let Some(capacity) = state.out_buffer_capacity {
+                    if capacity == 0 {
+                        Self::flush_file_handle_buffer(state)?;
+                        if let Some(file) = state.file.as_mut() {
+                            file.write_all(payload_bytes).map_err(|err| {
+                                RuntimeError::new(format!("Failed to write to file: {}", err))
+                            })?;
+                        }
+                        return Ok(());
+                    }
+                    if payload_bytes.len() > capacity {
+                        // Large payloads bypass buffering after flushing queued data.
+                        Self::flush_file_handle_buffer(state)?;
+                        if let Some(file) = state.file.as_mut() {
+                            file.write_all(payload_bytes).map_err(|err| {
+                                RuntimeError::new(format!("Failed to write to file: {}", err))
+                            })?;
+                        }
+                        return Ok(());
+                    }
+                    if state.out_buffer_pending.len() + payload_bytes.len() > capacity {
+                        Self::flush_file_handle_buffer(state)?;
+                    }
+                    state.out_buffer_pending.extend_from_slice(payload_bytes);
+                    Ok(())
+                } else if let Some(file) = state.file.as_mut() {
+                    file.write_all(payload_bytes).map_err(|err| {
                         RuntimeError::new(format!("Failed to write to file: {}", err))
                     })?;
                     Ok(())
@@ -124,6 +175,13 @@ impl Interpreter {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
             return Ok(false);
+        }
+        if matches!(state.target, IoHandleTarget::File) {
+            Self::flush_file_handle_buffer(state)?;
+            if let Some(file) = state.file.as_mut() {
+                file.flush()
+                    .map_err(|err| RuntimeError::new(format!("Failed to flush handle: {}", err)))?;
+            }
         }
         state.closed = true;
         state.file = None;
@@ -335,23 +393,29 @@ impl Interpreter {
     pub(super) fn parse_io_flags_values(
         &self,
         args: &[Value],
-    ) -> (bool, bool, bool, bool, bool, Vec<Vec<u8>>) {
+    ) -> (bool, bool, bool, bool, bool, Vec<Vec<u8>>, Option<usize>) {
         let mut read = false;
         let mut write = false;
         let mut append = false;
         let mut bin = false;
         let mut chomp = true;
         let mut nl_in: Option<Vec<Vec<u8>>> = None;
+        let mut out_buffer: Option<usize> = None;
         for arg in args {
             if let Value::Pair(name, value) = arg {
                 let truthy = value.truthy();
                 match name.as_str() {
                     "r" => read = truthy,
                     "w" => write = truthy,
+                    "rw" => {
+                        read = truthy;
+                        write = truthy;
+                    }
                     "a" => append = truthy,
                     "bin" => bin = truthy,
                     "chomp" => chomp = truthy,
                     "nl-in" => nl_in = Some(Self::parse_nl_in_value(value)),
+                    "out-buffer" => out_buffer = Self::parse_out_buffer_size(value),
                     _ => {}
                 }
             }
@@ -368,6 +432,7 @@ impl Interpreter {
             Self::normalize_line_separators(
                 nl_in.unwrap_or_else(|| self.default_line_separators()),
             ),
+            out_buffer,
         )
     }
 
@@ -381,14 +446,17 @@ impl Interpreter {
         bin: bool,
         line_chomp: bool,
         line_separators: Vec<Vec<u8>>,
+        out_buffer_capacity: Option<usize>,
     ) -> Result<Value, RuntimeError> {
         let mut options = fs::OpenOptions::new();
         options.read(read);
         options.write(write || append);
         if append {
             options.append(true).create(true);
-        } else if write {
+        } else if write && !read {
             options.create(true).truncate(true);
+        } else if write && read {
+            options.create(true);
         }
         let file = options.open(path).map_err(|err| {
             RuntimeError::new(format!("Failed to open '{}': {}", path.display(), err))
@@ -414,6 +482,8 @@ impl Interpreter {
             file: Some(file),
             socket: None,
             closed: false,
+            out_buffer_capacity,
+            out_buffer_pending: Vec::new(),
             bin,
         };
         self.handles.insert(id, state);

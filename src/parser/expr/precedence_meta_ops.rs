@@ -318,7 +318,13 @@ pub(super) fn parse_bracket_infix_op(input: &str) -> Option<BracketInfix> {
 }
 
 fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
-    if input.starts_with("(|)") {
+    if input.starts_with("(==)") {
+        Some((TokenKind::Ident("(==)".to_string()), 4))
+    } else if input.starts_with('≡') {
+        Some((TokenKind::Ident("≡".to_string()), '≡'.len_utf8()))
+    } else if input.starts_with('≢') {
+        Some((TokenKind::Ident("≢".to_string()), '≢'.len_utf8()))
+    } else if input.starts_with("(|)") {
         Some((TokenKind::SetUnion, 3))
     } else if input.starts_with('∪') {
         Some((TokenKind::SetUnion, '∪'.len_utf8()))

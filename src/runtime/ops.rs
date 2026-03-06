@@ -197,6 +197,32 @@ impl Interpreter {
         Ok(Value::set(l))
     }
 
+    fn set_equal_bag_counts(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+        let mut counts = Self::union_bag_counts(value)?;
+        counts.retain(|_, v| *v > 0);
+        Ok(counts)
+    }
+
+    fn set_equal_mix_weights(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        let mut weights = Self::union_mix_weights(value)?;
+        weights.retain(|_, w| *w != 0.0);
+        Ok(weights)
+    }
+
+    fn apply_set_equality(left: &Value, right: &Value) -> Result<bool, RuntimeError> {
+        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+            return Ok(Self::set_equal_mix_weights(left)? == Self::set_equal_mix_weights(right)?);
+        }
+        if matches!(left, Value::Bag(_)) || matches!(right, Value::Bag(_)) {
+            return Ok(Self::set_equal_bag_counts(left)? == Self::set_equal_bag_counts(right)?);
+        }
+        Ok(Self::union_set_keys(left)? == Self::union_set_keys(right)?)
+    }
+
     fn multiply_pair_i64(value: &Value) -> i64 {
         match value {
             Value::Int(i) => *i,
@@ -221,6 +247,9 @@ impl Interpreter {
     fn multiply_bag_counts(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, (i64, bool)>, RuntimeError> {
+        if let Value::Scalar(inner) = value {
+            return Self::multiply_bag_counts(inner.as_ref());
+        }
         fn parse_pair_key(key: &str) -> Option<(String, i64, bool)> {
             let (base, raw_weight) = key.split_once('\t')?;
             let weight = match raw_weight {
@@ -325,6 +354,9 @@ impl Interpreter {
     fn multiply_mix_weights(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        if let Value::Scalar(inner) = value {
+            return Self::multiply_mix_weights(inner.as_ref());
+        }
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
@@ -408,6 +440,14 @@ impl Interpreter {
     }
 
     fn apply_set_multiply(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        let left = match left {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
+        let right = match right {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
         if matches!(left, Value::Instance { class_name, .. } if class_name == "Failure")
             || matches!(right, Value::Instance { class_name, .. } if class_name == "Failure")
         {
@@ -1060,6 +1100,8 @@ impl Interpreter {
             "(-)" | "∖" => Ok(set_diff_values(left, right)),
             "(&)" | "∩" => Ok(set_intersect_values(left, right)),
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
+            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
+            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op

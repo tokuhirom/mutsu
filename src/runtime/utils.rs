@@ -66,13 +66,22 @@ pub(crate) fn get_grep_view_binding(
 /// Check if an array is a shaped (multidimensional) array.
 /// A shaped array is one explicitly created as multidimensional via `:shape`.
 pub(crate) fn is_shaped_array(value: &Value) -> bool {
+    if let Value::Array(_, kind) = value
+        && *kind == ArrayKind::Shaped
+    {
+        return true;
+    }
     shaped_array_shape(value).is_some()
 }
 
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
-    let Value::Array(items, ..) = value else {
+    let Value::Array(items, kind) = value else {
         return None;
     };
+    // Only arrays explicitly created as shaped can be shaped
+    if *kind != ArrayKind::Shaped {
+        return None;
+    }
     let key = shaped_array_key(items);
 
     fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
@@ -210,6 +219,11 @@ fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(
 
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left, right) {
+        (Value::Package(name), Value::Int(0)) | (Value::Int(0), Value::Package(name))
+            if name.resolve() == "int" =>
+        {
+            true
+        }
         (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
@@ -221,7 +235,26 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             a_inner.eqv(b_inner) && a_mix == b_mix
         }
         (Value::Mixin(_, _), _) | (_, Value::Mixin(_, _)) => false,
-        (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+        (
+            Value::Instance {
+                class_name: a_class,
+                id: a_id,
+                ..
+            },
+            Value::Instance {
+                class_name: b_class,
+                id: b_id,
+                ..
+            },
+        ) => {
+            let a_name = a_class.resolve();
+            let b_name = b_class.resolve();
+            if a_name == b_name && (a_name == "Stash" || a_name == "Supply") {
+                left.eqv(right)
+            } else {
+                a_id == b_id
+            }
+        }
         _ => left.eqv(right),
     }
 }
@@ -407,24 +440,54 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
     Ok(Value::hash(map))
 }
 
+/// Maximum number of elements when expanding an infinite range into an Array.
+/// TODO: Properly implement lazy arrays that reify elements on demand.
+const MAX_ARRAY_EXPAND: i64 = 100_000;
+
 pub(crate) fn coerce_to_array(value: Value) -> Value {
+    fn metadata_shape_for_items(items: &Arc<Vec<Value>>) -> Option<Vec<usize>> {
+        let key = shaped_array_key(items);
+        shaped_array_ids()
+            .lock()
+            .ok()
+            .and_then(|ids| ids.get(&key).cloned())
+    }
+
     match value {
-        Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
+        Value::Array(items, kind) => {
+            if kind == ArrayKind::Shaped {
+                Value::Array(items, kind)
+            } else if let Some(shape) = metadata_shape_for_items(&items) {
+                let value = Value::Array(items, ArrayKind::Shaped);
+                mark_shaped_array(&value, Some(&shape));
+                value
+            } else {
+                Value::Array(items, ArrayKind::Array)
+            }
+        }
         Value::Nil => Value::real_array(Vec::new()),
-        Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::Range(a, b) => Value::real_array((a..=b).map(Value::Int).collect()),
-        Value::RangeExcl(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExcl(a, b) => Value::real_array((a..b).map(Value::Int).collect()),
-        Value::RangeExclStart(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclStart(a, b) => Value::real_array((a + 1..=b).map(Value::Int).collect()),
-        Value::RangeExclBoth(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclBoth(a, b) => Value::real_array((a + 1..b).map(Value::Int).collect()),
+        Value::Range(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::real_array((a..=end).map(Value::Int).collect())
+        }
+        Value::RangeExcl(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::real_array((a..end).map(Value::Int).collect())
+        }
+        Value::RangeExclStart(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::real_array((a + 1..=end).map(Value::Int).collect())
+        }
+        Value::RangeExclBoth(a, b) => {
+            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+            Value::real_array((a + 1..end).map(Value::Int).collect())
+        }
         Value::GenericRange {
             ref start, ref end, ..
         } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
             Value::real_array(value_to_list(&value))
         }
-        Value::GenericRange { .. } => value,
+        Value::GenericRange { .. } => Value::real_array(value_to_list(&value)),
         Value::Slip(items) | Value::Seq(items) => Value::Array(items, ArrayKind::Array),
         Value::LazyList(_) => value,
         other => Value::real_array(vec![other]),
@@ -506,6 +569,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
     matches!(
         constraint,
         "Int"
+            | "UInt"
             | "Num"
             | "Str"
             | "Bool"
@@ -596,6 +660,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::ParametricRole { .. } => "Package",
         Value::CustomType { .. } => "CustomType",
         Value::CustomTypeInstance { .. } => "CustomTypeInstance",
+        Value::Scalar(inner) => value_type_name(inner),
     }
 }
 
@@ -942,6 +1007,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     }
 
     match val {
+        Value::Scalar(inner) => coerce_to_set(inner),
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
@@ -986,6 +1052,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 /// - Other scalars → Set with one element
 pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
     match val {
+        Value::Scalar(inner) => coerce_value_to_quanthash(inner),
         Value::Set(_) | Value::Bag(_) | Value::Mix(_) => val.clone(),
         Value::Hash(h) => {
             let mut set = HashSet::new();
@@ -1388,6 +1455,9 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             attributes,
             ..
         } if class_name == "Match" => attributes.get("str").and_then(to_float_value),
+        Value::Instance { attributes, .. } => {
+            attributes.get("__mutsu_int_value").and_then(to_float_value)
+        }
         Value::Hash(map) => Some(map.len() as f64),
         _ => None,
     }
@@ -1511,6 +1581,27 @@ pub(crate) fn to_int(v: &Value) -> i64 {
                 })
         }
         Value::Num(f) => *f as i64,
+        Value::Range(a, b) => {
+            if b >= a {
+                b - a + 1
+            } else {
+                0
+            }
+        }
+        Value::RangeExcl(a, b) | Value::RangeExclStart(a, b) => {
+            if b > a {
+                b - a
+            } else {
+                0
+            }
+        }
+        Value::RangeExclBoth(a, b) => {
+            if *b > *a + 1 {
+                b - a - 1
+            } else {
+                0
+            }
+        }
         Value::Rat(n, d) => {
             if *d != 0 {
                 n / d
@@ -1520,6 +1611,11 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         }
         Value::Complex(r, _) => *r as i64,
         Value::Str(s) => s.parse().unwrap_or(0),
+        Value::Array(items, ..) => items.len() as i64,
+        Value::Hash(items) => items.len() as i64,
+        Value::Seq(items) => items.len() as i64,
+        Value::Slip(items) => items.len() as i64,
+        Value::Instance { attributes, .. } => attributes.get("__mutsu_int_value").map_or(0, to_int),
         _ => 0,
     }
 }

@@ -680,10 +680,15 @@ impl VM {
             name,
             base,
             predicate,
+            version,
         } = stmt
         {
-            self.interpreter
-                .register_subset_decl(&name.resolve(), base, predicate.as_ref());
+            self.interpreter.register_subset_decl(
+                &name.resolve(),
+                base,
+                predicate.as_ref(),
+                version,
+            );
             self.env_dirty = true;
             Ok(())
         } else {
