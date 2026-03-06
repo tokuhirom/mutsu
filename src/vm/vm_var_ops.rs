@@ -871,49 +871,96 @@ impl VM {
             (Value::Mix(m), idx) => Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)),
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
-                let (start, _end, _excl_start, _excl_end) = range_params(range);
-                if i < 0 {
-                    Value::Nil
+                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                    if i < 0 {
+                        Value::Nil
+                    } else {
+                        Value::Int(start + i)
+                    }
                 } else {
-                    Value::Int(start + i)
+                    let items = crate::runtime::utils::value_to_list(range);
+                    if i < 0 {
+                        Value::Nil
+                    } else {
+                        items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    }
                 }
             }
             (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
-                let (start, end, _excl_start, excl_end) = range_params(range);
-                let actual_end = if excl_end { end - 1 } else { end };
-                let mut result = Vec::new();
-                for i in a..b {
-                    let val = start + i;
-                    if val > actual_end {
-                        break;
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
+                    let mut result = Vec::new();
+                    for i in a..b {
+                        let val = start + i;
+                        if val > actual_end {
+                            break;
+                        }
+                        result.push(Value::Int(val));
                     }
-                    result.push(Value::Int(val));
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let start = a.max(0) as usize;
+                    let end_excl = b.max(0) as usize;
+                    if start >= items.len() {
+                        Value::array(Vec::new())
+                    } else {
+                        let end_excl = end_excl.min(items.len());
+                        if start >= end_excl {
+                            Value::array(Vec::new())
+                        } else {
+                            Value::array(items[start..end_excl].to_vec())
+                        }
+                    }
                 }
-                Value::array(result)
             }
             (ref range, Value::Range(a, b)) if range.is_range() => {
-                let (start, end, _excl_start, excl_end) = range_params(range);
-                let actual_end = if excl_end { end - 1 } else { end };
-                let mut result = Vec::new();
-                for i in a..=b {
-                    let val = start + i;
-                    if val > actual_end {
-                        break;
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
+                    let mut result = Vec::new();
+                    for i in a..=b {
+                        let val = start + i;
+                        if val > actual_end {
+                            break;
+                        }
+                        result.push(Value::Int(val));
                     }
-                    result.push(Value::Int(val));
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let start = a.max(0) as usize;
+                    let end = b.max(-1) as usize;
+                    if start >= items.len() {
+                        Value::array(Vec::new())
+                    } else {
+                        let end = end.min(items.len().saturating_sub(1));
+                        Value::array(items[start..=end].to_vec())
+                    }
                 }
-                Value::array(result)
             }
             (ref range, Value::Array(indices, ..)) if range.is_range() => {
-                let (start, _end, _excl_start, _excl_end) = range_params(range);
-                let result: Vec<Value> = indices
-                    .iter()
-                    .map(|idx| match idx {
-                        Value::Int(i) => Value::Int(start + i),
-                        _ => Value::Nil,
-                    })
-                    .collect();
-                Value::array(result)
+                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|idx| match idx {
+                            Value::Int(i) => Value::Int(start + i),
+                            _ => Value::Nil,
+                        })
+                        .collect();
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|idx| match idx {
+                            Value::Int(i) if *i >= 0 => {
+                                items.get(*i as usize).cloned().unwrap_or(Value::Nil)
+                            }
+                            _ => Value::Nil,
+                        })
+                        .collect();
+                    Value::array(result)
+                }
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (Value::Array(ref items, ..), Value::Sub(ref data)) => {
@@ -1997,23 +2044,29 @@ impl VM {
 }
 
 /// Extract (start, end, excl_start, excl_end) from a Range value.
-fn range_params(v: &Value) -> (i64, i64, bool, bool) {
+fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
     match v {
-        Value::Range(a, b) => (*a, *b, false, false),
-        Value::RangeExcl(a, b) => (*a, *b, false, true),
-        Value::RangeExclStart(a, b) => (*a + 1, *b, true, false),
-        Value::RangeExclBoth(a, b) => (*a + 1, *b, true, true),
+        Value::Range(a, b) => Some((*a, *b, false, false)),
+        Value::RangeExcl(a, b) => Some((*a, *b, false, true)),
+        Value::RangeExclStart(a, b) => Some((*a + 1, *b, true, false)),
+        Value::RangeExclBoth(a, b) => Some((*a + 1, *b, true, true)),
         Value::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
+            if !start.is_numeric() || !end.is_numeric() {
+                return None;
+            }
             let s = start.to_f64() as i64;
             let e = end.to_f64() as i64;
+            if start.to_f64().is_nan() || end.to_f64().is_nan() {
+                return None;
+            }
             let s = if *excl_start { s + 1 } else { s };
-            (s, e, *excl_start, *excl_end)
+            Some((s, e, *excl_start, *excl_end))
         }
-        _ => (0, 0, false, false),
+        _ => None,
     }
 }

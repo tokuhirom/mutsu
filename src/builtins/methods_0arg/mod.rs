@@ -2391,6 +2391,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExclStart(a, b) => Some(Ok(if a < b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { start, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(start.as_ref().clone()))
+                } else {
+                    Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
@@ -2404,6 +2424,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*b) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclStart(a, b) => {
+                Some(Ok(if a < b { Value::Int(*b) } else { Value::Nil }))
+            }
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { end, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(end.as_ref().clone()))
+                } else {
+                    Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
