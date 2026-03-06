@@ -720,6 +720,24 @@ impl Interpreter {
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
+            || (matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+                && matches!(
+                    method,
+                    "start"
+                        | "kill"
+                        | "write"
+                        | "close-stdin"
+                        | "ready"
+                        | "print"
+                        | "say"
+                        | "command"
+                        | "started"
+                        | "w"
+                        | "pid"
+                        | "stdout"
+                        | "stderr"
+                        | "Supply"
+                ))
             || (matches!(method, "AT-KEY" | "keys")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash"))
             || (!is_pseudo_method

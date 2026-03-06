@@ -719,7 +719,7 @@ fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
             break;
         }
         if let Some((r, quoted)) = parse_quoted_word(rest)? {
-            words.push(Expr::Literal(Value::str(quoted)));
+            words.push(quoted);
             rest = r;
             continue;
         }
@@ -746,28 +746,24 @@ fn trim_breaking_ws(input: &str) -> &str {
     &input[idx..]
 }
 
-fn parse_quoted_word(input: &str) -> Result<Option<(&str, String)>, PError> {
+fn parse_quoted_word(input: &str) -> Result<Option<(&str, Expr)>, PError> {
     if let Ok((rest, expr)) = single_quoted_string(input) {
-        return quoted_word_literal(rest, expr);
+        return quoted_word_expr(rest, expr);
     }
     if let Ok((rest, expr)) = smart_single_quoted_string(input) {
-        return quoted_word_literal(rest, expr);
+        return quoted_word_expr(rest, expr);
     }
     if let Ok((rest, expr)) = double_quoted_string(input) {
-        return quoted_word_literal(rest, expr);
+        return quoted_word_expr(rest, expr);
     }
     if let Ok((rest, expr)) = smart_double_quoted_string(input) {
-        return quoted_word_literal(rest, expr);
+        return quoted_word_expr(rest, expr);
     }
     Ok(None)
 }
 
-fn quoted_word_literal(rest: &str, expr: Expr) -> Result<Option<(&str, String)>, PError> {
-    if let Expr::Literal(Value::Str(s)) = expr {
-        Ok(Some((rest, s.to_string())))
-    } else {
-        Err(PError::expected("string literal word"))
-    }
+fn quoted_word_expr(rest: &str, expr: Expr) -> Result<Option<(&str, Expr)>, PError> {
+    Ok(Some((rest, expr)))
 }
 fn angle_word_expr(word: &str) -> Expr {
     // Raku `<...>` words produce allomorphic types: numeric-looking words

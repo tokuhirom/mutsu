@@ -647,11 +647,13 @@ impl Interpreter {
                             Value::Pair(key, value) if key == "w" => {
                                 w_flag = value.truthy();
                             }
+                            Value::Pair(key, _value) if key == "out" => {}
                             _ => positional.push(arg.clone()),
                         }
                     }
                     let stdout_id = super::native_methods::next_supply_id();
                     let stderr_id = super::native_methods::next_supply_id();
+                    let supply_id = super::native_methods::next_supply_id();
                     let mut stdout_supply_attrs = HashMap::new();
                     stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -662,6 +664,11 @@ impl Interpreter {
                     stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     stderr_supply_attrs
                         .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+                    let mut merged_supply_attrs = HashMap::new();
+                    merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs
+                        .insert("supply_id".to_string(), Value::Int(supply_id as i64));
 
                     let mut attrs = HashMap::new();
                     attrs.insert("cmd".to_string(), Value::array(positional));
@@ -673,6 +680,10 @@ impl Interpreter {
                     attrs.insert(
                         "stderr".to_string(),
                         Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
+                    );
+                    attrs.insert(
+                        "supply".to_string(),
+                        Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
                     );
                     if w_flag {
                         attrs.insert("w".to_string(), Value::Bool(true));

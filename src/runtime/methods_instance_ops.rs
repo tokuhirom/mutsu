@@ -229,6 +229,43 @@ impl Interpreter {
                     );
                 return Ok(Value::Bool(can));
             }
+            if class_name == "Proc::Async" {
+                if matches!(
+                    method,
+                    "start"
+                        | "kill"
+                        | "write"
+                        | "close-stdin"
+                        | "ready"
+                        | "print"
+                        | "say"
+                        | "Supply"
+                ) {
+                    let (result, updated) = self.call_native_instance_method_mut(
+                        &class_name.resolve(),
+                        (**attributes).clone(),
+                        method,
+                        args,
+                    )?;
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        *target_id,
+                        updated,
+                    );
+                    return Ok(result);
+                }
+                if matches!(
+                    method,
+                    "command" | "started" | "w" | "pid" | "stdout" | "stderr" | "Supply"
+                ) {
+                    return self.call_native_instance_method(
+                        &class_name.resolve(),
+                        attributes,
+                        method,
+                        args,
+                    );
+                }
+            }
             if self.is_native_method(&class_name.resolve(), method) {
                 return self.call_native_instance_method(
                     &class_name.resolve(),
