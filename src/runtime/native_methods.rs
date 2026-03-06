@@ -1844,7 +1844,8 @@ impl Interpreter {
         match method {
             "finish" => self.dispatch_thread_finish(attributes),
             "id" => Ok(attributes
-                .get("thread_id")
+                .get("id")
+                .or_else(|| attributes.get("thread_id"))
                 .cloned()
                 .unwrap_or(Value::Int(0))),
             "WHAT" => Ok(Value::Package(crate::symbol::Symbol::intern("Thread"))),
