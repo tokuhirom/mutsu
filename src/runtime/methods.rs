@@ -19,6 +19,8 @@ impl Interpreter {
                 | "THREAD"
                 | "raku"
                 | "perl"
+                | "first"
+                | "grep"
         )
     }
 
