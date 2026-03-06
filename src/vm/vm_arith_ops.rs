@@ -218,11 +218,79 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Buf ~ Buf → Buf (byte concatenation)
+        if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            let mut bytes = Self::extract_buf_bytes(&left);
+            bytes.extend(Self::extract_buf_bytes(&right));
+            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            self.stack.push(Value::make_instance(
+                crate::symbol::Symbol::intern("Buf"),
+                attrs,
+            ));
+            return;
+        }
+        // Buf ~ non-Buf or non-Buf ~ Buf: also produce Buf if one side is Buf
+        if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
+            let mut bytes = if Self::is_buf_value(&left) {
+                Self::extract_buf_bytes(&left)
+            } else {
+                crate::runtime::utils::coerce_to_str(&left)
+                    .as_bytes()
+                    .to_vec()
+            };
+            let right_bytes = if Self::is_buf_value(&right) {
+                Self::extract_buf_bytes(&right)
+            } else {
+                crate::runtime::utils::coerce_to_str(&right)
+                    .as_bytes()
+                    .to_vec()
+            };
+            bytes.extend(right_bytes);
+            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            self.stack.push(Value::make_instance(
+                crate::symbol::Symbol::intern("Buf"),
+                attrs,
+            ));
+            return;
+        }
         self.stack.push(Value::str(format!(
             "{}{}",
             crate::runtime::utils::coerce_to_str(&left),
             crate::runtime::utils::coerce_to_str(&right)
         )));
+    }
+
+    fn is_buf_value(val: &Value) -> bool {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } else {
+            false
+        }
+    }
+
+    fn extract_buf_bytes(val: &Value) -> Vec<u8> {
+        if let Value::Instance { attributes, .. } = val
+            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        {
+            return items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i as u8,
+                    _ => 0,
+                })
+                .collect();
+        }
+        Vec::new()
     }
 
     pub(super) fn exec_int_div_op(&mut self) -> Result<(), RuntimeError> {

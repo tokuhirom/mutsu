@@ -900,6 +900,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_one_junction_operator_without_spaces() {
+        let (rest, expr) = expression("3^2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::Caret,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_fat_arrow_chains_right_associatively() {
         let (rest, expr) = expression("1 => 2 => 3 => 4").unwrap();
         assert_eq!(rest, "");
@@ -995,6 +1008,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_upto_with_negative_literal() {
+        let (rest, expr) = expression("^-1").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Binary { left, op, right } => {
+                assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+                assert!(matches!(op, TokenKind::DotDotCaret));
+                assert!(matches!(
+                    *right,
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+            }
+            _ => panic!("expected upto range expression"),
+        }
+    }
+
+    #[test]
     fn parse_topical_dot_angle_expression() {
         let (rest, expr) = expression(".<a>").unwrap();
         assert_eq!(rest, "");
@@ -1073,6 +1106,44 @@ mod tests {
             },
             _ => panic!("Expected Unary expression"),
         }
+    }
+
+    #[test]
+    fn parse_container_not_equal_operator() {
+        let (rest, expr) = expression("$a !=:= $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::Ident(op),
+                    ..
+                } => assert_eq!(op, "=:="),
+                _ => panic!("Expected !=:= to lower to !(=:=)"),
+            },
+            _ => panic!("Expected unary ! expression"),
+        }
+    }
+
+    #[test]
+    fn parse_cross_with_container_not_equal_operator() {
+        let (rest, expr) = expression("$a X!=:= $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "X");
+                assert_eq!(op, "!=:=");
+            }
+            _ => panic!("Expected cross meta operator expression"),
+        }
+    }
+
+    #[test]
+    fn parse_cross_dot_string_reports_obsolete_error() {
+        let err = expression("3 X. \"foo\"").unwrap_err();
+        assert!(err.message().contains("X::Obsolete"));
     }
 
     #[test]
@@ -1698,6 +1769,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_dot_ampersand_block_call() {
+        let (rest, expr) = expression("$m.&{ 3 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::DynamicMethodCall {
+                target,
+                name_expr,
+                args,
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert!(matches!(*name_expr, Expr::AnonSub { .. }));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected dynamic method call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_dot_ampersand_block_call() {
+        let (rest, expr) = expression("$m>>.&{ 3 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                ..
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert!(matches!(*name_expr, Expr::AnonSub { .. }));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected hyper dynamic method call"),
+        }
+    }
+
+    #[test]
     fn parse_array_slice_assignment_with_comma_rhs() {
         let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
         assert_eq!(rest, "");
@@ -1867,5 +1975,19 @@ mod tests {
             expr,
             Expr::CallOn { target, args } if args.is_empty() && matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
         ));
+    }
+
+    #[test]
+    fn parse_ampersand_infix_operator_reference_double_angles() {
+        let (rest, expr) = expression("&infix:<<(<=)>>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref name) if name == "infix:<(<=)>"));
+    }
+
+    #[test]
+    fn parse_ampersand_infix_operator_reference_unicode_symbol() {
+        let (rest, expr) = expression("&infix:<⊆>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref name) if name == "infix:<⊆>"));
     }
 }

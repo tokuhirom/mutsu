@@ -31,9 +31,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
-    "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max",
-    "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
-    "o", "∘", "⊍",
+    "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min",
+    "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|",
+    "^", "o", "∘", "⊍",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -237,7 +237,8 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
-    let mut items = merge_sequence_seeds(items);
+    let mut items = merge_list_infix_seeds(items);
+    items = merge_sequence_seeds(items);
     let expr = if items.len() == 1 {
         items.remove(0)
     } else {
@@ -290,6 +291,32 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
     } else {
         items
     }
+}
+
+fn merge_list_infix_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::MetaOp {
+        meta,
+        op,
+        left,
+        right,
+    } = last
+        && (meta == "X" || meta == "Z")
+    {
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            right: right.clone(),
+        };
+        return vec![merged];
+    }
+    items
 }
 
 pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, Expr> {
@@ -1344,15 +1371,24 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             if pending_key.is_some() {
                 return Err(PError::expected("hash value"));
             }
-            let (r, (key, val)) = parse_colon_pair_entry(r)?;
+            let (r_after_pair, (key, mut val)) = parse_colon_pair_entry(r)?;
+            let (r_after_pair, _) = ws_inner(r_after_pair);
+            let r_after_value = if let Some(after_arrow) = r_after_pair.strip_prefix("=>") {
+                let (after_arrow, _) = ws_inner(after_arrow);
+                let (after_arrow, explicit_val) = super::super::expr::expression(after_arrow)?;
+                val = Some(explicit_val);
+                after_arrow
+            } else {
+                r_after_pair
+            };
             pairs.push((key, val));
-            let (r, _) = ws_inner(r);
-            if let Some(stripped) = r.strip_prefix(',') {
+            let (r_after_value, _) = ws_inner(r_after_value);
+            if let Some(stripped) = r_after_value.strip_prefix(',') {
                 rest = stripped;
-            } else if let Some(stripped) = r.strip_prefix(';') {
+            } else if let Some(stripped) = r_after_value.strip_prefix(';') {
                 rest = stripped;
             } else {
-                rest = r;
+                rest = r_after_value;
             }
             continue;
         }

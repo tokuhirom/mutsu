@@ -249,6 +249,7 @@ struct IoHandleState {
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
+    listener: Option<std::net::TcpListener>,
     closed: bool,
     out_buffer_capacity: Option<usize>,
     out_buffer_pending: Vec<u8>,
@@ -467,9 +468,11 @@ pub struct Interpreter {
     pub(crate) in_lvalue_assignment: bool,
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
-    /// Each entry saves (function_keys, class_names, newline_mode, strict_mode) before a block with `use`.
-    import_scope_stack: Vec<(HashSet<Symbol>, HashSet<String>, NewlineMode, bool)>,
+    /// Each entry saves (function_keys, class_names, newline_mode, strict_mode, fatal_mode)
+    /// before a block with `use`.
+    import_scope_stack: Vec<ImportScopeSnapshot>,
     pub(crate) strict_mode: bool,
+    pub(crate) fatal_mode: bool,
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
@@ -614,6 +617,8 @@ pub(crate) type RoutineRegistrySnapshot = (
     HashSet<String>,
 );
 
+pub(crate) type ImportScopeSnapshot = (HashSet<Symbol>, HashSet<String>, NewlineMode, bool, bool);
+
 impl Default for Interpreter {
     fn default() -> Self {
         Self::new()
@@ -705,6 +710,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Thread".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["finish", "id"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Thread".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Supply".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -788,8 +805,11 @@ impl Interpreter {
                     "start",
                     "command",
                     "started",
+                    "w",
+                    "pid",
                     "stdout",
                     "stderr",
+                    "Supply",
                     "kill",
                     "write",
                     "close-stdin",
@@ -1081,10 +1101,24 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["close", "getpeername"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                native_methods: [
+                    "close",
+                    "getpeername",
+                    "accept",
+                    "localport",
+                    "print",
+                    "say",
+                    "put",
+                    "write",
+                    "recv",
+                    "read",
+                    "get",
+                    "lines",
+                    "nl-in",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
@@ -1600,6 +1634,7 @@ impl Interpreter {
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             strict_mode: false,
+            fatal_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
             caller_env_stack: Vec::new(),
@@ -1641,6 +1676,7 @@ impl Interpreter {
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter.init_endian_enum();
+        interpreter.init_protocol_family_enum();
         interpreter.init_signal_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
@@ -1794,20 +1830,26 @@ impl Interpreter {
     pub(crate) fn push_import_scope(&mut self) {
         let func_keys: HashSet<Symbol> = self.functions.keys().copied().collect();
         let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
-        self.import_scope_stack
-            .push((func_keys, class_keys, self.newline_mode, self.strict_mode));
+        self.import_scope_stack.push((
+            func_keys,
+            class_keys,
+            self.newline_mode,
+            self.strict_mode,
+            self.fatal_mode,
+        ));
     }
 
     /// Restore function/class registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode)) =
+        if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode, fatal_mode)) =
             self.import_scope_stack.pop()
         {
             self.functions.retain(|key, _| func_snapshot.contains(key));
             self.classes.retain(|key, _| class_snapshot.contains(key));
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
+            self.fatal_mode = fatal_mode;
         }
     }
 
@@ -1815,6 +1857,8 @@ impl Interpreter {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
+            } else if module == "fatal" {
+                self.fatal_mode = true;
             }
             return match self.import_module(module, &[]) {
                 Ok(()) => Ok(()),
@@ -1843,6 +1887,7 @@ impl Interpreter {
                     | "MONKEY"
                     | "newline"
                     | "soft"
+                    | "fatal"
             ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
@@ -1869,6 +1914,8 @@ impl Interpreter {
         if result.is_ok() {
             if module == "strict" {
                 self.strict_mode = true;
+            } else if module == "fatal" {
+                self.fatal_mode = true;
             }
             self.loaded_modules.insert(module.to_string());
             if let Err(err) = self.import_module(module, &[])
@@ -2063,6 +2110,8 @@ impl Interpreter {
     pub(crate) fn no_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if module == "strict" {
             self.strict_mode = false;
+        } else if module == "fatal" {
+            self.fatal_mode = false;
         } else if module == "precompilation" {
             self.precomp_enabled = false;
         }
@@ -2613,6 +2662,7 @@ impl Interpreter {
                 encoding: handle.encoding.clone(),
                 file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
                 socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
+                listener: handle.listener.as_ref().and_then(|l| l.try_clone().ok()),
                 closed: handle.closed,
                 out_buffer_capacity: handle.out_buffer_capacity,
                 out_buffer_pending: handle.out_buffer_pending.clone(),
@@ -2683,6 +2733,7 @@ impl Interpreter {
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             strict_mode: self.strict_mode,
+            fatal_mode: self.fatal_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             caller_env_stack: Vec::new(),
@@ -2783,8 +2834,8 @@ impl Interpreter {
         if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(key) {
             let items = Arc::make_mut(arc_items);
             items.extend(values);
-            // Normalize @-variables to ArrayKind::Array (matching set_shared_var behavior)
-            if key.starts_with('@') && !kind.is_itemized() {
+            // Normalize @-variables only from List to Array while preserving Shaped.
+            if key.starts_with('@') && *kind == ArrayKind::List {
                 *kind = ArrayKind::Array;
             }
             return Value::Array(Arc::clone(arc_items), *kind);
@@ -2815,9 +2866,8 @@ impl Interpreter {
         // Ensure @-variables always store Array(true) (real Arrays)
         let value = if key.starts_with('@') {
             match value {
-                Value::Array(items, kind) if !kind.is_itemized() => {
-                    Value::Array(items, ArrayKind::Array)
-                }
+                // Preserve Shaped arrays; only normalize List to Array.
+                Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
                 other => other,
             }
         } else {

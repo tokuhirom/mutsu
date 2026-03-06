@@ -369,6 +369,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_program_accepts_french_quote_word_list_with_interpolation() {
+        let src =
+            r#"subtest 'x' => { with Proc::Async.new: «"$*EXECUTABLE" -e "print 'ok'"» { } };"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_program_does_not_bind_with_statement_across_newline_as_modifier() {
+        let src = r#"
+{
+    my $proc = Proc::Async.new($*EXECUTABLE, '-e', '$*OUT.write(Blob.new(65, 66, 67, 13, 10))');
+    my $result = '';
+    $proc.stdout.tap({ $result ~= $_ });
+    await $proc.start;
+}
+with Proc::Async.new: :out, ($*EXECUTABLE, '-e'), 'say "pass"' {
+    .stdout.tap: { }
+}
+"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
     fn parse_program_accepts_unicode_single_quoted_regex_atoms() {
         let src = r#"
 	ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");
@@ -405,6 +430,32 @@ use Test;
         gather $x [R/]= 1 while ($x -= take $x.floor) > 0
     }
 }
+"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_q_to_quoted_delim_inside_call_then_method() {
+        let src = r#"
+my @precompiled = Test::Util::run( "use lib x\n" ~ q:to"--END--").lines;
+    for <C A B> {
+        say 1;
+    }
+    --END--
+say @precompiled.elems;
+"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_listop_q_concat_argument_for_user_sub() {
+        let src = r#"
+sub is_run($a, $b, $c) { }
+is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).join(",").print>,
+       { :err(''), :out('0,1,2'), :status => 0 },
+       'closure is preserved after deserialzation';
 "#;
         let parsed = parse_program(src);
         assert!(parsed.is_ok(), "{parsed:?}");

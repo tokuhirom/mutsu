@@ -688,7 +688,16 @@ impl Interpreter {
         let ok = match &block {
             Value::Sub(data) => {
                 self.push_caller_env();
+                let saved_topic = self.env.get("$_").cloned();
                 let result = self.eval_block_value(&data.body).is_ok();
+                match saved_topic {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
                 self.pop_caller_env();
                 result
             }
@@ -705,7 +714,16 @@ impl Interpreter {
         let ok = match &block {
             Value::Sub(data) => {
                 self.push_caller_env();
+                let saved_topic = self.env.get("$_").cloned();
                 let result = self.eval_block_value(&data.body).is_err();
+                match saved_topic {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
                 self.pop_caller_env();
                 result
             }

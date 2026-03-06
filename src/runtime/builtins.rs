@@ -1,6 +1,237 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ArrayKind;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Navigate a multi-dimensional array to get a value.
+fn multidim_index(target: &Value, indices: &[Value]) -> Value {
+    if indices.is_empty() {
+        return target.clone();
+    }
+    let head = &indices[0];
+    // Whatever (*) means "all elements of this dimension"
+    if matches!(head, Value::Whatever) {
+        let Value::Array(items, ..) = target else {
+            return Value::Nil;
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items.iter() {
+            out.push(multidim_index(item, &indices[1..]));
+        }
+        return Value::array(out);
+    }
+    // List/Array as index means "multiple indices in this dimension"
+    if let Value::Array(idx_items, ..) = head {
+        let mut out = Vec::with_capacity(idx_items.len());
+        for idx in idx_items.iter() {
+            let mut sub_indices = vec![idx.clone()];
+            sub_indices.extend_from_slice(&indices[1..]);
+            out.push(multidim_index(target, &sub_indices));
+        }
+        return Value::array(out);
+    }
+    let Value::Array(items, ..) = target else {
+        return Value::Nil;
+    };
+    let i = match head {
+        Value::Int(n) => {
+            let n = *n;
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return Value::Nil;
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
+        Value::Num(f) => *f as usize,
+        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        _ => return Value::Nil,
+    };
+    if i >= items.len() {
+        return Value::Nil;
+    }
+    multidim_index(&items[i], &indices[1..])
+}
+
+/// Delete element from a multi-dimensional array, returning the deleted value.
+fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
+    let default = || Value::Package(crate::symbol::Symbol::intern("Any"));
+    if indices.is_empty() {
+        let old = target.clone();
+        *target = default();
+        return old;
+    }
+    let head = &indices[0];
+    // Whatever (*) means "all elements of this dimension"
+    if matches!(head, Value::Whatever) {
+        let Value::Array(items, ..) = target else {
+            return default();
+        };
+        let items = std::sync::Arc::make_mut(items);
+        let mut out = Vec::with_capacity(items.len());
+        for item in items.iter_mut() {
+            out.push(multidim_delete(item, &indices[1..]));
+        }
+        // Truncate trailing Any values
+        while items
+            .last()
+            .is_some_and(|v| matches!(v, Value::Package(s) if s == "Any"))
+        {
+            items.pop();
+        }
+        return Value::array(out);
+    }
+    // List/Array as index means "multiple indices in this dimension"
+    if let Value::Array(idx_items, ..) = head {
+        let idx_list: Vec<Value> = idx_items.as_ref().clone();
+        let mut out = Vec::with_capacity(idx_list.len());
+        for idx in &idx_list {
+            let mut sub_indices = vec![idx.clone()];
+            sub_indices.extend_from_slice(&indices[1..]);
+            out.push(multidim_delete(target, &sub_indices));
+        }
+        return Value::array(out);
+    }
+    let Value::Array(items, ..) = target else {
+        return default();
+    };
+    let items = std::sync::Arc::make_mut(items);
+    let i = match head {
+        Value::Int(n) => {
+            let n = *n;
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return default();
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
+        Value::Num(f) => *f as usize,
+        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        _ => return default(),
+    };
+    if i >= items.len() {
+        return default();
+    }
+    if indices.len() == 1 {
+        let old = items[i].clone();
+        items[i] = Value::Package(crate::symbol::Symbol::intern("Any"));
+        // Truncate trailing Any values (Raku behavior)
+        while items
+            .last()
+            .is_some_and(|v| matches!(v, Value::Package(s) if s == "Any"))
+        {
+            items.pop();
+        }
+        old
+    } else {
+        multidim_delete(&mut items[i], &indices[1..])
+    }
+}
+
+/// Convert array value to list (non-array) for :v/:kv/:p adverb output.
+fn array_to_list(value: Value) -> Value {
+    match value {
+        Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, ArrayKind::List),
+        other => other,
+    }
+}
+
+/// Build a key tuple from indices, normalizing to integers.
+fn make_key_tuple(indices: &[Value]) -> Value {
+    let int_indices: Vec<Value> = indices
+        .iter()
+        .map(|v| match v {
+            Value::Int(_) => v.clone(),
+            Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
+            Value::Num(f) => Value::Int(*f as i64),
+            Value::Rat(n, d) => Value::Int(*n / *d),
+            _ => v.clone(),
+        })
+        .collect();
+    if int_indices.len() == 1 {
+        int_indices[0].clone()
+    } else {
+        Value::Array(std::sync::Arc::new(int_indices), ArrayKind::List)
+    }
+}
+
+/// Collect all (index_path, value) leaves from a multidim access,
+/// expanding Whatever and list indices.
+fn multidim_collect_leaves(
+    target: &Value,
+    indices: &[Value],
+    prefix: &[i64],
+    out: &mut Vec<(Vec<i64>, Value)>,
+) {
+    if indices.is_empty() {
+        out.push((prefix.to_vec(), target.clone()));
+        return;
+    }
+    let head = &indices[0];
+    if matches!(head, Value::Whatever) {
+        let Value::Array(items, ..) = target else {
+            return;
+        };
+        for (i, item) in items.iter().enumerate() {
+            let mut path = prefix.to_vec();
+            path.push(i as i64);
+            multidim_collect_leaves(item, &indices[1..], &path, out);
+        }
+        return;
+    }
+    if let Value::Array(idx_items, ..) = head {
+        for idx in idx_items.iter() {
+            let mut sub_indices = vec![idx.clone()];
+            sub_indices.extend_from_slice(&indices[1..]);
+            multidim_collect_leaves(target, &sub_indices, prefix, out);
+        }
+        return;
+    }
+    // Single index
+    let Value::Array(items, ..) = target else {
+        return;
+    };
+    let i = match head {
+        Value::Int(n) => {
+            let n = *n;
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return;
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
+        Value::Num(f) => *f as usize,
+        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        _ => return,
+    };
+    if i >= items.len() {
+        return;
+    }
+    let mut path = prefix.to_vec();
+    path.push(i as i64);
+    multidim_collect_leaves(&items[i], &indices[1..], &path, out);
+}
+
+/// Check if indices contain Whatever or list values (needing multi-result).
+fn has_multi_indices(indices: &[Value]) -> bool {
+    indices
+        .iter()
+        .any(|v| matches!(v, Value::Whatever) || matches!(v, Value::Array(..)))
+}
 
 static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -114,6 +345,13 @@ impl Interpreter {
         if matches!(target_val, Value::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
         }
+        if let Value::Junction { kind, values } = target_val {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.eval_call_on_value(callable.clone(), args.clone())?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
         // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
         if let Value::Mixin(ref inner, ref mixins) = target_val {
             // Check if any mixed-in role provides CALL-ME
@@ -144,7 +382,7 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (args, callsite_line) = self.sanitize_call_args(&args);
+        let (mut args, callsite_line) = self.sanitize_call_args(&args);
         self.test_pending_callsite_line = callsite_line;
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         match name {
@@ -158,12 +396,14 @@ impl Interpreter {
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
+            "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
+            "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(Value::Array(
@@ -178,6 +418,17 @@ impl Interpreter {
                 )),
             )),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
+            "__mutsu_multidim_adverb" => self.builtin_multidim_adverb(&args),
+            "__mutsu_multidim_subscript_adverb" => self.builtin_multidim_subscript_adverb(&args),
+            "__mutsu_multidim_exists_adverb" => self.builtin_multidim_exists_adverb(&args),
+            "__mutsu_multidim_delete" => self.builtin_multidim_delete(&mut args),
+            "__mutsu_multidim_dynamic_adverb" => self.builtin_multidim_dynamic_adverb(&mut args),
+            "__mutsu_multidim_subscript_adverb_dyn" => {
+                self.builtin_multidim_subscript_adverb_dyn(&mut args)
+            }
+            "__mutsu_multidim_exists_adverb_dyn" => {
+                self.builtin_multidim_exists_adverb_dyn(&mut args)
+            }
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
@@ -283,6 +534,9 @@ impl Interpreter {
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
             "end" => self.builtin_end(&args),
+            "Set" if !args.is_empty() => self.builtin_set(&args),
+            "Bag" if !args.is_empty() => self.builtin_bag(&args),
+            "Mix" if !args.is_empty() => self.builtin_mix(&args),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
@@ -797,6 +1051,612 @@ impl Interpreter {
         Ok(Value::array(out))
     }
 
+    /// Handle dynamic adverbs on multidim index: @array[$a;$b;$c]:$delete
+    /// Args: [inner_expr_result, adverb_name, adverb_value]
+    fn builtin_multidim_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_adverb expects value, adverb_name, and adverb_value",
+            ));
+        }
+        let value = args[0].clone();
+        let _adverb_name = args[1].to_string_value();
+        let adverb_value = &args[2];
+
+        // If the adverb is False, just return the value unchanged
+        if !adverb_value.truthy() {
+            return Ok(value);
+        }
+
+        // Adverb is True — currently only "delete" is supported.
+        // When the inner expression is a MultiDimIndex result, we need to
+        // delete the element from the array. However, the value has already
+        // been evaluated, so we return it as-is for now.
+        // TODO: Implement actual delete by restructuring the parser to
+        // pass target array info.
+        Ok(value)
+    }
+
+    /// Handle subscript adverbs (:kv, :k, :v, :p, etc.) on multidim index.
+    /// Args: [target_array, adverb_name, dim0, dim1, dim2, ...]
+    fn builtin_multidim_subscript_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_subscript_adverb expects target, adverb, and indices",
+            ));
+        }
+        let target = &args[0];
+        let adverb = args[1].to_string_value();
+        let raw_indices = &args[2..];
+        let indices = self.resolve_multidim_indices(target, raw_indices)?;
+
+        // Check if we need multi-result mode
+        if has_multi_indices(&indices) {
+            return self.multidim_subscript_adverb_multi(target, &adverb, &indices);
+        }
+
+        let value = multidim_index(target, &indices);
+        let key = make_key_tuple(&indices);
+        let exists = !matches!(&value, Value::Nil);
+
+        match adverb.as_str() {
+            "k" => Ok(if exists { key } else { Value::Nil }),
+            "kv" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, v]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::ValuePair(Box::new(key), Box::new(v)))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "v" => {
+                if exists {
+                    Ok(array_to_list(value))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "not-k" => Ok(if !exists { key } else { Value::Nil }),
+            "not-kv" => {
+                if !exists {
+                    let v = array_to_list(value);
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, v]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "not-p" => {
+                if !exists {
+                    let v = array_to_list(value);
+                    Ok(Value::ValuePair(Box::new(key), Box::new(v)))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "not-v" => {
+                if !exists {
+                    Ok(array_to_list(value))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => Ok(value),
+        }
+    }
+
+    /// Multi-result adverb handler for Whatever/list indices.
+    fn multidim_subscript_adverb_multi(
+        &mut self,
+        target: &Value,
+        adverb: &str,
+        indices: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut leaves = Vec::new();
+        multidim_collect_leaves(target, indices, &[], &mut leaves);
+
+        let mut out = Vec::new();
+        for (path, value) in leaves {
+            let exists = !matches!(&value, Value::Nil);
+            let key = if path.len() == 1 {
+                Value::Int(path[0])
+            } else {
+                Value::Array(
+                    std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                    ArrayKind::List,
+                )
+            };
+            match adverb {
+                "k" => {
+                    if exists {
+                        out.push(key);
+                    }
+                }
+                "kv" => {
+                    if exists {
+                        out.push(key);
+                        out.push(array_to_list(value));
+                    }
+                }
+                "p" => {
+                    if exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(array_to_list(value)),
+                        ));
+                    }
+                }
+                "v" => {
+                    if exists {
+                        out.push(array_to_list(value));
+                    }
+                }
+                "not-k" => {
+                    if !exists {
+                        out.push(key);
+                    }
+                }
+                "not-kv" => {
+                    if !exists {
+                        out.push(key);
+                        out.push(array_to_list(value));
+                    }
+                }
+                "not-p" => {
+                    if !exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(array_to_list(value)),
+                        ));
+                    }
+                }
+                "not-v" => {
+                    if !exists {
+                        out.push(array_to_list(value));
+                    }
+                }
+                _ => out.push(value),
+            }
+        }
+        Ok(Value::array(out))
+    }
+
+    /// Handle :exists with secondary adverbs on multidim index.
+    /// Args: [target_array, negated_bool, adverb_name, dim0, dim1, ...]
+    fn builtin_multidim_exists_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_exists_adverb expects target, negated, adverb, and indices",
+            ));
+        }
+        let target = &args[0];
+        let negated = args[1].truthy();
+        let adverb = args[2].to_string_value();
+        let raw_indices = &args[3..];
+        let indices = self.resolve_multidim_indices(target, raw_indices)?;
+
+        // Multi-result mode for Whatever/list indices
+        if has_multi_indices(&indices) {
+            return self.multidim_exists_adverb_multi(target, negated, &adverb, &indices);
+        }
+
+        let value = multidim_index(target, &indices);
+        let raw_exists = !matches!(&value, Value::Nil);
+        let exists = if negated { !raw_exists } else { raw_exists };
+        let key = make_key_tuple(&indices);
+
+        match adverb.as_str() {
+            "none" => Ok(Value::Bool(exists)),
+            "kv" => {
+                if raw_exists {
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if raw_exists {
+                    Ok(Value::ValuePair(
+                        Box::new(key),
+                        Box::new(Value::Bool(exists)),
+                    ))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "k" => {
+                if raw_exists {
+                    Ok(key)
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "v" => Ok(Value::Bool(exists)),
+            _ => Ok(Value::Bool(exists)),
+        }
+    }
+
+    /// Multi-result :exists adverb handler for Whatever/list indices.
+    fn multidim_exists_adverb_multi(
+        &mut self,
+        target: &Value,
+        negated: bool,
+        adverb: &str,
+        indices: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut leaves = Vec::new();
+        multidim_collect_leaves(target, indices, &[], &mut leaves);
+
+        let mut out = Vec::new();
+        for (path, value) in leaves {
+            let raw_exists = !matches!(&value, Value::Nil);
+            let exists = if negated { !raw_exists } else { raw_exists };
+            let key = if path.len() == 1 {
+                Value::Int(path[0])
+            } else {
+                Value::Array(
+                    std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                    ArrayKind::List,
+                )
+            };
+            match adverb {
+                "none" => out.push(Value::Bool(exists)),
+                "kv" => {
+                    if raw_exists {
+                        out.push(key);
+                        out.push(Value::Bool(exists));
+                    }
+                }
+                "p" => {
+                    if raw_exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(Value::Bool(exists)),
+                        ));
+                    }
+                }
+                "k" => {
+                    if raw_exists {
+                        out.push(key);
+                    }
+                }
+                "v" => out.push(Value::Bool(exists)),
+                _ => out.push(Value::Bool(exists)),
+            }
+        }
+        Ok(Value::array(out))
+    }
+
+    /// Handle :delete on multidim index.
+    /// Args: [var_name_string, dim0, dim1, ...]
+    fn builtin_multidim_delete(&mut self, args: &mut [Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_delete expects var_name and indices",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let raw_indices = args[1..].to_vec();
+        let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
+        if let Some(target) = self.env.get_mut(&var_name) {
+            Ok(multidim_delete(target, &indices))
+        } else {
+            Ok(Value::Nil)
+        }
+    }
+
+    /// Resolve WhateverCode indices: if an index is a Sub (WhateverCode),
+    /// call it with the current dimension's array length.
+    fn resolve_multidim_indices(
+        &mut self,
+        target: &Value,
+        indices: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut resolved = Vec::with_capacity(indices.len());
+        let mut current = target.clone();
+        for idx in indices {
+            match idx {
+                Value::Sub(..) => {
+                    // WhateverCode: call with array length
+                    let len = match &current {
+                        Value::Array(items, ..) => Value::Int(items.len() as i64),
+                        _ => Value::Int(0),
+                    };
+                    let result = self.call_sub_value(idx.clone(), vec![len], false)?;
+                    // Navigate to next dimension
+                    let resolved_idx = result.clone();
+                    current = multidim_index(&current, std::slice::from_ref(&resolved_idx));
+                    resolved.push(result);
+                }
+                _ => {
+                    current = multidim_index(&current, std::slice::from_ref(idx));
+                    resolved.push(idx.clone());
+                }
+            }
+        }
+        Ok(resolved)
+    }
+
+    /// Handle dynamic adverb (:$delete) on multidim index.
+    /// Args: [var_name_string, adverb_name, adverb_value, dim0, dim1, ...]
+    fn builtin_multidim_dynamic_adverb(
+        &mut self,
+        args: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_dynamic_adverb expects var_name, name, value, and indices",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let adverb_value = args[2].truthy();
+        let raw_indices = args[3..].to_vec();
+
+        let target = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target, &raw_indices)?;
+
+        if adverb_value {
+            // Multi-result mode for Whatever/list indices
+            if has_multi_indices(&indices) {
+                let mut leaves = Vec::new();
+                multidim_collect_leaves(&target, &indices, &[], &mut leaves);
+                if let Some(t) = self.env.get_mut(&var_name) {
+                    multidim_delete(t, &indices);
+                }
+                let values: Vec<Value> = leaves.into_iter().map(|(_, v)| v).collect();
+                return Ok(Value::array(values));
+            }
+            if let Some(target) = self.env.get_mut(&var_name) {
+                Ok(multidim_delete(target, &indices))
+            } else {
+                Ok(Value::Nil)
+            }
+        } else {
+            Ok(multidim_index(&target, &indices))
+        }
+    }
+
+    /// Handle :kv/:k/:v/:p with dynamic :$delete on multidim index.
+    /// Args: [var_name_str, adverb_name, delete_flag, dim0, dim1, ...]
+    fn builtin_multidim_subscript_adverb_dyn(
+        &mut self,
+        args: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_subscript_adverb_dyn expects var_name, adverb, delete, and indices",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let adverb = args[1].to_string_value();
+        let do_delete = args[2].truthy();
+        let raw_indices = args[3..].to_vec();
+
+        let target = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target, &raw_indices)?;
+
+        // Multi-result mode for Whatever/list indices
+        if has_multi_indices(&indices) {
+            // Collect leaves before potentially deleting
+            let mut leaves = Vec::new();
+            multidim_collect_leaves(&target, &indices, &[], &mut leaves);
+            if do_delete && let Some(t) = self.env.get_mut(&var_name) {
+                multidim_delete(t, &indices);
+            }
+            let mut out = Vec::new();
+            for (path, value) in leaves {
+                let exists = !matches!(&value, Value::Nil);
+                let key = if path.len() == 1 {
+                    Value::Int(path[0])
+                } else {
+                    Value::Array(
+                        std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                        ArrayKind::List,
+                    )
+                };
+                match adverb.as_str() {
+                    "k" => {
+                        if exists {
+                            out.push(key);
+                        }
+                    }
+                    "kv" => {
+                        if exists {
+                            out.push(key);
+                            out.push(array_to_list(value));
+                        }
+                    }
+                    "p" => {
+                        if exists {
+                            out.push(Value::ValuePair(
+                                Box::new(key),
+                                Box::new(array_to_list(value)),
+                            ));
+                        }
+                    }
+                    "v" => {
+                        if exists {
+                            out.push(array_to_list(value));
+                        }
+                    }
+                    _ => out.push(value),
+                }
+            }
+            return Ok(Value::array(out));
+        }
+
+        let value = if do_delete {
+            if let Some(target) = self.env.get_mut(&var_name) {
+                multidim_delete(target, &indices)
+            } else {
+                Value::Nil
+            }
+        } else {
+            multidim_index(&target, &indices)
+        };
+
+        let key = make_key_tuple(&indices);
+        let exists = !matches!(&value, Value::Nil);
+
+        match adverb.as_str() {
+            "k" => Ok(if exists { key } else { Value::Nil }),
+            "kv" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, v]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::ValuePair(Box::new(key), Box::new(v)))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "v" => {
+                if exists {
+                    Ok(array_to_list(value))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => Ok(value),
+        }
+    }
+
+    /// Handle :exists:kv/:exists:p with dynamic :$delete on multidim index.
+    /// Args: [var_name_str, negated_bool, delete_flag, adverb_name, dim0, dim1, ...]
+    fn builtin_multidim_exists_adverb_dyn(
+        &mut self,
+        args: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 5 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_exists_adverb_dyn requires 5+ args",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let negated = args[1].truthy();
+        let do_delete = args[2].truthy();
+        let adverb = args[3].to_string_value();
+        let raw_indices = args[4..].to_vec();
+
+        // First get value (need to read before potentially deleting)
+        let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
+
+        // Multi-result mode for Whatever/list indices
+        if has_multi_indices(&indices) {
+            let mut leaves = Vec::new();
+            multidim_collect_leaves(&target_val, &indices, &[], &mut leaves);
+            if do_delete && let Some(t) = self.env.get_mut(&var_name) {
+                multidim_delete(t, &indices);
+            }
+            let mut out = Vec::new();
+            for (path, value) in leaves {
+                let raw_exists = !matches!(&value, Value::Nil);
+                let exists = if negated { !raw_exists } else { raw_exists };
+                let key = if path.len() == 1 {
+                    Value::Int(path[0])
+                } else {
+                    Value::Array(
+                        std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                        ArrayKind::List,
+                    )
+                };
+                match adverb.as_str() {
+                    "none" => out.push(Value::Bool(exists)),
+                    "kv" => {
+                        if raw_exists {
+                            out.push(key);
+                            out.push(Value::Bool(exists));
+                        }
+                    }
+                    "p" => {
+                        if raw_exists {
+                            out.push(Value::ValuePair(
+                                Box::new(key),
+                                Box::new(Value::Bool(exists)),
+                            ));
+                        }
+                    }
+                    "k" => {
+                        if raw_exists {
+                            out.push(key);
+                        }
+                    }
+                    _ => out.push(Value::Bool(exists)),
+                }
+            }
+            return Ok(Value::array(out));
+        }
+
+        let value = multidim_index(&target_val, &indices);
+        // Then delete if requested
+        if do_delete && let Some(target) = self.env.get_mut(&var_name) {
+            multidim_delete(target, &indices);
+        }
+
+        let raw_exists = !matches!(&value, Value::Nil);
+        let exists = if negated { !raw_exists } else { raw_exists };
+        let key = make_key_tuple(&indices);
+
+        match adverb.as_str() {
+            "none" => Ok(Value::Bool(exists)),
+            "kv" => {
+                if raw_exists {
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if raw_exists {
+                    Ok(Value::ValuePair(
+                        Box::new(key),
+                        Box::new(Value::Bool(exists)),
+                    ))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "k" => {
+                if raw_exists {
+                    Ok(key)
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => Ok(Value::Bool(exists)),
+        }
+    }
+
     fn builtin_feed_whatever(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = args.first().cloned().unwrap_or(Value::Nil);
         let list = crate::runtime::value_to_list(&value);
@@ -903,6 +1763,56 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    fn builtin_cross_shortcircuit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_cross_shortcircuit expects op, lhs, thunk",
+            ));
+        }
+        let op = args[0].to_string_value();
+        let left_values = if matches!(args[1], Value::Nil) {
+            vec![Value::Nil]
+        } else {
+            crate::runtime::value_to_list(&args[1])
+        };
+        let thunk = args[2].clone();
+        let mut out = Vec::new();
+        for left in left_values {
+            let needs_rhs = match op.as_str() {
+                "and" | "&&" => left.truthy(),
+                "or" | "||" => !left.truthy(),
+                "andthen" => crate::runtime::types::value_is_defined(&left),
+                "orelse" => !crate::runtime::types::value_is_defined(&left),
+                _ => false,
+            };
+            if !needs_rhs {
+                out.push(left);
+                continue;
+            }
+            let rhs_value = if op == "andthen" || op == "orelse" {
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), left.clone());
+                let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+                match saved_topic {
+                    Some(value) => {
+                        self.env.insert("_".to_string(), value);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                result?
+            } else {
+                self.eval_call_on_value(thunk.clone(), Vec::new())?
+            };
+            let rhs_values = crate::runtime::value_to_list(&rhs_value);
+            for rhs in rhs_values {
+                out.push(rhs);
+            }
+        }
+        Ok(Value::array(out))
     }
 
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
@@ -1221,6 +2131,34 @@ impl Interpreter {
             format!("__mutsu_bound_array_len::{target_name}"),
             Value::Int(bound_len),
         );
+        Ok(Value::Nil)
+    }
+
+    fn builtin_record_shaped_array_dims(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 1 {
+            return Err(RuntimeError::new(
+                "__mutsu_record_shaped_array_dims expects target name",
+            ));
+        }
+        let target_name = args[0].to_string_value();
+        if !target_name.starts_with('@') {
+            return Ok(Value::Nil);
+        }
+        let key = format!("__mutsu_shaped_array_dims::{target_name}");
+        let dims = self
+            .env
+            .get(&target_name)
+            .and_then(Self::infer_array_shape)
+            .filter(|shape| shape.len() > 1);
+        if let Some(shape) = dims {
+            let dims_val = Value::Array(
+                std::sync::Arc::new(shape.into_iter().map(|n| Value::Int(n as i64)).collect()),
+                ArrayKind::List,
+            );
+            self.env.insert(key, dims_val);
+        } else {
+            self.env.remove(&key);
+        }
         Ok(Value::Nil)
     }
 
@@ -2126,7 +3064,7 @@ impl Interpreter {
             "**" => OpAssoc::Right,
             "=" | ":=" | "=>" | "x" | "xx" => OpAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
-            | "le" | "ge" | "~~" | "=~=" | "=:=" => OpAssoc::Chain,
+            | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => OpAssoc::Chain,
             _ => OpAssoc::Left,
         }
     }

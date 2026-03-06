@@ -1595,6 +1595,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let had_ws = rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n');
     let (rest, _) = ws(rest)?;
+    if name == "int" && had_ws && !is_user_declared_sub("int") {
+        return Err(PError::expected("known function call"));
+    }
 
     // Special handling for proceed/succeed with no args
     if name == "proceed" {
@@ -1628,7 +1631,10 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     let mut args = args;
     // Test assertion calls (e.g. `is [1], [1], 'desc'`) can start with bracketed
     // arguments and be mistaken for an expression prefix. Keep them as calls.
-    if !is_test_assertion_callable(&name) && known_call_is_expression_prefix(input, rest) {
+    if !is_test_assertion_callable(&name)
+        && KNOWN_CALLS.contains(&name.as_str())
+        && known_call_is_expression_prefix(input, rest)
+    {
         return Err(PError::expected("known function call"));
     }
     if is_test_assertion_callable(&name) {

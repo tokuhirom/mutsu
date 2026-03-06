@@ -1169,6 +1169,37 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, make_anon_sub(body)));
             }
+            if let Ok((r_named, _name)) = super::super::stmt::parse_sub_name_pub(r) {
+                let (r_named, _) = ws(r_named)?;
+                if r_named.starts_with("is ")
+                    || r_named.starts_with("returns ")
+                    || r_named.starts_with("of ")
+                {
+                    let (r_named, traits) = super::super::stmt::parse_sub_traits_pub(r_named)?;
+                    let (r_named, body) = parse_block_body(r_named)?;
+                    let mut expr = make_anon_sub(body);
+                    if traits.is_rw {
+                        expr = set_anon_sub_rw(expr, true);
+                    }
+                    return Ok((r_named, expr));
+                }
+                if r_named.starts_with('{') {
+                    let (r_named, body) = parse_block_body(r_named)?;
+                    return Ok((r_named, make_anon_sub(body)));
+                }
+                if r_named.starts_with('(') {
+                    let (r_named, params_body) =
+                        parse_anon_sub_with_params(r_named).map_err(|err| PError {
+                            messages: merge_expected_messages(
+                                "expected anonymous sub parameter list/body",
+                                &err.messages,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r_named.len())),
+                            exception: None,
+                        })?;
+                    return Ok((r_named, params_body));
+                }
+            }
             if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
                 let (r, traits) = super::super::stmt::parse_sub_traits_pub(r)?;
                 let (r, body) = parse_block_body(r)?;
@@ -1659,6 +1690,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);
+        // Raku removed prefix/listop `int`; only `int(...)` should parse as the builtin.
+        if name == "int" && !is_user_sub && !is_user_prefix_sub {
+            return Ok((rest, Expr::BareWord(name)));
+        }
+        let is_imported_sub = crate::parser::stmt::simple::is_imported_function(&name);
         let call_name = if is_user_prefix_sub {
             format!("prefix:<{}>", name)
         } else {
@@ -1671,6 +1707,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
             }
         } else if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone()) {
+            return Ok((r2, expr));
+        } else if is_imported_sub
+            && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone())
+        {
             return Ok((r2, expr));
         }
         if hyphen_forward_call && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
@@ -1693,7 +1733,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next.is_ascii_digit()
             || starts_with_term_keyword(r)
             || hyphen_forward_call
-            || is_user_sub)
+            || is_user_sub
+            || is_imported_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
             let (r2, invocant_colon_call) =

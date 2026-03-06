@@ -1,9 +1,29 @@
-use super::methods_signature::{make_method_not_found_error, make_private_permission_error};
+use super::methods_signature::{
+    make_method_not_found_error, make_private_permission_error, make_x_immutable_error,
+};
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    fn should_autothread_method(method: &str) -> bool {
+        !matches!(
+            method,
+            "Bool"
+                | "so"
+                | "WHAT"
+                | "^name"
+                | "gist"
+                | "Str"
+                | "defined"
+                | "THREAD"
+                | "raku"
+                | "perl"
+                | "first"
+                | "grep"
+        )
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -13,6 +33,79 @@ impl Interpreter {
         // Scalar containers are transparent for method dispatch (except .item itself)
         if let Value::Scalar(inner) = target {
             return self.call_method_with_values(*inner, method, args);
+        }
+        if Self::should_autothread_method(method)
+            && let Value::Junction { kind, values } = &target
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                results.push(self.call_method_with_values(value.clone(), method, args.clone())?);
+            }
+            return Ok(Value::junction(kind.clone(), results));
+        }
+        if Self::should_autothread_method(method)
+            && let Some((idx, kind, values)) =
+                args.iter().enumerate().find_map(|(idx, arg)| match arg {
+                    Value::Junction { kind, values } => Some((idx, kind.clone(), values.clone())),
+                    _ => None,
+                })
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                let mut threaded_args = args.clone();
+                threaded_args[idx] = value.clone();
+                results.push(self.call_method_with_values(
+                    target.clone(),
+                    method,
+                    threaded_args,
+                )?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
+        if args.is_empty()
+            && matches!(method, "raku" | "perl" | "gist")
+            && let Value::Junction { kind, values } = &target
+        {
+            let kind_name = match kind {
+                JunctionKind::Any => "any",
+                JunctionKind::All => "all",
+                JunctionKind::One => "one",
+                JunctionKind::None => "none",
+            };
+            let render_method = if method == "gist" { "gist" } else { "raku" };
+            let mut parts = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                if method == "gist" && matches!(value, Value::Nil) {
+                    parts.push("Nil".to_string());
+                    continue;
+                }
+                let rendered =
+                    self.call_method_with_values(value.clone(), render_method, vec![])?;
+                parts.push(rendered.to_string_value());
+            }
+            return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
+        }
+        // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw X::Immutable
+        if matches!(
+            method,
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+        ) {
+            let is_immutable = match &target {
+                Value::Array(_, kind) => !kind.is_real_array(),
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => true,
+                _ => false,
+            };
+            if is_immutable {
+                let typename = match &target {
+                    Value::Array(..) => "List",
+                    _ => "Range",
+                };
+                return Err(make_x_immutable_error(method, typename));
+            }
         }
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {
@@ -724,6 +817,24 @@ impl Interpreter {
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
+            || (matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+                && matches!(
+                    method,
+                    "start"
+                        | "kill"
+                        | "write"
+                        | "close-stdin"
+                        | "ready"
+                        | "print"
+                        | "say"
+                        | "command"
+                        | "started"
+                        | "w"
+                        | "pid"
+                        | "stdout"
+                        | "stderr"
+                        | "Supply"
+                ))
             || (matches!(method, "AT-KEY" | "keys")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash"))
             || (!is_pseudo_method
@@ -857,6 +968,7 @@ impl Interpreter {
                     | "candidates"
                     | "concretization"
                     | "curried_role"
+                    | "enum_value_list"
             )
         {
             let mut how_args = args.to_vec();
@@ -980,11 +1092,24 @@ impl Interpreter {
                 return Ok(Value::mixin(numeric, mixins));
             }
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
+                let default_exception = || {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str("Failed".to_string()));
+                    Value::make_instance(Symbol::intern("Exception"), attrs)
+                };
+                let exception = args
+                    .first()
+                    .cloned()
+                    .filter(|v| !matches!(v, Value::Nil))
+                    .or_else(|| {
+                        self.env
+                            .get("!")
+                            .cloned()
+                            .filter(|v| !matches!(v, Value::Nil))
+                    })
+                    .unwrap_or_else(default_exception);
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "exception".to_string(),
-                    args.first().cloned().unwrap_or(Value::Nil),
-                );
+                attrs.insert("exception".to_string(), exception);
                 attrs.insert("handled".to_string(), Value::Bool(false));
                 return Ok(Value::make_instance(Symbol::intern("Failure"), attrs));
             }
@@ -1235,6 +1360,12 @@ impl Interpreter {
                         }
                     });
                     return Ok(ret);
+                }
+                // Thread.start
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Thread"
+                {
+                    return self.dispatch_thread_start(&args);
                 }
             }
             "in" => {
@@ -1663,6 +1794,29 @@ impl Interpreter {
                     other => value_type_name(other).to_string(),
                 }));
             }
+            "^enum_value_list" | "enum_value_list" => {
+                let type_name_owned = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.to_string()),
+                    _ => None,
+                };
+                let type_name = type_name_owned.as_deref();
+                if let Some(type_name) = type_name
+                    && let Some(variants) = self.enum_types.get(type_name)
+                {
+                    let values: Vec<Value> = variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, val))| Value::Enum {
+                            enum_type: Symbol::intern(type_name),
+                            key: Symbol::intern(key),
+                            value: *val,
+                            index,
+                        })
+                        .collect();
+                    return Ok(Value::array(values));
+                }
+            }
             "enums" => {
                 let type_name_owned = match &target {
                     Value::Package(name) => Some(name.resolve()),
@@ -2000,6 +2154,50 @@ impl Interpreter {
             "Mix" | "MixHash" if args.is_empty() => {
                 return self.dispatch_to_mix(target);
             }
+            "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
+                // Role-ish quant hash family conversion on type objects.
+                // Raku maps Set/Bag/Mix families to the corresponding family,
+                // preserving hash flavor for *Hash type objects.
+                let source_type = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Set(_) => Some("Set".to_string()),
+                    Value::Bag(_) => Some("Bag".to_string()),
+                    Value::Mix(_) => Some("Mix".to_string()),
+                    _ => None,
+                };
+                if let Some(source_type) = source_type
+                    && matches!(
+                        source_type.as_str(),
+                        "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                    )
+                {
+                    let hashy = matches!(source_type.as_str(), "SetHash" | "BagHash" | "MixHash");
+                    let mapped = match method {
+                        "Setty" => {
+                            if hashy {
+                                "SetHash"
+                            } else {
+                                "Set"
+                            }
+                        }
+                        "Baggy" => {
+                            if hashy {
+                                "BagHash"
+                            } else {
+                                "Bag"
+                            }
+                        }
+                        _ => {
+                            if hashy {
+                                "MixHash"
+                            } else {
+                                "Mix"
+                            }
+                        }
+                    };
+                    return Ok(Value::Package(Symbol::intern(mapped)));
+                }
+            }
             "Map" | "Hash" if args.is_empty() => {
                 // Type objects return the corresponding type object
                 if matches!(&target, Value::Package(_)) {
@@ -2077,6 +2275,20 @@ impl Interpreter {
                     return Ok(target);
                 }
                 return self.call_function("produce", vec![callable, target]);
+            }
+            "reduce" => {
+                let callable = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
+                let mut items = Self::value_to_list(&target).into_iter();
+                let Some(mut acc) = items.next() else {
+                    return Ok(Value::Nil);
+                };
+                for item in items {
+                    acc = self.call_sub_value(callable.clone(), vec![acc, item], true)?;
+                }
+                return Ok(acc);
             }
             "map" => {
                 if let Value::Instance {
@@ -2320,6 +2532,14 @@ impl Interpreter {
                         ));
                     }
                 };
+                if matches!(
+                    class_name.resolve().as_str(),
+                    "Sub" | "Routine" | "Method" | "Code" | "Block"
+                ) {
+                    return Err(RuntimeError::new(
+                        "getcodename requires a concrete code object",
+                    ));
+                }
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name.resolve()) {
@@ -2457,6 +2677,30 @@ impl Interpreter {
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
                     return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                }
+            }
+            "join" if args.len() <= 1 => {
+                if matches!(
+                    target,
+                    Value::Array(..)
+                        | Value::Seq(..)
+                        | Value::Slip(..)
+                        | Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }
+                ) {
+                    let sep = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let joined = Self::value_to_list(&target)
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    return Ok(Value::str(joined));
                 }
             }
             "grep" => {

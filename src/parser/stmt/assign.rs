@@ -14,6 +14,18 @@ use crate::value::Value;
 
 use super::{ident, parse_statement_modifier, var_name};
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +43,7 @@ pub(crate) enum CompoundAssignOp {
     Power,
     Repeat,
     ListRepeat,
+    Comma,
     BitOr,
     BitAnd,
     BitXor,
@@ -63,6 +76,7 @@ impl CompoundAssignOp {
             CompoundAssignOp::Power => "**=",
             CompoundAssignOp::Repeat => "x=",
             CompoundAssignOp::ListRepeat => "xx=",
+            CompoundAssignOp::Comma => ",=",
             CompoundAssignOp::BitOr => "+|=",
             CompoundAssignOp::BitAnd => "+&=",
             CompoundAssignOp::BitXor => "+^=",
@@ -95,6 +109,7 @@ impl CompoundAssignOp {
             CompoundAssignOp::Power => TokenKind::StarStar,
             CompoundAssignOp::Repeat => TokenKind::Ident("x".to_string()),
             CompoundAssignOp::ListRepeat => TokenKind::Ident("xx".to_string()),
+            CompoundAssignOp::Comma => TokenKind::Comma,
             CompoundAssignOp::BitOr => TokenKind::BitOr,
             CompoundAssignOp::BitAnd => TokenKind::BitAnd,
             CompoundAssignOp::BitXor => TokenKind::BitXor,
@@ -161,6 +176,7 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Mod,
     CompoundAssignOp::ListRepeat, // xx= before x= to match longest first
     CompoundAssignOp::Repeat,
+    CompoundAssignOp::Comma,
     CompoundAssignOp::BitOr,
     CompoundAssignOp::BitAnd,
     CompoundAssignOp::BitXor,
@@ -287,6 +303,27 @@ fn parse_bracket_meta_assign_op(input: &str) -> Option<(&str, String, String)> {
     };
     let rest = &after_bracket[1..];
     Some((rest, meta.to_string(), op.to_string()))
+}
+
+fn parse_meta_compound_assign_op(input: &str) -> Option<(&str, String, String)> {
+    let (meta, after_meta) = if let Some(rest) = input.strip_prefix('R') {
+        ("R", rest)
+    } else if let Some(rest) = input.strip_prefix('X') {
+        ("X", rest)
+    } else {
+        return None;
+    };
+    if after_meta.starts_with('=') && !after_meta.starts_with("==") && !after_meta.starts_with("=>")
+    {
+        return Some((&after_meta[1..], meta.to_string(), "=".to_string()));
+    }
+    let (rest, op) = parse_compound_assign_op(after_meta)?;
+    let op_name = op
+        .symbol()
+        .strip_suffix('=')
+        .unwrap_or(op.symbol())
+        .to_string();
+    Some((rest, meta.to_string(), op_name))
 }
 
 pub(super) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
@@ -646,6 +683,11 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 index,
                 value: Box::new(rhs),
             },
+            Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(rhs),
+            },
             _ => return Err(PError::expected("assignment expression")),
         };
         return Ok((rest, expr));
@@ -687,6 +729,11 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         Expr::Index { target, index } => Expr::IndexAssign {
             target,
             index,
+            value: Box::new(rhs),
+        },
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+            target,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
             value: Box::new(rhs),
         },
         Expr::MethodCall {
@@ -879,7 +926,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let (r, _) = ws(r)?;
-        // Parse optional args in parens
+        // Parse optional args in parens or colon-form
         let (rest, args) = if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
@@ -905,6 +952,34 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 let (r, _) = parse_char(r, ')')?;
                 (r, args)
             }
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (r, vec![])
         };
@@ -945,6 +1020,31 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     op,
                     rhs,
                 )),
+            },
+        ));
+    }
+    if let Some((stripped, meta, op)) = parse_meta_compound_assign_op(r2) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression_no_sequence(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        let var_expr = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(name.clone()),
+        };
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(Expr::MetaOp {
+                    meta,
+                    op,
+                    left: Box::new(var_expr),
+                    right: Box::new(rhs),
+                }),
             },
         ));
     }
@@ -1036,7 +1136,13 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (rest, _) = ws(r3)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
-            Err(_) => expression(rest)?,
+            Err(_) => {
+                if sigil == b'@' || sigil == b'%' {
+                    expression(rest)?
+                } else {
+                    expression_no_sequence(rest)?
+                }
+            }
         };
         let name = format!("{}{}", prefix, var);
         if is_atomic {
@@ -1272,6 +1378,24 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
+    // Meta-op assignment: @a X*= 10 → @a = @a X* 10
+    if let Some((after_eq, meta, op)) = parse_meta_compound_assign_op(rest) {
+        let (after_eq, _) = ws(after_eq)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
+        let expr = Expr::MetaOp {
+            meta,
+            op,
+            left: Box::new(var_expr),
+            right: Box::new(rhs),
+        };
+        let stmt = Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+        };
+        return parse_statement_modifier(rest, stmt);
+    }
+
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
@@ -1340,17 +1464,26 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             // Colon-arg syntax: .=method: arg, arg2
             let r = &r[1..];
             let (r, _) = ws(r)?;
-            let (r, first_arg) = expression(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
             let mut args = vec![first_arg];
             let mut r_inner = r;
             loop {
                 let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
                 if !r2.starts_with(',') {
                     break;
                 }
                 let r2 = &r2[1..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next) = expression(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
                 args.push(next);
                 r_inner = r2;
             }

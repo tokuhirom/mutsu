@@ -216,6 +216,8 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         }
         "is-prime" => Some(super::methods_0arg::coercion::value_is_prime(arg)),
+        "lsb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("lsb")),
+        "msb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("msb")),
         "sign" => {
             if matches!(arg, Value::Instance { .. }) {
                 return None;
@@ -787,7 +789,7 @@ fn native_function_2arg(
         }
         "index" => {
             // Skip native path for junctions — fall through to interpreter for auto-threading
-            if matches!(arg1, Value::Junction { .. }) {
+            if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
                 return None;
             }
             let s = arg1.to_string_value();
@@ -810,6 +812,9 @@ fn native_function_2arg(
             }))
         }
         "substr" => {
+            if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
+                return None;
+            }
             let s = arg1.to_string_value();
             let start = match arg2 {
                 Value::Int(i) => (*i).max(0) as usize,
@@ -924,6 +929,12 @@ fn native_function_3arg(
     match name {
         "expmod" => Some(crate::builtins::expmod(arg1, arg2, arg3)),
         "substr" => {
+            if matches!(arg1, Value::Junction { .. })
+                || matches!(arg2, Value::Junction { .. })
+                || matches!(arg3, Value::Junction { .. })
+            {
+                return None;
+            }
             let s = arg1.to_string_value();
             let start = match arg2 {
                 Value::Int(i) => (*i).max(0) as usize,
