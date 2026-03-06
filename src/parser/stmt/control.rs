@@ -1,5 +1,5 @@
 use super::super::expr::expression;
-use super::super::helpers::{skip_balanced_parens, ws, ws1};
+use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1082,10 +1082,17 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     }
 
     // Optional unpacking sub-signature: `-> Pair $p (:$key, :$value) { ... }`
-    // Keep parse permissive and skip details for now.
+    // Parse and preserve the sub-signature for runtime binding.
+    let mut sub_signature = None;
     let (r, _) = ws(rest)?;
     if r.starts_with('(') {
-        rest = skip_balanced_parens(r);
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = super::sub::parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        sub_signature = Some(sub_params);
+        rest = r;
     } else {
         rest = r;
     }
@@ -1125,7 +1132,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             sigilless: false,
             type_constraint,
             literal_value: None,
-            sub_signature: None,
+            sub_signature,
             outer_sub_signature: None,
             code_signature: None,
             where_constraint,

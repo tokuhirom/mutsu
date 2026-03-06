@@ -1813,6 +1813,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyper_method_with_unspace_after_operator() {
+        let (rest, expr) = expression("$m»\\\n.foo").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall { target, name, .. } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert_eq!(name, "foo");
+            }
+            _ => panic!("expected hyper method call"),
+        }
+    }
+
+    #[test]
     fn parse_array_slice_assignment_with_comma_rhs() {
         let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
         assert_eq!(rest, "");
