@@ -296,6 +296,7 @@ impl Interpreter {
             )));
             return Err(err);
         }
+
         if self.has_role(name) {
             return Ok(Value::Pair(
                 name.to_string(),

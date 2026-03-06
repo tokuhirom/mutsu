@@ -880,6 +880,15 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
+            return true;
+        }
+        if constraint == "Baggy" && matches!(value_type, "Bag" | "BagHash" | "Mix" | "MixHash") {
+            return true;
+        }
+        if constraint == "Mixy" && matches!(value_type, "Mix" | "MixHash") {
+            return true;
+        }
         // Metamodel:: is an alias for Perl6::Metamodel::
         if constraint.starts_with("Metamodel::") {
             let full = format!("Perl6::{}", constraint);
