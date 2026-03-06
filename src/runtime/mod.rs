@@ -175,6 +175,7 @@ struct RoleCandidateDef {
 struct SubsetDef {
     base: String,
     predicate: Option<Expr>,
+    version: String,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +187,8 @@ pub(crate) struct MethodDef {
     pub(crate) is_private: bool,
     pub(crate) is_multi: bool,
     pub(crate) is_my: bool,
+    /// Role where this method was originally declared when composed into a class.
+    pub(crate) role_origin: Option<String>,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
 }
@@ -1557,6 +1560,7 @@ impl Interpreter {
                         is_private: false,
                         is_multi: false,
                         is_my: false,
+                        role_origin: None,
                         return_type: None,
                         compiled_code: None,
                     };
@@ -2740,12 +2744,36 @@ impl Interpreter {
             // shared_vars first when shared_vars_active is true.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
+            if let Some(shared_value) = sv.remove(key) {
+                if let Value::Array(mut arc_items, kind) = shared_value {
+                    let items = Arc::make_mut(&mut arc_items);
+                    items.extend(values);
+                    let result = Value::Array(Arc::clone(&arc_items), kind);
+                    sv.insert(key.to_string(), Value::Array(arc_items, kind));
+                    drop(sv);
+                    let needs_mark_dirty = self
+                        .shared_vars_dirty
+                        .read()
+                        .map(|dirty| !dirty.contains(key))
+                        .unwrap_or(false);
+                    if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(key.to_string());
+                    }
+                    return result;
+                }
+                sv.insert(key.to_string(), shared_value);
+            }
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                let needs_mark_dirty = self
+                    .shared_vars_dirty
+                    .read()
+                    .map(|dirty| !dirty.contains(key))
+                    .unwrap_or(false);
+                if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(key.to_string());
                 }
                 return result;
@@ -2755,8 +2783,8 @@ impl Interpreter {
         if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(key) {
             let items = Arc::make_mut(arc_items);
             items.extend(values);
-            // Normalize @-variables to ArrayKind::Array (matching set_shared_var behavior)
-            if key.starts_with('@') && !kind.is_itemized() {
+            // Normalize @-variables only from List to Array while preserving Shaped.
+            if key.starts_with('@') && *kind == ArrayKind::List {
                 *kind = ArrayKind::Array;
             }
             return Value::Array(Arc::clone(arc_items), *kind);
@@ -2787,9 +2815,8 @@ impl Interpreter {
         // Ensure @-variables always store Array(true) (real Arrays)
         let value = if key.starts_with('@') {
             match value {
-                Value::Array(items, kind) if !kind.is_itemized() => {
-                    Value::Array(items, ArrayKind::Array)
-                }
+                // Preserve Shaped arrays; only normalize List to Array.
+                Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
                 other => other,
             }
         } else {

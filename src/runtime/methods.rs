@@ -4,12 +4,83 @@ use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    fn should_autothread_method(method: &str) -> bool {
+        !matches!(
+            method,
+            "Bool"
+                | "so"
+                | "WHAT"
+                | "^name"
+                | "gist"
+                | "Str"
+                | "defined"
+                | "THREAD"
+                | "raku"
+                | "perl"
+        )
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Scalar containers are transparent for method dispatch (except .item itself)
+        if let Value::Scalar(inner) = target {
+            return self.call_method_with_values(*inner, method, args);
+        }
+        if Self::should_autothread_method(method)
+            && let Value::Junction { kind, values } = &target
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                results.push(self.call_method_with_values(value.clone(), method, args.clone())?);
+            }
+            return Ok(Value::junction(kind.clone(), results));
+        }
+        if Self::should_autothread_method(method)
+            && let Some((idx, kind, values)) =
+                args.iter().enumerate().find_map(|(idx, arg)| match arg {
+                    Value::Junction { kind, values } => Some((idx, kind.clone(), values.clone())),
+                    _ => None,
+                })
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                let mut threaded_args = args.clone();
+                threaded_args[idx] = value.clone();
+                results.push(self.call_method_with_values(
+                    target.clone(),
+                    method,
+                    threaded_args,
+                )?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
+        if args.is_empty()
+            && matches!(method, "raku" | "perl" | "gist")
+            && let Value::Junction { kind, values } = &target
+        {
+            let kind_name = match kind {
+                JunctionKind::Any => "any",
+                JunctionKind::All => "all",
+                JunctionKind::One => "one",
+                JunctionKind::None => "none",
+            };
+            let render_method = if method == "gist" { "gist" } else { "raku" };
+            let mut parts = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                if method == "gist" && matches!(value, Value::Nil) {
+                    parts.push("Nil".to_string());
+                    continue;
+                }
+                let rendered =
+                    self.call_method_with_values(value.clone(), render_method, vec![])?;
+                parts.push(rendered.to_string_value());
+            }
+            return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
+        }
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {
             for arg in &mut args {
@@ -741,11 +812,44 @@ impl Interpreter {
             return result;
         }
 
-        // Force LazyList and re-dispatch as Seq for methods that need element access
+        // Force LazyList and re-dispatch as Seq for methods that need element access.
+        // Save/restore the environment to prevent gather body side effects from leaking
+        // into the outer scope (preserves laziness semantics).
         if let Value::LazyList(ll) = &target
-            && matches!(method, "elems" | "list" | "Array" | "Numeric" | "Int")
+            && matches!(
+                method,
+                "list"
+                    | "Array"
+                    | "Numeric"
+                    | "Int"
+                    | "first"
+                    | "grep"
+                    | "map"
+                    | "sort"
+                    | "reverse"
+                    | "join"
+                    | "head"
+                    | "tail"
+                    | "min"
+                    | "max"
+                    | "minmax"
+                    | "sum"
+                    | "flat"
+                    | "unique"
+                    | "squish"
+                    | "classify"
+                    | "categorize"
+                    | "produce"
+                    | "rotor"
+                    | "batch"
+                    | "reduce"
+                    | "combinations"
+                    | "permutations"
+            )
         {
+            let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(ll)?;
+            self.env = saved_env;
             let seq = Value::Seq(std::sync::Arc::new(items));
             return self.call_method_with_values(seq, method, args);
         }
@@ -799,6 +903,8 @@ impl Interpreter {
 
         if let Value::Instance { class_name, .. } = &target
             && (class_name == "Perl6::Metamodel::ClassHOW"
+                || class_name == "Perl6::Metamodel::SubsetHOW"
+                || class_name == "Perl6::Metamodel::EnumHOW"
                 || class_name == "Perl6::Metamodel::CurriedRoleHOW"
                 || class_name == "Perl6::Metamodel::ParametricRoleGroupHOW")
             && matches!(
@@ -1460,6 +1566,9 @@ impl Interpreter {
                         let name = format!("{}[{}]", base_name, args_str.join(","));
                         return Ok(Value::Package(Symbol::intern(&name)));
                     }
+                    Value::Scalar(inner) => {
+                        return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
+                    }
                 };
                 let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
                     ""
@@ -1949,6 +2058,50 @@ impl Interpreter {
             "Mix" | "MixHash" if args.is_empty() => {
                 return self.dispatch_to_mix(target);
             }
+            "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
+                // Role-ish quant hash family conversion on type objects.
+                // Raku maps Set/Bag/Mix families to the corresponding family,
+                // preserving hash flavor for *Hash type objects.
+                let source_type = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Set(_) => Some("Set".to_string()),
+                    Value::Bag(_) => Some("Bag".to_string()),
+                    Value::Mix(_) => Some("Mix".to_string()),
+                    _ => None,
+                };
+                if let Some(source_type) = source_type
+                    && matches!(
+                        source_type.as_str(),
+                        "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                    )
+                {
+                    let hashy = matches!(source_type.as_str(), "SetHash" | "BagHash" | "MixHash");
+                    let mapped = match method {
+                        "Setty" => {
+                            if hashy {
+                                "SetHash"
+                            } else {
+                                "Set"
+                            }
+                        }
+                        "Baggy" => {
+                            if hashy {
+                                "BagHash"
+                            } else {
+                                "Bag"
+                            }
+                        }
+                        _ => {
+                            if hashy {
+                                "MixHash"
+                            } else {
+                                "Mix"
+                            }
+                        }
+                    };
+                    return Ok(Value::Package(Symbol::intern(mapped)));
+                }
+            }
             "Map" | "Hash" if args.is_empty() => {
                 // Type objects return the corresponding type object
                 if matches!(&target, Value::Package(_)) {
@@ -2266,6 +2419,14 @@ impl Interpreter {
                         ));
                     }
                 };
+                if matches!(
+                    class_name.resolve().as_str(),
+                    "Sub" | "Routine" | "Method" | "Code" | "Block"
+                ) {
+                    return Err(RuntimeError::new(
+                        "getcodename requires a concrete code object",
+                    ));
+                }
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name.resolve()) {

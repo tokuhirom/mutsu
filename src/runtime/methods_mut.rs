@@ -53,6 +53,30 @@ fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &Big
 }
 
 impl Interpreter {
+    fn normalize_push_unshift_arg(arg: Value) -> Value {
+        match arg {
+            Value::Scalar(inner) => *inner,
+            Value::Array(items, kind) if kind.is_itemized() => {
+                Value::Array(items, kind.decontainerize())
+            }
+            other => other,
+        }
+    }
+
+    fn normalize_push_unshift_args(args: Vec<Value>) -> Vec<Value> {
+        let needs_normalize = args.iter().any(|arg| match arg {
+            Value::Scalar(_) => true,
+            Value::Array(_, kind) => kind.is_itemized(),
+            _ => false,
+        });
+        if !needs_normalize {
+            return args;
+        }
+        args.into_iter()
+            .map(Self::normalize_push_unshift_arg)
+            .collect()
+    }
+
     fn normalize_incdec_source_for_mut(value: Value) -> Value {
         match value {
             Value::Nil | Value::Package(_) => Value::Int(0),
@@ -913,8 +937,9 @@ impl Interpreter {
             let key = target_var.to_string();
             match method {
                 "push" => {
-                    self.check_container_element_types(&key, &args)?;
-                    let result = self.push_to_shared_var(&key, args, &target);
+                    let normalized_args = Self::normalize_push_unshift_args(args);
+                    self.check_container_element_types(&key, &normalized_args)?;
+                    let result = self.push_to_shared_var(&key, normalized_args, &target);
                     return Ok(result);
                 }
                 "append" => {
@@ -938,10 +963,11 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 }
                 "unshift" | "prepend" => {
-                    self.check_container_element_types(&key, &args)?;
+                    let normalized_args = Self::normalize_push_unshift_args(args);
+                    self.check_container_element_types(&key, &normalized_args)?;
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        for (i, arg) in args.iter().enumerate() {
+                        for (i, arg) in normalized_args.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
                         let result = Value::Array(Arc::clone(arc_items), *kind);
@@ -951,7 +977,7 @@ impl Interpreter {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let mut pref = args;
+                    let mut pref: Vec<Value> = normalized_args;
                     pref.extend(items);
                     let result = Value::real_array(pref.clone());
                     self.env.insert(key, Value::real_array(pref));
@@ -1107,12 +1133,17 @@ impl Interpreter {
             };
             match method {
                 "push" | "append" => {
+                    let normalized_args = if method == "push" {
+                        Self::normalize_push_unshift_args(args)
+                    } else {
+                        args
+                    };
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         if method == "append" {
-                            items.extend(flatten_append_args(args));
+                            items.extend(flatten_append_args(normalized_args));
                         } else {
-                            items.extend(args);
+                            items.extend(normalized_args);
                         }
                         return Ok(Value::Array(Arc::clone(arc_items), *kind));
                     }
@@ -1121,9 +1152,9 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     if method == "append" {
-                        items.extend(flatten_append_args(args));
+                        items.extend(flatten_append_args(normalized_args));
                     } else {
-                        items.extend(args);
+                        items.extend(normalized_args);
                     }
                     let result = Value::Array(Arc::new(items), array_flag);
                     self.env.insert(key, result.clone());
@@ -1153,9 +1184,10 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "unshift" | "prepend" => {
+                    let normalized_args = Self::normalize_push_unshift_args(args);
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        for (i, arg) in args.iter().enumerate() {
+                        for (i, arg) in normalized_args.iter().enumerate() {
                             items.insert(i, arg.clone());
                         }
                         return Ok(Value::Array(Arc::clone(arc_items), *kind));
@@ -1164,7 +1196,7 @@ impl Interpreter {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    for (i, arg) in args.iter().enumerate() {
+                    for (i, arg) in normalized_args.iter().enumerate() {
                         items.insert(i, arg.clone());
                     }
                     let result = Value::Array(Arc::new(items), array_flag);

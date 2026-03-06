@@ -59,6 +59,7 @@ thread_local! {
         RefCell::new(HashMap::new());
     /// Imported function names to pre-register after scope reset (for EVAL).
     static EVAL_IMPORTED_FUNCTION_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.e".to_string());
 }
 
 pub(super) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -420,6 +421,19 @@ pub(in crate::parser) fn reset_user_subs() {
             }
         });
     });
+    CURRENT_LANGUAGE_VERSION.with(|v| {
+        *v.borrow_mut() = "6.e".to_string();
+    });
+}
+
+pub(in crate::parser) fn set_current_language_version(version: &str) {
+    CURRENT_LANGUAGE_VERSION.with(|v| {
+        *v.borrow_mut() = version.to_string();
+    });
+}
+
+pub(in crate::parser) fn current_language_version() -> String {
+    CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().clone())
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).
@@ -623,12 +637,23 @@ pub(in crate::parser) fn match_user_declared_infix_symbol_op(
 }
 
 /// Register a user-declared term symbol.
-/// The canonical name must be in `term:<...>` form.
+/// The canonical name can be in `term:<...>` form or a plain identifier
+/// (for sigilless variables declared with `my \name`).
 pub(in crate::parser) fn register_user_term_symbol(name: &str) {
-    let Some(symbol) = name
+    let symbol = if let Some(s) = name
         .strip_prefix("term:<")
         .and_then(|s| s.strip_suffix('>'))
-    else {
+    {
+        s.to_string()
+    } else if !name.starts_with('$')
+        && !name.starts_with('@')
+        && !name.starts_with('%')
+        && !name.starts_with('&')
+    {
+        // Plain identifier (sigilless variable): use name as both symbol and canonical name
+        name.to_string()
+    } else {
+        // Sigiled variables ($x, @x, %x) are not term symbols
         return;
     };
     SCOPES.with(|s| {
@@ -638,7 +663,7 @@ pub(in crate::parser) fn register_user_term_symbol(name: &str) {
             .expect("scope stack should never be empty");
         current
             .term_symbols
-            .insert(symbol.to_string(), TermBinding::Value(name.to_string()));
+            .insert(symbol, TermBinding::Value(name.to_string()));
     });
 }
 
@@ -689,18 +714,19 @@ pub(in crate::parser) fn match_user_declared_term_symbol(
                 {
                     continue;
                 }
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
-                {
-                    match binding {
-                        TermBinding::Value(canonical) => {
-                            best = Some((canonical.clone(), consumed, false));
-                        }
-                        TermBinding::Callable(canonical) => {
-                            best = Some((canonical.clone(), consumed, true));
-                        }
+                let candidate = match binding {
+                    TermBinding::Value(canonical) => (canonical.clone(), consumed, false),
+                    TermBinding::Callable(canonical) => (canonical.clone(), consumed, true),
+                };
+                let replace = match &best {
+                    None => true,
+                    Some((_, best_len, best_callable)) => {
+                        consumed > *best_len
+                            || (consumed == *best_len && candidate.2 && !*best_callable)
                     }
+                };
+                if replace {
+                    best = Some(candidate);
                 }
             }
         }
@@ -1569,6 +1595,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let had_ws = rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n');
     let (rest, _) = ws(rest)?;
+    if name == "int" && had_ws && !is_user_declared_sub("int") {
+        return Err(PError::expected("known function call"));
+    }
 
     // Special handling for proceed/succeed with no args
     if name == "proceed" {
@@ -1602,7 +1631,10 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     let mut args = args;
     // Test assertion calls (e.g. `is [1], [1], 'desc'`) can start with bracketed
     // arguments and be mistaken for an expression prefix. Keep them as calls.
-    if !is_test_assertion_callable(&name) && known_call_is_expression_prefix(input, rest) {
+    if !is_test_assertion_callable(&name)
+        && KNOWN_CALLS.contains(&name.as_str())
+        && known_call_is_expression_prefix(input, rest)
+    {
         return Err(PError::expected("known function call"));
     }
     if is_test_assertion_callable(&name) {

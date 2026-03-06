@@ -740,13 +740,13 @@ impl Interpreter {
         }
         let len = dims[0];
         if dims.len() == 1 {
-            let value = Value::real_array(vec![Value::Nil; len]);
+            let value = Value::shaped_array(vec![Value::Nil; len]);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return value;
         }
         let child = Self::make_shaped_array(&dims[1..]);
         crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
-        let value = Value::real_array((0..len).map(|_| child.clone()).collect());
+        let value = Value::shaped_array((0..len).map(|_| child.clone()).collect());
         crate::runtime::utils::mark_shaped_array(&value, Some(dims));
         value
     }

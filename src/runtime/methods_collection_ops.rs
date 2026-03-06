@@ -353,6 +353,31 @@ impl Interpreter {
                 let is_same = if let Some(func) = with_func.clone() {
                     self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
                         .truthy()
+                } else if let (
+                    Value::Instance {
+                        class_name: seen_class,
+                        id: seen_id,
+                        ..
+                    },
+                    Value::Instance {
+                        class_name: key_class,
+                        id: key_id,
+                        ..
+                    },
+                ) = (seen, &key)
+                {
+                    // Some instances still use placeholder id=0; treat those as
+                    // distinct for unique's default identity semantics.
+                    if *seen_id == 0
+                        && *key_id == 0
+                        && seen_class == key_class
+                        && seen_class.resolve() != "Stash"
+                        && seen_class.resolve() != "Supply"
+                    {
+                        false
+                    } else {
+                        values_identical(seen, &key)
+                    }
                 } else {
                     values_identical(seen, &key)
                 };
@@ -956,6 +981,9 @@ impl Interpreter {
                         .eval_grep_over_items(args.first().cloned(), vec![Value::Str(s.clone())]);
                 }
                 Ok(Value::Str(s.clone()))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
             }
             other => Ok(other),
         }

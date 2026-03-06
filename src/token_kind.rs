@@ -106,6 +106,7 @@ pub(crate) enum TokenKind {
     LtEqGt,
     SetUnion,
     SetIntersect,
+    SetMultiply,
     SetDiff,
     SetSymDiff,
     SetElem,

@@ -66,6 +66,21 @@ impl<T: Clone + 'static> ParseMemo<T> {
         if !super::parse_memo_enabled() {
             return;
         }
+        // Memoization assumes `rest` is a subslice of `input` so we can
+        // recover it later as `&input[consumed..]`. Some parsers (notably
+        // heredoc forms) may synthesize a combined remainder string that is
+        // not a subslice. Skip caching those entries to avoid corrupt results.
+        if let Ok((rest, _)) = result {
+            let input_start = input.as_ptr() as usize;
+            let input_end = input_start.saturating_add(input.len());
+            let rest_start = rest.as_ptr() as usize;
+            let rest_end = rest_start.saturating_add(rest.len());
+            let rest_is_subslice =
+                rest_start >= input_start && rest_end <= input_end && rest.len() <= input.len();
+            if !rest_is_subslice {
+                return;
+            }
+        }
         let key = Self::key(input);
         let entry = match result {
             Ok((rest, value)) => MemoEntry::Ok {

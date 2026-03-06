@@ -86,6 +86,7 @@ roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
 roast/S03-buf/read-write-bits.t
 roast/S03-feeds/basic.t
+roast/S03-metaops/cross.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
@@ -116,6 +117,9 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
+roast/S03-operators/set_equality.t
+roast/S03-operators/set_multiply.t
+roast/S03-operators/set_subset.t
 roast/S03-operators/set_union.t
 roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
@@ -416,7 +420,6 @@ roast/S16-io/put.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
-roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t

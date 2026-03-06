@@ -87,6 +87,7 @@ fn substitute_type_params_in_method(
         is_private: method.is_private,
         is_multi: method.is_multi,
         is_my: method.is_my,
+        role_origin: method.role_origin.clone(),
         return_type: method.return_type.clone(),
         compiled_code: method.compiled_code.clone(),
     }
@@ -457,11 +458,22 @@ impl Interpreter {
                         continue;
                     }
                     let composed: Vec<MethodDef> = if type_subs.is_empty() {
-                        non_my_overloads.into_iter().cloned().collect()
+                        non_my_overloads
+                            .into_iter()
+                            .map(|md| {
+                                let mut method = md.clone();
+                                method.role_origin = Some(base_role_name.to_string());
+                                method
+                            })
+                            .collect()
                     } else {
                         non_my_overloads
                             .into_iter()
-                            .map(|md| substitute_type_params_in_method(md, &type_subs))
+                            .map(|md| {
+                                let mut method = substitute_type_params_in_method(md, &type_subs);
+                                method.role_origin = Some(base_role_name.to_string());
+                                method
+                            })
                             .collect()
                     };
                     class_def
@@ -546,12 +558,24 @@ impl Interpreter {
                                     continue;
                                 }
                                 let composed: Vec<MethodDef> = if parent_type_subs.is_empty() {
-                                    non_my_overloads.into_iter().cloned().collect()
+                                    non_my_overloads
+                                        .into_iter()
+                                        .map(|md| {
+                                            let mut method = md.clone();
+                                            method.role_origin = Some(parent_base.to_string());
+                                            method
+                                        })
+                                        .collect()
                                 } else {
                                     non_my_overloads
                                         .into_iter()
                                         .map(|md| {
-                                            substitute_type_params_in_method(md, &parent_type_subs)
+                                            let mut method = substitute_type_params_in_method(
+                                                md,
+                                                &parent_type_subs,
+                                            );
+                                            method.role_origin = Some(parent_base.to_string());
+                                            method
                                         })
                                         .collect()
                                 };
@@ -800,6 +824,7 @@ impl Interpreter {
                                     is_private: false,
                                     is_multi: false,
                                     is_my: false,
+                                    role_origin: None,
                                     return_type: None,
                                     compiled_code: None,
                                 });
@@ -840,6 +865,7 @@ impl Interpreter {
                         is_private: *is_private,
                         is_multi: *multi,
                         is_my: *is_my,
+                        role_origin: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -953,11 +979,18 @@ impl Interpreter {
                         }
                     }
                     for (mname, overloads) in role.methods {
-                        class_def
-                            .methods
-                            .entry(mname)
-                            .or_default()
-                            .extend(overloads);
+                        let composed: Vec<MethodDef> = overloads
+                            .into_iter()
+                            .filter(|md| !md.is_my)
+                            .map(|mut md| {
+                                md.role_origin = Some(role_name_str.clone());
+                                md
+                            })
+                            .collect();
+                        if composed.is_empty() {
+                            continue;
+                        }
+                        class_def.methods.entry(mname).or_default().extend(composed);
                     }
                     if !class_def.parents.iter().any(|p| p == &role_name_str) {
                         // Keep role composition visible in MRO introspection.
@@ -1135,6 +1168,7 @@ impl Interpreter {
                         is_private: *is_private,
                         is_multi: *multi,
                         is_my: *is_my,
+                        role_origin: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1203,6 +1237,7 @@ impl Interpreter {
                                         is_private: false,
                                         is_multi: false,
                                         is_my: false,
+                                        role_origin: None,
                                         return_type: None,
                                         compiled_code: None,
                                     });
@@ -1286,6 +1321,7 @@ impl Interpreter {
                                 is_private: false,
                                 is_multi: false,
                                 is_my: false,
+                                role_origin: None,
                                 return_type: None,
                                 compiled_code: None,
                             });
@@ -1368,10 +1404,21 @@ impl Interpreter {
                         }
                         let composed: Vec<MethodDef> = if type_subs.is_empty() {
                             non_my_overloads
+                                .into_iter()
+                                .map(|mut md| {
+                                    md.role_origin = Some(base_role_name.to_string());
+                                    md
+                                })
+                                .collect()
                         } else {
                             non_my_overloads
                                 .iter()
-                                .map(|md| substitute_type_params_in_method(md, &type_subs))
+                                .map(|md| {
+                                    let mut method =
+                                        substitute_type_params_in_method(md, &type_subs);
+                                    method.role_origin = Some(base_role_name.to_string());
+                                    method
+                                })
                                 .collect()
                         };
                         role_def.methods.entry(mname).or_default().extend(composed);
@@ -1415,6 +1462,7 @@ impl Interpreter {
                         is_private: *is_private,
                         is_multi: *multi,
                         is_my: *is_my,
+                        role_origin: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1465,12 +1513,14 @@ impl Interpreter {
         name: &str,
         base: &str,
         predicate: Option<&Expr>,
+        version: &str,
     ) {
         self.subsets.insert(
             name.to_string(),
             SubsetDef {
                 base: base.to_string(),
                 predicate: predicate.cloned(),
+                version: version.to_string(),
             },
         );
         self.env

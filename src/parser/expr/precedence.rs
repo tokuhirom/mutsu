@@ -1,5 +1,5 @@
 use super::super::helpers::{is_ident_char, ws};
-use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_tag};
+use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
 
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -208,7 +208,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 
     let r = &r[1..];
     let (r, _) = ws(r)?;
-    let (r, rhs) = assign_not_expr_mode(r, mode)?;
+    let (r, rhs) = parse_assignment_rhs_mode(r, mode)?;
 
     match expr {
         Expr::Var(name) => Ok((
@@ -254,14 +254,100 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 ],
             },
         )),
+        Expr::MultiDimIndex { target, dimensions } => Ok((
+            r,
+            Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(rhs),
+            },
+        )),
         Expr::CallOn { target, args } => Ok((
             r,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![*target, Expr::ArrayLiteral(args), rhs],
+            if args.is_empty() {
+                if let Expr::ArrayLiteral(items) = *target.clone() {
+                    if let Some(expr) = list_lvalue_assign_expr(items, rhs.clone()) {
+                        expr
+                    } else {
+                        Expr::Call {
+                            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                            args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                        }
+                    }
+                } else {
+                    Expr::Call {
+                        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                        args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                    }
+                }
+            } else {
+                Expr::Call {
+                    name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                    args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                }
             },
         )),
         _ => Ok((rest, expr)),
+    }
+}
+
+fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
+    let mut saw_whatever = false;
+    let mut lvalues: Vec<Expr> = Vec::new();
+    for item in items {
+        if matches!(item, Expr::Whatever) {
+            saw_whatever = true;
+            continue;
+        }
+        lvalues.push(item);
+    }
+    if !saw_whatever || lvalues.len() != 1 {
+        return None;
+    }
+    match lvalues.into_iter().next()? {
+        Expr::Var(name) => Some(Expr::AssignExpr {
+            name,
+            expr: Box::new(rhs),
+        }),
+        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(rhs),
+        }),
+        Expr::HashVar(name) => Some(Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(rhs),
+        }),
+        Expr::Index { target, index } => Some(Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(rhs),
+        }),
+        _ => None,
+    }
+}
+
+fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (rest, first) = assign_not_expr_mode(input, mode)?;
+    let (r, _) = ws(rest)?;
+    if !r.starts_with(',') || r.starts_with(",,") {
+        return Ok((rest, first));
+    }
+
+    let mut items = vec![first];
+    let mut cursor = r;
+    loop {
+        let (r2, _) = parse_char(cursor, ',')?;
+        let (r2, _) = ws(r2)?;
+        if r2.is_empty() || r2.starts_with(';') || r2.starts_with('}') || r2.starts_with(')') {
+            return Ok((r2, Expr::ArrayLiteral(items)));
+        }
+        let (r3, next) = assign_not_expr_mode(r2, mode)?;
+        items.push(next);
+        let (r3, _) = ws(r3)?;
+        if !r3.starts_with(',') || r3.starts_with(",,") {
+            return Ok((r3, Expr::ArrayLiteral(items)));
+        }
+        cursor = r3;
     }
 }
 
@@ -567,6 +653,20 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
+        if r.starts_with("X.") && !r.starts_with("X..") {
+            let after = &r[2..];
+            let after_trimmed = after.trim_start();
+            if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+                return Err(PError::expected_at(
+                    "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                    r,
+                ));
+            }
+            return Err(PError::expected_at(
+                "X::Syntax::CannotMeta: Cannot do . because it is too fiddly",
+                r,
+            ));
+        }
         // Infixed function call: [&func], R[&func], X[&func], Z[&func]
         if let Some((modifier, name, len)) = parse_infix_func_op(r) {
             let r = &r[len..];
@@ -789,6 +889,22 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         }
         // Meta operators: R-, X+, Z~, bare Z, bare X, R[...], etc.
         if let Some((meta, op, len)) = parse_meta_op(r) {
+            if meta == "X"
+                && op == "cmp"
+                && matches!(
+                    &left,
+                    Expr::MetaOp {
+                        meta: prev_meta,
+                        op: prev_op,
+                        ..
+                    } if prev_meta == "X" && prev_op == "cmp"
+                )
+            {
+                return Err(PError::expected_at(
+                    "Non-associative operator 'Xcmp' cannot be chained",
+                    r,
+                ));
+            }
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let needs_comma_list = (meta == "Z" || meta == "X")
@@ -1004,6 +1120,11 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::Index { target, index } => Expr::IndexAssign {
             target,
             index,
+            value: Box::new(source),
+        },
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+            target,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
             value: Box::new(source),
         },
         Expr::Call { name, mut args } => {
@@ -1312,6 +1433,21 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             r,
         ));
     }
+    // Detect X. metaop misuse.
+    if r.starts_with("X.") && !r.starts_with("X..") {
+        let after = &r[2..];
+        let after_trimmed = after.trim_start();
+        if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+            return Err(PError::expected_at(
+                "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                r,
+            ));
+        }
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot do . because it is too fiddly",
+            r,
+        ));
+    }
     if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
@@ -1617,6 +1753,9 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     }
     if r.starts_with("=~=") {
         return Some((ComparisonOp::ApproxEq, 3));
+    }
+    if r.starts_with("!=:=") {
+        return Some((ComparisonOp::ContainerNe, 4));
     }
     if r.starts_with("=:=") {
         return Some((ComparisonOp::ContainerEq, 3));

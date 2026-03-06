@@ -3,6 +3,134 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    const LAZY_ASSIGN_PRESERVE_MARKER: &str = "__mutsu_preserve_lazy_on_array_assign";
+    const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
+
+    fn assignment_rhs_values(&mut self, val: &Value) -> Result<Vec<Value>, RuntimeError> {
+        Ok(match val {
+            Value::Array(v, ..) => v.as_ref().clone(),
+            Value::Seq(v) | Value::Slip(v) => v.iter().cloned().collect(),
+            Value::Range(a, b) => {
+                let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < *a {
+                    Vec::new()
+                } else {
+                    (*a..=end).map(Value::Int).collect()
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                let end = (*b).min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end <= *a {
+                    Vec::new()
+                } else {
+                    (*a..end).map(Value::Int).collect()
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = a.saturating_add(1);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < start {
+                    Vec::new()
+                } else {
+                    (start..=end).map(Value::Int).collect()
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = a.saturating_add(1);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end <= start {
+                    Vec::new()
+                } else {
+                    (start..end).map(Value::Int).collect()
+                }
+            }
+            Value::LazyList(list) => self.interpreter.force_lazy_list_bridge(list)?,
+            _ => vec![val.clone()],
+        })
+    }
+
+    pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
+        let is_nilish = |v: &Value| match v {
+            Value::Nil => true,
+            Value::Package(sym) => sym.resolve() == "Any",
+            _ => false,
+        };
+        match val {
+            Value::Array(items, kind) if items.len() == 1 => {
+                if items.first().is_some_and(is_nilish) {
+                    Value::Nil
+                } else {
+                    Value::Array(items, kind)
+                }
+            }
+            Value::Seq(items) if items.len() == 1 && items.first().is_some_and(is_nilish) => {
+                Value::Nil
+            }
+            Value::Slip(items) if items.len() == 1 && items.first().is_some_and(is_nilish) => {
+                Value::Nil
+            }
+            other => other,
+        }
+    }
+
+    fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
+        match idx {
+            Value::Range(a, b) => {
+                let start = (*a).max(0);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < start {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..=end)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            Value::RangeExcl(a, b) => {
+                let start = (*a).max(0);
+                let end_excl = (*b)
+                    .max(0)
+                    .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if start >= end_excl {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..end_excl)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = a.saturating_add(1).max(0);
+                let end = (*b).min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if end < start {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..=end)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = a.saturating_add(1).max(0);
+                let end_excl = (*b)
+                    .max(0)
+                    .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                if start >= end_excl {
+                    return Some(Vec::new());
+                }
+                Some(
+                    (start..end_excl)
+                        .filter_map(|i| usize::try_from(i).ok())
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn exec_string_concat_op(&mut self, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n;
@@ -166,16 +294,37 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
+        let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-        let (val, bind_mode) = match raw_val {
-            Value::Pair(name, value) if name == "__mutsu_bind_index_value" => (*value, true),
-            other => (other, false),
+        let (val, bind_mode, bind_sources) = match raw_val {
+            Value::Pair(name, payload) if name == "__mutsu_bind_index_value" => match *payload {
+                Value::Array(items, ..) if items.len() >= 2 => {
+                    let value = items.first().cloned().unwrap_or(Value::Nil);
+                    let sources = match items.get(1) {
+                        Some(Value::Array(srcs, ..)) => srcs
+                            .iter()
+                            .map(|src| match src {
+                                Value::Str(s) if !s.is_empty() => Some((**s).clone()),
+                                _ => None,
+                            })
+                            .collect(),
+                        _ => Vec::new(),
+                    };
+                    (value, true, sources)
+                }
+                other => (other, true, Vec::new()),
+            },
+            other => (other, false, Vec::new()),
         };
         // When assigning Nil to a typed container element, use the type object
         let val = if matches!(val, Value::Nil) {
             if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
-                Value::Package(Symbol::intern(&constraint))
+                let nominal = self
+                    .interpreter
+                    .nominal_type_object_name_for_constraint(&constraint);
+                Value::Package(Symbol::intern(&nominal))
             } else {
                 val
             }
@@ -198,10 +347,12 @@ impl VM {
         }
         match &idx {
             Value::Array(keys, ..) => {
+                let mut vals = self.assignment_rhs_values(&val)?;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
-                    let is_shaped = crate::runtime::utils::is_shaped_array(container);
+                    let is_shaped =
+                        has_declared_shape || crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
                     if is_shaped {
                         if bind_mode && is_bound_index {
@@ -225,10 +376,6 @@ impl VM {
                             }
                         }
                         // Assign each value to the corresponding index
-                        let vals = match &val {
-                            Value::Array(v, ..) => (**v).clone(),
-                            _ => vec![val.clone()],
-                        };
                         for (i, key) in keys.iter().enumerate() {
                             let v = vals.get(i).cloned().unwrap_or(Value::Nil);
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
@@ -244,10 +391,6 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let mut vals = match &val {
-                    Value::Array(v, ..) => (**v).clone(),
-                    _ => vec![val.clone()],
-                };
                 if vals.is_empty() {
                     vals.push(Value::Nil);
                 }
@@ -257,13 +400,32 @@ impl VM {
                         Value::hash(std::collections::HashMap::new()),
                     );
                 }
+                let mut pending_source_updates: Vec<(String, Value)> = Vec::new();
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
-                        let v = vals[i % vals.len()].clone();
-                        h.insert(k, v);
+                        let v = if bind_mode {
+                            vals.get(i).cloned().unwrap_or(Value::Nil)
+                        } else {
+                            vals[i % vals.len()].clone()
+                        };
+                        if bind_mode && let Some(Some(source_name)) = bind_sources.get(i) {
+                            pending_source_updates.push((source_name.clone(), v.clone()));
+                            h.insert(
+                                k,
+                                Value::Pair(
+                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
+                                    Box::new(Value::str(source_name.clone())),
+                                ),
+                            );
+                        } else {
+                            h.insert(k, v);
+                        }
                     }
+                }
+                for (source_name, source_value) in pending_source_updates {
+                    self.interpreter.env_mut().insert(source_name, source_value);
                 }
             }
             _ => {
@@ -280,20 +442,45 @@ impl VM {
                         &val,
                     )));
                 }
+                let range_slice = if let Some(indices) = Self::slice_indices_from_index(&idx) {
+                    Some((indices, self.assignment_rhs_values(&val)?))
+                } else {
+                    None
+                };
+                let mut range_initialized_marks: Vec<String> = Vec::new();
+                let mut pending_source_update: Option<(String, Value)> = None;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
-                            if let Value::Hash(source_hash) = &val
-                                && Arc::ptr_eq(hash, source_hash)
+                            let is_self_hash_ref = matches!(
+                                &val,
+                                Value::Hash(source_hash) if Arc::ptr_eq(hash, source_hash)
+                            );
+                            let h = Arc::make_mut(hash);
+                            if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
+                                pending_source_update = Some((source_name.clone(), val.clone()));
+                                h.insert(
+                                    key.clone(),
+                                    Value::Pair(
+                                        super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
+                                        Box::new(Value::str(source_name.clone())),
+                                    ),
+                                );
+                            } else if let Some(Value::Pair(marker, source_name)) = h.get(&key)
+                                && marker == super::vm_var_ops::BOUND_HASH_REF_SENTINEL
                             {
-                                Arc::make_mut(hash)
-                                    .insert(key.clone(), Self::self_hash_ref_marker());
+                                let source_name = source_name.to_string_value();
+                                pending_source_update = Some((source_name, val.clone()));
+                            } else if is_self_hash_ref {
+                                h.insert(key.clone(), Self::self_hash_ref_marker());
                             } else {
-                                Arc::make_mut(hash).insert(key.clone(), val.clone());
+                                h.insert(key.clone(), val.clone());
                             }
                         }
                         Value::Array(..) => {
-                            if crate::runtime::utils::is_shaped_array(container) {
+                            if has_declared_shape
+                                || crate::runtime::utils::is_shaped_array(container)
+                            {
                                 if bind_mode && is_bound_index {
                                     return Err(RuntimeError::new("X::Assignment::RO"));
                                 }
@@ -302,6 +489,28 @@ impl VM {
                                     std::slice::from_ref(&idx),
                                     val.clone(),
                                 )?;
+                            } else if let Some((slice_indices, vals)) = &range_slice {
+                                if let Value::Array(items, ..) = container {
+                                    let arr = Arc::make_mut(items);
+                                    if let Some(max_idx) = slice_indices.last().copied()
+                                        && max_idx >= arr.len()
+                                    {
+                                        arr.resize(
+                                            max_idx + 1,
+                                            Value::Package(Symbol::intern("Any")),
+                                        );
+                                    }
+                                }
+                                for (offset, i) in slice_indices.iter().enumerate() {
+                                    let key = Value::Int(*i as i64);
+                                    let v = vals.get(offset).cloned().unwrap_or(Value::Nil);
+                                    Self::assign_array_multidim(
+                                        container,
+                                        std::slice::from_ref(&key),
+                                        v,
+                                    )?;
+                                    range_initialized_marks.push(Self::encode_bound_index(&key));
+                                }
                             } else if let Some(i) = Self::index_to_usize(&idx) {
                                 if let Value::Array(items, ..) = container {
                                     let is_self_array_ref = matches!(
@@ -338,6 +547,12 @@ impl VM {
                     self.interpreter
                         .env_mut()
                         .insert(var_name.clone(), Value::hash(hash));
+                }
+                if let Some((source_name, source_value)) = pending_source_update {
+                    self.interpreter.env_mut().insert(source_name, source_value);
+                }
+                for encoded in range_initialized_marks {
+                    self.mark_initialized_index(&var_name, encoded);
                 }
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
@@ -492,6 +707,13 @@ impl VM {
                 self.stack.push(def.clone());
                 return Ok(());
             }
+            if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
+                let nominal = self
+                    .interpreter
+                    .nominal_type_object_name_for_constraint(&constraint);
+                self.stack.push(Value::Package(Symbol::intern(&nominal)));
+                return Ok(());
+            }
         }
         self.stack.push(val);
         Ok(())
@@ -506,14 +728,23 @@ impl VM {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            if !name.starts_with('@') && !name.starts_with('%') {
+                val = Self::normalize_scalar_assignment_value(val);
+            }
+            if matches!(val, Value::Nil)
+                && let Some(def) = self.interpreter.var_default(name)
+            {
+                val = def.clone();
+            }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
                 {
-                    return Err(RuntimeError::new(
-                        "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
-                    ));
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                        constraint
+                    )));
                 }
                 if !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
@@ -538,30 +769,34 @@ impl VM {
 
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
-        let val = if name.starts_with('@') {
-            if let Value::LazyList(ref list) = val {
-                Value::array(self.interpreter.force_lazy_list_bridge(list)?)
-            } else {
-                val
-            }
-        } else {
-            val
-        };
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(val)
+            match val {
+                Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
+                    Some(Value::Bool(true)) => Value::LazyList(list),
+                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                },
+                other => runtime::coerce_to_array(other),
+            }
         } else {
-            val
+            Self::normalize_scalar_assignment_value(val)
         };
+        if matches!(val, Value::Nil)
+            && !matches!(self.locals[idx], Value::Nil)
+            && let Some(def) = self.interpreter.var_default(name)
+        {
+            val = def.clone();
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
             if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
-                return Err(RuntimeError::new(
-                    "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
-                ));
+                return Err(RuntimeError::new(format!(
+                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                    constraint
+                )));
             }
             if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
             {
@@ -694,11 +929,27 @@ impl VM {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            if !name.starts_with('@') && !name.starts_with('%') {
+                val = Self::normalize_scalar_assignment_value(val);
+            }
+            if matches!(val, Value::Nil)
+                && !matches!(self.locals[idx], Value::Nil)
+                && let Some(def) = self.interpreter.var_default(name)
+            {
+                val = def.clone();
+            }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 let val = if matches!(val, Value::Nil) {
-                    Value::Package(Symbol::intern(&constraint))
+                    if constraint == "Mu" {
+                        val
+                    } else {
+                        let nominal = self
+                            .interpreter
+                            .nominal_type_object_name_for_constraint(&constraint);
+                        Value::Package(Symbol::intern(&nominal))
+                    }
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
                     return Err(RuntimeError::new(
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
@@ -725,17 +976,33 @@ impl VM {
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(raw_val)
+            match raw_val {
+                Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
+                    Some(Value::Bool(true)) => Value::LazyList(list),
+                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                },
+                other => runtime::coerce_to_array(other),
+            }
         } else {
-            raw_val
+            Self::normalize_scalar_assignment_value(raw_val)
         };
+        if matches!(val, Value::Nil)
+            && let Some(def) = self.interpreter.var_default(name)
+        {
+            val = def.clone();
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
             if matches!(val, Value::Nil) {
-                // Assigning Nil to a typed variable resets it to the type object
-                val = Value::Package(Symbol::intern(&constraint));
+                if constraint != "Mu" {
+                    // Assigning Nil to a typed variable resets it to the type object
+                    let nominal = self
+                        .interpreter
+                        .nominal_type_object_name_for_constraint(&constraint);
+                    val = Value::Package(Symbol::intern(&nominal));
+                }
             } else if !self.interpreter.type_matches_value(&constraint, &val) {
                 return Err(RuntimeError::new(
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),

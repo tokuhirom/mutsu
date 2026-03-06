@@ -383,7 +383,7 @@ is ([~] ()), "", '[~] on empty list returns ""';
 # --- Phase 8: compiled statements ---
 
 # Take statement (compiled Take opcode)
-my @gathered = gather { take 1; take 2; take 3; };
+my @gathered = eager gather { take 1; take 2; take 3; };
 is @gathered.elems, 3, 'take compiled to Take opcode';
 is @gathered[0], 1, 'take first value';
 is @gathered[2], 3, 'take third value';

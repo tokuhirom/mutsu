@@ -983,6 +983,12 @@ impl Compiler {
                     self.code.emit(OpCode::Index);
                 }
             }
+            // Multi-dimensional indexing: @a[$x;$y;$z]
+            Expr::MultiDimIndex { target, dimensions } => {
+                self.compile_expr(target);
+                self.compile_expr(&Expr::ArrayLiteral(dimensions.clone()));
+                self.code.emit(OpCode::Index);
+            }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {
                 self.compile_expr(target);
@@ -1161,13 +1167,49 @@ impl Compiler {
                         }
                         _ => {}
                     }
-                    // Non-index, non-env: use ExistsExpr
-                    if !matches!(target.as_ref(), Expr::Index { .. } | Expr::ZenSlice(_)) {
+                    // Non-index, non-env, non-multidim: use ExistsExpr
+                    if !matches!(
+                        target.as_ref(),
+                        Expr::Index { .. } | Expr::ZenSlice(_) | Expr::MultiDimIndex { .. }
+                    ) {
                         self.compile_expr(target);
                         self.code.emit(OpCode::ExistsExpr);
                         return;
                     }
                 }
+                // MultiDimIndex targets: compile as a call to
+                // __mutsu_multidim_exists_adverb(target, negated, adverb, dim0, dim1, ...)
+                if let Expr::MultiDimIndex {
+                    target: mdtarget,
+                    dimensions,
+                } = target.as_ref()
+                {
+                    let adverb_str = match adverb {
+                        ExistsAdverb::Kv => "kv",
+                        ExistsAdverb::NotKv => "not-kv",
+                        ExistsAdverb::P => "p",
+                        ExistsAdverb::NotP => "not-p",
+                        ExistsAdverb::InvalidK => "k",
+                        ExistsAdverb::InvalidNotK => "not-k",
+                        ExistsAdverb::InvalidV => "v",
+                        ExistsAdverb::None => "none",
+                        ExistsAdverb::NotV => "not-v",
+                    };
+                    // Build args: target, negated_bool, adverb_name, dim0, dim1, ...
+                    let mut call_args = vec![
+                        mdtarget.as_ref().clone(),
+                        Expr::Literal(Value::Bool(*negated)),
+                        Expr::Literal(Value::str(adverb_str.to_string())),
+                    ];
+                    call_args.extend(dimensions.iter().cloned());
+                    let call = Expr::Call {
+                        name: crate::symbol::Symbol::intern("__mutsu_multidim_exists_adverb"),
+                        args: call_args,
+                    };
+                    self.compile_expr(&call);
+                    return;
+                }
+
                 // Rich case: use ExistsIndexAdv opcode
                 let is_zen = matches!(target.as_ref(), Expr::ZenSlice(_));
                 let mut flags: u32 = 0;
@@ -1287,6 +1329,39 @@ impl Compiler {
                 left,
                 right,
             } => {
+                if meta == "X"
+                    && matches!(
+                        op.as_str(),
+                        "and" | "&&" | "or" | "||" | "andthen" | "orelse"
+                    )
+                {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(right.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_cross_shortcircuit"),
+                        args: vec![
+                            Expr::Literal(Value::str(op.clone())),
+                            left.as_ref().clone(),
+                            thunked,
+                        ],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
+                if meta == "X" && op == "xx" && matches!(left.as_ref(), Expr::ArrayLiteral(_)) {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(left.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_reverse_xx"),
+                        args: vec![right.as_ref().clone(), thunked],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
                 if meta == "R" {
                     // R-meta can stack (RRop, RRRop, ...). Normalize to base operator and parity.
                     let mut base = op.as_str();
@@ -1359,6 +1434,23 @@ impl Compiler {
                 right,
                 modifier,
             } => {
+                if modifier.is_none()
+                    && matches!(name.as_str(), "any" | "all" | "one" | "none")
+                    && right.len() == 1
+                    && let Expr::BareWord(mop_name) = left.as_ref()
+                    && matches!(mop_name.as_str(), "WHAT" | "HOW")
+                    && let Expr::ArrayLiteral(junction_args) = &right[0]
+                {
+                    let normalized = Expr::Call {
+                        name: Symbol::intern(mop_name),
+                        args: vec![Expr::Call {
+                            name: Symbol::intern(name),
+                            args: junction_args.clone(),
+                        }],
+                    };
+                    self.compile_expr(&normalized);
+                    return;
+                }
                 let flip_flop_mode = match name.as_str() {
                     "ff" => Some((false, false, false)),
                     "^ff" => Some((true, false, false)),
@@ -1575,6 +1667,10 @@ impl Compiler {
                     self.code.emit(OpCode::MakeGather(idx));
                 }
             }
+            Expr::Eager(inner) => {
+                self.compile_expr(inner);
+                self.code.emit(OpCode::Eager);
+            }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::ContainerizePair);
@@ -1757,6 +1853,34 @@ impl Compiler {
                     self.code.emit(OpCode::IndexAssignGeneric);
                 }
             }
+            // Multi-dimensional index assignment: @a[$x;$y;$z] = value
+            Expr::MultiDimIndexAssign {
+                target,
+                dimensions,
+                value,
+            } => {
+                // Compile as a runtime call: __mutsu_multidim_assign(target_var, dim0, dim1, ..., value)
+                if let Some(var_name) = Self::index_assign_target_name(target) {
+                    self.compile_expr(value);
+                    for dim in dimensions {
+                        self.compile_expr(dim);
+                    }
+                    let name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::MultiDimIndexAssign {
+                        name_idx,
+                        ndims: dimensions.len() as u32,
+                    });
+                } else {
+                    // Fallback: compile target, dims, value, use generic handler
+                    self.compile_expr(target);
+                    for dim in dimensions {
+                        self.compile_expr(dim);
+                    }
+                    self.compile_expr(value);
+                    self.code
+                        .emit(OpCode::MultiDimIndexAssignGeneric(dimensions.len() as u32));
+                }
+            }
             Expr::IndirectTypeLookup(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::IndirectTypeLookup);
@@ -1872,6 +1996,7 @@ impl Compiler {
             TokenKind::SetCont => Some(OpCode::SetCont),
             TokenKind::SetUnion => Some(OpCode::SetUnion),
             TokenKind::SetIntersect => Some(OpCode::SetIntersect),
+            TokenKind::SetMultiply => Some(OpCode::SetMultiply),
             TokenKind::SetDiff => Some(OpCode::SetDiff),
             TokenKind::SetSymDiff => Some(OpCode::SetSymDiff),
             TokenKind::SetSubset => Some(OpCode::SetSubset),

@@ -766,6 +766,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_my_subset_decl_as_single_statement() {
+        let (rest, stmts) = program("my subset S-Int of Int;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(
+            matches!(&stmts[0], Stmt::SubsetDecl { name, base, .. } if name.resolve() == "S-Int" && base == "Int")
+        );
+    }
+
+    #[test]
+    fn parse_method_arg_hyphenated_subset_name() {
+        let src = "use Test; { my subset S-Int of Int; my subset S-Str of Str; nok S-Int.isa(S-Str), 'isa subset'; }";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn parse_pointy_param_where_constraint() {
+        let (rest, stmts) = program("-> $ where Int|Bool { }(one True);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
     fn parse_plan_skip_all() {
         let (rest, stmts) = program("use Test;\nplan skip-all => \"msg\";").unwrap();
         assert_eq!(rest, "");
@@ -1045,6 +1070,15 @@ mod tests {
             }
             _ => panic!("expected for statement"),
         }
+    }
+
+    #[test]
+    fn parse_for_with_operator_code_ref_in_iterable_list() {
+        let src = "for &infix:<<(==)>>, \"(==)\", &infix:<≡>, \"≡\" -> &op, $name { }";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
     }
 
     #[test]
@@ -1563,6 +1597,70 @@ mod tests {
                 }
                 other => panic!("expected meta-op assignment stmt, got {other:?}"),
             },
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_expr_parses_unbracketed_cross_metaop_assign() {
+        let (rest, expr) = assign::try_parse_assign_expr("@a X*= 10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "@a");
+                match *expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "*");
+                        assert!(matches!(*left, Expr::ArrayVar(ref n) if n == "a"));
+                        assert!(matches!(*right, Expr::Literal(Value::Int(10))));
+                    }
+                    other => panic!("expected meta-op assignment expr, got {other:?}"),
+                }
+            }
+            other => panic!("expected AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
+        let (rest, stmt) = assign::assign_stmt("@a X*= 10;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp { meta, op, .. } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "*");
+                    }
+                    other => panic!("expected meta-op assignment stmt, got {other:?}"),
+                }
+            }
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_parses_unbracketed_cross_plain_assign() {
+        let (rest, stmt) = assign::assign_stmt("@a X= 10;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp { meta, op, .. } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "=");
+                    }
+                    other => panic!("expected meta-op assignment stmt, got {other:?}"),
+                }
+            }
             other => panic!("expected Assign stmt, got {other:?}"),
         }
     }

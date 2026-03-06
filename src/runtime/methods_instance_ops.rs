@@ -21,9 +21,23 @@ impl Interpreter {
         } = &target
         {
             if let Some(private_rest) = method.strip_prefix('!') {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
                 let (pm_name, resolved) =
                     if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+                        let caller_allowed = caller_class.as_deref() == Some(owner_class)
+                            || self.class_trusts.get(owner_class).is_some_and(|trusted| {
+                                caller_class
+                                    .as_ref()
+                                    .is_some_and(|caller| trusted.contains(caller))
+                            });
+                        if !caller_allowed {
+                            return Err(make_private_permission_error(pm_name, owner_class));
+                        }
                         (
                             pm_name,
                             self.resolve_private_method_with_owner(
@@ -44,11 +58,6 @@ impl Interpreter {
                         )
                     };
                 if let Some((resolved_owner, method_def)) = resolved {
-                    let caller_class = self
-                        .method_class_stack
-                        .last()
-                        .cloned()
-                        .or_else(|| Some(self.current_package().to_string()));
                     let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                         || self
                             .class_trusts
@@ -538,9 +547,23 @@ impl Interpreter {
                 return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
             }
             if let Some(private_rest) = method.strip_prefix('!') {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
                 let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
                     private_rest.split_once("::")
                 {
+                    let caller_allowed = caller_class.as_deref() == Some(owner_class)
+                        || self.class_trusts.get(owner_class).is_some_and(|trusted| {
+                            caller_class
+                                .as_ref()
+                                .is_some_and(|caller| trusted.contains(caller))
+                        });
+                    if !caller_allowed {
+                        return Err(make_private_permission_error(pm_name, owner_class));
+                    }
                     (
                         pm_name,
                         self.resolve_private_method_with_owner(
@@ -557,11 +580,6 @@ impl Interpreter {
                     )
                 };
                 if let Some((resolved_owner, method_def)) = resolved {
-                    let caller_class = self
-                        .method_class_stack
-                        .last()
-                        .cloned()
-                        .or_else(|| Some(self.current_package().to_string()));
                     let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                         || self
                             .class_trusts
@@ -585,6 +603,7 @@ impl Interpreter {
                     )?;
                     return Ok(result);
                 }
+                return Err(make_method_not_found_error(pm_name, &name.resolve(), true));
             }
             // Package (type object) dispatch -- check user-defined methods
             if self.has_user_method(&name.resolve(), method) {
@@ -724,6 +743,43 @@ impl Interpreter {
             }
             "raku" | "perl" if args.is_empty() => match target {
                 Value::Package(name) => Ok(Value::str(name.resolve())),
+                Value::Junction { kind, values } => {
+                    let kind_name = match kind {
+                        JunctionKind::Any => "any",
+                        JunctionKind::All => "all",
+                        JunctionKind::One => "one",
+                        JunctionKind::None => "none",
+                    };
+                    let mut parts = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        if let Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } = value
+                            && self
+                                .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
+                                .is_some()
+                        {
+                            let attrs_map = (**attributes).clone();
+                            if let Ok((rendered, _)) = self.run_instance_method(
+                                &class_name.resolve(),
+                                attrs_map,
+                                "raku",
+                                Vec::new(),
+                                None,
+                            ) {
+                                parts.push(rendered.to_string_value());
+                                continue;
+                            }
+                        }
+                        let rendered = self
+                            .call_method_with_values(value.clone(), "raku", Vec::new())
+                            .unwrap_or_else(|_| Value::str(value.to_string_value()));
+                        parts.push(rendered.to_string_value());
+                    }
+                    Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))))
+                }
                 other => Ok(Value::str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {
@@ -749,6 +805,23 @@ impl Interpreter {
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other.to_string_value(),
                 };
+                if pkg_name == target_name {
+                    return Ok(Value::Bool(true));
+                }
+                if let Some(mut base) = self.subsets.get(&pkg_name).map(|s| s.base.clone()) {
+                    loop {
+                        if base == target_name {
+                            return Ok(Value::Bool(true));
+                        }
+                        let Some(parent_subset) = self.subsets.get(&base) else {
+                            break;
+                        };
+                        if parent_subset.base == base {
+                            break;
+                        }
+                        base = parent_subset.base.clone();
+                    }
+                }
                 Ok(Value::Bool(
                     self.class_mro(&pkg_name).contains(&target_name),
                 ))
