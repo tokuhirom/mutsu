@@ -6,7 +6,7 @@ usage() {
 Usage: ai-sandbox [--set-window-title] [--recreate] [--no-prune] [--dry-run] <branch> [claude|codex|bash] [args...]
 
 Environment variables:
-  AI_SANDBOX_MAX_CLEAN_CLONES   Maximum number of clean sandboxes to keep (default: 30)
+  AI_SANDBOX_MAX_CLEAN_CLONES   Maximum number of clean sandboxes to keep (default: 10)
   AI_SANDBOX_PRUNE_MIN_AGE_HOURS
                                 Minimum age in hours before clean sandbox is deletable (default: 6)
 USAGE
@@ -56,7 +56,7 @@ SANDBOX_BASE="${REPO_ROOT}/.git/sandbox"
 CLONE_DIR="${SANDBOX_BASE}/${BRANCH}"
 LOCK_BASE="${SANDBOX_BASE}/.locks"
 LOCK_FILE="${LOCK_BASE}/${BRANCH}.pid"
-MAX_CLEAN_CLONES="${AI_SANDBOX_MAX_CLEAN_CLONES:-30}"
+MAX_CLEAN_CLONES="${AI_SANDBOX_MAX_CLEAN_CLONES:-10}"
 PRUNE_MIN_AGE_HOURS="${AI_SANDBOX_PRUNE_MIN_AGE_HOURS:-6}"
 
 if ! [[ "$MAX_CLEAN_CLONES" =~ ^[0-9]+$ ]]; then
