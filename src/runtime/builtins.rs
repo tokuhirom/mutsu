@@ -345,6 +345,13 @@ impl Interpreter {
         if matches!(target_val, Value::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
         }
+        if let Value::Junction { kind, values } = target_val {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.eval_call_on_value(callable.clone(), args.clone())?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
         // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
         if let Value::Mixin(ref inner, ref mixins) = target_val {
             // Check if any mixed-in role provides CALL-ME

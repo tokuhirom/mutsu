@@ -1621,20 +1621,30 @@ pub(crate) fn to_int(v: &Value) -> i64 {
 }
 
 pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
+    let left_is_other_junction = matches!(&left, Value::Junction { kind: k, .. } if *k != kind);
+    let right_is_other_junction = matches!(&right, Value::Junction { kind: k, .. } if *k != kind);
     let mut values = Vec::new();
-    push_junction_value(&kind, left, &mut values);
-    push_junction_value(&kind, right, &mut values);
-    Value::junction(kind, values)
-}
 
-fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
-    match value {
+    match left {
         Value::Junction {
             kind: inner_kind,
-            values,
-        } if &inner_kind == kind => out.extend(values.iter().cloned()),
-        other => out.push(other),
+            values: inner_values,
+        } if inner_kind == kind && !right_is_other_junction => {
+            values.extend(inner_values.iter().cloned());
+        }
+        other => values.push(other),
     }
+    match right {
+        Value::Junction {
+            kind: inner_kind,
+            values: inner_values,
+        } if inner_kind == kind && !left_is_other_junction => {
+            values.extend(inner_values.iter().cloned());
+        }
+        other => values.push(other),
+    }
+
+    Value::junction(kind, values)
 }
 
 /// Format a short representation of a value for type-check error messages,

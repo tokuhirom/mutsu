@@ -166,6 +166,11 @@ impl Interpreter {
             match arg {
                 Value::Array(items, ..) => elems.extend(items.iter().cloned()),
                 Value::Seq(items) | Value::Slip(items) => elems.extend(items.iter().cloned()),
+                range @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => elems.extend(Self::value_to_list(&range)),
                 other => elems.push(other),
             }
         }

@@ -743,6 +743,43 @@ impl Interpreter {
             }
             "raku" | "perl" if args.is_empty() => match target {
                 Value::Package(name) => Ok(Value::str(name.resolve())),
+                Value::Junction { kind, values } => {
+                    let kind_name = match kind {
+                        JunctionKind::Any => "any",
+                        JunctionKind::All => "all",
+                        JunctionKind::One => "one",
+                        JunctionKind::None => "none",
+                    };
+                    let mut parts = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        if let Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } = value
+                            && self
+                                .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
+                                .is_some()
+                        {
+                            let attrs_map = (**attributes).clone();
+                            if let Ok((rendered, _)) = self.run_instance_method(
+                                &class_name.resolve(),
+                                attrs_map,
+                                "raku",
+                                Vec::new(),
+                                None,
+                            ) {
+                                parts.push(rendered.to_string_value());
+                                continue;
+                            }
+                        }
+                        let rendered = self
+                            .call_method_with_values(value.clone(), "raku", Vec::new())
+                            .unwrap_or_else(|_| Value::str(value.to_string_value()));
+                        parts.push(rendered.to_string_value());
+                    }
+                    Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))))
+                }
                 other => Ok(Value::str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {

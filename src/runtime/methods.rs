@@ -4,6 +4,22 @@ use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    fn should_autothread_method(method: &str) -> bool {
+        !matches!(
+            method,
+            "Bool"
+                | "so"
+                | "WHAT"
+                | "^name"
+                | "gist"
+                | "Str"
+                | "defined"
+                | "THREAD"
+                | "raku"
+                | "perl"
+        )
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -13,6 +29,57 @@ impl Interpreter {
         // Scalar containers are transparent for method dispatch (except .item itself)
         if let Value::Scalar(inner) = target {
             return self.call_method_with_values(*inner, method, args);
+        }
+        if Self::should_autothread_method(method)
+            && let Value::Junction { kind, values } = &target
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                results.push(self.call_method_with_values(value.clone(), method, args.clone())?);
+            }
+            return Ok(Value::junction(kind.clone(), results));
+        }
+        if Self::should_autothread_method(method)
+            && let Some((idx, kind, values)) =
+                args.iter().enumerate().find_map(|(idx, arg)| match arg {
+                    Value::Junction { kind, values } => Some((idx, kind.clone(), values.clone())),
+                    _ => None,
+                })
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                let mut threaded_args = args.clone();
+                threaded_args[idx] = value.clone();
+                results.push(self.call_method_with_values(
+                    target.clone(),
+                    method,
+                    threaded_args,
+                )?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
+        if args.is_empty()
+            && matches!(method, "raku" | "perl" | "gist")
+            && let Value::Junction { kind, values } = &target
+        {
+            let kind_name = match kind {
+                JunctionKind::Any => "any",
+                JunctionKind::All => "all",
+                JunctionKind::One => "one",
+                JunctionKind::None => "none",
+            };
+            let render_method = if method == "gist" { "gist" } else { "raku" };
+            let mut parts = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                if method == "gist" && matches!(value, Value::Nil) {
+                    parts.push("Nil".to_string());
+                    continue;
+                }
+                let rendered =
+                    self.call_method_with_values(value.clone(), render_method, vec![])?;
+                parts.push(rendered.to_string_value());
+            }
+            return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {

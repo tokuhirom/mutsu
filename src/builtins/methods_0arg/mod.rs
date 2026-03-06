@@ -2240,16 +2240,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
                 Some(Ok(Value::str(format!("slip({})", inner))))
             }
-            Value::Junction { kind, values } if method == "raku" || method == "perl" => {
-                let kind_str = match kind {
-                    crate::value::JunctionKind::Any => "any",
-                    crate::value::JunctionKind::All => "all",
-                    crate::value::JunctionKind::One => "one",
-                    crate::value::JunctionKind::None => "none",
-                };
-                let inner = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                Some(Ok(Value::str(format!("{}({})", kind_str, inner))))
-            }
+            Value::Junction { .. } if method == "raku" || method == "perl" => None,
             Value::Pair(k, v) => {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(raku_value(target))))

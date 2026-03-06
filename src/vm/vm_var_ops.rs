@@ -588,6 +588,28 @@ impl VM {
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
+        if let Value::Junction { kind, values } = &target {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                self.stack.push(value.clone());
+                self.stack.push(index.clone());
+                self.exec_index_op()?;
+                results.push(self.stack.pop().unwrap_or(Value::Nil));
+            }
+            self.stack.push(Value::junction(kind.clone(), results));
+            return Ok(());
+        }
+        if let Value::Junction { kind, values } = &index {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                self.stack.push(target.clone());
+                self.stack.push(value.clone());
+                self.exec_index_op()?;
+                results.push(self.stack.pop().unwrap_or(Value::Nil));
+            }
+            self.stack.push(Value::junction(kind.clone(), results));
+            return Ok(());
+        }
         // If target is a Failure, propagate it (// will catch it as undefined)
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
             self.stack.push(target);

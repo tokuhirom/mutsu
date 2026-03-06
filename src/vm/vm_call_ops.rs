@@ -461,6 +461,14 @@ impl VM {
                     method.as_str(),
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 ));
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -1021,6 +1029,14 @@ impl VM {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
