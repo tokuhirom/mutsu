@@ -594,6 +594,12 @@ impl VM {
         {
             val = def.clone();
         }
+        if self.interpreter.fatal_mode
+            && !name.contains("__mutsu_")
+            && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+        {
+            return Err(err);
+        }
         // When assigning Nil to a typed variable, reset to the type object
         let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
             if let Some(constraint) = self.interpreter.var_type_constraint(&name) {

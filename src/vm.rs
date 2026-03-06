@@ -423,6 +423,12 @@ impl VM {
                             .try_coerce_value_for_constraint(&constraint, val)?;
                     }
                 }
+                if self.interpreter.fatal_mode
+                    && !name.contains("__mutsu_")
+                    && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                {
+                    return Err(err);
+                }
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
                 if matches!(

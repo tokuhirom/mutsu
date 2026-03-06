@@ -681,6 +681,13 @@ mod tests {
     }
 
     #[test]
+    fn primary_parses_named_sub_literal_in_expression_context() {
+        let (rest, expr) = primary("sub f { 42 }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::AnonSub { .. }));
+    }
+
+    #[test]
     fn primary_big_q_bang_delimiter() {
         reset_primary_memo();
         let (rest, expr) = primary("Q!hello!").unwrap();
