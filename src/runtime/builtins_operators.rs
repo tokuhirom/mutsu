@@ -508,7 +508,8 @@ impl Interpreter {
                 let mut acc = args[0].clone();
                 for rhs in &args[1..] {
                     if !crate::runtime::types::value_is_defined(&acc) {
-                        return Ok(acc);
+                        // Return Empty (empty Slip) when LHS is not defined
+                        return Ok(Value::Slip(std::sync::Arc::new(vec![])));
                     }
                     acc = rhs.clone();
                 }
