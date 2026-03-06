@@ -158,7 +158,7 @@ impl VM {
     pub(super) fn exec_decont_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let new_val = match val {
-            Value::Array(items, kind) => Value::Array(items, kind.decontainerize()),
+            Value::Scalar(inner) => *inner,
             other => other,
         };
         self.stack.push(new_val);

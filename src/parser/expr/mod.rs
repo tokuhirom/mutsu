@@ -900,6 +900,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_one_junction_operator_without_spaces() {
+        let (rest, expr) = expression("3^2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::Caret,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_fat_arrow_chains_right_associatively() {
         let (rest, expr) = expression("1 => 2 => 3 => 4").unwrap();
         assert_eq!(rest, "");
@@ -1073,6 +1086,44 @@ mod tests {
             },
             _ => panic!("Expected Unary expression"),
         }
+    }
+
+    #[test]
+    fn parse_container_not_equal_operator() {
+        let (rest, expr) = expression("$a !=:= $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::Ident(op),
+                    ..
+                } => assert_eq!(op, "=:="),
+                _ => panic!("Expected !=:= to lower to !(=:=)"),
+            },
+            _ => panic!("Expected unary ! expression"),
+        }
+    }
+
+    #[test]
+    fn parse_cross_with_container_not_equal_operator() {
+        let (rest, expr) = expression("$a X!=:= $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "X");
+                assert_eq!(op, "!=:=");
+            }
+            _ => panic!("Expected cross meta operator expression"),
+        }
+    }
+
+    #[test]
+    fn parse_cross_dot_string_reports_obsolete_error() {
+        let err = expression("3 X. \"foo\"").unwrap_err();
+        assert!(err.message().contains("X::Obsolete"));
     }
 
     #[test]
@@ -1666,6 +1717,76 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyper_index_without_dot() {
+        let (rest, expr) = expression("%h{*}»[1]").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "AT-POS");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(*target, Expr::Index { .. }));
+            }
+            _ => panic!("expected hyper index call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_index_with_dot() {
+        let (rest, expr) = expression("%h{*}».[1]").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "AT-POS");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(*target, Expr::Index { .. }));
+            }
+            _ => panic!("expected hyper dot-index call"),
+        }
+    }
+
+    #[test]
+    fn parse_array_slice_assignment_with_comma_rhs() {
+        let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::IndexAssign { value, .. } => match *value {
+                Expr::ArrayLiteral(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert!(matches!(items[0], Expr::Literal(Value::Int(10))));
+                    assert!(matches!(items[1], Expr::Literal(Value::Int(20))));
+                }
+                other => panic!("expected ArrayLiteral RHS, got {other:?}"),
+            },
+            _ => panic!("expected IndexAssign expression"),
+        }
+    }
+
+    #[test]
+    fn parse_hash_slice_assignment_with_comma_rhs() {
+        let (rest, expr) = expression("%h{1,2} = \"one\", \"two\"").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::IndexAssign { value, .. } => match *value {
+                Expr::ArrayLiteral(items) => {
+                    assert_eq!(items.len(), 2);
+                    assert!(
+                        matches!(items[0], Expr::Literal(Value::Str(ref s)) if s.as_str() == "one")
+                    );
+                    assert!(
+                        matches!(items[1], Expr::Literal(Value::Str(ref s)) if s.as_str() == "two")
+                    );
+                }
+                other => panic!("expected ArrayLiteral RHS, got {other:?}"),
+            },
+            _ => panic!("expected IndexAssign expression"),
+        }
+    }
+
+    #[test]
     fn parse_dot_postfix_decrement() {
         let (rest, expr) = expression("$x.--").unwrap();
         assert_eq!(rest, "");
@@ -1797,5 +1918,19 @@ mod tests {
             expr,
             Expr::CallOn { target, args } if args.is_empty() && matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
         ));
+    }
+
+    #[test]
+    fn parse_ampersand_infix_operator_reference_double_angles() {
+        let (rest, expr) = expression("&infix:<<(<=)>>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref name) if name == "infix:<(<=)>"));
+    }
+
+    #[test]
+    fn parse_ampersand_infix_operator_reference_unicode_symbol() {
+        let (rest, expr) = expression("&infix:<⊆>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref name) if name == "infix:<⊆>"));
     }
 }

@@ -463,13 +463,11 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             return Ok((rest, CallArg::Positional(assign_expr)));
         }
     }
-    // Prefer regular expression parsing for unary-minus angle terms like `-<42+2i>`.
-    // The reduction call-style parser can misinterpret this shape in statement arg context.
-    let parsed_expr = if input.starts_with("-<") || input.starts_with("−<") {
-        expression(input)
-    } else {
-        reduction_call_style_expr(input).or_else(|_| expression(input))
-    };
+    // Prefer full expression parsing for statement call arguments.
+    // `reduction_call_style_expr` can misparse quote forms like `q<...>` as
+    // infix-word operators in this context; keep it only as a fallback.
+    // Also preserves correct behavior for unary-minus angle terms like `-<...>`.
+    let parsed_expr = expression(input).or_else(|_| reduction_call_style_expr(input));
     let (rest, expr) = parsed_expr.map_err(|err| PError {
         messages: merge_expected_messages("expected positional argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),

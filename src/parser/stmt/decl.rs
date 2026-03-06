@@ -253,8 +253,71 @@ fn register_term_symbol_from_decl_name(name: &str) {
     if let Some(callable_name) = name.strip_prefix('&') {
         super::simple::register_user_callable_term_symbol(callable_name);
     } else {
-        super::simple::register_user_term_symbol(name);
+        // Don't register keywords as term symbols — they must be handled
+        // by the keyword-specific paths in identifier_or_call, not as
+        // bare words via declared_term_symbol. E.g. `my $sub` should not
+        // cause `sub` to be treated as a bare word on the RHS.
+        if !is_parser_keyword(name) {
+            super::simple::register_user_term_symbol(name);
+        }
     }
+}
+
+fn normalize_language_version(version_token: &str) -> String {
+    if version_token.starts_with("v6.c") {
+        "6.c".to_string()
+    } else if version_token.starts_with("v6.d") {
+        "6.d".to_string()
+    } else {
+        "6.e".to_string()
+    }
+}
+
+fn is_parser_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "loop"
+            | "repeat"
+            | "try"
+            | "do"
+            | "gather"
+            | "sub"
+            | "method"
+            | "my"
+            | "our"
+            | "has"
+            | "class"
+            | "role"
+            | "module"
+            | "use"
+            | "need"
+            | "import"
+            | "require"
+            | "return"
+            | "last"
+            | "next"
+            | "redo"
+            | "die"
+            | "say"
+            | "print"
+            | "put"
+            | "note"
+            | "with"
+            | "without"
+            | "supply"
+            | "react"
+            | "whenever"
+            | "start"
+            | "quietly"
+            | "sink"
+            | "let"
+    )
 }
 
 /// Parse a `use` statement.
@@ -264,9 +327,11 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 
     // Handle `use v6`, `use v6.d`, etc.
     if rest.starts_with('v') {
-        let (r, _) = take_while1(rest, |c: char| {
+        let (r, version_token) = take_while1(rest, |c: char| {
             c.is_alphanumeric() || c == '.' || c == '*' || c == '+'
         })?;
+        let version = normalize_language_version(version_token);
+        super::simple::set_current_language_version(&version);
         let (r, _) = ws(r)?;
         let _ = opt_char(r, ';');
         let (r, _) = opt_char(r, ';');
@@ -274,7 +339,7 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             r,
             Stmt::Use {
                 module: "v6".to_string(),
-                arg: None,
+                arg: Some(Expr::Literal(Value::str(version))),
             },
         ));
     }
@@ -521,9 +586,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return package_decl(rest);
     }
     // my subset Name of BaseType where ...
-    if let Some(r) = keyword("subset", rest) {
-        let (r, _) = ws1(r)?;
-        return subset_decl(r);
+    if keyword("subset", rest).is_some() {
+        return subset_decl(rest);
     }
     // my constant $x = ...
     if keyword("constant", rest).is_some() {
@@ -724,7 +788,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, n) = ident(rest)?;
         (r, n)
     };
-    register_term_symbol_from_decl_name(&name);
+    let term_decl_name = if sigil == b'$' {
+        format!("${name}")
+    } else {
+        name.clone()
+    };
+    register_term_symbol_from_decl_name(&term_decl_name);
 
     let (rest, _) = ws(rest)?;
 
@@ -1100,6 +1169,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             };
             rest = r_after;
         }
+        let bound_name = name.clone();
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -1111,6 +1181,21 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
+        };
+        let stmt = if is_array {
+            Stmt::SyntheticBlock(vec![
+                stmt,
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_record_bound_array_len"),
+                    args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                }),
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_record_shaped_array_dims"),
+                    args: vec![Expr::Literal(Value::str(bound_name))],
+                }),
+            ])
+        } else {
+            stmt
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -1879,8 +1964,22 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("subset", input).ok_or_else(|| PError::expected("subset declaration"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, name) = ident(rest)?;
-    let (rest, _) = ws(rest)?;
+    let (rest, name) = qualified_ident(rest)?;
+    let (mut rest, _) = ws(rest)?;
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, trait_name) = ident(r)?;
+        let (r, _) = ws(r)?;
+        // Keep parsing permissive for subset traits; currently only `is export`
+        // has runtime meaning in roast modules.
+        if trait_name == "export" {
+            rest = skip_balanced_parens(r);
+            let (r2, _) = ws(rest)?;
+            rest = r2;
+        } else {
+            rest = r;
+        }
+    }
     let (rest, base) = if let Some(r) = keyword("of", rest) {
         let (r, _) = ws1(r)?;
         let (r, base) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
@@ -1904,6 +2003,7 @@ pub(super) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(&name),
             base,
             predicate,
+            version: super::simple::current_language_version(),
         },
     ))
 }

@@ -461,6 +461,14 @@ impl VM {
                     method.as_str(),
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 ));
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -583,6 +591,77 @@ impl VM {
                 .interpreter
                 .call_method_with_values(target, method, args);
         }
+        // Private method fast path: resolve private candidate and run compiled code
+        // when caller context clearly allows direct dispatch.
+        if method.starts_with('!') {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name {
+                let resolved = self
+                    .interpreter
+                    .resolve_private_method_for_vm(&cn, method, &args);
+                if let Some((owner_class, method_def)) = resolved {
+                    let caller_allowed = self
+                        .interpreter
+                        .can_fast_dispatch_private_method_vm(&owner_class);
+                    if caller_allowed && let Some(ref cc) = method_def.compiled_code {
+                        let cc = cc.clone();
+                        let target_id = match &target {
+                            Value::Instance { id, .. } => Some(*id),
+                            _ => None,
+                        };
+                        let attributes = match &target {
+                            Value::Instance { attributes, .. } => (**attributes).clone(),
+                            _ => std::collections::HashMap::new(),
+                        };
+                        let invocant_for_dispatch = if attributes.is_empty() {
+                            Value::Package(crate::symbol::Symbol::intern(&cn))
+                        } else {
+                            target.clone()
+                        };
+                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                            &cn,
+                            method,
+                            &args,
+                            invocant_for_dispatch,
+                        );
+                        let invocant = Some(target);
+                        let empty_fns = HashMap::new();
+                        let method_result = self.call_compiled_method(
+                            &cn,
+                            &owner_class,
+                            method,
+                            &method_def,
+                            &cc,
+                            attributes,
+                            args,
+                            invocant,
+                            &empty_fns,
+                        );
+                        if pushed_dispatch {
+                            self.interpreter.pop_method_dispatch();
+                        }
+                        let (result, new_attrs) = method_result?;
+                        if let Some(id) = target_id {
+                            self.interpreter.overwrite_instance_bindings_by_identity(
+                                &cn,
+                                id,
+                                new_attrs.clone(),
+                            );
+                            if let Value::Proxy { ref fetcher, .. } = result {
+                                return self
+                                    .interpreter
+                                    .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                            }
+                        }
+                        return Ok(result);
+                    }
+                }
+            }
+        }
         // Only attempt compiled path for Instance or Package targets
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -669,6 +748,75 @@ impl VM {
             return self
                 .interpreter
                 .call_method_mut_with_values(target_name, target, method, args);
+        }
+        if method.starts_with('!') {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name {
+                let resolved = self
+                    .interpreter
+                    .resolve_private_method_for_vm(&cn, method, &args);
+                if let Some((owner_class, method_def)) = resolved {
+                    let caller_allowed = self
+                        .interpreter
+                        .can_fast_dispatch_private_method_vm(&owner_class);
+                    if caller_allowed && let Some(ref cc) = method_def.compiled_code {
+                        let cc = cc.clone();
+                        let target_id = match &target {
+                            Value::Instance { id, .. } => Some(*id),
+                            _ => None,
+                        };
+                        let attributes = match &target {
+                            Value::Instance { attributes, .. } => (**attributes).clone(),
+                            _ => std::collections::HashMap::new(),
+                        };
+                        let invocant_for_dispatch = if attributes.is_empty() {
+                            Value::Package(crate::symbol::Symbol::intern(&cn))
+                        } else {
+                            target.clone()
+                        };
+                        let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
+                            &cn,
+                            method,
+                            &args,
+                            invocant_for_dispatch,
+                        );
+                        let invocant = Some(target);
+                        let empty_fns = HashMap::new();
+                        let method_result = self.call_compiled_method(
+                            &cn,
+                            &owner_class,
+                            method,
+                            &method_def,
+                            &cc,
+                            attributes,
+                            args,
+                            invocant,
+                            &empty_fns,
+                        );
+                        if pushed_dispatch {
+                            self.interpreter.pop_method_dispatch();
+                        }
+                        let (result, new_attrs) = method_result?;
+                        if let Some(id) = target_id {
+                            self.interpreter.overwrite_instance_bindings_by_identity(
+                                &cn,
+                                id,
+                                new_attrs.clone(),
+                            );
+                            if let Value::Proxy { ref fetcher, .. } = result {
+                                return self
+                                    .interpreter
+                                    .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                            }
+                        }
+                        return Ok(result);
+                    }
+                }
+            }
         }
         let class_name = match &target {
             Value::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -881,6 +1029,14 @@ impl VM {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -1555,18 +1711,19 @@ impl VM {
         _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let block_cc = match code_val {
+        let (block_cc, captured_env) = match code_val {
             Value::Sub(data) => {
                 // Targeted sync: refresh shared vars for keys the closure captures
                 self.interpreter.sync_shared_vars_for_keys(data.env.keys());
-                match &data.compiled_code {
+                let block_cc = match &data.compiled_code {
                     Some(cc) => cc.clone(),
                     None => {
                         let compiler = crate::compiler::Compiler::new();
                         let (compiled, _) = compiler.compile(&data.body);
                         Arc::new(compiled)
                     }
-                }
+                };
+                (block_cc, Some(&data.env))
             }
             _ => {
                 return self.interpreter.call_protect_block(code_val);
@@ -1579,9 +1736,13 @@ impl VM {
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
-        for (i, name) in block_cc.locals.iter().enumerate() {
-            if let Some(val) = self.interpreter.env().get(name) {
-                self.locals[i] = val.clone();
+        if let Some(captured) = captured_env {
+            for (i, name) in block_cc.locals.iter().enumerate() {
+                if captured.contains_key(name)
+                    && let Some(val) = self.interpreter.env().get(name)
+                {
+                    self.locals[i] = val.clone();
+                }
             }
         }
 
@@ -1597,10 +1758,14 @@ impl VM {
         }
 
         // Sync locals back to env
-        for (i, name) in block_cc.locals.iter().enumerate() {
-            self.interpreter
-                .env_mut()
-                .insert(name.clone(), self.locals[i].clone());
+        if let Some(captured) = captured_env {
+            for (i, name) in block_cc.locals.iter().enumerate() {
+                if captured.contains_key(name) {
+                    self.interpreter
+                        .env_mut()
+                        .insert(name.clone(), self.locals[i].clone());
+                }
+            }
         }
 
         // Get return value before restoring state

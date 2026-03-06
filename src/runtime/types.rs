@@ -32,6 +32,30 @@ fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
     }
 }
 
+fn language_version_is_6e_or_newer(version: &str) -> bool {
+    version.starts_with("6.e")
+}
+
+fn predicate_requires_defined(predicate: &Expr) -> bool {
+    match predicate {
+        Expr::MethodCall {
+            target, name, args, ..
+        } => {
+            args.is_empty()
+                && name.resolve() == "defined"
+                && matches!(target.as_ref(), Expr::Var(v) if v == "_")
+        }
+        Expr::AnonSub { body, .. } => {
+            body.len() == 1
+                && matches!(
+                    &body[0],
+                    Stmt::Expr(expr) if predicate_requires_defined(expr)
+                )
+        }
+        _ => false,
+    }
+}
+
 #[inline]
 fn is_coercion_constraint(constraint: &str) -> bool {
     let bytes = constraint.as_bytes();
@@ -634,9 +658,6 @@ impl Interpreter {
     }
 
     fn optional_type_object_name(constraint: &str) -> String {
-        if let Some((target, _source)) = parse_coercion_type(constraint) {
-            return target.to_string();
-        }
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
             if ch == '[' || ch == '(' || ch == ':' {
@@ -658,6 +679,20 @@ impl Interpreter {
             return Value::Package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }
         Value::Nil
+    }
+
+    pub(crate) fn nominal_type_object_name_for_constraint(&self, constraint: &str) -> String {
+        let (base, _) = strip_type_smiley(constraint);
+        if let Some((target, _source)) = parse_coercion_type(base) {
+            return self.nominal_type_object_name_for_constraint(target);
+        }
+        let base_name = Self::optional_type_object_name(base);
+        if let Some(subset) = self.subsets.get(&base_name)
+            && subset.base != base_name
+        {
+            return self.nominal_type_object_name_for_constraint(&subset.base);
+        }
+        base_name
     }
 
     fn checked_default_param_value(
@@ -880,6 +915,15 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
+            return true;
+        }
+        if constraint == "Baggy" && matches!(value_type, "Bag" | "BagHash" | "Mix" | "MixHash") {
+            return true;
+        }
+        if constraint == "Mixy" && matches!(value_type, "Mix" | "MixHash") {
+            return true;
+        }
         // Metamodel:: is an alias for Perl6::Metamodel::
         if constraint.starts_with("Metamodel::") {
             let full = format!("Perl6::{}", constraint);
@@ -995,7 +1039,17 @@ impl Interpreter {
             return self.is_definite_constraint(target);
         }
         if let Some(subset) = self.subsets.get(base_constraint) {
-            return self.is_definite_constraint(&subset.base);
+            if self.is_definite_constraint(&subset.base) {
+                return true;
+            }
+            if language_version_is_6e_or_newer(&subset.version)
+                && subset
+                    .predicate
+                    .as_ref()
+                    .is_some_and(predicate_requires_defined)
+            {
+                return true;
+            }
         }
         false
     }
@@ -1088,6 +1142,18 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if constraint == "UInt" {
+            return match value {
+                Value::Int(i) => *i >= 0,
+                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                Value::Nil => true,
+                Value::Package(name) => {
+                    let name = name.resolve();
+                    name == "UInt" || name == "Int"
+                }
+                _ => false,
+            };
+        }
         if let Some((base, _)) = constraint.split_once(':')
             && base == "Variable"
             && varref_from_value(value).is_some()
@@ -1223,7 +1289,7 @@ impl Interpreter {
                     self.env.insert("_".to_string(), predicate_value);
                     let result = self
                         .eval_block_value(&[Stmt::Expr(pred.clone())])
-                        .map(|v| v.truthy())
+                        .map(|v| self.smart_match(value, &v))
                         .unwrap_or(false);
                     if let Some(old) = saved {
                         self.env.insert("_".to_string(), old);
@@ -1256,6 +1322,18 @@ impl Interpreter {
         // Type-object checks: Package values should respect declared class/role ancestry.
         if let Value::Package(package_name) = value {
             if Self::type_matches(constraint, &package_name.resolve()) {
+                return true;
+            }
+            if let Some(subset_base) = self
+                .subsets
+                .get(&package_name.resolve())
+                .map(|subset| subset.base.clone())
+                && (constraint == package_name.resolve()
+                    || self.type_matches_value(
+                        constraint,
+                        &Value::Package(Symbol::intern(&subset_base)),
+                    ))
+            {
                 return true;
             }
             let mro = self.class_mro(&package_name.resolve());
@@ -1387,6 +1465,36 @@ impl Interpreter {
         let result = (|| {
             let positional_params: Vec<&ParamDef> =
                 param_defs.iter().filter(|p| !p.named).collect();
+            let positional_arg_count = args
+                .iter()
+                .filter(|arg| {
+                    !matches!(
+                        unwrap_varref_value((*arg).clone()),
+                        Value::Pair(..) | Value::ValuePair(..)
+                    )
+                })
+                .count();
+            let mut required_positional_count = 0usize;
+            let mut positional_max_count = 0usize;
+            let mut has_variadic_positional = false;
+            for pd in &positional_params {
+                let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
+                let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
+                if pd.slurpy || is_capture_param || is_subsig_capture {
+                    has_variadic_positional = true;
+                    continue;
+                }
+                positional_max_count += 1;
+                if pd.default.is_none() && !pd.optional_marker {
+                    required_positional_count += 1;
+                }
+            }
+            if positional_arg_count < required_positional_count {
+                return false;
+            }
+            if !has_variadic_positional && positional_arg_count > positional_max_count {
+                return false;
+            }
             let mut i = 0usize;
             for pd in positional_params {
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
@@ -1451,6 +1559,15 @@ impl Interpreter {
                     } else {
                         return false;
                     }
+                }
+                if arg_for_checks.is_none()
+                    && !pd.slurpy
+                    && !is_capture_param
+                    && !is_subsig_capture
+                    && pd.default.is_none()
+                    && !pd.optional_marker
+                {
+                    return false;
                 }
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()

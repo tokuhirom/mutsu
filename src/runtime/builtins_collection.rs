@@ -166,6 +166,11 @@ impl Interpreter {
             match arg {
                 Value::Array(items, ..) => elems.extend(items.iter().cloned()),
                 Value::Seq(items) | Value::Slip(items) => elems.extend(items.iter().cloned()),
+                range @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => elems.extend(Self::value_to_list(&range)),
                 other => elems.push(other),
             }
         }
@@ -657,9 +662,21 @@ impl Interpreter {
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
         match val {
+            Value::Array(items, kind) if kind.is_itemized() => {
+                out.push(Value::Array(std::sync::Arc::clone(items), *kind))
+            }
             Value::Array(items, ..) | Value::Slip(items) | Value::Seq(items) => {
                 for item in items.iter() {
                     Self::flat_into(item, out);
+                }
+            }
+            Value::LazyList(ll) => {
+                if let Some(cached) = ll.cache.lock().unwrap().clone() {
+                    for item in &cached {
+                        Self::flat_into(item, out);
+                    }
+                } else {
+                    out.push(val.clone());
                 }
             }
             Value::Range(..)
@@ -1181,7 +1198,21 @@ impl Interpreter {
                     with_func = Some(v.as_ref().clone());
                 }
                 _ => {
-                    lists.push(super::utils::value_to_list(arg));
+                    let mut values = super::utils::value_to_list(arg);
+                    if values.len() == 1
+                        && let Some(single) = values.first()
+                    {
+                        match single {
+                            Value::Array(items, _) => {
+                                values = items.as_ref().clone();
+                            }
+                            Value::Seq(items) | Value::Slip(items) => {
+                                values = items.as_ref().clone();
+                            }
+                            _ => {}
+                        }
+                    }
+                    lists.push(values);
                 }
             }
         }
@@ -1235,6 +1266,7 @@ impl Interpreter {
                 {
                     vec![arg.clone()]
                 }
+                Value::Array(items, kind) if kind.is_itemized() => vec![arg.clone()],
                 Value::Array(items, _) => items.iter().cloned().collect(),
                 Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
                 Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
