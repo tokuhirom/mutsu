@@ -1212,11 +1212,29 @@ impl VM {
                     .insert("*HOME".to_string(), Value::Nil);
             }
         }
+        // Save type metadata before delete (Arc::make_mut may change pointer)
+        let saved_meta = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             Self::delete_from_container(container, idx)?
         } else {
             Self::delete_from_missing_container(idx)
         };
+        // Re-register type metadata if it was lost due to Arc::make_mut
+        if let Some(info) = saved_meta
+            && let Some(container) = self.interpreter.env().get(&var_name)
+            && self
+                .interpreter
+                .container_type_metadata(container)
+                .is_none()
+        {
+            let container = container.clone();
+            self.interpreter
+                .register_container_type_metadata(&container, info);
+        }
         self.stack.push(result);
         Ok(())
     }
@@ -1850,16 +1868,18 @@ impl VM {
                         let key = idx.clone();
                         let result = match adverb_bits {
                             0 | 5 => Value::Bool(result_bool),
+                            // :kv — filter by actual existence, not negated result
                             1 => {
-                                if result_bool {
+                                if exists {
                                     Value::array(vec![key, Value::Bool(result_bool)])
                                 } else {
                                     Value::array(Vec::new())
                                 }
                             }
                             2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                            // :p — filter by actual existence, not negated result
                             3 => {
-                                if result_bool {
+                                if exists {
                                     Value::ValuePair(
                                         Box::new(key),
                                         Box::new(Value::Bool(result_bool)),

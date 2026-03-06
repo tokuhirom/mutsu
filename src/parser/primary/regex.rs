@@ -1001,6 +1001,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
     if let Some(after_m) = input.strip_prefix('m')
+        && !after_m.starts_with("=>")
         && !crate::parser::stmt::simple::is_user_declared_sub("m")
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;

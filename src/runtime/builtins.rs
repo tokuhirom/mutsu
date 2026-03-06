@@ -1022,6 +1022,10 @@ impl Interpreter {
                 }
             }
             Value::Hash(map) => {
+                let default_type = var_name
+                    .as_ref()
+                    .and_then(|name| self.var_type_constraint(name))
+                    .unwrap_or_else(|| "Any".to_string());
                 for idx in &indices {
                     let key_str = idx.to_string_value();
                     let key =
@@ -1030,7 +1034,7 @@ impl Interpreter {
                     let value = map
                         .get(&key_str)
                         .cloned()
-                        .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                        .unwrap_or_else(|| Value::Package(Symbol::intern(&default_type)));
                     rows.push((key, value, exists));
                 }
             }
