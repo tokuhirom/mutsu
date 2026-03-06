@@ -633,12 +633,42 @@ impl Interpreter {
             return Ok(Value::str(joined));
         }
         // Multi-arg: join(sep, item1, item2, ...)
+        // Flatten ranges and lists to their elements
         if args.len() > 1 {
-            let joined = args[1..]
-                .iter()
-                .map(|v| v.to_string_value())
-                .collect::<Vec<_>>()
-                .join(&sep);
+            let mut parts = Vec::new();
+            for v in &args[1..] {
+                match v {
+                    Value::Range(start, end) => {
+                        for i in *start..=*end {
+                            parts.push(Value::Int(i).to_string_value());
+                        }
+                    }
+                    Value::RangeExcl(start, end) => {
+                        for i in *start..*end {
+                            parts.push(Value::Int(i).to_string_value());
+                        }
+                    }
+                    Value::GenericRange { .. } => {
+                        for item in crate::runtime::utils::value_to_list(v) {
+                            parts.push(item.to_string_value());
+                        }
+                    }
+                    Value::Array(items, ..) => {
+                        for item in items.iter() {
+                            parts.push(item.to_string_value());
+                        }
+                    }
+                    Value::Seq(items) | Value::Slip(items) => {
+                        for item in items.as_ref() {
+                            parts.push(item.to_string_value());
+                        }
+                    }
+                    _ => {
+                        parts.push(v.to_string_value());
+                    }
+                }
+            }
+            let joined = parts.join(&sep);
             return Ok(Value::str(joined));
         }
         Ok(Value::str(String::new()))

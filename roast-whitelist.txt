@@ -352,6 +352,7 @@ roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
+roast/S15-nfg/from-file.t
 roast/S15-nfg/grapheme-break.t
 roast/S15-nfg/many-combiners.t
 roast/S15-nfg/many-threads.t
@@ -425,11 +426,13 @@ roast/S16-io/put.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
+roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t
+roast/S17-lowlevel/thread-start-join-stress.t
 roast/S17-procasync/basic.t
 roast/S17-procasync/kill.t
 roast/S17-procasync/many-processes-no-close-stdin.t
@@ -526,6 +529,7 @@ roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-hash/slice.t
+roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t

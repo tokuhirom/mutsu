@@ -23,6 +23,18 @@ use super::super::expr::expression;
 use super::super::helpers::{consume_unspace, skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::assign::try_parse_assign_expr;
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 #[derive(Default)]
 struct MatchAdverbs {
     global: bool,
@@ -1333,17 +1345,26 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     if r2.starts_with(':') && !r2.starts_with("::") {
         let r3 = &r2[1..];
         let (r3, _) = ws(r3)?;
-        let (r3, first_arg) = expression(r3)?;
+        let (r3, first_arg) = parse_colon_method_arg(r3)?;
         let mut args = vec![first_arg];
         let mut r_inner = r3;
         loop {
             let (r4, _) = ws(r_inner)?;
+            // Adjacent colonpairs without comma
+            if r4.starts_with(':')
+                && !r4.starts_with("::")
+                && let Ok((r5, arg)) = crate::parser::primary::misc::colonpair_expr(r4)
+            {
+                args.push(arg);
+                r_inner = r5;
+                continue;
+            }
             if !r4.starts_with(',') {
                 break;
             }
             let r4 = &r4[1..];
             let (r4, _) = ws(r4)?;
-            let (r4, next) = expression(r4)?;
+            let (r4, next) = parse_colon_method_arg(r4)?;
             args.push(next);
             r_inner = r4;
         }

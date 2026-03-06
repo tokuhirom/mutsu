@@ -236,6 +236,20 @@ pub(crate) fn native_method_1arg(
                         }
                         Some(Ok(Value::Nil))
                     }
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Buf"
+                        || class_name == "Blob"
+                        || class_name.resolve().starts_with("Buf[")
+                        || class_name.resolve().starts_with("Blob[") =>
+                    {
+                        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                            return Some(Ok(bytes.get(idx).cloned().unwrap_or(Value::Int(0))));
+                        }
+                        Some(Ok(Value::Int(0)))
+                    }
                     _ => None,
                 }
             }
