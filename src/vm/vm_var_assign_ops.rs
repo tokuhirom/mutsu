@@ -213,35 +213,19 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_post_increment_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-    ) {
+    pub(super) fn exec_post_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
         self.exec_inc_dec_index_op(code, name_idx, true, false);
     }
 
-    pub(super) fn exec_post_decrement_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-    ) {
+    pub(super) fn exec_post_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
         self.exec_inc_dec_index_op(code, name_idx, false, false);
     }
 
-    pub(super) fn exec_pre_increment_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-    ) {
+    pub(super) fn exec_pre_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
         self.exec_inc_dec_index_op(code, name_idx, true, true);
     }
 
-    pub(super) fn exec_pre_decrement_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-    ) {
+    pub(super) fn exec_pre_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
         self.exec_inc_dec_index_op(code, name_idx, false, true);
     }
 
