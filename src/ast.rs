@@ -184,6 +184,17 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         index: Box<Expr>,
     },
+    /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
+    MultiDimIndex {
+        target: Box<Expr>,
+        dimensions: Vec<Expr>,
+    },
+    /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
+    MultiDimIndexAssign {
+        target: Box<Expr>,
+        dimensions: Vec<Expr>,
+        value: Box<Expr>,
+    },
     IndexAssign {
         target: Box<Expr>,
         index: Box<Expr>,

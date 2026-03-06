@@ -797,6 +797,12 @@ impl Interpreter {
                     };
                     return Ok(Value::FatRat(a, b));
                 }
+                "Pair" => {
+                    // Pair.new(key, value)
+                    let key = args.first().cloned().unwrap_or(Value::Nil);
+                    let value = args.get(1).cloned().unwrap_or(Value::Nil);
+                    return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
+                }
                 "Set" | "SetHash" => {
                     let mut elems = HashSet::new();
                     for arg in &args {

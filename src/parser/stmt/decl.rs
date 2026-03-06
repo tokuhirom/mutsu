@@ -1187,6 +1187,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 stmt,
                 Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_record_bound_array_len"),
+                    args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                }),
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_record_shaped_array_dims"),
                     args: vec![Expr::Literal(Value::str(bound_name))],
                 }),
             ])

@@ -66,13 +66,22 @@ pub(crate) fn get_grep_view_binding(
 /// Check if an array is a shaped (multidimensional) array.
 /// A shaped array is one explicitly created as multidimensional via `:shape`.
 pub(crate) fn is_shaped_array(value: &Value) -> bool {
+    if let Value::Array(_, kind) = value
+        && *kind == ArrayKind::Shaped
+    {
+        return true;
+    }
     shaped_array_shape(value).is_some()
 }
 
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
-    let Value::Array(items, ..) = value else {
+    let Value::Array(items, kind) = value else {
         return None;
     };
+    // Only arrays explicitly created as shaped can be shaped
+    if *kind != ArrayKind::Shaped {
+        return None;
+    }
     let key = shaped_array_key(items);
 
     fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
@@ -436,8 +445,26 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 const MAX_ARRAY_EXPAND: i64 = 100_000;
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
+    fn metadata_shape_for_items(items: &Arc<Vec<Value>>) -> Option<Vec<usize>> {
+        let key = shaped_array_key(items);
+        shaped_array_ids()
+            .lock()
+            .ok()
+            .and_then(|ids| ids.get(&key).cloned())
+    }
+
     match value {
-        Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
+        Value::Array(items, kind) => {
+            if kind == ArrayKind::Shaped {
+                Value::Array(items, kind)
+            } else if let Some(shape) = metadata_shape_for_items(&items) {
+                let value = Value::Array(items, ArrayKind::Shaped);
+                mark_shaped_array(&value, Some(&shape));
+                value
+            } else {
+                Value::Array(items, ArrayKind::Array)
+            }
+        }
         Value::Nil => Value::real_array(Vec::new()),
         Value::Range(a, b) => {
             let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
