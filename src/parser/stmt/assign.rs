@@ -150,6 +150,16 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
             then_expr: Box::new(lhs),
             else_expr: Box::new(rhs),
         }
+    } else if matches!(op, CompoundAssignOp::Andthen) {
+        // andthen=: assign RHS only when LHS is defined, else keep LHS
+        Expr::Ternary {
+            cond: Box::new(Expr::Call {
+                name: Symbol::intern("defined"),
+                args: vec![lhs.clone()],
+            }),
+            then_expr: Box::new(rhs),
+            else_expr: Box::new(lhs),
+        }
     } else {
         Expr::Binary {
             left: Box::new(autoviv_compound_lhs(lhs, op)),

@@ -325,7 +325,7 @@ impl Compiler {
                         return;
                     }
                     TokenKind::AndThen => {
-                        // a andthen b: result is b if a.defined, else a
+                        // a andthen b: result is b if a.defined, else Empty
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::CallDefined);
@@ -334,8 +334,11 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
                         let jump_end = self.code.emit(OpCode::Jump(0));
-                        // Undefined path: keep original
+                        // Undefined path: replace with Empty
                         self.code.patch_jump(jump_undef);
+                        self.code.emit(OpCode::Pop);
+                        let empty_idx = self.code.add_constant(Value::slip(vec![]));
+                        self.code.emit(OpCode::LoadConst(empty_idx));
                         self.code.patch_jump(jump_end);
                         return;
                     }
