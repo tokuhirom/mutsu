@@ -623,6 +623,21 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    if twigil.is_empty()
+        && let Ok((op_rest, op_name)) = super::super::stmt::parse_sub_name_pub(rest)
+        && matches!(
+            op_name.as_str(),
+            n if n.starts_with("infix:<")
+                || n.starts_with("prefix:<")
+                || n.starts_with("postfix:<")
+                || n.starts_with("term:<")
+                || n.starts_with("circumfix:<")
+                || n.starts_with("postcircumfix:<")
+        )
+    {
+        return Ok((op_rest, Expr::CodeVar(op_name)));
+    }
+
     let (rest, name) = parse_ident_with_hyphens(rest)?;
     // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>, &term:<OP>
     if twigil.is_empty()
