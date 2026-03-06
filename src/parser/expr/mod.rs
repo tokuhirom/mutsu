@@ -1008,6 +1008,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_upto_with_negative_literal() {
+        let (rest, expr) = expression("^-1").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Binary { left, op, right } => {
+                assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+                assert!(matches!(op, TokenKind::DotDotCaret));
+                assert!(matches!(
+                    *right,
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+            }
+            _ => panic!("expected upto range expression"),
+        }
+    }
+
+    #[test]
     fn parse_topical_dot_angle_expression() {
         let (rest, expr) = expression(".<a>").unwrap();
         assert_eq!(rest, "");
