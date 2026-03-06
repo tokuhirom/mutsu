@@ -45,6 +45,22 @@ pub(super) fn make_method_not_found_error(
     err
 }
 
+/// Create a structured X::Immutable error.
+pub(super) fn make_x_immutable_error(method_name: &str, typename: &str) -> RuntimeError {
+    let msg = format!(
+        "Cannot call '{}' on an immutable '{}'",
+        method_name, typename
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("method".to_string(), Value::str(method_name.to_string()));
+    attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Immutable"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Create a structured X::Multi::NoMatch error.
 pub(super) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("No matching candidates for method: {}", method_name);

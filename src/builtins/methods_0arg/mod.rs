@@ -681,7 +681,13 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
         ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
-        ArrayKind::ItemList => format!("$({})", inner),
+        ArrayKind::ItemList => {
+            if inner.is_empty() {
+                "$( )".to_string()
+            } else {
+                format!("$({})", inner)
+            }
+        }
     }
 }
 
@@ -1218,19 +1224,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
-            Value::Array(items, ArrayKind::List)
-                if items.iter().all(|v| matches!(v, Value::Int(_))) =>
-            {
-                // Uni-like list: convert codepoints to a string
-                let s: String = items
-                    .iter()
-                    .filter_map(|v| match v {
-                        Value::Int(cp) => char::from_u32(*cp as u32),
-                        _ => None,
-                    })
-                    .collect();
-                Some(Ok(Value::str(s)))
-            }
             _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "Int" => {

@@ -66,6 +66,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/int-uint.t
+roast/S02-types/lazy-lists.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_arrays.t
@@ -163,6 +164,7 @@ roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
 roast/S04-statement-modifiers/without.t
 roast/S04-statement-parsing/hash.t
+roast/S04-statements/do.t
 roast/S04-statements/for-scope.t
 roast/S04-statements/for_with_only_one_item.t
 roast/S04-statements/goto.t
@@ -249,6 +251,7 @@ roast/S06-operator-overloading/term.t
 roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
+roast/S06-other/misc.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
 roast/S06-routine-modifiers/native-lvalue-subroutines.t
 roast/S06-signature/arity.t
@@ -326,6 +329,7 @@ roast/S12-methods/indirect_notation.t
 roast/S12-methods/instance.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
+roast/S12-methods/private.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
@@ -505,6 +509,7 @@ roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t
 roast/S32-array/pairs.t
+roast/S32-array/rotate.t
 roast/S32-basics/pairup.t
 roast/S32-basics/xxPOS-native.t
 roast/S32-container/stringify.t
@@ -519,6 +524,7 @@ roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
+roast/S32-hash/slice.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
@@ -527,6 +533,7 @@ roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-io/out-buffering.t
+roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
 roast/S32-list/cross.t
@@ -550,6 +557,7 @@ roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t
+roast/S32-num/int.t
 roast/S32-num/is-prime.t
 roast/S32-num/log.t
 roast/S32-num/narrow.t
