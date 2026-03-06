@@ -2198,9 +2198,13 @@ impl Interpreter {
                         pd.name
                     )));
                 } else if !found && !pd.name.is_empty() {
-                    let value = Self::missing_optional_param_value(pd);
-                    self.bind_param_value(&pd.name, value);
-                    self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    // Only bind a default if the env doesn't already have a value
+                    // (e.g. BUILD/TWEAK attribute bindings pre-populate the env).
+                    if !self.env.contains_key(&pd.name) {
+                        let value = Self::missing_optional_param_value(pd);
+                        self.bind_param_value(&pd.name, value);
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    }
                 }
             } else {
                 // Positional param — skip over Value::Pair entries (named args)
