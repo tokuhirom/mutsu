@@ -31,9 +31,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
-    "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max",
-    "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
-    "o", "∘", "⊍",
+    "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min",
+    "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|",
+    "^", "o", "∘", "⊍",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -237,7 +237,8 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
-    let mut items = merge_sequence_seeds(items);
+    let mut items = merge_list_infix_seeds(items);
+    items = merge_sequence_seeds(items);
     let expr = if items.len() == 1 {
         items.remove(0)
     } else {
@@ -290,6 +291,32 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
     } else {
         items
     }
+}
+
+fn merge_list_infix_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::MetaOp {
+        meta,
+        op,
+        left,
+        right,
+    } = last
+        && (meta == "X" || meta == "Z")
+    {
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            right: right.clone(),
+        };
+        return vec![merged];
+    }
+    items
 }
 
 pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, Expr> {

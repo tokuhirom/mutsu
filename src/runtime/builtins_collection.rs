@@ -1198,7 +1198,21 @@ impl Interpreter {
                     with_func = Some(v.as_ref().clone());
                 }
                 _ => {
-                    lists.push(super::utils::value_to_list(arg));
+                    let mut values = super::utils::value_to_list(arg);
+                    if values.len() == 1
+                        && let Some(single) = values.first()
+                    {
+                        match single {
+                            Value::Array(items, _) => {
+                                values = items.as_ref().clone();
+                            }
+                            Value::Seq(items) | Value::Slip(items) => {
+                                values = items.as_ref().clone();
+                            }
+                            _ => {}
+                        }
+                    }
+                    lists.push(values);
                 }
             }
         }

@@ -86,6 +86,7 @@ roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
 roast/S03-buf/read-write-bits.t
 roast/S03-feeds/basic.t
+roast/S03-metaops/cross.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t

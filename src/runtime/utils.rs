@@ -762,6 +762,7 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
+        Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
         Value::Array(items, ..) => items.to_vec(),
         Value::Seq(items) => items.to_vec(),
         Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),

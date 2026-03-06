@@ -31,6 +31,7 @@ pub(super) enum ComparisonOp {
     After,
     ApproxEq,
     ContainerEq,
+    ContainerNe,
 }
 
 impl ComparisonOp {
@@ -61,6 +62,7 @@ impl ComparisonOp {
             ComparisonOp::After => TokenKind::Ident("after".to_string()),
             ComparisonOp::ApproxEq => TokenKind::Ident("=~=".to_string()),
             ComparisonOp::ContainerEq => TokenKind::Ident("=:=".to_string()),
+            ComparisonOp::ContainerNe => TokenKind::Ident("!=:=".to_string()),
         }
     }
 }
