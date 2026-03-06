@@ -160,6 +160,7 @@ roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
 roast/S04-statement-modifiers/without.t
 roast/S04-statement-parsing/hash.t
+roast/S04-statements/do.t
 roast/S04-statements/for-scope.t
 roast/S04-statements/for_with_only_one_item.t
 roast/S04-statements/goto.t
@@ -526,6 +527,7 @@ roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-io/out-buffering.t
+roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
 roast/S32-list/cross.t
