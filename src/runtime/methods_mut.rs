@@ -435,6 +435,30 @@ impl Interpreter {
             let _ = self.call_method_with_values(target.clone(), method, vec![value.clone()])?;
             return Ok(value);
         }
+        // nl-in setter for IO::Socket::INET and IO::Handle
+        if method == "nl-in"
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && (class_name == "IO::Socket::INET" || class_name == "IO::Handle")
+            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+        {
+            let id = *handle_id as usize;
+            let new_seps = match &value {
+                Value::Str(s) => vec![s.as_bytes().to_vec()],
+                Value::Array(items, ..) => items
+                    .iter()
+                    .map(|v| v.to_string_value().into_bytes())
+                    .collect(),
+                other => vec![other.to_string_value().into_bytes()],
+            };
+            if let Some(state) = self.handles.get_mut(&id) {
+                state.line_separators = new_seps;
+            }
+            return Ok(value);
+        }
         if method == "value"
             && let Value::Instance {
                 class_name,

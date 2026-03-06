@@ -249,6 +249,7 @@ struct IoHandleState {
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
+    listener: Option<std::net::TcpListener>,
     closed: bool,
     out_buffer_capacity: Option<usize>,
     out_buffer_pending: Vec<u8>,
@@ -709,6 +710,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Thread".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["finish", "id"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Thread".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Supply".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -1088,10 +1101,24 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["close", "getpeername"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                native_methods: [
+                    "close",
+                    "getpeername",
+                    "accept",
+                    "localport",
+                    "print",
+                    "say",
+                    "put",
+                    "write",
+                    "recv",
+                    "read",
+                    "get",
+                    "lines",
+                    "nl-in",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
@@ -1649,6 +1676,7 @@ impl Interpreter {
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter.init_endian_enum();
+        interpreter.init_protocol_family_enum();
         interpreter.init_signal_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
@@ -2634,6 +2662,7 @@ impl Interpreter {
                 encoding: handle.encoding.clone(),
                 file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
                 socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
+                listener: handle.listener.as_ref().and_then(|l| l.try_clone().ok()),
                 closed: handle.closed,
                 out_buffer_capacity: handle.out_buffer_capacity,
                 out_buffer_pending: handle.out_buffer_pending.clone(),

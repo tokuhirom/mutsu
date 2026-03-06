@@ -939,6 +939,52 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
+            // WhateverCode index on Instance (e.g. Buf): $buf[*-1]
+            (
+                Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                },
+                Value::Sub(ref data),
+            ) => {
+                // Get element count from the instance
+                let len = if class_name == "Buf"
+                    || class_name == "Blob"
+                    || class_name.resolve().starts_with("Buf[")
+                    || class_name.resolve().starts_with("Blob[")
+                {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        bytes.len() as i64
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                match idx {
+                    Value::Int(i) => {
+                        if i < 0 {
+                            Value::Nil
+                        } else if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                            bytes.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        } else {
+                            Value::Nil
+                        }
+                    }
+                    _ => Value::Nil,
+                }
+            }
             // GenericRange with WhateverCode endpoint: @a[0..*-2]
             (
                 Value::Array(ref items, ..),

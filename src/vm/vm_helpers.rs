@@ -570,7 +570,17 @@ impl VM {
                 | "RatStr"
                 | "ComplexStr"
                 | "Allomorph"
-        )
+        ) || {
+            // Handle parameterized types like Buf[uint8], Array[Int], etc.
+            if let Some(open) = name.find('[')
+                && name.ends_with(']')
+                && open > 0
+            {
+                Self::is_builtin_type(&name[..open])
+            } else {
+                false
+            }
+        }
     }
 
     /// Check if a name is a type with a smiley suffix (:U, :D, :_).

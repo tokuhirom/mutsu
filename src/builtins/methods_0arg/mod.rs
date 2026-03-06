@@ -1382,6 +1382,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "bytes" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf"
+                || class_name == "Blob"
+                || class_name.resolve().starts_with("Buf[")
+                || class_name.resolve().starts_with("Blob[") =>
+            {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Int(bytes.len() as i64)))
+                } else {
+                    Some(Ok(Value::Int(0)))
+                }
+            }
+            Value::Str(s) => Some(Ok(Value::Int(s.len() as i64))),
+            _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
+        },
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),
@@ -1967,7 +1986,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if let Value::Instance { class_name, .. } = target
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
-                    || class_name == "IO::Path")
+                    || class_name == "IO::Path"
+                    || class_name == "IO::Socket::INET")
             {
                 return None;
             }

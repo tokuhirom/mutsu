@@ -459,6 +459,30 @@ impl Interpreter {
                     }
                 }
             }
+            "enum_value_list" if !args.is_empty() => {
+                let type_name = match &args[0] {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.to_string()),
+                    _ => None,
+                };
+                if let Some(type_name) = type_name
+                    && let Some(variants) = self.enum_types.get(&type_name)
+                {
+                    let values: Vec<Value> = variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, val))| Value::Enum {
+                            enum_type: Symbol::intern(&type_name),
+                            key: Symbol::intern(key),
+                            value: *val,
+                            index,
+                        })
+                        .collect();
+                    Ok(Value::array(values))
+                } else {
+                    Ok(Value::array(Vec::new()))
+                }
+            }
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
