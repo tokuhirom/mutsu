@@ -887,6 +887,27 @@ impl Compiler {
                     }
                     return;
                 }
+                if name == "DELETE-KEY"
+                    && args.is_empty()
+                    && modifier.is_none()
+                    && let Expr::Call {
+                        name: sub_name,
+                        args: sub_args,
+                    } = target.as_ref()
+                    && *sub_name == Symbol::intern("__mutsu_subscript_adverb")
+                {
+                    let mut call_args = sub_args.clone();
+                    call_args.push(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str_from("delete"))),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(Expr::Literal(Value::Bool(true))),
+                    });
+                    self.compile_expr(&Expr::Call {
+                        name: *sub_name,
+                        args: call_args,
+                    });
+                    return;
+                }
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
@@ -1131,6 +1152,7 @@ impl Compiler {
             Expr::Exists {
                 target,
                 negated,
+                delete,
                 arg,
                 adverb,
             } => {
@@ -1240,6 +1262,30 @@ impl Compiler {
                     self.compile_expr(a);
                 }
                 self.code.emit(OpCode::ExistsIndexAdv(flags));
+
+                if *delete
+                    && let Expr::Index {
+                        target: delete_target,
+                        index: delete_index,
+                    } = target.as_ref()
+                {
+                    if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        if Self::index_assign_target_requires_eval(delete_target) {
+                            // Preserve side effects for targets like DoStmt(VarDecl).
+                            self.compile_expr(delete_target);
+                            self.code.emit(OpCode::Pop);
+                        }
+                        self.compile_expr(delete_index);
+                        let name_idx = self.code.add_constant(Value::str(var_name));
+                        self.code.emit(OpCode::DeleteIndexNamed(name_idx));
+                    } else {
+                        self.compile_expr(delete_target);
+                        self.compile_expr(delete_index);
+                        self.code.emit(OpCode::DeleteIndexExpr);
+                    }
+                    // Keep the :exists result on the stack.
+                    self.code.emit(OpCode::Pop);
+                }
             }
             Expr::ZenSlice(inner) => {
                 // Outside of :exists, zen slice is identity

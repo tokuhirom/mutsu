@@ -1846,7 +1846,33 @@ impl VM {
                     }
                     _ => {
                         let exists = map.contains_key(&idx.to_string_value());
-                        let result = Value::Bool(exists ^ effective_negated);
+                        let result_bool = exists ^ effective_negated;
+                        let key = idx.clone();
+                        let result = match adverb_bits {
+                            0 | 5 => Value::Bool(result_bool),
+                            1 => {
+                                if result_bool {
+                                    Value::array(vec![key, Value::Bool(result_bool)])
+                                } else {
+                                    Value::array(Vec::new())
+                                }
+                            }
+                            2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                            3 => {
+                                if result_bool {
+                                    Value::ValuePair(
+                                        Box::new(key),
+                                        Box::new(Value::Bool(result_bool)),
+                                    )
+                                } else {
+                                    Value::array(Vec::new())
+                                }
+                            }
+                            4 => {
+                                Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool)))
+                            }
+                            _ => Value::Bool(result_bool),
+                        };
                         self.stack.push(result);
                         return Ok(());
                     }
@@ -2088,6 +2114,18 @@ impl VM {
     fn delete_from_container(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
         Ok(match container {
             Value::Hash(hash) => match idx {
+                Value::Whatever => {
+                    let h = Arc::make_mut(hash);
+                    let removed: Vec<Value> = h.values().cloned().collect();
+                    h.clear();
+                    Value::array(removed)
+                }
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    let h = Arc::make_mut(hash);
+                    let removed: Vec<Value> = h.values().cloned().collect();
+                    h.clear();
+                    Value::array(removed)
+                }
                 Value::Array(keys, ..) => {
                     let h = Arc::make_mut(hash);
                     let removed = keys
