@@ -1534,6 +1534,15 @@ impl Compiler {
                 }
                 Stmt::Given { topic, body } => {
                     self.compile_expr(topic);
+                    if let Some(source_name) = match topic {
+                        Expr::Var(name) => Some(name.clone()),
+                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                        Expr::HashVar(name) => Some(format!("%{}", name)),
+                        _ => None,
+                    } {
+                        let name_idx = self.code.add_constant(Value::str(source_name));
+                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                    }
                     let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
                     self.compile_block_inline(body);
                     self.code.patch_body_end(given_idx);

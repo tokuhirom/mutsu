@@ -1820,6 +1820,12 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    Stmt::SubDecl { name, .. } => {
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::CodeVar(name.resolve()));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     _ => {}
                 }
             }

@@ -1605,8 +1605,12 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, Stmt::Proceed));
     }
     if name == "succeed" {
-        let (rest, _) = opt_char(rest, ';');
-        return Ok((rest, Stmt::Succeed));
+        // `succeed EXPR` should call the builtin function with payload;
+        // only bare `succeed` maps to the control-flow statement form.
+        if rest.is_empty() || rest.starts_with(';') || is_stmt_modifier_keyword(rest) {
+            let (rest, _) = opt_char(rest, ';');
+            return Ok((rest, Stmt::Succeed));
+        }
     }
     if name == "done" {
         // Support statement modifiers like `done if $v >= 2`

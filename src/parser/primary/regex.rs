@@ -1077,6 +1077,59 @@ pub(super) fn version_lit(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::Literal(Value::Version { parts, plus, minus })))
 }
 
+fn parse_topic_brace_index(input: &str) -> PResult<'_, Expr> {
+    let (r, first) = expression(input)?;
+    let mut current_dim = vec![first];
+    let mut dimensions: Vec<Expr> = Vec::new();
+    let mut has_semicolons = false;
+    let mut r = r;
+
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(',') {
+            let (r3, _) = parse_char(r2, ',')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if r2.starts_with(';') && !r2.starts_with(";;") {
+            has_semicolons = true;
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(std::mem::take(&mut current_dim))
+            };
+            dimensions.push(dim_expr);
+            current_dim = Vec::new();
+            let (r3, _) = parse_char(r2, ';')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if has_semicolons {
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            };
+            dimensions.push(dim_expr);
+            return Ok((r2, Expr::ArrayLiteral(dimensions)));
+        }
+        return Ok((
+            r2,
+            if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            },
+        ));
+    }
+}
+
 /// Parse a topicalized method call: .say, .uc, .defined, etc.
 pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('.') || input.starts_with("..") {
@@ -1169,6 +1222,20 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
         let (r, index) = expression(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ']')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::Var("_".to_string())),
+                index: Box::new(index),
+            },
+        ));
+    }
+    // .{index} — topicalized hash/associative lookup on $_
+    if let Some(r) = r.strip_prefix('{') {
+        let (r, _) = ws(r)?;
+        let (r, index) = parse_topic_brace_index(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, '}')?;
         return Ok((
             r,
             Expr::Index {
