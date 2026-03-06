@@ -247,6 +247,7 @@ roast/S06-operator-overloading/term.t
 roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
+roast/S06-other/misc.t
 roast/S06-routine-modifiers/lvalue-subroutines.t
 roast/S06-routine-modifiers/native-lvalue-subroutines.t
 roast/S06-signature/arity.t

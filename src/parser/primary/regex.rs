@@ -926,6 +926,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     scan_to_delim(r, open_ch, close_ch, is_paired)
                 };
                 if let Some((pattern, rest)) = scan_result {
+                    // Disambiguate `m-foo` style identifiers (e.g., user-defined
+                    // callable names like `m-bar`) from `m-...-` regex literals.
+                    // If the `-`-delimited candidate spans a statement boundary,
+                    // treat it as a non-match and let identifier parsing handle it.
+                    if !is_paired && open_ch == '-' && has_unescaped_statement_boundary(pattern) {
+                        return Err(PError::expected("regex literal"));
+                    }
                     let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;
