@@ -19,6 +19,8 @@ impl Interpreter {
                 | "THREAD"
                 | "raku"
                 | "perl"
+                | "first"
+                | "grep"
         )
     }
 
@@ -966,6 +968,7 @@ impl Interpreter {
                     | "candidates"
                     | "concretization"
                     | "curried_role"
+                    | "enum_value_list"
             )
         {
             let mut how_args = args.to_vec();
@@ -1348,6 +1351,12 @@ impl Interpreter {
                         }
                     });
                     return Ok(ret);
+                }
+                // Thread.start
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Thread"
+                {
+                    return self.dispatch_thread_start(&args);
                 }
             }
             "in" => {
@@ -1775,6 +1784,29 @@ impl Interpreter {
                     }
                     other => value_type_name(other).to_string(),
                 }));
+            }
+            "^enum_value_list" | "enum_value_list" => {
+                let type_name_owned = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.to_string()),
+                    _ => None,
+                };
+                let type_name = type_name_owned.as_deref();
+                if let Some(type_name) = type_name
+                    && let Some(variants) = self.enum_types.get(type_name)
+                {
+                    let values: Vec<Value> = variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, val))| Value::Enum {
+                            enum_type: Symbol::intern(type_name),
+                            key: Symbol::intern(key),
+                            value: *val,
+                            index,
+                        })
+                        .collect();
+                    return Ok(Value::array(values));
+                }
             }
             "enums" => {
                 let type_name_owned = match &target {

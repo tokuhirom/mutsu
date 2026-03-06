@@ -14,6 +14,18 @@ use crate::value::Value;
 
 use super::{ident, parse_statement_modifier, var_name};
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -910,7 +922,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let (r, _) = ws(r)?;
-        // Parse optional args in parens
+        // Parse optional args in parens or colon-form
         let (rest, args) = if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
@@ -936,6 +948,34 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 let (r, _) = parse_char(r, ')')?;
                 (r, args)
             }
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (r, vec![])
         };
@@ -1420,17 +1460,26 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             // Colon-arg syntax: .=method: arg, arg2
             let r = &r[1..];
             let (r, _) = ws(r)?;
-            let (r, first_arg) = expression(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
             let mut args = vec![first_arg];
             let mut r_inner = r;
             loop {
                 let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
                 if !r2.starts_with(',') {
                     break;
                 }
                 let r2 = &r2[1..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next) = expression(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
                 args.push(next);
                 r_inner = r2;
             }

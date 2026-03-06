@@ -531,6 +531,9 @@ impl Interpreter {
                     }
                     return Err(RuntimeError::new("DateTime.new requires arguments"));
                 }
+                "IO::Socket::INET" => {
+                    return self.dispatch_socket_inet_new(&args);
+                }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));
                 }

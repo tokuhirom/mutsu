@@ -45,6 +45,8 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Promise"
             | "Supply"
             | "Channel"
+            | "Thread"
+            | "ProtocolFamily"
             | "Instant"
             | "Duration"
             | "Version"
@@ -77,6 +79,17 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Blob"
             | "utf8"
     ) || crate::runtime::native_types::is_native_int_type(name)
+        || is_parameterized_core_type(name)
+}
+
+fn is_parameterized_core_type(name: &str) -> bool {
+    if let Some(base) = name.split('[').next()
+        && name.contains('[')
+        && name.ends_with(']')
+    {
+        return is_core_raku_type(base);
+    }
+    false
 }
 
 impl VM {

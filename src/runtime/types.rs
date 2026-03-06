@@ -750,6 +750,34 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn init_protocol_family_enum(&mut self) {
+        let variants = vec![
+            ("PF_UNSPEC".to_string(), 0i64),
+            ("PF_INET".to_string(), 1i64),
+            ("PF_INET6".to_string(), 2i64),
+            ("PF_LOCAL".to_string(), 3i64),
+            ("PF_UNIX".to_string(), 3i64),
+            ("PF_MAX".to_string(), 4i64),
+        ];
+        self.enum_types
+            .insert("ProtocolFamily".to_string(), variants.clone());
+        self.env.insert(
+            "ProtocolFamily".to_string(),
+            Value::Package(Symbol::intern("ProtocolFamily")),
+        );
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: Symbol::intern("ProtocolFamily"),
+                key: Symbol::intern(key),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("ProtocolFamily::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
     pub(super) fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),
@@ -1221,6 +1249,22 @@ impl Interpreter {
                 "Array" | "List" | "Positional" => {
                     if let Value::Array(items, ..) = value {
                         return items.iter().all(|v| self.type_matches_value(inner, v));
+                    }
+                    return false;
+                }
+                "Buf" | "Blob" | "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16"
+                | "blob32" | "blob64" => {
+                    if let Value::Instance { class_name, .. } = value {
+                        let cn = class_name.resolve();
+                        if cn == "Buf"
+                            || cn == "Blob"
+                            || cn.starts_with("Buf[")
+                            || cn.starts_with("Blob[")
+                            || cn.starts_with("buf")
+                            || cn.starts_with("blob")
+                        {
+                            return true;
+                        }
                     }
                     return false;
                 }
