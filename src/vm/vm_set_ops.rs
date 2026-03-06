@@ -153,6 +153,46 @@ impl VM {
         }
     }
 
+    fn quant_hash_weights(value: &Value) -> HashMap<String, f64> {
+        match runtime::coerce_value_to_quanthash(value) {
+            Value::Set(items) => items.iter().map(|k| (k.clone(), 1.0)).collect(),
+            Value::Bag(items) => items.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+            Value::Mix(items) => items.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+            _ => HashMap::new(),
+        }
+    }
+
+    fn quant_hash_subset(left: &Value, right: &Value) -> bool {
+        let left_map = Self::quant_hash_weights(left);
+        let right_map = Self::quant_hash_weights(right);
+        let keys: std::collections::HashSet<String> =
+            left_map.keys().chain(right_map.keys()).cloned().collect();
+        keys.into_iter().all(|key| {
+            let lv = left_map.get(&key).copied().unwrap_or(0.0);
+            let rv = right_map.get(&key).copied().unwrap_or(0.0);
+            lv <= rv
+        })
+    }
+
+    fn quant_hash_strict_subset(left: &Value, right: &Value) -> bool {
+        let left_map = Self::quant_hash_weights(left);
+        let right_map = Self::quant_hash_weights(right);
+        let keys: std::collections::HashSet<String> =
+            left_map.keys().chain(right_map.keys()).cloned().collect();
+        let mut strictly_less = false;
+        for key in keys {
+            let lv = left_map.get(&key).copied().unwrap_or(0.0);
+            let rv = right_map.get(&key).copied().unwrap_or(0.0);
+            if lv > rv {
+                return false;
+            }
+            if lv < rv {
+                strictly_less = true;
+            }
+        }
+        strictly_less
+    }
+
     fn lazy_list_error() -> RuntimeError {
         RuntimeError::new("X::Cannot::Lazy")
     }
@@ -569,35 +609,29 @@ impl VM {
     pub(super) fn exec_set_subset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let a = runtime::coerce_to_set(&left);
-        let b = runtime::coerce_to_set(&right);
-        self.stack.push(Value::Bool(a.is_subset(&b)));
+        self.stack
+            .push(Value::Bool(Self::quant_hash_subset(&left, &right)));
     }
 
     pub(super) fn exec_set_superset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let a = runtime::coerce_to_set(&left);
-        let b = runtime::coerce_to_set(&right);
-        self.stack.push(Value::Bool(a.is_superset(&b)));
+        self.stack
+            .push(Value::Bool(Self::quant_hash_subset(&right, &left)));
     }
 
     pub(super) fn exec_set_strict_subset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let a = runtime::coerce_to_set(&left);
-        let b = runtime::coerce_to_set(&right);
         self.stack
-            .push(Value::Bool(a.is_subset(&b) && a.len() < b.len()));
+            .push(Value::Bool(Self::quant_hash_strict_subset(&left, &right)));
     }
 
     pub(super) fn exec_set_strict_superset_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let a = runtime::coerce_to_set(&left);
-        let b = runtime::coerce_to_set(&right);
         self.stack
-            .push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
+            .push(Value::Bool(Self::quant_hash_strict_subset(&right, &left)));
     }
 
     pub(super) fn exec_junction_any_op(&mut self) {

@@ -624,18 +624,16 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_ident_with_hyphens(rest)?;
-    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>, &term:<OP>
+    // Check for operator reference:
+    // &infix:<OP>, &infix:<<OP>>, &infix:«OP», &[op], ...
     if twigil.is_empty()
-        && matches!(name, "infix" | "prefix" | "postfix" | "term")
-        && rest.starts_with(":<")
+        && matches!(
+            name,
+            "infix" | "prefix" | "postfix" | "term" | "circumfix" | "postcircumfix"
+        )
+        && let Some((r, full_name)) = parse_operator_code_ref_suffix(name, rest)
     {
-        let r = &rest[2..]; // skip ':' and '<'
-        if let Some(end_pos) = r.find('>') {
-            let op_name = &r[..end_pos];
-            let r = &r[end_pos + 1..];
-            let full_name = format!("{}:<{}>", name, op_name);
-            return Ok((r, Expr::CodeVar(full_name)));
-        }
+        return Ok((r, Expr::CodeVar(full_name)));
     }
     let full_name = if twigil.is_empty() {
         normalize_raku_identifier(name)
@@ -643,6 +641,67 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         format!("{}{}", twigil, normalize_raku_identifier(name))
     };
     Ok((rest, Expr::CodeVar(full_name)))
+}
+
+fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(&'a str, String)> {
+    if let Some(after_open) = rest.strip_prefix(":<<")
+        && let Some(end_pos) = after_open.find(">>")
+    {
+        let symbol = after_open[..end_pos].trim();
+        let after_close = &after_open[end_pos + 2..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":<") {
+        // Nested <...> is valid in categorical operator names.
+        let mut depth = 1u32;
+        let mut chars = after_open.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let symbol = &after_open[..i];
+                        let after_close = &after_open[i + 1..];
+                        return Some((after_close, format!("{category}:<{symbol}>")));
+                    }
+                }
+                '<' => depth += 1,
+                '\\' => {
+                    chars.next();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":\u{ab}")
+        && let Some(end_pos) = after_open.find('\u{bb}')
+    {
+        let symbol = after_open[..end_pos].trim();
+        let after_close = &after_open[end_pos + '\u{bb}'.len_utf8()..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":['")
+        && let Some(end_pos) = after_open.find("']")
+    {
+        let symbol = after_open[..end_pos]
+            .replace("\\'", "'")
+            .replace("\\\\", "\\");
+        let after_close = &after_open[end_pos + 2..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":[\"")
+        && let Some(end_pos) = after_open.find("\"]")
+    {
+        let symbol = &after_open[..end_pos];
+        let after_close = &after_open[end_pos + 2..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    None
 }
 
 /// Parse `$(stmt; stmt; ... expr)` — statement block in scalar context.

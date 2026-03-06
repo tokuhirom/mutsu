@@ -356,6 +356,8 @@ impl Interpreter {
                 | "⊆"
                 | "(>=)"
                 | "⊇"
+                | "⊈"
+                | "⊉"
                 | "(<)"
                 | "⊂"
                 | "(>)"
@@ -967,6 +969,18 @@ impl Interpreter {
                 expr: Box::new(Self::build_infix_expr(inner, left, right)),
             };
         }
+        if op == "⊈" {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Self::build_infix_expr("⊆", left, right)),
+            };
+        }
+        if op == "⊉" {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Self::build_infix_expr("⊇", left, right)),
+            };
+        }
         Expr::Binary {
             left: Box::new(Expr::Literal(left)),
             op: Self::infix_token(op),
@@ -999,6 +1013,10 @@ impl Interpreter {
             "(^)" | "⊖" => TokenKind::SetSymDiff,
             "(elem)" | "∈" => TokenKind::SetElem,
             "(cont)" | "∋" => TokenKind::SetCont,
+            "(<=)" | "⊆" => TokenKind::SetSubset,
+            "(>=)" | "⊇" => TokenKind::SetSuperset,
+            "(<)" | "⊂" => TokenKind::SetStrictSubset,
+            "(>)" | "⊃" => TokenKind::SetStrictSuperset,
             "..." => TokenKind::DotDotDot,
             "...^" => TokenKind::DotDotDotCaret,
             ".." => TokenKind::DotDot,
