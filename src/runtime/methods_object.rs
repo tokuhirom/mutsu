@@ -787,15 +787,22 @@ impl Interpreter {
                     return Ok(make_rat(a, b));
                 }
                 "FatRat" => {
+                    use num_bigint::BigInt;
+                    use num_traits::ToPrimitive;
                     let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(0),
                     };
                     let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(1),
                     };
-                    return Ok(Value::FatRat(a, b));
+                    if let (Some(ai), Some(bi)) = (a.to_i64(), b.to_i64()) {
+                        return Ok(Value::FatRat(ai, bi));
+                    }
+                    return Ok(Value::BigRat(a, b));
                 }
                 "Pair" => {
                     // Pair.new(key, value)
