@@ -670,7 +670,7 @@ impl Interpreter {
 
     fn missing_optional_param_value(pd: &ParamDef) -> Value {
         if pd.name.starts_with('@') {
-            return Value::array(Vec::new());
+            return Value::real_array(Vec::new());
         }
         if pd.name.starts_with('%') {
             return Value::hash(std::collections::HashMap::new());
@@ -2197,6 +2197,10 @@ impl Interpreter {
                         "Required named parameter '{}' not passed",
                         pd.name
                     )));
+                } else if !found && !pd.name.is_empty() {
+                    let value = Self::missing_optional_param_value(pd);
+                    self.bind_param_value(&pd.name, value);
+                    self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                 }
             } else {
                 // Positional param — skip over Value::Pair entries (named args)
