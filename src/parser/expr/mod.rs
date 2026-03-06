@@ -1769,6 +1769,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_dot_ampersand_block_call() {
+        let (rest, expr) = expression("$m.&{ 3 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::DynamicMethodCall {
+                target,
+                name_expr,
+                args,
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert!(matches!(*name_expr, Expr::AnonSub { .. }));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected dynamic method call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_dot_ampersand_block_call() {
+        let (rest, expr) = expression("$m>>.&{ 3 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                ..
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert!(matches!(*name_expr, Expr::AnonSub { .. }));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected hyper dynamic method call"),
+        }
+    }
+
+    #[test]
     fn parse_array_slice_assignment_with_comma_rhs() {
         let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
         assert_eq!(rest, "");

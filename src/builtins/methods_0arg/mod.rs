@@ -1483,6 +1483,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "default" => {
+            let result = match target {
+                Value::Array(..) | Value::Hash(..) => Value::Package(Symbol::intern("Any")),
+                Value::Set(..) => Value::Bool(false),
+                Value::Bag(..) | Value::Mix(..) => Value::Int(0),
+                _ => return None,
+            };
+            Some(Ok(result))
+        }
         "Complex-i" | "i" => {
             let imag = match target {
                 Value::Int(i) => *i as f64,

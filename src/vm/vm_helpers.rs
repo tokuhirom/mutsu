@@ -124,10 +124,29 @@ impl VM {
         if let Some(qualified) = Self::main_qualified_name(name) {
             return self.interpreter.env().get(&qualified).cloned();
         }
+        // Placeholder block parameters are stored as "^name". Allow lexical
+        // access by the de-careted name inside the same block.
+        if !name.starts_with('^') {
+            let placeholder = format!("^{name}");
+            if let Some(val) = self.interpreter.env().get(&placeholder) {
+                return Some(val.clone());
+            }
+            if let Some(val) = self.interpreter.get_shared_var(&placeholder) {
+                return Some(val);
+            }
+        }
         None
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        if !name.starts_with('^') {
+            let placeholder = format!("^{name}");
+            if self.interpreter.env().contains_key(&placeholder) {
+                self.interpreter.set_shared_var(&placeholder, value.clone());
+                self.interpreter.env_mut().insert(placeholder, value);
+                return;
+            }
+        }
         self.interpreter.set_shared_var(name, value.clone());
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
             self.interpreter.env_mut().insert(alias, value.clone());
