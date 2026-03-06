@@ -763,6 +763,14 @@ impl VM {
             } else {
                 self.locals[idx] = val;
             }
+            if self.interpreter.fatal_mode
+                && !name.contains("__mutsu_")
+                && let Some(err) = self
+                    .interpreter
+                    .failure_to_runtime_error_if_unhandled(&self.locals[idx])
+            {
+                return Err(err);
+            }
             self.locals_dirty = true;
             return Ok(());
         }
@@ -833,6 +841,12 @@ impl VM {
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
         // so they can reference the Proxy by its binding variable name (simulating capture-by-ref).
         let val = Self::update_proxy_closure_envs(val, name);
+        if self.interpreter.fatal_mode
+            && !name.contains("__mutsu_")
+            && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+        {
+            return Err(err);
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if let Some(symbol) = Self::term_symbol_from_name(name) {
@@ -966,6 +980,14 @@ impl VM {
                 self.locals[idx] = val.clone();
                 self.stack.push(val);
             }
+            if self.interpreter.fatal_mode
+                && !name.contains("__mutsu_")
+                && let Some(err) = self
+                    .interpreter
+                    .failure_to_runtime_error_if_unhandled(&self.locals[idx])
+            {
+                return Err(err);
+            }
             self.locals_dirty = true;
             return Ok(());
         }
@@ -1025,6 +1047,12 @@ impl VM {
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key(name);
+        }
+        if self.interpreter.fatal_mode
+            && !name.contains("__mutsu_")
+            && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+        {
+            return Err(err);
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());

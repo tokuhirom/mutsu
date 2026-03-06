@@ -1169,6 +1169,37 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, make_anon_sub(body)));
             }
+            if let Ok((r_named, _name)) = super::super::stmt::parse_sub_name_pub(r) {
+                let (r_named, _) = ws(r_named)?;
+                if r_named.starts_with("is ")
+                    || r_named.starts_with("returns ")
+                    || r_named.starts_with("of ")
+                {
+                    let (r_named, traits) = super::super::stmt::parse_sub_traits_pub(r_named)?;
+                    let (r_named, body) = parse_block_body(r_named)?;
+                    let mut expr = make_anon_sub(body);
+                    if traits.is_rw {
+                        expr = set_anon_sub_rw(expr, true);
+                    }
+                    return Ok((r_named, expr));
+                }
+                if r_named.starts_with('{') {
+                    let (r_named, body) = parse_block_body(r_named)?;
+                    return Ok((r_named, make_anon_sub(body)));
+                }
+                if r_named.starts_with('(') {
+                    let (r_named, params_body) =
+                        parse_anon_sub_with_params(r_named).map_err(|err| PError {
+                            messages: merge_expected_messages(
+                                "expected anonymous sub parameter list/body",
+                                &err.messages,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r_named.len())),
+                            exception: None,
+                        })?;
+                    return Ok((r_named, params_body));
+                }
+            }
             if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
                 let (r, traits) = super::super::stmt::parse_sub_traits_pub(r)?;
                 let (r, body) = parse_block_body(r)?;
