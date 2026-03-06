@@ -457,14 +457,12 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         Value::Array(items, kind) => {
             if kind == ArrayKind::Shaped {
                 Value::Array(items, kind)
+            } else if let Some(shape) = metadata_shape_for_items(&items) {
+                let value = Value::Array(items, ArrayKind::Shaped);
+                mark_shaped_array(&value, Some(&shape));
+                value
             } else {
-                if let Some(shape) = metadata_shape_for_items(&items) {
-                    let value = Value::Array(items, ArrayKind::Shaped);
-                    mark_shaped_array(&value, Some(&shape));
-                    value
-                } else {
-                    Value::Array(items, ArrayKind::Array)
-                }
+                Value::Array(items, ArrayKind::Array)
             }
         }
         Value::Nil => Value::real_array(Vec::new()),

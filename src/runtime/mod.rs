@@ -2816,9 +2816,7 @@ impl Interpreter {
         let value = if key.starts_with('@') {
             match value {
                 // Preserve Shaped arrays; only normalize List to Array.
-                Value::Array(items, kind) if kind == ArrayKind::List => {
-                    Value::Array(items, ArrayKind::Array)
-                }
+                Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
                 other => other,
             }
         } else {
