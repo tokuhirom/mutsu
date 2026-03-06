@@ -915,6 +915,15 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
+            return true;
+        }
+        if constraint == "Baggy" && matches!(value_type, "Bag" | "BagHash" | "Mix" | "MixHash") {
+            return true;
+        }
+        if constraint == "Mixy" && matches!(value_type, "Mix" | "MixHash") {
+            return true;
+        }
         // Metamodel:: is an alias for Perl6::Metamodel::
         if constraint.starts_with("Metamodel::") {
             let full = format!("Perl6::{}", constraint);
@@ -1133,6 +1142,18 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if constraint == "UInt" {
+            return match value {
+                Value::Int(i) => *i >= 0,
+                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                Value::Nil => true,
+                Value::Package(name) => {
+                    let name = name.resolve();
+                    name == "UInt" || name == "Int"
+                }
+                _ => false,
+            };
+        }
         if let Some((base, _)) = constraint.split_once(':')
             && base == "Variable"
             && varref_from_value(value).is_some()

@@ -1344,15 +1344,24 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             if pending_key.is_some() {
                 return Err(PError::expected("hash value"));
             }
-            let (r, (key, val)) = parse_colon_pair_entry(r)?;
+            let (r_after_pair, (key, mut val)) = parse_colon_pair_entry(r)?;
+            let (r_after_pair, _) = ws_inner(r_after_pair);
+            let r_after_value = if let Some(after_arrow) = r_after_pair.strip_prefix("=>") {
+                let (after_arrow, _) = ws_inner(after_arrow);
+                let (after_arrow, explicit_val) = super::super::expr::expression(after_arrow)?;
+                val = Some(explicit_val);
+                after_arrow
+            } else {
+                r_after_pair
+            };
             pairs.push((key, val));
-            let (r, _) = ws_inner(r);
-            if let Some(stripped) = r.strip_prefix(',') {
+            let (r_after_value, _) = ws_inner(r_after_value);
+            if let Some(stripped) = r_after_value.strip_prefix(',') {
                 rest = stripped;
-            } else if let Some(stripped) = r.strip_prefix(';') {
+            } else if let Some(stripped) = r_after_value.strip_prefix(';') {
                 rest = stripped;
             } else {
-                rest = r;
+                rest = r_after_value;
             }
             continue;
         }

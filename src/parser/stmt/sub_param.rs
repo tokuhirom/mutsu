@@ -4,6 +4,8 @@ use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
+use crate::value::Value;
+use std::collections::HashMap;
 
 use super::decl::parse_array_shape_suffix;
 use super::sub::{
@@ -132,9 +134,165 @@ fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     if r.starts_with('{') {
         let (r, body) = crate::parser::primary::parse_block_body(r)?;
+        if stmts_contain_whatever(&body) {
+            return Err(malformed_double_closure_error());
+        }
         return Ok((r, Expr::AnonSub { body, is_rw: false }));
     }
     expression(input)
+}
+
+fn malformed_double_closure_error() -> PError {
+    let msg = "Malformed double closure; WhateverCode is already a closure without curlies, so either remove the curlies or use valid parameter syntax instead of *".to_string();
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("what".to_string(), Value::str("closure".to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Malformed"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
+fn stmts_contain_whatever(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(stmt_contains_whatever)
+}
+
+fn stmt_contains_whatever(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(expr)
+        | Stmt::Return(expr)
+        | Stmt::Take(expr)
+        | Stmt::Die(expr)
+        | Stmt::Fail(expr) => expr_contains_whatever(expr),
+        Stmt::VarDecl {
+            expr,
+            where_constraint,
+            ..
+        } => {
+            expr_contains_whatever(expr)
+                || where_constraint
+                    .as_ref()
+                    .is_some_and(|wc| expr_contains_whatever(wc))
+        }
+        Stmt::Assign { expr, .. } => expr_contains_whatever(expr),
+        Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+            stmts_contain_whatever(body)
+        }
+        Stmt::SubDecl { body, .. } | Stmt::TokenDecl { body, .. } | Stmt::RuleDecl { body, .. } => {
+            stmts_contain_whatever(body)
+        }
+        Stmt::Label { stmt, .. } => stmt_contains_whatever(stmt),
+        _ => false,
+    }
+}
+
+fn expr_contains_whatever(expr: &Expr) -> bool {
+    match expr {
+        Expr::Whatever | Expr::HyperWhatever => true,
+        Expr::StringInterpolation(parts)
+        | Expr::ArrayLiteral(parts)
+        | Expr::BracketArray(parts)
+        | Expr::CaptureLiteral(parts) => parts.iter().any(expr_contains_whatever),
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            expr_contains_whatever(target) || args.iter().any(expr_contains_whatever)
+        }
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+        }
+        | Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            expr_contains_whatever(target)
+                || expr_contains_whatever(name_expr)
+                || args.iter().any(expr_contains_whatever)
+        }
+        Expr::Exists { target, arg, .. } => {
+            expr_contains_whatever(target)
+                || arg
+                    .as_ref()
+                    .is_some_and(|arg_expr| expr_contains_whatever(arg_expr))
+        }
+        Expr::ZenSlice(inner)
+        | Expr::PositionalPair(inner)
+        | Expr::Eager(inner)
+        | Expr::Reduction { expr: inner, .. }
+        | Expr::IndirectTypeLookup(inner)
+        | Expr::SymbolicDeref { expr: inner, .. } => expr_contains_whatever(inner),
+        Expr::Lambda { param, body } => param == "_" || stmts_contain_whatever(body),
+        Expr::AnonSubParams { params, body, .. } => {
+            params.iter().any(|p| p.starts_with("__wc_")) || stmts_contain_whatever(body)
+        }
+        Expr::Block(body) | Expr::AnonSub { body, .. } | Expr::Gather(body) => {
+            stmts_contain_whatever(body)
+        }
+        Expr::CallOn { target, args } => {
+            expr_contains_whatever(target) || args.iter().any(expr_contains_whatever)
+        }
+        Expr::Index { target, index } => {
+            expr_contains_whatever(target) || expr_contains_whatever(index)
+        }
+        Expr::MultiDimIndex { target, dimensions } => {
+            expr_contains_whatever(target) || dimensions.iter().any(expr_contains_whatever)
+        }
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+        } => {
+            expr_contains_whatever(target)
+                || dimensions.iter().any(expr_contains_whatever)
+                || expr_contains_whatever(value)
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+        } => {
+            expr_contains_whatever(target)
+                || expr_contains_whatever(index)
+                || expr_contains_whatever(value)
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_contains_whatever(cond)
+                || expr_contains_whatever(then_expr)
+                || expr_contains_whatever(else_expr)
+        }
+        Expr::AssignExpr { expr, .. } => expr_contains_whatever(expr),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_whatever(expr),
+        Expr::Binary { left, right, .. }
+        | Expr::HyperOp { left, right, .. }
+        | Expr::MetaOp { left, right, .. } => {
+            expr_contains_whatever(left) || expr_contains_whatever(right)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_contains_whatever),
+        Expr::Try { body, catch } => {
+            stmts_contain_whatever(body)
+                || catch
+                    .as_ref()
+                    .is_some_and(|branch| stmts_contain_whatever(branch))
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            expr_contains_whatever(left) || right.iter().any(expr_contains_whatever)
+        }
+        Expr::DoBlock { body, .. } => stmts_contain_whatever(body),
+        Expr::DoStmt(stmt) => stmt_contains_whatever(stmt),
+        Expr::IndirectCodeLookup { package, .. } => expr_contains_whatever(package),
+        Expr::Hash(pairs) => pairs
+            .iter()
+            .any(|(_, value)| value.as_ref().is_some_and(expr_contains_whatever)),
+        Expr::HyperSlice { target, .. } => expr_contains_whatever(target),
+        Expr::HyperIndex { target, keys } => {
+            expr_contains_whatever(target) || expr_contains_whatever(keys)
+        }
+        _ => false,
+    }
 }
 
 fn parse_generic_suffix(input: &str) -> PResult<'_, String> {

@@ -1881,4 +1881,18 @@ mod tests {
             Expr::CallOn { target, args } if args.is_empty() && matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
         ));
     }
+
+    #[test]
+    fn parse_ampersand_infix_operator_reference_double_angles() {
+        let (rest, expr) = expression("&infix:<<(<=)>>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref name) if name == "infix:<(<=)>"));
+    }
+
+    #[test]
+    fn parse_ampersand_infix_operator_reference_unicode_symbol() {
+        let (rest, expr) = expression("&infix:<⊆>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref name) if name == "infix:<⊆>"));
+    }
 }

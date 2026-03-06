@@ -2,6 +2,12 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn normalize_categorical_operator_name(name: &str) -> String {
+        // Keep categorical operator names as-written. Parenthesized operators
+        // like infix:<(==)> are distinct from infix:<==>.
+        name.to_string()
+    }
+
     fn inferred_operator_arity(name: &str) -> Option<usize> {
         if name.starts_with("infix:<") && name.ends_with('>') {
             return Some(2);
@@ -656,14 +662,15 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
-        if (name.starts_with("infix:<")
-            || name.starts_with("prefix:<")
-            || name.starts_with("postfix:<"))
-            && name.ends_with('>')
+        let normalized_name = Self::normalize_categorical_operator_name(name);
+        if (normalized_name.starts_with("infix:<")
+            || normalized_name.starts_with("prefix:<")
+            || normalized_name.starts_with("postfix:<"))
+            && normalized_name.ends_with('>')
         {
             return Value::Routine {
                 package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(name),
+                name: Symbol::intern(&normalized_name),
                 is_regex: false,
             };
         }

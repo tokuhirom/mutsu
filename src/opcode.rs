@@ -284,6 +284,19 @@ pub(crate) enum OpCode {
     Index,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
+    /// Multi-dimensional indexing: @a[$x;$y;$z]
+    /// Stack: [target, dim0, dim1, ..., dimN] → [result]
+    #[allow(dead_code)]
+    MultiDimIndex(u32),
+    /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
+    /// Stack: [value, dim0, dim1, ..., dimN] (target by name)
+    MultiDimIndexAssign {
+        name_idx: u32,
+        ndims: u32,
+    },
+    /// Multi-dimensional index assignment (generic target)
+    /// Stack: [target, dim0, ..., dimN, value]
+    MultiDimIndexAssignGeneric(u32),
     /// Hash hyperslice: recursively iterate hash with given adverb mode.
     /// Stack: [target] → [result list]
     HyperSlice(u8),

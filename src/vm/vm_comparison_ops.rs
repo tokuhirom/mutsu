@@ -364,13 +364,15 @@ impl VM {
     pub(super) fn exec_strict_eq_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left.strict_identical(&right)));
+        self.stack
+            .push(Value::Bool(runtime::values_identical(&left, &right)));
     }
 
     pub(super) fn exec_strict_ne_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(!left.strict_identical(&right)));
+        self.stack
+            .push(Value::Bool(!runtime::values_identical(&left, &right)));
     }
 
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {

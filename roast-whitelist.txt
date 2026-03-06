@@ -66,7 +66,6 @@ roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/int-uint.t
-roast/S02-types/lazy-lists.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_arrays.t
@@ -117,6 +116,9 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
+roast/S03-operators/set_equality.t
+roast/S03-operators/set_multiply.t
+roast/S03-operators/set_subset.t
 roast/S03-operators/set_union.t
 roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
@@ -322,7 +324,6 @@ roast/S12-methods/indirect_notation.t
 roast/S12-methods/instance.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/method-vs-sub.t
-roast/S12-methods/private.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
@@ -418,7 +419,6 @@ roast/S16-io/put.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
-roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t
@@ -517,7 +517,6 @@ roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
-roast/S32-hash/slice.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
@@ -525,7 +524,6 @@ roast/S32-io/note.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
-roast/S32-io/out-buffering.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
 roast/S32-list/cross.t

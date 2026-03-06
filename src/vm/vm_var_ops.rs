@@ -293,9 +293,7 @@ impl VM {
         val: Value,
     ) -> Result<(), RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
-        let depth = shape
-            .as_ref()
-            .map_or_else(|| Self::array_depth(target), |s| s.len());
+        let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "assign to",
@@ -329,9 +327,7 @@ impl VM {
 
     fn delete_array_multidim(target: &mut Value, indices: &[Value]) -> Result<Value, RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
-        let depth = shape
-            .as_ref()
-            .map_or_else(|| Self::array_depth(target), |s| s.len());
+        let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "delete from",
@@ -1114,6 +1110,330 @@ impl VM {
         let result = Self::delete_from_container(&mut target, idx)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Multi-dimensional indexing: @a[$x;$y;$z]
+    /// Stack: [target, dim0, dim1, ..., dimN-1] → [result]
+    pub(super) fn exec_multi_dim_index_op(&mut self, ndims: u32) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let target = self.stack.pop().unwrap_or(Value::Nil);
+
+        let result = self.multi_dim_index_read(&target, &dims)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Read a value from a nested array using multi-dimensional indices.
+    /// Each dimension can be:
+    /// - A scalar (Int, Str, Num, Rat, WhateverCode) — index into that level
+    /// - Whatever (*) — iterate all elements at that level
+    /// - An array/list — iterate specified indices at that level
+    fn multi_dim_index_read(
+        &mut self,
+        target: &Value,
+        dims: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if dims.is_empty() {
+            return Ok(target.clone());
+        }
+        let dim = &dims[0];
+        let rest = &dims[1..];
+
+        match dim {
+            Value::Whatever => {
+                // Iterate all elements at this level
+                let items = match target {
+                    Value::Array(items, ..) => items,
+                    _ => return Ok(Value::Nil),
+                };
+                let has_more_multi = rest
+                    .iter()
+                    .any(|v| matches!(v, Value::Whatever | Value::Array(..)));
+                let mut out = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    let result = self.multi_dim_index_read(item, rest)?;
+                    if has_more_multi {
+                        // Flatten intermediate array results from deeper * or list dims
+                        if let Value::Array(inner, ..) = &result {
+                            out.extend(inner.iter().cloned());
+                        } else {
+                            out.push(result);
+                        }
+                    } else {
+                        out.push(result);
+                    }
+                }
+                Ok(Value::array(out))
+            }
+            Value::Array(indices, ..) => {
+                // Multiple indices at this dimension level
+                let items = match target {
+                    Value::Array(items, ..) => items,
+                    _ => return Ok(Value::Nil),
+                };
+                let has_more_multi = rest
+                    .iter()
+                    .any(|v| matches!(v, Value::Whatever | Value::Array(..)));
+                let mut out = Vec::with_capacity(indices.len());
+                for idx in indices.iter() {
+                    let result = if let Some(i) = Self::index_to_usize(idx) {
+                        if i < items.len() {
+                            self.multi_dim_index_read(&items[i], rest)?
+                        } else {
+                            self.multi_dim_index_read(&Value::Nil, rest)?
+                        }
+                    } else {
+                        Value::Nil
+                    };
+                    if has_more_multi {
+                        if let Value::Array(inner, ..) = &result {
+                            out.extend(inner.iter().cloned());
+                        } else {
+                            out.push(result);
+                        }
+                    } else {
+                        out.push(result);
+                    }
+                }
+                Ok(Value::array(out))
+            }
+            _ => {
+                // Scalar index — resolve WhateverCode first
+                let resolved = self.resolve_whatever_code_index(dim, target);
+                let idx = resolved.as_ref().unwrap_or(dim);
+                if let Some(i) = Self::index_to_usize(idx) {
+                    let items = match target {
+                        Value::Array(items, ..) => items,
+                        _ => return Ok(Value::Nil),
+                    };
+                    if i < items.len() {
+                        self.multi_dim_index_read(&items[i], rest)
+                    } else {
+                        // Out of bounds — return Nil for scalar index
+                        Ok(Value::Nil)
+                    }
+                } else {
+                    // Non-numeric index (e.g., string "0")
+                    let i = idx.to_string_value().parse::<usize>().ok();
+                    if let Some(i) = i {
+                        let items = match target {
+                            Value::Array(items, ..) => items,
+                            _ => return Ok(Value::Nil),
+                        };
+                        if i < items.len() {
+                            self.multi_dim_index_read(&items[i], rest)
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    } else {
+                        Ok(Value::Nil)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Resolve WhateverCode (e.g., *-1) or numeric coercion for a dimension index.
+    fn resolve_whatever_code_index(&mut self, dim: &Value, target: &Value) -> Option<Value> {
+        if let Value::Sub(data) = dim {
+            let len = match target {
+                Value::Array(items, ..) => items.len() as i64,
+                _ => 0,
+            };
+            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+            let mut sub_env = data.env.clone();
+            sub_env.insert(param.to_string(), Value::Int(len));
+            let saved_env = std::mem::take(self.interpreter.env_mut());
+            *self.interpreter.env_mut() = sub_env;
+            let result = self
+                .interpreter
+                .eval_block_value(&data.body)
+                .unwrap_or(Value::Nil);
+            *self.interpreter.env_mut() = saved_env;
+            return Some(result);
+        }
+        if let Value::Rat(n, d) = dim {
+            return Some(Value::Int(*n / *d));
+        }
+        if let Value::Num(f) = dim {
+            return Some(Value::Int(*f as i64));
+        }
+        if let Value::Str(s) = dim
+            && let Ok(i) = s.parse::<i64>()
+        {
+            return Some(Value::Int(i));
+        }
+        None
+    }
+
+    /// Multi-dimensional index assignment with named target.
+    /// Stack: [value, dim0, dim1, ..., dimN-1]
+    pub(super) fn exec_multi_dim_index_assign_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        ndims: u32,
+    ) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+
+        let var_name = Self::const_str(code, name_idx).to_string();
+
+        // Resolve WhateverCode indices
+        let target_val = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let dims = self.resolve_multidim_indices_for_assign(&target_val, &dims)?;
+
+        // Get mutable reference to the target variable
+        if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+            Self::multi_dim_assign(container, &dims, value.clone())?;
+        }
+
+        self.stack.push(value);
+        Ok(())
+    }
+
+    /// Multi-dimensional index assignment with generic (expression) target.
+    /// Stack: [target, dim0, ..., dimN-1, value]
+    pub(super) fn exec_multi_dim_index_assign_generic_op(
+        &mut self,
+        ndims: u32,
+    ) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let mut target = self.stack.pop().unwrap_or(Value::Nil);
+        Self::multi_dim_assign(&mut target, &dims, value.clone())?;
+        self.stack.push(value);
+        Ok(())
+    }
+
+    /// Recursively assign a value into a nested array at the given dimension indices.
+    fn multi_dim_assign(
+        target: &mut Value,
+        dims: &[Value],
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        if dims.is_empty() {
+            *target = value;
+            return Ok(());
+        }
+
+        let dim = &dims[0];
+        let rest = &dims[1..];
+
+        // For multi-index dimensions (arrays), need to distribute values
+        if let Value::Array(indices, ..) = dim {
+            if let Value::Array(values, ..) = &value {
+                // Distribute values to indices
+                for (i, idx) in indices.iter().enumerate() {
+                    let val = values.get(i).cloned().unwrap_or(Value::Nil);
+                    let ii = Self::index_to_usize(idx).unwrap_or(0);
+                    Self::ensure_array_size(target, ii + 1);
+                    if let Value::Array(items, ..) = target {
+                        let items = std::sync::Arc::make_mut(items);
+                        Self::multi_dim_assign(&mut items[ii], rest, val)?;
+                    }
+                }
+            } else {
+                // Single value assigned to multiple indices
+                for idx in indices.iter() {
+                    let ii = Self::index_to_usize(idx).unwrap_or(0);
+                    Self::ensure_array_size(target, ii + 1);
+                    if let Value::Array(items, ..) = target {
+                        let items = std::sync::Arc::make_mut(items);
+                        Self::multi_dim_assign(&mut items[ii], rest, value.clone())?;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Scalar index
+        let Some(i) = Self::index_to_usize(dim) else {
+            return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
+        };
+
+        Self::ensure_array_size(target, i + 1);
+
+        if let Value::Array(items, ..) = target {
+            let items = std::sync::Arc::make_mut(items);
+            Self::multi_dim_assign(&mut items[i], rest, value)?;
+        }
+
+        Ok(())
+    }
+
+    /// Resolve WhateverCode indices for multidim assignment.
+    fn resolve_multidim_indices_for_assign(
+        &mut self,
+        target: &Value,
+        indices: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut resolved = Vec::with_capacity(indices.len());
+        let mut current = target.clone();
+        for idx in indices {
+            if let Value::Sub(..) = idx {
+                let len = match &current {
+                    Value::Array(items, ..) => Value::Int(items.len() as i64),
+                    _ => Value::Int(0),
+                };
+                let result = self
+                    .interpreter
+                    .call_sub_value(idx.clone(), vec![len], false)?;
+                current =
+                    Self::index_array_multidim(&current, std::slice::from_ref(&result), false)
+                        .unwrap_or(Value::Nil);
+                resolved.push(result);
+            } else {
+                current = Self::index_array_multidim(&current, std::slice::from_ref(idx), false)
+                    .unwrap_or(Value::Nil);
+                resolved.push(idx.clone());
+            }
+        }
+        Ok(resolved)
+    }
+
+    /// Ensure the target is an array with at least `min_size` elements.
+    fn ensure_array_size(target: &mut Value, min_size: usize) {
+        match target {
+            Value::Array(items, ..) => {
+                if items.len() < min_size {
+                    let items = std::sync::Arc::make_mut(items);
+                    items.resize(
+                        min_size,
+                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                    );
+                }
+            }
+            Value::Nil | Value::Package(..) => {
+                let mut items = Vec::with_capacity(min_size);
+                items.resize(
+                    min_size,
+                    Value::Package(crate::symbol::Symbol::intern("Any")),
+                );
+                *target = Value::real_array(items);
+            }
+            _ => {}
+        }
     }
 
     /// Rich :exists adverb handler supporting negation, parameterized arg,
