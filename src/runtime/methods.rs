@@ -1129,6 +1129,15 @@ impl Interpreter {
                 if matches!(target, Value::Array(..)) {
                     return Ok(Value::Package(Symbol::intern("Any")));
                 }
+                if matches!(target, Value::Set(_)) {
+                    return Ok(Value::Bool(false));
+                }
+                if matches!(target, Value::Bag(_)) {
+                    return Ok(Value::Int(0));
+                }
+                if matches!(target, Value::Mix(_)) {
+                    return Ok(Value::Num(0.0));
+                }
             }
             "note" if args.is_empty() => {
                 let content = format!("{}\n", self.render_gist_value(&target));
@@ -1999,6 +2008,9 @@ impl Interpreter {
                 if method == "Map" {
                     return self.dispatch_to_map(target);
                 }
+                return self.dispatch_to_hash(target);
+            }
+            "hash" if args.is_empty() => {
                 return self.dispatch_to_hash(target);
             }
             "any" | "all" | "one" | "none" if args.is_empty() => {

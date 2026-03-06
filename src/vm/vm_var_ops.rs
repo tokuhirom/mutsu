@@ -846,10 +846,28 @@ impl VM {
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
+            (Value::Set(s), Value::Array(indices, ..)) => Value::array(
+                indices
+                    .iter()
+                    .map(|idx| Value::Bool(s.contains(&idx.to_string_value())))
+                    .collect(),
+            ),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
             (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
+            (Value::Bag(b), Value::Array(indices, ..)) => Value::array(
+                indices
+                    .iter()
+                    .map(|idx| Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)))
+                    .collect(),
+            ),
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
             (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(key.as_str()).unwrap_or(&0.0)),
+            (Value::Mix(m), Value::Array(indices, ..)) => Value::array(
+                indices
+                    .iter()
+                    .map(|idx| Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)))
+                    .collect(),
+            ),
             (Value::Mix(m), idx) => Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)),
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
@@ -1434,6 +1452,12 @@ impl VM {
                     let exists = match (&target, &idx) {
                         (Value::Hash(map), Value::Str(key)) => map.contains_key(key.as_str()),
                         (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        (Value::Set(set), Value::Str(key)) => set.contains(key.as_str()),
+                        (Value::Set(set), other) => set.contains(&other.to_string_value()),
+                        (Value::Bag(bag), Value::Str(key)) => bag.contains_key(key.as_str()),
+                        (Value::Bag(bag), other) => bag.contains_key(&other.to_string_value()),
+                        (Value::Mix(mix), Value::Str(key)) => mix.contains_key(key.as_str()),
+                        (Value::Mix(mix), other) => mix.contains_key(&other.to_string_value()),
                         (
                             Value::Instance {
                                 class_name,

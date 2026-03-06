@@ -308,6 +308,9 @@ impl Value {
         match type_name {
             "Any" => true,
             "Mu" => true,
+            "SetHash" => matches!(self, Value::Set(_)),
+            "BagHash" => matches!(self, Value::Bag(_)),
+            "MixHash" => matches!(self, Value::Mix(_)),
             "Cool" => matches!(
                 self,
                 Value::Int(_)

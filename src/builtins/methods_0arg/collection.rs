@@ -132,10 +132,33 @@ pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "hash" => {
-            let items = crate::runtime::utils::value_to_list(target);
-            Some(crate::runtime::utils::build_hash_from_items(items))
-        }
+        "hash" => match target {
+            Value::Set(s) => {
+                let mut map = std::collections::HashMap::new();
+                for k in s.iter() {
+                    map.insert(k.clone(), Value::Bool(true));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            Value::Bag(b) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in b.iter() {
+                    map.insert(k.clone(), Value::Int(*v));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            Value::Mix(m) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in m.iter() {
+                    map.insert(k.clone(), Value::Num(*v));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            _ => {
+                let items = crate::runtime::utils::value_to_list(target);
+                Some(crate::runtime::utils::build_hash_from_items(items))
+            }
+        },
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);

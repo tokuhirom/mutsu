@@ -18,6 +18,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::Caret => "^".to_string(),
         TokenKind::Ampersand => "&".to_string(),
         TokenKind::Pipe => "|".to_string(),
+        TokenKind::Comma => ",".to_string(),
         TokenKind::EqEq => "==".to_string(),
         TokenKind::BangEq => "!=".to_string(),
         TokenKind::Lt => "<".to_string(),

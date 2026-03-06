@@ -800,8 +800,9 @@ impl Interpreter {
                 "Set" | "SetHash" => {
                     let mut elems = HashSet::new();
                     for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            elems.insert(item.to_string_value());
+                        let coerced = self.dispatch_to_set(arg.clone())?;
+                        if let Value::Set(set_items) = coerced {
+                            elems.extend(set_items.iter().cloned());
                         }
                     }
                     return Ok(Value::set(elems));
