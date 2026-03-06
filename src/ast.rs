@@ -101,11 +101,15 @@ pub(crate) enum Expr {
         pattern: String,
         replacement: String,
         samemark: bool,
+        nth: Option<String>,
+        x: Option<usize>,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
         samemark: bool,
+        nth: Option<String>,
+        x: Option<usize>,
     },
     Transliterate {
         from: String,

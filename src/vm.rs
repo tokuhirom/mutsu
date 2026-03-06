@@ -1437,20 +1437,33 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
+                self.exec_subst_op(
+                    code,
+                    *pattern_idx,
+                    *replacement_idx,
+                    *samemark,
+                    *nth_idx,
+                    *x_count,
+                )?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
                     *pattern_idx,
                     *replacement_idx,
                     *samemark,
+                    *nth_idx,
+                    *x_count,
                 )?;
                 *ip += 1;
             }
