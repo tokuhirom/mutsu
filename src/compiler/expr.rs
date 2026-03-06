@@ -1359,6 +1359,23 @@ impl Compiler {
                 right,
                 modifier,
             } => {
+                if modifier.is_none()
+                    && matches!(name.as_str(), "any" | "all" | "one" | "none")
+                    && right.len() == 1
+                    && let Expr::BareWord(mop_name) = left.as_ref()
+                    && matches!(mop_name.as_str(), "WHAT" | "HOW")
+                    && let Expr::ArrayLiteral(junction_args) = &right[0]
+                {
+                    let normalized = Expr::Call {
+                        name: Symbol::intern(mop_name),
+                        args: vec![Expr::Call {
+                            name: Symbol::intern(name),
+                            args: junction_args.clone(),
+                        }],
+                    };
+                    self.compile_expr(&normalized);
+                    return;
+                }
                 let flip_flop_mode = match name.as_str() {
                     "ff" => Some((false, false, false)),
                     "^ff" => Some((true, false, false)),
