@@ -1,5 +1,5 @@
 use Test;
-plan 16;
+plan 17;
 
 # ? prefix (boolean coercion)
 is ?1, True, '?1 is True';
@@ -9,6 +9,7 @@ is ?"", False, '?"" is False';
 
 # ^ upto operator
 is-deeply (^5).list, (0, 1, 2, 3, 4), '^5 produces 0..^5';
+is-deeply (^-1).list, (), '^-1 parses and produces an empty range';
 my @vals = <a b c>;
 is-deeply (^@vals.elems).list, (0, 1, 2), '^@array.elems parses and evaluates as 0..^N';
 my $sum = 0;

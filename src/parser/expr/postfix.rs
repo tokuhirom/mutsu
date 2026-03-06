@@ -669,7 +669,8 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
     if input.starts_with('^') && !input.starts_with("^..") {
         let rest = &input[1..];
-        if let Ok((rest, expr)) = postfix_expr_tight(rest) {
+        let parsed_operand = postfix_expr_tight(rest).or_else(|_| prefix_expr(rest));
+        if let Ok((rest, expr)) = parsed_operand {
             return postfix_expr_continue(
                 rest,
                 Expr::Binary {
