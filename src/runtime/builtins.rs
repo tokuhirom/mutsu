@@ -403,6 +403,7 @@ impl Interpreter {
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
+            "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(Value::Array(
@@ -1764,6 +1765,56 @@ impl Interpreter {
         result
     }
 
+    fn builtin_cross_shortcircuit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_cross_shortcircuit expects op, lhs, thunk",
+            ));
+        }
+        let op = args[0].to_string_value();
+        let left_values = if matches!(args[1], Value::Nil) {
+            vec![Value::Nil]
+        } else {
+            crate::runtime::value_to_list(&args[1])
+        };
+        let thunk = args[2].clone();
+        let mut out = Vec::new();
+        for left in left_values {
+            let needs_rhs = match op.as_str() {
+                "and" | "&&" => left.truthy(),
+                "or" | "||" => !left.truthy(),
+                "andthen" => crate::runtime::types::value_is_defined(&left),
+                "orelse" => !crate::runtime::types::value_is_defined(&left),
+                _ => false,
+            };
+            if !needs_rhs {
+                out.push(left);
+                continue;
+            }
+            let rhs_value = if op == "andthen" || op == "orelse" {
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), left.clone());
+                let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+                match saved_topic {
+                    Some(value) => {
+                        self.env.insert("_".to_string(), value);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                result?
+            } else {
+                self.eval_call_on_value(thunk.clone(), Vec::new())?
+            };
+            let rhs_values = crate::runtime::value_to_list(&rhs_value);
+            for rhs in rhs_values {
+                out.push(rhs);
+            }
+        }
+        Ok(Value::array(out))
+    }
+
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
         match arg {
             Some(Value::Array(items, _)) => items.to_vec(),
@@ -3013,7 +3064,7 @@ impl Interpreter {
             "**" => OpAssoc::Right,
             "=" | ":=" | "=>" | "x" | "xx" => OpAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
-            | "le" | "ge" | "~~" | "=~=" | "=:=" => OpAssoc::Chain,
+            | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => OpAssoc::Chain,
             _ => OpAssoc::Left,
         }
     }

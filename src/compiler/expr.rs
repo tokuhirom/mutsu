@@ -1329,6 +1329,39 @@ impl Compiler {
                 left,
                 right,
             } => {
+                if meta == "X"
+                    && matches!(
+                        op.as_str(),
+                        "and" | "&&" | "or" | "||" | "andthen" | "orelse"
+                    )
+                {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(right.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_cross_shortcircuit"),
+                        args: vec![
+                            Expr::Literal(Value::str(op.clone())),
+                            left.as_ref().clone(),
+                            thunked,
+                        ],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
+                if meta == "X" && op == "xx" && matches!(left.as_ref(), Expr::ArrayLiteral(_)) {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(left.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_reverse_xx"),
+                        args: vec![right.as_ref().clone(), thunked],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
                 if meta == "R" {
                     // R-meta can stack (RRop, RRRop, ...). Normalize to base operator and parity.
                     let mut base = op.as_str();

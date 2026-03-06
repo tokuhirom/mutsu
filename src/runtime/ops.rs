@@ -668,6 +668,13 @@ impl Interpreter {
                         0.0
                     }
                 }
+                Value::Array(items, kind) => {
+                    if kind.is_itemized() {
+                        0.0
+                    } else {
+                        items.len() as f64
+                    }
+                }
                 _ => 0.0,
             }
         };
@@ -701,6 +708,13 @@ impl Interpreter {
                         0
                     }
                 }
+                Value::Array(items, kind) => {
+                    if kind.is_itemized() {
+                        0
+                    } else {
+                        items.len() as i64
+                    }
+                }
                 _ => 0,
             }
         };
@@ -711,6 +725,35 @@ impl Interpreter {
             && !inner_op.is_empty()
         {
             return Self::apply_reduction_op(inner_op, right, left);
+        }
+        if let Some(inner_op) = op.strip_prefix('X')
+            && !inner_op.is_empty()
+        {
+            let left_list = Self::value_to_list(left);
+            let right_list = Self::value_to_list(right);
+            let mut out = Vec::new();
+            for l in &left_list {
+                for r in &right_list {
+                    out.push(Self::apply_reduction_op(inner_op, l, r)?);
+                }
+            }
+            return Ok(Value::array(out));
+        }
+        if let Some(inner_op) = op.strip_prefix('Z')
+            && !inner_op.is_empty()
+        {
+            let left_list = Self::value_to_list(left);
+            let right_list = Self::value_to_list(right);
+            let len = left_list.len().min(right_list.len());
+            let mut out = Vec::with_capacity(len);
+            for i in 0..len {
+                out.push(Self::apply_reduction_op(
+                    inner_op,
+                    &left_list[i],
+                    &right_list[i],
+                )?);
+            }
+            return Ok(Value::array(out));
         }
         match op {
             "+" => {
@@ -806,6 +849,7 @@ impl Interpreter {
                 Ok(Value::from_bigint(a ^ b))
             }
             "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
+            "=" => Ok(right.clone()),
             "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
             ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
@@ -920,6 +964,7 @@ impl Interpreter {
             }
             "eqv" => Ok(Value::Bool(left.eqv(right))),
             "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
+            "!=:=" => Ok(Value::Bool(!super::values_identical(left, right))),
             "===" => Ok(Value::Bool(super::values_identical(left, right))),
             "=>" => match left {
                 Value::Str(_) => Ok(Value::Pair(left.to_string_value(), Box::new(right.clone()))),
@@ -1111,6 +1156,7 @@ impl Interpreter {
 
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
+            Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
             Value::Array(items, ..) => items.to_vec(),
             Value::Seq(items) => items.to_vec(),
             Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),

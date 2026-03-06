@@ -122,6 +122,7 @@ impl VM {
                 | "<=>"
                 | "==="
                 | "=:="
+                | "!=:="
                 | "=>"
                 | "eqv"
                 | "eq"
@@ -168,7 +169,7 @@ impl VM {
             "**" => ReductionAssoc::Right,
             "=" | ":=" | "=>" | "x" | "xx" => ReductionAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
-            | "le" | "ge" | "~~" | "=~=" | "=:=" => ReductionAssoc::Chain,
+            | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => ReductionAssoc::Chain,
             _ => ReductionAssoc::Left,
         }
     }
@@ -586,7 +587,7 @@ impl VM {
         } else if name.starts_with('@') {
             runtime::coerce_to_array(raw_val)
         } else {
-            raw_val
+            Self::normalize_scalar_assignment_value(raw_val)
         };
         if matches!(val, Value::Nil)
             && let Some(def) = self.interpreter.var_default(&name)
@@ -596,10 +597,14 @@ impl VM {
         // When assigning Nil to a typed variable, reset to the type object
         let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
             if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
-                Value::Package(Symbol::intern(&nominal))
+                if constraint == "Mu" {
+                    val
+                } else {
+                    let nominal = self
+                        .interpreter
+                        .nominal_type_object_name_for_constraint(&constraint);
+                    Value::Package(Symbol::intern(&nominal))
+                }
             } else {
                 val
             }
@@ -708,9 +713,9 @@ impl VM {
         const KNOWN_BASE_OPS: &[&str] = &[
             "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
-            ">=", "<=>", "===", "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg",
-            "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
-            "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
+            ">=", "<=>", "===", "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge",
+            "leg", "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after",
+            "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
