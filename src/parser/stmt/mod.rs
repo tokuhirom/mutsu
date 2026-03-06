@@ -1554,6 +1554,13 @@ mod tests {
     }
 
     #[test]
+    fn assign_stmt_parses_comma_compound_assign() {
+        let (rest, stmt) = assign::assign_stmt("%h ,= 1;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(stmt, Stmt::Assign { .. }));
+    }
+
+    #[test]
     fn assign_expr_parses_reverse_bracket_metaop_assign() {
         let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
         assert_eq!(rest, "");
