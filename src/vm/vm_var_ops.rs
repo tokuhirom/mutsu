@@ -293,9 +293,7 @@ impl VM {
         val: Value,
     ) -> Result<(), RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
-        let depth = shape
-            .as_ref()
-            .map_or_else(|| Self::array_depth(target), |s| s.len());
+        let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "assign to",
@@ -329,9 +327,7 @@ impl VM {
 
     fn delete_array_multidim(target: &mut Value, indices: &[Value]) -> Result<Value, RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
-        let depth = shape
-            .as_ref()
-            .map_or_else(|| Self::array_depth(target), |s| s.len());
+        let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "delete from",

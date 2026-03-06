@@ -642,9 +642,9 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 index,
                 value: Box::new(rhs),
             },
-            Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+            Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
                 target,
-                dimensions,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
                 value: Box::new(rhs),
             },
             _ => return Err(PError::expected("assignment expression")),
@@ -690,9 +690,9 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             index,
             value: Box::new(rhs),
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
             target,
-            dimensions,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
             value: Box::new(rhs),
         },
         Expr::MethodCall {

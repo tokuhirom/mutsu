@@ -18,10 +18,6 @@ impl VM {
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
                 // element itemized (e.g. `[(1,2),(3,4)]`).
-                // Don't flatten real arrays — `[[1,2]]` keeps the inner array as-is.
-                Value::Array(items, kind) if is_real_array && n == 1 && kind.is_real_array() => {
-                    elems.push(Value::Array(items, kind));
-                }
                 other if is_real_array && n == 1 => elems.extend(runtime::value_to_list(&other)),
                 other => elems.push(other),
             }

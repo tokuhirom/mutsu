@@ -420,9 +420,9 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         if let Expr::MultiDimIndex { target, dimensions } = expr {
-            let stmt = Stmt::Expr(Expr::MultiDimIndexAssign {
+            let stmt = Stmt::Expr(Expr::IndexAssign {
                 target,
-                dimensions,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
                 value: Box::new(value),
             });
             return parse_statement_modifier(rest, stmt);
@@ -468,7 +468,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         });
         return parse_statement_modifier(rest, stmt);
     }
-    if matches!(expr, Expr::Index { .. }) && rest.starts_with(":=") {
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) && rest.starts_with(":=") {
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
@@ -479,17 +479,29 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        if let Expr::Index { target, index } = expr {
-            let source_meta = bind_source_metadata_expr(&value);
-            let stmt = Stmt::Expr(Expr::IndexAssign {
-                target,
-                index,
-                value: Box::new(Expr::Call {
-                    name: Symbol::intern("__mutsu_bind_index_value"),
-                    args: vec![value, source_meta],
-                }),
-            });
-            return parse_statement_modifier(rest, stmt);
+        let source_meta = bind_source_metadata_expr(&value);
+        let bind_value = Expr::Call {
+            name: Symbol::intern("__mutsu_bind_index_value"),
+            args: vec![value, source_meta],
+        };
+        match expr {
+            Expr::Index { target, index } => {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index,
+                    value: Box::new(bind_value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
+            Expr::MultiDimIndex { target, dimensions } => {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index: Box::new(Expr::ArrayLiteral(dimensions)),
+                    value: Box::new(bind_value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
+            _ => {}
         }
     }
 

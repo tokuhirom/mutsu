@@ -270,6 +270,8 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
+        let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let (val, bind_mode, bind_sources) = match raw_val {
@@ -325,7 +327,8 @@ impl VM {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
-                    let is_shaped = crate::runtime::utils::is_shaped_array(container);
+                    let is_shaped =
+                        has_declared_shape || crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
                     if is_shaped {
                         if bind_mode && is_bound_index {
@@ -451,7 +454,8 @@ impl VM {
                             }
                         }
                         Value::Array(..) => {
-                            if crate::runtime::utils::is_shaped_array(container) {
+                            if has_declared_shape || crate::runtime::utils::is_shaped_array(container)
+                            {
                                 if bind_mode && is_bound_index {
                                     return Err(RuntimeError::new("X::Assignment::RO"));
                                 }

@@ -256,9 +256,9 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         )),
         Expr::MultiDimIndex { target, dimensions } => Ok((
             r,
-            Expr::MultiDimIndexAssign {
+            Expr::IndexAssign {
                 target,
-                dimensions,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
                 value: Box::new(rhs),
             },
         )),
@@ -1092,9 +1092,9 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             index,
             value: Box::new(source),
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
             target,
-            dimensions,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
             value: Box::new(source),
         },
         Expr::Call { name, mut args } => {

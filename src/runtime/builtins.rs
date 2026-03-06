@@ -59,16 +59,17 @@ fn multidim_index(target: &Value, indices: &[Value]) -> Value {
 
 /// Delete element from a multi-dimensional array, returning the deleted value.
 fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
+    let default = || Value::Package(crate::symbol::Symbol::intern("Any"));
     if indices.is_empty() {
         let old = target.clone();
-        *target = Value::Package(crate::symbol::Symbol::intern("Any"));
+        *target = default();
         return old;
     }
     let head = &indices[0];
     // Whatever (*) means "all elements of this dimension"
     if matches!(head, Value::Whatever) {
         let Value::Array(items, ..) = target else {
-            return Value::Nil;
+            return default();
         };
         let items = std::sync::Arc::make_mut(items);
         let mut out = Vec::with_capacity(items.len());
@@ -96,7 +97,7 @@ fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         return Value::array(out);
     }
     let Value::Array(items, ..) = target else {
-        return Value::Nil;
+        return default();
     };
     let items = std::sync::Arc::make_mut(items);
     let i = match head {
@@ -105,7 +106,7 @@ fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
             if n < 0 {
                 let len = items.len() as i64;
                 if -n > len {
-                    return Value::Nil;
+                    return default();
                 }
                 (len + n) as usize
             } else {
@@ -115,10 +116,10 @@ fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         Value::Str(s) => s.parse::<usize>().unwrap_or(0),
         Value::Num(f) => *f as usize,
         Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
-        _ => return Value::Nil,
+        _ => return default(),
     };
     if i >= items.len() {
-        return Value::Nil;
+        return default();
     }
     if indices.len() == 1 {
         let old = items[i].clone();
@@ -388,6 +389,7 @@ impl Interpreter {
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
+            "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
@@ -2068,6 +2070,34 @@ impl Interpreter {
             format!("__mutsu_bound_array_len::{target_name}"),
             Value::Int(bound_len),
         );
+        Ok(Value::Nil)
+    }
+
+    fn builtin_record_shaped_array_dims(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 1 {
+            return Err(RuntimeError::new(
+                "__mutsu_record_shaped_array_dims expects target name",
+            ));
+        }
+        let target_name = args[0].to_string_value();
+        if !target_name.starts_with('@') {
+            return Ok(Value::Nil);
+        }
+        let key = format!("__mutsu_shaped_array_dims::{target_name}");
+        let dims = self
+            .env
+            .get(&target_name)
+            .and_then(Self::infer_array_shape)
+            .filter(|shape| shape.len() > 1);
+        if let Some(shape) = dims {
+            let dims_val = Value::Array(
+                std::sync::Arc::new(shape.into_iter().map(|n| Value::Int(n as i64)).collect()),
+                ArrayKind::List,
+            );
+            self.env.insert(key, dims_val);
+        } else {
+            self.env.remove(&key);
+        }
         Ok(Value::Nil)
     }
 
