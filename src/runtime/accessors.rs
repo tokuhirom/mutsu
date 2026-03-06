@@ -116,6 +116,33 @@ impl Interpreter {
         err
     }
 
+    pub(crate) fn failure_to_runtime_error_if_unhandled(
+        &self,
+        value: &Value,
+    ) -> Option<RuntimeError> {
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+        else {
+            return None;
+        };
+        if class_name != "Failure" {
+            return None;
+        }
+        let handled = attributes
+            .get("handled")
+            .is_some_and(crate::value::Value::truthy);
+        if handled {
+            return None;
+        }
+        if let Some(exception) = attributes.get("exception") {
+            return Some(Self::failure_value_to_error(exception));
+        }
+        Some(RuntimeError::new("Failed"))
+    }
+
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
         let exception = err.exception.as_deref().cloned().unwrap_or_else(|| {
             let mut attrs = std::collections::HashMap::new();

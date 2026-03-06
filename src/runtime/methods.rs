@@ -1065,11 +1065,24 @@ impl Interpreter {
                 return Ok(Value::mixin(numeric, mixins));
             }
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
+                let default_exception = || {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str("Failed".to_string()));
+                    Value::make_instance(Symbol::intern("Exception"), attrs)
+                };
+                let exception = args
+                    .first()
+                    .cloned()
+                    .filter(|v| !matches!(v, Value::Nil))
+                    .or_else(|| {
+                        self.env
+                            .get("!")
+                            .cloned()
+                            .filter(|v| !matches!(v, Value::Nil))
+                    })
+                    .unwrap_or_else(default_exception);
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "exception".to_string(),
-                    args.first().cloned().unwrap_or(Value::Nil),
-                );
+                attrs.insert("exception".to_string(), exception);
                 attrs.insert("handled".to_string(), Value::Bool(false));
                 return Ok(Value::make_instance(Symbol::intern("Failure"), attrs));
             }

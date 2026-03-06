@@ -467,9 +467,11 @@ pub struct Interpreter {
     pub(crate) in_lvalue_assignment: bool,
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
-    /// Each entry saves (function_keys, class_names, newline_mode, strict_mode) before a block with `use`.
-    import_scope_stack: Vec<(HashSet<Symbol>, HashSet<String>, NewlineMode, bool)>,
+    /// Each entry saves (function_keys, class_names, newline_mode, strict_mode, fatal_mode)
+    /// before a block with `use`.
+    import_scope_stack: Vec<ImportScopeSnapshot>,
     pub(crate) strict_mode: bool,
+    pub(crate) fatal_mode: bool,
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
@@ -613,6 +615,8 @@ pub(crate) type RoutineRegistrySnapshot = (
     HashSet<String>,
     HashSet<String>,
 );
+
+pub(crate) type ImportScopeSnapshot = (HashSet<Symbol>, HashSet<String>, NewlineMode, bool, bool);
 
 impl Default for Interpreter {
     fn default() -> Self {
@@ -1603,6 +1607,7 @@ impl Interpreter {
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             strict_mode: false,
+            fatal_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
             caller_env_stack: Vec::new(),
@@ -1797,20 +1802,26 @@ impl Interpreter {
     pub(crate) fn push_import_scope(&mut self) {
         let func_keys: HashSet<Symbol> = self.functions.keys().copied().collect();
         let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
-        self.import_scope_stack
-            .push((func_keys, class_keys, self.newline_mode, self.strict_mode));
+        self.import_scope_stack.push((
+            func_keys,
+            class_keys,
+            self.newline_mode,
+            self.strict_mode,
+            self.fatal_mode,
+        ));
     }
 
     /// Restore function/class registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode)) =
+        if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode, fatal_mode)) =
             self.import_scope_stack.pop()
         {
             self.functions.retain(|key, _| func_snapshot.contains(key));
             self.classes.retain(|key, _| class_snapshot.contains(key));
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
+            self.fatal_mode = fatal_mode;
         }
     }
 
@@ -1818,6 +1829,8 @@ impl Interpreter {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
+            } else if module == "fatal" {
+                self.fatal_mode = true;
             }
             return match self.import_module(module, &[]) {
                 Ok(()) => Ok(()),
@@ -1846,6 +1859,7 @@ impl Interpreter {
                     | "MONKEY"
                     | "newline"
                     | "soft"
+                    | "fatal"
             ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
@@ -1872,6 +1886,8 @@ impl Interpreter {
         if result.is_ok() {
             if module == "strict" {
                 self.strict_mode = true;
+            } else if module == "fatal" {
+                self.fatal_mode = true;
             }
             self.loaded_modules.insert(module.to_string());
             if let Err(err) = self.import_module(module, &[])
@@ -2066,6 +2082,8 @@ impl Interpreter {
     pub(crate) fn no_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if module == "strict" {
             self.strict_mode = false;
+        } else if module == "fatal" {
+            self.fatal_mode = false;
         } else if module == "precompilation" {
             self.precomp_enabled = false;
         }
@@ -2686,6 +2704,7 @@ impl Interpreter {
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             strict_mode: self.strict_mode,
+            fatal_mode: self.fatal_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             caller_env_stack: Vec::new(),
