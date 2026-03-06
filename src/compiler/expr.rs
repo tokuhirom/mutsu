@@ -1264,13 +1264,20 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                nth,
+                x,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
+                let nth_idx = nth
+                    .as_ref()
+                    .map(|raw| self.code.add_constant(Value::str(raw.clone())));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
                     samemark: *samemark,
+                    nth_idx,
+                    x_count: x.map(|n| n as u32),
                 });
             }
             // S/// non-destructive substitution
@@ -1278,13 +1285,20 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                nth,
+                x,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
+                let nth_idx = nth
+                    .as_ref()
+                    .map(|raw| self.code.add_constant(Value::str(raw.clone())));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
                     samemark: *samemark,
+                    nth_idx,
+                    x_count: x.map(|n| n as u32),
                 });
             }
             // tr/// transliteration

@@ -231,6 +231,7 @@ pub enum Value {
         exhaustive: bool,
         overlap: bool,
         repeat: Option<usize>,
+        nth: Option<Arc<String>>,
         perl5: bool,
         pos: bool,
         ignore_case: bool,
@@ -744,6 +745,7 @@ impl PartialEq for Value {
                     exhaustive: aex,
                     overlap: aov,
                     repeat: ar,
+                    nth: anth,
                     perl5: ap5,
                     pos: apos,
                     ignore_case: aic,
@@ -757,6 +759,7 @@ impl PartialEq for Value {
                     exhaustive: bex,
                     overlap: bov,
                     repeat: br,
+                    nth: bnth,
                     perl5: bp5,
                     pos: bpos,
                     ignore_case: bic,
@@ -770,6 +773,7 @@ impl PartialEq for Value {
                     && aex == bex
                     && aov == bov
                     && ar == br
+                    && anth == bnth
                     && ap5 == bp5
                     && apos == bpos
                     && aic == bic
