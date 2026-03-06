@@ -369,6 +369,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_program_accepts_french_quote_word_list_with_interpolation() {
+        let src =
+            r#"subtest 'x' => { with Proc::Async.new: «"$*EXECUTABLE" -e "print 'ok'"» { } };"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_program_does_not_bind_with_statement_across_newline_as_modifier() {
+        let src = r#"
+{
+    my $proc = Proc::Async.new($*EXECUTABLE, '-e', '$*OUT.write(Blob.new(65, 66, 67, 13, 10))');
+    my $result = '';
+    $proc.stdout.tap({ $result ~= $_ });
+    await $proc.start;
+}
+with Proc::Async.new: :out, ($*EXECUTABLE, '-e'), 'say "pass"' {
+    .stdout.tap: { }
+}
+"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
     fn parse_program_accepts_unicode_single_quoted_regex_atoms() {
         let src = r#"
 	ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");

@@ -54,6 +54,12 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
 /// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
+    if matches!(stmt, Stmt::Block(_)) {
+        let consumed_len = input.len().saturating_sub(rest.len());
+        if input[..consumed_len].contains('\n') {
+            return Ok((input, stmt));
+        }
+    }
     let mut current_stmt = stmt;
     let mut rest = rest;
 

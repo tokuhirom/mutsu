@@ -797,7 +797,26 @@ impl Interpreter {
                 }
                 Ok(Value::str(String::new()))
             }
-            "write" | "print" => {
+            "write" => {
+                let mut bytes = Vec::new();
+                for arg in &args {
+                    match arg {
+                        Value::Instance { class_name, .. }
+                            if class_name == "Buf"
+                                || class_name == "Blob"
+                                || class_name == "utf8"
+                                || class_name == "utf16" =>
+                        {
+                            bytes.extend(self.supply_chunk_to_bytes(arg, "utf-8"));
+                        }
+                        _ => bytes.extend(self.render_str_value(arg).into_bytes()),
+                    }
+                }
+                let content = String::from_utf8_lossy(&bytes).to_string();
+                self.write_to_handle_value(&target_val, &content, false)?;
+                Ok(Value::Bool(true))
+            }
+            "print" => {
                 let mut content = String::new();
                 for arg in &args {
                     content.push_str(&self.render_str_value(arg));
