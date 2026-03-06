@@ -433,6 +433,7 @@ impl VM {
         let topic = self.stack.pop().unwrap();
         let body_start = *ip + 1;
         let end = body_end as usize;
+        let stack_base = self.stack.len();
 
         let saved_topic = self.interpreter.env().get("_").cloned();
         let saved_when = self.interpreter.when_matched();
@@ -446,6 +447,7 @@ impl VM {
         while inner_ip < end {
             if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
                 if e.is_succeed {
+                    self.stack.truncate(stack_base);
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
                     }
@@ -471,6 +473,11 @@ impl VM {
             if self.interpreter.when_matched() || self.interpreter.is_halted() {
                 break;
             }
+        }
+        if self.stack.len() > stack_base {
+            let last = self.stack.pop().unwrap_or(Value::Nil);
+            self.stack.truncate(stack_base);
+            self.stack.push(last);
         }
 
         self.interpreter.set_when_matched(saved_when);

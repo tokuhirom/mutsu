@@ -872,6 +872,25 @@ impl Interpreter {
         let (code, compiled_fns) = compiler.compile(body);
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
+        let trailing_sub_value = match body.last() {
+            Some(Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                is_rw,
+                ..
+            }) => Some(Value::make_sub(
+                Symbol::intern(&self.current_package),
+                *name,
+                params.clone(),
+                param_defs.clone(),
+                body.clone(),
+                *is_rw,
+                self.env.clone(),
+            )),
+            _ => None,
+        };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
         // Sub/proto declarations in block scope are lexical; restore registries on block exit.
         self.functions = saved_functions;
@@ -885,7 +904,15 @@ impl Interpreter {
         }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
-        result
+        result.map(|value| {
+            let missing_value = matches!(value, Value::Nil)
+                || matches!(&value, Value::Package(name) if name == "Any");
+            if missing_value {
+                trailing_sub_value.unwrap_or(Value::Nil)
+            } else {
+                value
+            }
+        })
     }
 
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block
@@ -937,7 +964,7 @@ impl Interpreter {
         }
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
-        result.map(|_last_value| value)
+        result.map(|last_value| last_value.unwrap_or(value))
     }
 
     pub(super) fn eval_map_over_items(
