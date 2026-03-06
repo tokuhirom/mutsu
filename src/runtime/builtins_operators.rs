@@ -360,6 +360,9 @@ impl Interpreter {
                 | "⊂"
                 | "(>)"
                 | "⊃"
+                | "(==)"
+                | "≡"
+                | "≢"
         );
         // 1-arg Iterable gets flattened (like +@foo slurpy), but not for set operators
         // which coerce their single argument to a QuantHash instead

@@ -203,6 +203,32 @@ impl Interpreter {
         Ok(Value::set(l))
     }
 
+    fn set_equal_bag_counts(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+        let mut counts = Self::union_bag_counts(value)?;
+        counts.retain(|_, v| *v > 0);
+        Ok(counts)
+    }
+
+    fn set_equal_mix_weights(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        let mut weights = Self::union_mix_weights(value)?;
+        weights.retain(|_, w| *w != 0.0);
+        Ok(weights)
+    }
+
+    fn apply_set_equality(left: &Value, right: &Value) -> Result<bool, RuntimeError> {
+        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+            return Ok(Self::set_equal_mix_weights(left)? == Self::set_equal_mix_weights(right)?);
+        }
+        if matches!(left, Value::Bag(_)) || matches!(right, Value::Bag(_)) {
+            return Ok(Self::set_equal_bag_counts(left)? == Self::set_equal_bag_counts(right)?);
+        }
+        Ok(Self::union_set_keys(left)? == Self::union_set_keys(right)?)
+    }
+
     fn multiply_pair_i64(value: &Value) -> i64 {
         match value {
             Value::Int(i) => *i,
@@ -669,6 +695,8 @@ impl Interpreter {
                 Ok(Value::from_bigint(a ^ b))
             }
             "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
+            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
+            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
             "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
             ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
