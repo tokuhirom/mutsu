@@ -454,7 +454,8 @@ impl VM {
                             }
                         }
                         Value::Array(..) => {
-                            if has_declared_shape || crate::runtime::utils::is_shaped_array(container)
+                            if has_declared_shape
+                                || crate::runtime::utils::is_shaped_array(container)
                             {
                                 if bind_mode && is_bound_index {
                                     return Err(RuntimeError::new("X::Assignment::RO"));
