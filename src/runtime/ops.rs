@@ -25,9 +25,6 @@ impl Interpreter {
     fn union_insert_set_elem(elems: &mut std::collections::HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
-            Value::Scalar(inner) => {
-                Self::union_insert_set_elem(elems, inner);
-            }
             Value::Set(items) => {
                 elems.extend(items.iter().cloned());
             }
@@ -86,7 +83,6 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Scalar(inner) => Self::union_set_keys(inner),
             Value::Set(s) => Ok((**s).clone()),
             Value::Bag(b) => Ok(b.keys().cloned().collect()),
             Value::Mix(m) => Ok(m.keys().cloned().collect()),
@@ -137,7 +133,6 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Scalar(inner) => Self::union_bag_counts(inner),
             Value::Bag(b) => Ok((**b).clone()),
             Value::Mix(m) => Ok(m
                 .iter()
@@ -163,7 +158,6 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Scalar(inner) => Self::union_mix_weights(inner),
             Value::Mix(m) => Ok((**m).clone()),
             Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
@@ -233,7 +227,10 @@ impl Interpreter {
         match value {
             Value::Int(i) => *i,
             Value::Num(n) => *n as i64,
-            _ => 1,
+            Value::Rat(n, d) if *d != 0 => n / d,
+            Value::FatRat(n, d) if *d != 0 => n / d,
+            Value::Bool(b) => i64::from(*b),
+            _ => i64::from(value.truthy()),
         }
     }
 
@@ -249,24 +246,52 @@ impl Interpreter {
 
     fn multiply_bag_counts(
         value: &Value,
-    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+    ) -> Result<std::collections::HashMap<String, (i64, bool)>, RuntimeError> {
+        if let Value::Scalar(inner) = value {
+            return Self::multiply_bag_counts(inner.as_ref());
+        }
+        fn parse_pair_key(key: &str) -> Option<(String, i64, bool)> {
+            let (base, raw_weight) = key.split_once('\t')?;
+            let weight = match raw_weight {
+                "True" => 1,
+                "False" => 0,
+                _ => raw_weight.parse::<i64>().ok()?,
+            };
+            let explicit = weight != 1;
+            Some((base.to_string(), weight, explicit))
+        }
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b) => Ok((**b).clone()),
-            Value::Mix(m) => Ok(m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()),
-            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1)).collect()),
+            Value::Bag(b) => {
+                let mut out = std::collections::HashMap::new();
+                for (k, c) in b.iter() {
+                    if let Some((base, weight, explicit)) = parse_pair_key(k) {
+                        let entry = out.entry(base).or_insert((0, false));
+                        entry.0 += weight.saturating_mul(*c);
+                        entry.1 |= explicit;
+                    } else {
+                        let entry = out.entry(k.clone()).or_insert((0, false));
+                        entry.0 += *c;
+                    }
+                }
+                Ok(out)
+            }
+            Value::Mix(m) => Ok(m
+                .iter()
+                .map(|(k, v)| (k.clone(), (*v as i64, false)))
+                .collect()),
+            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), (1, false))).collect()),
             Value::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
-                    let c = match v {
-                        Value::Int(i) => *i,
-                        Value::Num(n) => *n as i64,
-                        Value::Bool(b) => i64::from(*b),
-                        _ => i64::from(v.truthy()),
-                    };
-                    if c > 0 { Some((k.clone(), c)) } else { None }
+                    let c = Self::multiply_pair_i64(v);
+                    if c > 0 {
+                        Some((k.clone(), (c, c != 1)))
+                    } else {
+                        None
+                    }
                 })
                 .collect()),
             _ if value.as_list_items().is_some() => {
@@ -274,14 +299,21 @@ impl Interpreter {
                 for item in value.as_list_items().unwrap().iter() {
                     match item {
                         Value::Pair(k, v) => {
-                            *counts.entry(k.clone()).or_insert(0) += Self::multiply_pair_i64(v);
+                            let c = Self::multiply_pair_i64(v);
+                            let entry = counts.entry(k.clone()).or_insert((0, false));
+                            entry.0 += c;
+                            entry.1 |= c != 1;
                         }
                         Value::ValuePair(k, v) => {
                             let key = k.to_string_value();
-                            *counts.entry(key).or_insert(0) += Self::multiply_pair_i64(v);
+                            let c = Self::multiply_pair_i64(v);
+                            let entry = counts.entry(key).or_insert((0, false));
+                            entry.0 += c;
+                            entry.1 |= c != 1;
                         }
                         other => {
-                            *counts.entry(other.to_string_value()).or_insert(0) += 1;
+                            let entry = counts.entry(other.to_string_value()).or_insert((0, false));
+                            entry.0 += 1;
                         }
                     }
                 }
@@ -290,7 +322,8 @@ impl Interpreter {
             range if range.is_range() => {
                 let mut counts = std::collections::HashMap::new();
                 for item in Self::value_to_list(range) {
-                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                    let entry = counts.entry(item.to_string_value()).or_insert((0, false));
+                    entry.0 += 1;
                 }
                 Ok(counts)
             }
@@ -298,7 +331,7 @@ impl Interpreter {
                 let mut counts = std::collections::HashMap::new();
                 let c = Self::multiply_pair_i64(v);
                 if c > 0 {
-                    counts.insert(k.clone(), c);
+                    counts.insert(k.clone(), (c, c != 1));
                 }
                 Ok(counts)
             }
@@ -306,13 +339,13 @@ impl Interpreter {
                 let mut counts = std::collections::HashMap::new();
                 let c = Self::multiply_pair_i64(v);
                 if c > 0 {
-                    counts.insert(k.to_string_value(), c);
+                    counts.insert(k.to_string_value(), (c, c != 1));
                 }
                 Ok(counts)
             }
             other => {
                 let mut counts = std::collections::HashMap::new();
-                counts.insert(other.to_string_value(), 1);
+                counts.insert(other.to_string_value(), (1, false));
                 Ok(counts)
             }
         }
@@ -321,6 +354,9 @@ impl Interpreter {
     fn multiply_mix_weights(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        if let Value::Scalar(inner) = value {
+            return Self::multiply_mix_weights(inner.as_ref());
+        }
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
@@ -404,6 +440,14 @@ impl Interpreter {
     }
 
     fn apply_set_multiply(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        let left = match left {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
+        let right = match right {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
         if matches!(left, Value::Instance { class_name, .. } if class_name == "Failure")
             || matches!(right, Value::Instance { class_name, .. } if class_name == "Failure")
         {
@@ -425,12 +469,17 @@ impl Interpreter {
         }
         let l = Self::multiply_bag_counts(left)?;
         let r = Self::multiply_bag_counts(right)?;
-        let mut result = std::collections::HashMap::new();
-        for (k, lv) in l {
-            if let Some(rv) = r.get(&k) {
-                let product = lv * rv;
+        let mut result: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for (k, (lv, l_explicit)) in l {
+            if let Some((rv, r_explicit)) = r.get(&k) {
+                let product = lv * *rv;
                 if product > 0 {
-                    result.insert(k, product);
+                    if l_explicit || *r_explicit {
+                        // Pair-ish bag elements are represented as "key<TAB>weight" with count 1.
+                        result.insert(format!("{k}\t{product}"), 1);
+                    } else {
+                        result.insert(k, product);
+                    }
                 }
             }
         }
@@ -590,9 +639,71 @@ impl Interpreter {
         right: &Value,
     ) -> Result<Value, RuntimeError> {
         let to_num = |v: &Value| -> f64 {
-            crate::runtime::to_float_value(v).unwrap_or(crate::runtime::to_int(v) as f64)
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        f64::NAN
+                    } else {
+                        *n as f64 / *d as f64
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        f64::NAN
+                    } else {
+                        *n as f64 / *d as f64
+                    }
+                }
+                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                Value::Bool(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            }
         };
-        let to_int = |v: &Value| -> i64 { crate::runtime::to_int(v) };
+        let to_int = |v: &Value| -> i64 {
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        0
+                    } else {
+                        n / d
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        0
+                    } else {
+                        n / d
+                    }
+                }
+                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+                Value::Bool(b) => {
+                    if *b {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                _ => 0,
+            }
+        };
         let is_fractional =
             |v: &Value| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _));
         // Handle R (reverse) meta-prefix: swap operands and recurse with inner op
@@ -695,8 +806,6 @@ impl Interpreter {
                 Ok(Value::from_bigint(a ^ b))
             }
             "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
-            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
-            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
             "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
             ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
@@ -991,6 +1100,8 @@ impl Interpreter {
             "(-)" | "∖" => Ok(set_diff_values(left, right)),
             "(&)" | "∩" => Ok(set_intersect_values(left, right)),
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
+            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
+            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op

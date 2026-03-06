@@ -1007,6 +1007,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     }
 
     match val {
+        Value::Scalar(inner) => coerce_to_set(inner),
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),

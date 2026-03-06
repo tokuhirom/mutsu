@@ -1991,6 +1991,50 @@ impl Interpreter {
             "Mix" | "MixHash" if args.is_empty() => {
                 return self.dispatch_to_mix(target);
             }
+            "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
+                // Role-ish quant hash family conversion on type objects.
+                // Raku maps Set/Bag/Mix families to the corresponding family,
+                // preserving hash flavor for *Hash type objects.
+                let source_type = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Set(_) => Some("Set".to_string()),
+                    Value::Bag(_) => Some("Bag".to_string()),
+                    Value::Mix(_) => Some("Mix".to_string()),
+                    _ => None,
+                };
+                if let Some(source_type) = source_type
+                    && matches!(
+                        source_type.as_str(),
+                        "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                    )
+                {
+                    let hashy = matches!(source_type.as_str(), "SetHash" | "BagHash" | "MixHash");
+                    let mapped = match method {
+                        "Setty" => {
+                            if hashy {
+                                "SetHash"
+                            } else {
+                                "Set"
+                            }
+                        }
+                        "Baggy" => {
+                            if hashy {
+                                "BagHash"
+                            } else {
+                                "Bag"
+                            }
+                        }
+                        _ => {
+                            if hashy {
+                                "MixHash"
+                            } else {
+                                "Mix"
+                            }
+                        }
+                    };
+                    return Ok(Value::Package(Symbol::intern(mapped)));
+                }
+            }
             "Map" | "Hash" if args.is_empty() => {
                 // Type objects return the corresponding type object
                 if matches!(&target, Value::Package(_)) {

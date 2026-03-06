@@ -296,6 +296,7 @@ impl Interpreter {
             )));
             return Err(err);
         }
+
         if self.has_role(name) {
             return Ok(Value::Pair(
                 name.to_string(),
@@ -438,10 +439,14 @@ impl Interpreter {
             }
             // Set operators with single arg: coerce to appropriate set type
             if op == "(.)" || op == "⊍" {
-                if matches!(args[0], Value::Mix(_)) {
-                    return self.dispatch_to_mix(args[0].clone());
+                let arg0 = match &args[0] {
+                    Value::Scalar(inner) => inner.as_ref(),
+                    other => other,
+                };
+                if matches!(arg0, Value::Mix(_)) {
+                    return self.dispatch_to_mix(arg0.clone());
                 }
-                return self.dispatch_to_bag(args[0].clone());
+                return self.dispatch_to_bag(arg0.clone());
             }
             if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
                 return Ok(coerce_value_to_quanthash(&args[0]));

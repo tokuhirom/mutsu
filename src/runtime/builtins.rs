@@ -526,6 +526,9 @@ impl Interpreter {
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
             "end" => self.builtin_end(&args),
+            "Set" if !args.is_empty() => self.builtin_set(&args),
+            "Bag" if !args.is_empty() => self.builtin_bag(&args),
+            "Mix" if !args.is_empty() => self.builtin_mix(&args),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
