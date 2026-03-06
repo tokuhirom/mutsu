@@ -2308,6 +2308,14 @@ impl Interpreter {
                         ));
                     }
                 };
+                if matches!(
+                    class_name.resolve().as_str(),
+                    "Sub" | "Routine" | "Method" | "Code" | "Block"
+                ) {
+                    return Err(RuntimeError::new(
+                        "getcodename requires a concrete code object",
+                    ));
+                }
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name.resolve()) {
