@@ -2,17 +2,26 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: ai-sandbox [--set-window-title] [--recreate] [--dry-run] <branch> [claude|codex|bash] [args...]" >&2
+  cat <<'USAGE' >&2
+Usage: ai-sandbox [--set-window-title] [--recreate] [--no-prune] [--dry-run] <branch> [claude|codex|bash] [args...]
+
+Environment variables:
+  AI_SANDBOX_MAX_CLEAN_CLONES   Maximum number of clean sandboxes to keep (default: 10)
+  AI_SANDBOX_PRUNE_MIN_AGE_HOURS
+                                Minimum age in hours before clean sandbox is deletable (default: 6)
+USAGE
   exit 1
 }
 
 SET_WINDOW_TITLE=false
 RECREATE=false
+AUTO_PRUNE=true
 DRY_RUN=false
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
     --set-window-title) SET_WINDOW_TITLE=true; shift ;;
     --recreate)         RECREATE=true; shift ;;
+    --no-prune)         AUTO_PRUNE=false; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)                  break ;;
   esac
@@ -45,11 +54,126 @@ fi
 REPO_ROOT="$(find_repo_root)"
 SANDBOX_BASE="${REPO_ROOT}/.git/sandbox"
 CLONE_DIR="${SANDBOX_BASE}/${BRANCH}"
+LOCK_BASE="${SANDBOX_BASE}/.locks"
+LOCK_FILE="${LOCK_BASE}/${BRANCH}.pid"
+MAX_CLEAN_CLONES="${AI_SANDBOX_MAX_CLEAN_CLONES:-10}"
+PRUNE_MIN_AGE_HOURS="${AI_SANDBOX_PRUNE_MIN_AGE_HOURS:-6}"
+
+if ! [[ "$MAX_CLEAN_CLONES" =~ ^[0-9]+$ ]]; then
+  echo "Error: AI_SANDBOX_MAX_CLEAN_CLONES must be a non-negative integer" >&2
+  exit 1
+fi
+if ! [[ "$PRUNE_MIN_AGE_HOURS" =~ ^[0-9]+$ ]]; then
+  echo "Error: AI_SANDBOX_PRUNE_MIN_AGE_HOURS must be a non-negative integer" >&2
+  exit 1
+fi
+
+cleanup_lock() {
+  if [[ -f "$LOCK_FILE" ]]; then
+    rm -f "$LOCK_FILE"
+  fi
+}
+
+acquire_lock() {
+  mkdir -p "$(dirname "$LOCK_FILE")"
+  echo "$$" > "$LOCK_FILE"
+  trap cleanup_lock EXIT INT TERM
+}
+
+sandbox_lock_alive() {
+  local sandbox_dir="$1"
+  local rel lock_file pid
+  rel="${sandbox_dir#${SANDBOX_BASE}/}"
+  lock_file="${LOCK_BASE}/${rel}.pid"
+  if [[ ! -f "$lock_file" ]]; then
+    return 1
+  fi
+
+  pid="$(cat "$lock_file" 2>/dev/null || true)"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  rm -f "$lock_file"
+  return 1
+}
+
+prune_old_sandboxes() {
+  local now min_age_secs clean_count to_remove deleted
+  local -a entries deletable
+
+  [[ -d "$SANDBOX_BASE" ]] || return 0
+
+  now="$(date +%s)"
+  min_age_secs=$((PRUNE_MIN_AGE_HOURS * 3600))
+  entries=()
+  deletable=()
+
+  while IFS= read -r git_dir; do
+    local dir status mtime age
+    dir="$(dirname "$git_dir")"
+
+    # Never delete the current branch sandbox.
+    if [[ "$dir" == "$CLONE_DIR" ]]; then
+      continue
+    fi
+
+    # Skip sandboxes currently used by another ai-sandbox process.
+    if sandbox_lock_alive "$dir"; then
+      continue
+    fi
+
+    # Keep non-clean sandboxes so interrupted work can be resumed safely.
+    status="$(git -C "$dir" status --porcelain --untracked-files=normal 2>/dev/null || true)"
+    if [[ -n "$status" ]]; then
+      continue
+    fi
+
+    mtime="$(stat -c %Y "$dir" 2>/dev/null || echo 0)"
+    age=$((now - mtime))
+    entries+=("${mtime}|${dir}")
+    if (( age >= min_age_secs )); then
+      deletable+=("${mtime}|${dir}")
+    fi
+  done < <(find "$SANDBOX_BASE" -mindepth 2 -type d -name .git 2>/dev/null)
+
+  clean_count="${#entries[@]}"
+  if (( clean_count <= MAX_CLEAN_CLONES )); then
+    return 0
+  fi
+
+  to_remove=$((clean_count - MAX_CLEAN_CLONES))
+  deleted=0
+
+  if (( ${#deletable[@]} == 0 )); then
+    echo "Warning: sandbox cleanup skipped; no clean sandbox is old enough (>= ${PRUNE_MIN_AGE_HOURS}h)." >&2
+    return 0
+  fi
+
+  while IFS= read -r line; do
+    local dir
+    dir="${line#*|}"
+    echo "Pruning old clean sandbox: $dir"
+    rm -rf "$dir"
+    deleted=$((deleted + 1))
+    if (( deleted >= to_remove )); then
+      break
+    fi
+  done < <(printf '%s\n' "${deletable[@]}" | sort -n)
+
+  if (( deleted < to_remove )); then
+    echo "Warning: sandbox cleanup removed ${deleted}/${to_remove}; remaining clean sandboxes are too new (< ${PRUNE_MIN_AGE_HOURS}h)." >&2
+  fi
+}
 
 # --recreate: 既存クローンを削除して作り直す
 if [[ "$RECREATE" == true && -d "$CLONE_DIR" ]]; then
   echo "Removing existing sandbox clone for branch '${BRANCH}'..."
   rm -rf "$CLONE_DIR"
+fi
+
+if [[ "$AUTO_PRUNE" == true ]]; then
+  prune_old_sandboxes
 fi
 
 # クローンがなければ作成
@@ -94,6 +218,8 @@ if [[ ! -d "$CLONE_DIR" ]]; then
 
   cd "$REPO_ROOT"
 fi
+
+acquire_lock
 
 case "$TOOL" in
   claude|codex|bash) CMD_ARGS=("$TOOL" "${EXTRA_ARGS[@]}") ;;

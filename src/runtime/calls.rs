@@ -44,11 +44,19 @@ impl Interpreter {
             self.env.insert("?LINE".to_string(), Value::Int(line));
         }
         self.push_caller_env();
+        // Set current_package to the function's defining package so that default
+        // value expressions can resolve package-scoped functions (e.g. &double).
+        let saved_package = self.current_package().to_string();
+        let def_package = def.package.resolve();
+        if !def_package.is_empty() && def_package != "GLOBAL" {
+            self.set_current_package(def_package);
+        }
         let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
         {
             Ok(bindings) => bindings,
             Err(e) => {
+                self.set_current_package(saved_package);
                 self.pop_caller_env();
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
@@ -74,6 +82,7 @@ impl Interpreter {
         self.routine_stack.pop();
         self.block_stack.pop();
         self.pop_test_assertion_context(pushed_assertion);
+        self.set_current_package(saved_package);
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
         let mut restored_env = saved_env;
         self.pop_caller_env_with_writeback(&mut restored_env);
@@ -153,11 +162,17 @@ impl Interpreter {
                         self.env.insert("?LINE".to_string(), Value::Int(line));
                     }
                     self.push_caller_env();
+                    let saved_package = self.current_package().to_string();
+                    let def_package = def.package.resolve();
+                    if !def_package.is_empty() && def_package != "GLOBAL" {
+                        self.set_current_package(def_package);
+                    }
                     let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
                     let rw_bindings =
                         match self.bind_function_args_values(&def.param_defs, &def.params, &args) {
                             Ok(bindings) => bindings,
                             Err(e) => {
+                                self.set_current_package(saved_package);
                                 self.pop_caller_env();
                                 self.env = saved_env;
                                 self.restore_readonly_vars(saved_readonly);
@@ -182,6 +197,7 @@ impl Interpreter {
                     self.routine_stack.pop();
                     self.block_stack.pop();
                     self.pop_test_assertion_context(pushed_assertion);
+                    self.set_current_package(saved_package);
                     let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
                     let mut restored_env = saved_env;
                     self.pop_caller_env_with_writeback(&mut restored_env);

@@ -136,10 +136,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         )));
     }
     // Check for do { } with loop modifiers (X::Obsolete in Raku)
-    let is_do_block = matches!(
-        &stmt,
-        Stmt::Expr(Expr::DoBlock { .. }) | Stmt::Expr(Expr::DoStmt(_))
-    );
+    // Note: DoStmt is a generic wrapper for inline modifiers in parens (e.g. `(expr with cond)`),
+    // not the `do` keyword. Only DoBlock should trigger this error.
+    let is_do_block = matches!(&stmt, Stmt::Expr(Expr::DoBlock { .. }));
     if is_do_block {
         for kw in &["while", "until", "for", "given"] {
             if keyword(kw, rest).is_some() {
@@ -295,6 +294,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             };
         }
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
+        // When the statement is a block with placeholders, rewrite them.
+        let stmt_for_branch =
+            rewrite_placeholder_block_modifier_stmt(stmt_for_branch, &Expr::Var("_".to_string()));
         // When the modified statement is an expression statement, preserve
         // expression semantics via do-given.
         if matches!(stmt, Stmt::Expr(_)) {
