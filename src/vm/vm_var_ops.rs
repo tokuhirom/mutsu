@@ -867,8 +867,12 @@ impl VM {
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
             (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
-            (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(key.as_str()).unwrap_or(&0.0)),
-            (Value::Mix(m), idx) => Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)),
+            (Value::Mix(m), Value::Str(key)) => {
+                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
+            }
+            (Value::Mix(m), idx) => {
+                Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+            }
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
                 if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
@@ -1782,6 +1786,48 @@ impl VM {
                     }
                 }
             }
+            if let Value::Set(set) = &target {
+                let exists_for_key = |key: &Value| set.contains(&key.to_string_value());
+                let result = match &idx {
+                    Value::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .collect(),
+                    ),
+                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            if let Value::Bag(bag) = &target {
+                let exists_for_key = |key: &Value| bag.contains_key(&key.to_string_value());
+                let result = match &idx {
+                    Value::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .collect(),
+                    ),
+                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            if let Value::Mix(mix) = &target {
+                let exists_for_key = |key: &Value| mix.contains_key(&key.to_string_value());
+                let result = match &idx {
+                    Value::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .collect(),
+                    ),
+                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
             let idxs = match &idx {
                 Value::Int(i) => vec![*i],
                 Value::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
@@ -2040,6 +2086,14 @@ impl VM {
                 _ => Value::Nil,
             },
         })
+    }
+
+    fn mix_weight_as_value(weight: f64) -> Value {
+        if weight.is_finite() && weight.fract() == 0.0 {
+            Value::Int(weight as i64)
+        } else {
+            Value::Num(weight)
+        }
     }
 }
 

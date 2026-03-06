@@ -12,6 +12,7 @@ use super::super::helpers::{
 };
 use super::container::paren_expr;
 use super::current_line_number;
+use super::misc::parse_block_body;
 
 static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -529,6 +530,11 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, expr));
+    }
+    // Callable block literal dereference: &{ ... }
+    if input.starts_with('{') {
+        let (rest, body) = parse_block_body(input)?;
+        return Ok((rest, Expr::AnonSub { body, is_rw: false }));
     }
     // Handle &[op] — short form for &infix:<op>
     if let Some(after_bracket) = input.strip_prefix('[')
