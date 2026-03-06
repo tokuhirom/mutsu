@@ -696,14 +696,36 @@ impl Compiler {
             // Given/When/Default
             Stmt::Given { topic, body } => {
                 self.compile_expr(topic);
+                if let Some(source_name) = match topic {
+                    Expr::Var(name) => Some(name.clone()),
+                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                    Expr::HashVar(name) => Some(format!("%{}", name)),
+                    _ => None,
+                } {
+                    let name_idx = self.code.add_constant(Value::str(source_name));
+                    self.code.emit(OpCode::TagContainerRef(name_idx));
+                }
                 let given_idx = self.code.emit(OpCode::Given { body_end: 0 });
-                for s in body {
-                    self.compile_stmt(s);
+                for (i, s) in body.iter().enumerate() {
+                    let is_last = i == body.len() - 1;
+                    if is_last {
+                        if let Stmt::Expr(expr) = s {
+                            self.compile_expr(expr);
+                            if let Expr::Var(name) = expr {
+                                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                                self.code.emit(OpCode::TagContainerRef(name_idx));
+                            }
+                        } else {
+                            self.compile_stmt(s);
+                        }
+                    } else {
+                        self.compile_stmt(s);
+                    }
                 }
                 self.code.patch_body_end(given_idx);
             }
             Stmt::When { cond, body } => {
-                self.compile_condition_expr(cond);
+                self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;

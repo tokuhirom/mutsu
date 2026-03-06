@@ -168,7 +168,11 @@ impl VM {
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
-        (self.interpreter, Ok(self.last_topic_value))
+        let last_stack_value = self.stack.last().cloned();
+        (
+            self.interpreter,
+            Ok(last_stack_value.or(self.last_topic_value)),
+        )
     }
 
     /// Run compiled bytecode without consuming self.

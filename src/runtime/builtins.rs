@@ -389,6 +389,7 @@ impl Interpreter {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "succeed" => self.builtin_succeed(&args),
             "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
@@ -796,6 +797,14 @@ impl Interpreter {
         let mut err = RuntimeError::new("Failed");
         err.is_fail = true;
         Err(err)
+    }
+
+    fn builtin_succeed(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut sig = RuntimeError::succeed_signal();
+        if let Some(v) = args.first() {
+            sig.return_value = Some(v.clone());
+        }
+        Err(sig)
     }
 
     fn builtin_return_rw(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -2761,6 +2770,7 @@ impl Interpreter {
                 | "put"
                 | "note"
                 | "die"
+                | "succeed"
                 | "warn"
                 | "sink"
                 | "quietly"

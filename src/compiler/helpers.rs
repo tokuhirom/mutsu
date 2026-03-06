@@ -575,6 +575,22 @@ impl Compiler {
                             }
                             continue;
                         }
+                        Stmt::Call { name, args } => {
+                            let positional: Option<Vec<Expr>> = args
+                                .iter()
+                                .map(|arg| match arg {
+                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            if let Some(positional_args) = positional {
+                                sub_compiler.compile_expr(&Expr::Call {
+                                    name: *name,
+                                    args: positional_args,
+                                });
+                                continue;
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1820,6 +1836,29 @@ impl Compiler {
                         self.compile_stmt(stmt);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
+                    }
+                    Stmt::SubDecl { name, .. } => {
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::CodeVar(name.resolve()));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    Stmt::Call { name, args } => {
+                        let positional: Option<Vec<Expr>> = args
+                            .iter()
+                            .map(|arg| match arg {
+                                crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        if let Some(positional_args) = positional {
+                            self.compile_expr(&Expr::Call {
+                                name: *name,
+                                args: positional_args,
+                            });
+                            self.pop_dynamic_scope_lexical(saved);
+                            return;
+                        }
                     }
                     _ => {}
                 }

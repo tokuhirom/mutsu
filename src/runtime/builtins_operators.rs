@@ -272,9 +272,11 @@ impl Interpreter {
         let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
-            .filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+            .filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
             .or_else(|| {
-                callable_from_plain.filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+                callable_from_plain.filter(|v| {
+                    matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                })
             })
         {
             return self.eval_call_on_value(callable, args.to_vec());

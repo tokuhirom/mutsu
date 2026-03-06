@@ -1035,6 +1035,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_topical_dot_brace_expression() {
+        let (rest, expr) = expression(".{'a'}").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
     fn expression_memo_reuses_result() {
         reset_expression_memo();
         let (rest, expr) = expression("1 + 2").unwrap();
