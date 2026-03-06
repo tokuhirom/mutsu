@@ -307,7 +307,7 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    return Ok(Value::array(codepoints));
+                    return Ok(Value::real_array(codepoints));
                 }
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator

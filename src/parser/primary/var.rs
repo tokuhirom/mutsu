@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::Expr;
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::expr::expression;
@@ -42,6 +43,31 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     // Handle $(stmt; expr) — statement block in scalar context
     // Try to parse as a statement list first (for cases like `$(let $a = 23; $a)`)
     if let Some(inner) = input.strip_prefix('(') {
+        // Handle $(;) — semicolons only inside $() produce an empty itemized list
+        {
+            let mut r = inner;
+            loop {
+                r = r.trim_start();
+                if let Some(rest) = r.strip_prefix(';') {
+                    r = rest;
+                } else {
+                    break;
+                }
+            }
+            r = r.trim_start();
+            if let Some(rest) = r.strip_prefix(')') {
+                return Ok((
+                    rest,
+                    Expr::MethodCall {
+                        target: Box::new(Expr::ArrayLiteral(Vec::new())),
+                        name: Symbol::intern("item"),
+                        args: vec![],
+                        modifier: None,
+                        quoted: false,
+                    },
+                ));
+            }
+        }
         if let Ok(result) = parse_dollar_paren_block(inner) {
             return Ok(result);
         }
