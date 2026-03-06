@@ -178,6 +178,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_code_var_operator_with_double_angle_delimiter() {
+        let (rest, expr) = primary("&infix:<<(==)>>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::CodeVar(ref n) if n.as_str() == "infix:<(==)>"));
+    }
+
+    #[test]
     fn parse_angle_single() {
         let (rest, expr) = primary("<hello>").unwrap();
         assert_eq!(rest, "");
@@ -671,6 +678,13 @@ mod tests {
         let (rest, loop_expr) = primary("loop(5)").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(loop_expr, Expr::Call { ref name, .. } if name == "loop"));
+    }
+
+    #[test]
+    fn primary_parses_named_sub_literal_in_expression_context() {
+        let (rest, expr) = primary("sub f { 42 }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::AnonSub { .. }));
     }
 
     #[test]

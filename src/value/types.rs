@@ -147,6 +147,20 @@ impl Value {
                 if class_name == "Failure" {
                     return false;
                 }
+                // Buf/Blob: truthy when non-empty
+                let cn = class_name.resolve();
+                if cn == "Buf"
+                    || cn == "Blob"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+                {
+                    return match attributes.get("bytes") {
+                        Some(Value::Array(items, ..)) => !items.is_empty(),
+                        _ => false,
+                    };
+                }
                 true
             }
             Value::Junction { kind, values } => match kind {
@@ -296,6 +310,9 @@ impl Value {
         match type_name {
             "Any" => true,
             "Mu" => true,
+            "SetHash" => matches!(self, Value::Set(_)),
+            "BagHash" => matches!(self, Value::Bag(_)),
+            "MixHash" => matches!(self, Value::Mix(_)),
             "Cool" => matches!(
                 self,
                 Value::Int(_)

@@ -540,6 +540,13 @@ impl Interpreter {
             }
             return self.call_function(&name.resolve(), args);
         }
+        if let Value::Junction { kind, values } = func {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.call_sub_value(callable.clone(), args.clone(), merge_all)?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
         if let Value::Sub(data) = func {
             // Check for wrap chain — if wrappers exist, dispatch through them
             // Skip if we're already inside a wrap dispatch for this sub

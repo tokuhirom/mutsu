@@ -307,7 +307,7 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    return Ok(Value::array(codepoints));
+                    return Ok(Value::real_array(codepoints));
                 }
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator
@@ -531,6 +531,9 @@ impl Interpreter {
                     }
                     return Err(RuntimeError::new("DateTime.new requires arguments"));
                 }
+                "IO::Socket::INET" => {
+                    return self.dispatch_socket_inet_new(&args);
+                }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));
                 }
@@ -647,11 +650,13 @@ impl Interpreter {
                             Value::Pair(key, value) if key == "w" => {
                                 w_flag = value.truthy();
                             }
+                            Value::Pair(key, _value) if key == "out" => {}
                             _ => positional.push(arg.clone()),
                         }
                     }
                     let stdout_id = super::native_methods::next_supply_id();
                     let stderr_id = super::native_methods::next_supply_id();
+                    let supply_id = super::native_methods::next_supply_id();
                     let mut stdout_supply_attrs = HashMap::new();
                     stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -662,6 +667,11 @@ impl Interpreter {
                     stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     stderr_supply_attrs
                         .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+                    let mut merged_supply_attrs = HashMap::new();
+                    merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs
+                        .insert("supply_id".to_string(), Value::Int(supply_id as i64));
 
                     let mut attrs = HashMap::new();
                     attrs.insert("cmd".to_string(), Value::array(positional));
@@ -673,6 +683,10 @@ impl Interpreter {
                     attrs.insert(
                         "stderr".to_string(),
                         Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
+                    );
+                    attrs.insert(
+                        "supply".to_string(),
+                        Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
                     );
                     if w_flag {
                         attrs.insert("w".to_string(), Value::Bool(true));
@@ -787,21 +801,35 @@ impl Interpreter {
                     return Ok(make_rat(a, b));
                 }
                 "FatRat" => {
+                    use num_bigint::BigInt;
+                    use num_traits::ToPrimitive;
                     let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(0),
                     };
                     let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(1),
                     };
-                    return Ok(Value::FatRat(a, b));
+                    if let (Some(ai), Some(bi)) = (a.to_i64(), b.to_i64()) {
+                        return Ok(Value::FatRat(ai, bi));
+                    }
+                    return Ok(Value::BigRat(a, b));
+                }
+                "Pair" => {
+                    // Pair.new(key, value)
+                    let key = args.first().cloned().unwrap_or(Value::Nil);
+                    let value = args.get(1).cloned().unwrap_or(Value::Nil);
+                    return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
                 }
                 "Set" | "SetHash" => {
                     let mut elems = HashSet::new();
                     for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            elems.insert(item.to_string_value());
+                        let coerced = self.dispatch_to_set(arg.clone())?;
+                        if let Value::Set(set_items) = coerced {
+                            elems.extend(set_items.iter().cloned());
                         }
                     }
                     return Ok(Value::set(elems));

@@ -66,13 +66,22 @@ pub(crate) fn get_grep_view_binding(
 /// Check if an array is a shaped (multidimensional) array.
 /// A shaped array is one explicitly created as multidimensional via `:shape`.
 pub(crate) fn is_shaped_array(value: &Value) -> bool {
+    if let Value::Array(_, kind) = value
+        && *kind == ArrayKind::Shaped
+    {
+        return true;
+    }
     shaped_array_shape(value).is_some()
 }
 
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
-    let Value::Array(items, ..) = value else {
+    let Value::Array(items, kind) = value else {
         return None;
     };
+    // Only arrays explicitly created as shaped can be shaped
+    if *kind != ArrayKind::Shaped {
+        return None;
+    }
     let key = shaped_array_key(items);
 
     fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
@@ -436,8 +445,26 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 const MAX_ARRAY_EXPAND: i64 = 100_000;
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
+    fn metadata_shape_for_items(items: &Arc<Vec<Value>>) -> Option<Vec<usize>> {
+        let key = shaped_array_key(items);
+        shaped_array_ids()
+            .lock()
+            .ok()
+            .and_then(|ids| ids.get(&key).cloned())
+    }
+
     match value {
-        Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
+        Value::Array(items, kind) => {
+            if kind == ArrayKind::Shaped {
+                Value::Array(items, kind)
+            } else if let Some(shape) = metadata_shape_for_items(&items) {
+                let value = Value::Array(items, ArrayKind::Shaped);
+                mark_shaped_array(&value, Some(&shape));
+                value
+            } else {
+                Value::Array(items, ArrayKind::Array)
+            }
+        }
         Value::Nil => Value::real_array(Vec::new()),
         Value::Range(a, b) => {
             let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
@@ -735,6 +762,7 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
+        Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
         Value::Array(items, ..) => items.to_vec(),
         Value::Seq(items) => items.to_vec(),
         Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
@@ -766,6 +794,18 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             excl_start,
             excl_end,
         } => {
+            let next_numeric = |v: &Value| -> Option<Value> {
+                match v {
+                    Value::Int(i) => Some(Value::Int(i + 1)),
+                    Value::BigInt(n) => Some(Value::bigint(n.as_ref() + 1)),
+                    Value::Num(f) => Some(Value::Num(*f + 1.0)),
+                    Value::Rat(n, d) => Some(crate::value::make_rat(n + d, *d)),
+                    Value::FatRat(n, d) => Some(Value::FatRat(n + d, *d)),
+                    Value::BigRat(n, d) => Some(Value::BigRat(n + d, d.clone())),
+                    other if other.is_numeric() => Some(Value::Num(other.to_f64() + 1.0)),
+                    _ => None,
+                }
+            };
             // String ranges: expand as character sequences
             if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref()) {
                 if a.chars().count() == 1 && b.chars().count() == 1 {
@@ -784,6 +824,60 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             .collect()
                     }
                 } else {
+                    let split_numeric_core = |s: &str| -> Option<(String, String, String)> {
+                        let mut start_byte = None;
+                        let mut end_byte = None;
+                        for (idx, ch) in s.char_indices() {
+                            if ch.is_ascii_digit() {
+                                if start_byte.is_none() {
+                                    start_byte = Some(idx);
+                                }
+                            } else if start_byte.is_some() && end_byte.is_none() {
+                                end_byte = Some(idx);
+                                break;
+                            }
+                        }
+                        let start = start_byte?;
+                        let end = end_byte.unwrap_or(s.len());
+                        if end <= start {
+                            return None;
+                        }
+                        Some((
+                            s[..start].to_string(),
+                            s[start..end].to_string(),
+                            s[end..].to_string(),
+                        ))
+                    };
+                    if let (Some((ap, an, asuf)), Some((bp, bn, bsuf))) =
+                        (split_numeric_core(a), split_numeric_core(b))
+                        && ap == bp
+                        && asuf == bsuf
+                        && let (Ok(mut n), Ok(e)) = (an.parse::<i128>(), bn.parse::<i128>())
+                    {
+                        if *excl_start {
+                            n += 1;
+                        }
+                        if n > e {
+                            return Vec::new();
+                        }
+                        let width = an.len().max(bn.len());
+                        let pad = an.starts_with('0') || bn.starts_with('0');
+                        let mut result = Vec::new();
+                        let limit = MAX_RANGE_EXPAND as usize;
+                        while n <= e && result.len() < limit {
+                            if *excl_end && n == e {
+                                break;
+                            }
+                            let digits = if pad {
+                                format!("{n:0width$}")
+                            } else {
+                                n.to_string()
+                            };
+                            result.push(Value::str(format!("{ap}{digits}{asuf}")));
+                            n += 1;
+                        }
+                        return result;
+                    }
                     // Multi-char string ranges: use string succession
                     let mut result = Vec::new();
                     let mut current = if *excl_start {
@@ -801,32 +895,80 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     }
                     result
                 }
+            } else if let (Value::Str(a), Value::HyperWhatever | Value::Whatever) =
+                (start.as_ref(), end.as_ref())
+            {
+                let mut result = Vec::new();
+                let mut current = if *excl_start {
+                    crate::runtime::Interpreter::string_succ(a)
+                } else {
+                    a.to_string()
+                };
+                let limit = MAX_RANGE_EXPAND as usize;
+                while result.len() < limit {
+                    result.push(Value::str(current.clone()));
+                    current = crate::runtime::Interpreter::string_succ(&current);
+                }
+                result
             } else {
-                // Numeric GenericRange: expand using integer steps
-                let s_f = start.to_f64();
-                let e_f = end.to_f64();
-                if s_f.is_infinite() || e_f.is_infinite() || s_f.is_nan() || e_f.is_nan() {
+                // Numeric GenericRange: expand using .succ semantics to preserve endpoint type.
+                let start_num = if start.is_numeric() {
+                    Some(start.as_ref().clone())
+                } else if let Value::Str(s) = start.as_ref() {
+                    let coerced = coerce_to_numeric(Value::str((**s).clone()));
+                    if coerced.is_numeric() {
+                        Some(coerced)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let end_num = if end.is_numeric() {
+                    Some(end.as_ref().clone())
+                } else if let Value::Str(s) = end.as_ref() {
+                    let coerced = coerce_to_numeric(Value::str((**s).clone()));
+                    if coerced.is_numeric() {
+                        Some(coerced)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let (start_num, end_num) = match (start_num, end_num) {
+                    (Some(s), Some(e)) => (s, e),
+                    _ => return vec![val.clone()],
+                };
+                if start_num.to_f64().is_infinite()
+                    || end_num.to_f64().is_infinite()
+                    || start_num.to_f64().is_nan()
+                    || end_num.to_f64().is_nan()
+                {
                     vec![val.clone()]
                 } else {
-                    let s_i = if *excl_start {
-                        s_f as i64 + 1
+                    let mut result = Vec::new();
+                    let mut current = if *excl_start {
+                        next_numeric(&start_num).unwrap_or(start_num)
                     } else {
-                        s_f as i64
+                        start_num
                     };
-                    let e_i = if *excl_end {
-                        e_f as i64 - 1
-                    } else {
-                        e_f as i64
-                    };
-                    let end_capped = e_i.min(s_i + MAX_RANGE_EXPAND);
-                    // Preserve type of start endpoint
-                    match start.as_ref() {
-                        Value::Num(_) => (s_i..=end_capped).map(|i| Value::Num(i as f64)).collect(),
-                        Value::Rat(_, d) => (s_i..=end_capped)
-                            .map(|i| crate::value::make_rat(i * d, *d))
-                            .collect(),
-                        _ => (s_i..=end_capped).map(Value::Int).collect(),
+                    let limit = MAX_RANGE_EXPAND as usize;
+                    while result.len() < limit {
+                        let cmp = compare_values(&current, &end_num);
+                        if cmp > 0 || (*excl_end && cmp == 0) {
+                            break;
+                        }
+                        result.push(current.clone());
+                        let Some(next) = next_numeric(&current) else {
+                            break;
+                        };
+                        if values_identical(&next, &current) {
+                            break;
+                        }
+                        current = next;
                     }
+                    result
                 }
             }
         }
@@ -885,6 +1027,11 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::Int(0)
             }
         }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => Value::Int(value_to_list(&val).len() as i64),
         Value::Nil => Value::Int(0),
         Value::Instance {
             ref class_name,
@@ -980,6 +1127,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     }
 
     match val {
+        Value::Scalar(inner) => coerce_to_set(inner),
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
@@ -1593,20 +1741,30 @@ pub(crate) fn to_int(v: &Value) -> i64 {
 }
 
 pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
+    let left_is_other_junction = matches!(&left, Value::Junction { kind: k, .. } if *k != kind);
+    let right_is_other_junction = matches!(&right, Value::Junction { kind: k, .. } if *k != kind);
     let mut values = Vec::new();
-    push_junction_value(&kind, left, &mut values);
-    push_junction_value(&kind, right, &mut values);
-    Value::junction(kind, values)
-}
 
-fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
-    match value {
+    match left {
         Value::Junction {
             kind: inner_kind,
-            values,
-        } if &inner_kind == kind => out.extend(values.iter().cloned()),
-        other => out.push(other),
+            values: inner_values,
+        } if inner_kind == kind && !right_is_other_junction => {
+            values.extend(inner_values.iter().cloned());
+        }
+        other => values.push(other),
     }
+    match right {
+        Value::Junction {
+            kind: inner_kind,
+            values: inner_values,
+        } if inner_kind == kind && !left_is_other_junction => {
+            values.extend(inner_values.iter().cloned());
+        }
+        other => values.push(other),
+    }
+
+    Value::junction(kind, values)
 }
 
 /// Format a short representation of a value for type-check error messages,

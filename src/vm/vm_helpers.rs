@@ -2,6 +2,14 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl VM {
+    fn thread_right_first(
+        left: &crate::value::JunctionKind,
+        right: &crate::value::JunctionKind,
+    ) -> bool {
+        use crate::value::JunctionKind::{All, Any, None, One};
+        matches!(left, Any | One) && matches!(right, All | None)
+    }
+
     /// Sync locals from env if the dirty flag is set, then clear the flag.
     /// If locals are also dirty, flush them to env first so we don't lose
     /// values that were only written to the locals array (fast-path SetLocal).
@@ -116,10 +124,29 @@ impl VM {
         if let Some(qualified) = Self::main_qualified_name(name) {
             return self.interpreter.env().get(&qualified).cloned();
         }
+        // Placeholder block parameters are stored as "^name". Allow lexical
+        // access by the de-careted name inside the same block.
+        if !name.starts_with('^') {
+            let placeholder = format!("^{name}");
+            if let Some(val) = self.interpreter.env().get(&placeholder) {
+                return Some(val.clone());
+            }
+            if let Some(val) = self.interpreter.get_shared_var(&placeholder) {
+                return Some(val);
+            }
+        }
         None
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        if !name.starts_with('^') {
+            let placeholder = format!("^{name}");
+            if self.interpreter.env().contains_key(&placeholder) {
+                self.interpreter.set_shared_var(&placeholder, value.clone());
+                self.interpreter.env_mut().insert(placeholder, value);
+                return;
+            }
+        }
         self.interpreter.set_shared_var(name, value.clone());
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
             self.interpreter.env_mut().insert(alias, value.clone());
@@ -512,6 +539,9 @@ impl VM {
                 | "SetHash"
                 | "BagHash"
                 | "MixHash"
+                | "Setty"
+                | "Baggy"
+                | "Mixy"
                 | "Grammar"
                 | "Submethod"
                 | "Label"
@@ -559,7 +589,17 @@ impl VM {
                 | "RatStr"
                 | "ComplexStr"
                 | "Allomorph"
-        )
+        ) || {
+            // Handle parameterized types like Buf[uint8], Array[Int], etc.
+            if let Some(open) = name.find('[')
+                && name.ends_with(']')
+                && open > 0
+            {
+                Self::is_builtin_type(&name[..open])
+            } else {
+                false
+            }
+        }
     }
 
     /// Check if a name is a type with a smiley suffix (:U, :D, :_).
@@ -594,6 +634,25 @@ impl VM {
         // Auto-FETCH Proxy containers in binary operations
         let left = self.interpreter.auto_fetch_proxy(&left)?;
         let right = self.interpreter.auto_fetch_proxy(&right)?;
+        if let (
+            Value::Junction {
+                kind: left_kind,
+                values: _,
+            },
+            Value::Junction {
+                kind: right_kind,
+                values: right_values,
+            },
+        ) = (&left, &right)
+            && Self::thread_right_first(left_kind, right_kind)
+        {
+            let results: Result<Vec<Value>, RuntimeError> = right_values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
+                .collect();
+            return Ok(Value::junction(right_kind.clone(), results?));
+        }
         if let Value::Junction { kind, values } = left {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
@@ -623,6 +682,25 @@ impl VM {
         right: Value,
         negate: bool,
     ) -> Result<Value, RuntimeError> {
+        if let (
+            Value::Junction {
+                kind: left_kind,
+                values: _,
+            },
+            Value::Junction {
+                kind: right_kind,
+                values: right_values,
+            },
+        ) = (&left, &right)
+            && Self::thread_right_first(left_kind, right_kind)
+        {
+            let results: Result<Vec<Value>, RuntimeError> = right_values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, negate))
+                .collect();
+            return Ok(Value::junction(right_kind.clone(), results?));
+        }
         if let Value::Junction { kind, values } = left {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()

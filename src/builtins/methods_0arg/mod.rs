@@ -669,7 +669,7 @@ fn range_gist_string(value: &Value) -> String {
 
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => format!("$({})", inner),
@@ -678,10 +678,16 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
 
 fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
-        ArrayKind::ItemList => format!("$({})", inner),
+        ArrayKind::ItemList => {
+            if inner.is_empty() {
+                "$( )".to_string()
+            } else {
+                format!("$({})", inner)
+            }
+        }
     }
 }
 
@@ -1218,10 +1224,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
-            Value::Array(items, ArrayKind::List)
+            Value::Array(items, ArrayKind::Array)
                 if items.iter().all(|v| matches!(v, Value::Int(_))) =>
             {
-                // Uni-like list: convert codepoints to a string
+                // Uni array: convert codepoints to a string
                 let s: String = items
                     .iter()
                     .filter_map(|v| match v {
@@ -1376,6 +1382,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "bytes" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf"
+                || class_name == "Blob"
+                || class_name.resolve().starts_with("Buf[")
+                || class_name.resolve().starts_with("Blob[") =>
+            {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Int(bytes.len() as i64)))
+                } else {
+                    Some(Ok(Value::Int(0)))
+                }
+            }
+            Value::Str(s) => Some(Ok(Value::Int(s.len() as i64))),
+            _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
+        },
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),
@@ -1474,6 +1499,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     )));
                 }
                 _ => Value::Int(1),
+            };
+            Some(Ok(result))
+        }
+        "default" => {
+            let result = match target {
+                Value::Array(..) | Value::Hash(..) => Value::Package(Symbol::intern("Any")),
+                Value::Set(..) => Value::Bool(false),
+                Value::Bag(..) | Value::Mix(..) => Value::Int(0),
+                _ => return None,
             };
             Some(Ok(result))
         }
@@ -1961,7 +1995,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if let Value::Instance { class_name, .. } = target
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
-                    || class_name == "IO::Path")
+                    || class_name == "IO::Path"
+                    || class_name == "IO::Socket::INET")
             {
                 return None;
             }
@@ -2240,16 +2275,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
                 Some(Ok(Value::str(format!("slip({})", inner))))
             }
-            Value::Junction { kind, values } if method == "raku" || method == "perl" => {
-                let kind_str = match kind {
-                    crate::value::JunctionKind::Any => "any",
-                    crate::value::JunctionKind::All => "all",
-                    crate::value::JunctionKind::One => "one",
-                    crate::value::JunctionKind::None => "none",
-                };
-                let inner = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                Some(Ok(Value::str(format!("{}({})", kind_str, inner))))
-            }
+            Value::Junction { .. } if method == "raku" || method == "perl" => None,
             Value::Pair(k, v) => {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(raku_value(target))))
@@ -2394,6 +2420,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExclStart(a, b) => Some(Ok(if a < b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { start, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(start.as_ref().clone()))
+                } else {
+                    Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
@@ -2407,6 +2453,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*b) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclStart(a, b) => {
+                Some(Ok(if a < b { Value::Int(*b) } else { Value::Nil }))
+            }
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { end, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(end.as_ref().clone()))
+                } else {
+                    Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),

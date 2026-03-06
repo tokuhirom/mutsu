@@ -848,6 +848,93 @@ impl Interpreter {
         }
     }
 
+    fn set_pending_nth_error(message: String) {
+        crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+            *e.borrow_mut() = Some(RuntimeError::new(message));
+        });
+    }
+
+    fn parse_nth_token(token: &str, total: usize) -> Result<usize, String> {
+        let t = token.trim();
+        if t.is_empty() {
+            return Err("Invalid :nth index ()".to_string());
+        }
+        if t.eq_ignore_ascii_case("-Inf") {
+            return Err("Invalid :nth index (-Inf)".to_string());
+        }
+        if t == "*" {
+            if total == 0 {
+                return Err("Invalid :nth index (*)".to_string());
+            }
+            return Ok(total);
+        }
+        if let Some(rest) = t.strip_prefix("*-") {
+            let n = rest
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid :nth index ({t})"))?;
+            if n >= total {
+                return Err(format!("Invalid :nth index ({t})"));
+            }
+            return Ok(total - n);
+        }
+        let n = t
+            .parse::<i64>()
+            .map_err(|_| format!("Invalid :nth index ({t})"))?;
+        if n <= 0 {
+            return Err(format!("Invalid :nth index ({t})"));
+        }
+        Ok(n as usize)
+    }
+
+    fn collect_nth_indices_from_value(
+        &self,
+        value: &Value,
+        total: usize,
+        out: &mut Vec<usize>,
+    ) -> Result<(), String> {
+        match value {
+            Value::Int(i) => out.push(Self::parse_nth_token(&i.to_string(), total)?),
+            Value::Num(n) => {
+                if n.fract() != 0.0 {
+                    return Err(format!("Invalid :nth index ({n})"));
+                }
+                out.push(Self::parse_nth_token(&format!("{}", *n as i64), total)?);
+            }
+            Value::Str(s) => {
+                for piece in s.split(',') {
+                    out.push(Self::parse_nth_token(piece, total)?);
+                }
+            }
+            Value::Whatever => out.push(Self::parse_nth_token("*", total)?),
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    self.collect_nth_indices_from_value(item, total, out)?;
+                }
+            }
+            _ => {
+                return Err(format!("Invalid :nth index ({})", value.to_string_value()));
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_nth_indices(&self, raw: &str, total: usize) -> Result<Vec<usize>, String> {
+        let raw = raw.trim();
+        if raw.starts_with('$') {
+            let var_name = raw.trim_start_matches('$');
+            let value = self.env.get(var_name).cloned().unwrap_or(Value::Nil);
+            let mut out = Vec::new();
+            self.collect_nth_indices_from_value(&value, total, &mut out)?;
+            return Ok(out);
+        }
+        let mut out = Vec::new();
+        for token in raw.split(',') {
+            out.push(Self::parse_nth_token(token, total)?);
+        }
+        Ok(out)
+    }
+
     /// Get the match continuation position from `$/.to`, defaulting to 0.
     fn get_match_to_position(&self) -> usize {
         if let Some(Value::Instance { attributes, .. }) = self.env.get("/")
@@ -1113,6 +1200,58 @@ impl Interpreter {
                     Ok(result) => result.truthy(),
                     Err(_) => false,
                 }
+            }
+            // :nth(...) and ordinal forms (:1st, :2nd, :3rd, :4th, ...)
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    nth: Some(raw_nth),
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                let non_overlapping = self.select_non_overlapping_matches(all);
+                let resolved = match self.resolve_nth_indices(raw_nth, non_overlapping.len()) {
+                    Ok(v) => v,
+                    Err(message) => {
+                        Self::set_pending_nth_error(message);
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                };
+                if resolved.is_empty() {
+                    Self::set_pending_nth_error("Invalid :nth index".to_string());
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                let mut selected = Vec::new();
+                for idx in resolved {
+                    if idx == 0 || idx > non_overlapping.len() {
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                    selected.push(non_overlapping[idx - 1].clone());
+                }
+                if selected.len() == 1 {
+                    self.apply_single_regex_captures(&selected[0]);
+                } else {
+                    self.apply_multi_regex_captures(&selected);
+                }
+                true
             }
             // :pos/:p anchored match (non-exhaustive/non-global) — match at $/.to (or 0)
             (

@@ -23,6 +23,18 @@ use super::super::expr::expression;
 use super::super::helpers::{consume_unspace, skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::assign::try_parse_assign_expr;
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 #[derive(Default)]
 struct MatchAdverbs {
     global: bool,
@@ -39,6 +51,7 @@ struct MatchAdverbs {
     perl5: bool,
     pos: bool,
     continue_: bool,
+    nth: Option<String>,
 }
 
 fn is_regex_quote_open(ch: char) -> bool {
@@ -131,6 +144,18 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.continue_ = true;
         } else if name.eq_ignore_ascii_case("p5") {
             adverbs.perl5 = true;
+        } else if name == "nth" {
+            if let Some(raw) = arg {
+                adverbs.nth = Some(raw.trim().to_string());
+            }
+        } else if (name == "th" || name == "st" || name == "nd" || name == "rd")
+            && !leading_digits.is_empty()
+        {
+            adverbs.nth = Some(leading_digits.clone());
+        } else if name == "th" {
+            if let Some(raw) = arg {
+                adverbs.nth = Some(raw.trim().to_string());
+            }
         } else if name == "x" {
             if let Some(raw) = arg {
                 let trimmed = raw.trim();
@@ -250,6 +275,19 @@ fn has_unescaped_statement_boundary(input: &str) -> bool {
     false
 }
 
+fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
+    let (rest, expr) = super::primary(input)?;
+    let replacement = match expr {
+        Expr::Literal(value) => value.to_string_value(),
+        _ => {
+            return Err(PError::expected(
+                "literal replacement expression after '=' in substitution",
+            ));
+        }
+    };
+    Ok((rest, replacement))
+}
+
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
     if adverbs.ignore_case {
         pattern = format!(":i {pattern}");
@@ -272,6 +310,7 @@ fn adverbs_need_value(adverbs: &MatchAdverbs) -> bool {
         || adverbs.exhaustive
         || adverbs.overlap
         || adverbs.repeat.is_some()
+        || adverbs.nth.is_some()
         || adverbs.perl5
         || adverbs.pos
         || adverbs.continue_
@@ -289,6 +328,7 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
         exhaustive: adverbs.exhaustive,
         overlap: adverbs.overlap,
         repeat: adverbs.repeat,
+        nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
         perl5: adverbs.perl5,
         pos: adverbs.pos,
         ignore_case: adverbs.ignore_case,
@@ -724,9 +764,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         after_pat
                     };
-                    if let Some((replacement, rest)) =
+                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                        None
+                    } else {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
-                    {
+                    };
+                    if let Some((replacement, rest)) = replacement_scan {
                         if !is_paired
                             && open_ch == '-'
                             && (has_unescaped_statement_boundary(pattern)
@@ -742,6 +785,31 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                            },
+                        ));
+                    }
+                    let (after_pat_ws, _) = ws(after_pat)?;
+                    if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
+                        let (rest, replacement) = parse_subst_replacement_expr(after_eq)?;
+                        if !is_paired
+                            && open_ch == '-'
+                            && (has_unescaped_statement_boundary(pattern)
+                                || has_unescaped_statement_boundary(&replacement))
+                        {
+                            return Err(PError::expected("substitution"));
+                        }
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
+                        return Ok((
+                            rest,
+                            Expr::Subst {
+                                pattern,
+                                replacement,
+                                samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
                             },
                         ));
                     }
@@ -776,9 +844,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         after_pat
                     };
-                    if let Some((replacement, rest)) =
+                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                        None
+                    } else {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
-                    {
+                    };
+                    if let Some((replacement, rest)) = replacement_scan {
                         if !is_paired
                             && open_ch == '-'
                             && (has_unescaped_statement_boundary(pattern)
@@ -793,6 +864,30 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                            },
+                        ));
+                    }
+                    let (after_pat_ws, _) = ws(after_pat)?;
+                    if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
+                        let (rest, replacement) = parse_subst_replacement_expr(after_eq)?;
+                        if !is_paired
+                            && open_ch == '-'
+                            && (has_unescaped_statement_boundary(pattern)
+                                || has_unescaped_statement_boundary(&replacement))
+                        {
+                            return Err(PError::expected("substitution"));
+                        }
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        return Ok((
+                            rest,
+                            Expr::NonDestructiveSubst {
+                                pattern,
+                                replacement,
+                                samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
                             },
                         ));
                     }
@@ -841,6 +936,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
                     samemark: false,
+                    nth: None,
+                    x: None,
                 },
             ));
         }
@@ -926,6 +1023,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     scan_to_delim(r, open_ch, close_ch, is_paired)
                 };
                 if let Some((pattern, rest)) = scan_result {
+                    // Disambiguate `m-foo` style identifiers (e.g., user-defined
+                    // callable names like `m-bar`) from `m-...-` regex literals.
+                    // If the `-`-delimited candidate spans a statement boundary,
+                    // treat it as a non-match and let identifier parsing handle it.
+                    if !is_paired && open_ch == '-' && has_unescaped_statement_boundary(pattern) {
+                        return Err(PError::expected("regex literal"));
+                    }
                     let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;
@@ -1174,17 +1278,26 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     if r2.starts_with(':') && !r2.starts_with("::") {
         let r3 = &r2[1..];
         let (r3, _) = ws(r3)?;
-        let (r3, first_arg) = expression(r3)?;
+        let (r3, first_arg) = parse_colon_method_arg(r3)?;
         let mut args = vec![first_arg];
         let mut r_inner = r3;
         loop {
             let (r4, _) = ws(r_inner)?;
+            // Adjacent colonpairs without comma
+            if r4.starts_with(':')
+                && !r4.starts_with("::")
+                && let Ok((r5, arg)) = crate::parser::primary::misc::colonpair_expr(r4)
+            {
+                args.push(arg);
+                r_inner = r5;
+                continue;
+            }
             if !r4.starts_with(',') {
                 break;
             }
             let r4 = &r4[1..];
             let (r4, _) = ws(r4)?;
-            let (r4, next) = expression(r4)?;
+            let (r4, next) = parse_colon_method_arg(r4)?;
             args.push(next);
             r_inner = r4;
         }

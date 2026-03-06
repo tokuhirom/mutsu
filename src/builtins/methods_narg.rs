@@ -236,6 +236,20 @@ pub(crate) fn native_method_1arg(
                         }
                         Some(Ok(Value::Nil))
                     }
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Buf"
+                        || class_name == "Blob"
+                        || class_name.resolve().starts_with("Buf[")
+                        || class_name.resolve().starts_with("Blob[") =>
+                    {
+                        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                            return Some(Ok(bytes.get(idx).cloned().unwrap_or(Value::Int(0))));
+                        }
+                        Some(Ok(Value::Int(0)))
+                    }
                     _ => None,
                 }
             }
@@ -604,13 +618,36 @@ pub(crate) fn native_method_1arg(
             _ => None,
         },
         "round" => {
-            let scale = match arg {
+            // Unwrap allomorphic types (IntStr, NumStr, RatStr, ComplexStr)
+            // to get the underlying numeric value for the scale
+            let unwrapped_arg = match arg {
+                Value::Mixin(inner, _) => inner.as_ref(),
+                other => other,
+            };
+            // Determine the scale type category for return type selection
+            // Int/IntStr -> Int, Num/NumStr/Complex/ComplexStr -> Num,
+            // Rat/RatStr -> Rat
+            #[derive(Clone, Copy)]
+            enum RoundResult {
+                Int,
+                Num,
+                Rat,
+            }
+            let scale_type = match unwrapped_arg {
+                Value::Int(_) | Value::BigInt(_) => RoundResult::Int,
+                Value::Num(_) => RoundResult::Num,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => RoundResult::Rat,
+                Value::Complex(_, _) => RoundResult::Num,
+                _ => return None,
+            };
+            let scale = match unwrapped_arg {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::Complex(re, _) => *re,
                 _ => return None,
             };
-            // Raku-style rounding: (x + 0.5).floor()
             fn raku_round(v: f64) -> f64 {
                 (v + 0.5).floor()
             }
@@ -621,39 +658,41 @@ pub(crate) fn native_method_1arg(
                     raku_round(x / scale) * scale
                 }
             }
-            // Handle Complex separately
-            if let Value::Complex(re, im) = target {
+            // Unwrap target allomorphic types too
+            let unwrapped_target = match target {
+                Value::Mixin(inner, _) => inner.as_ref(),
+                other => other,
+            };
+            // Handle Complex target separately — always returns Complex
+            if let Value::Complex(re, im) = unwrapped_target {
                 let rr = round_real(*re, scale);
                 let ri = round_real(*im, scale);
                 return Some(Ok(Value::Complex(rr, ri)));
             }
-            let x = match target {
+            let x = match unwrapped_target {
                 Value::Int(i) => *i as f64,
+                Value::BigInt(bi) => bi.to_f64().unwrap_or(0.0),
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 _ => return None,
             };
-            if scale == 0.0 {
-                let rounded = raku_round(x);
-                return Some(Ok(
-                    if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
-                        Value::Int(rounded as i64)
-                    } else {
-                        Value::Num(rounded)
-                    },
-                ));
-            }
             let result = round_real(x, scale);
-            if result == result.floor() {
-                let r = result.floor();
-                if r >= i64::MIN as f64 && r <= i64::MAX as f64 {
-                    Some(Ok(Value::Int(r as i64)))
-                } else {
-                    Some(Ok(Value::Num(r)))
+            // Return type depends on the scale type
+            match scale_type {
+                RoundResult::Int => {
+                    let r = result.floor();
+                    if r >= i64::MIN as f64 && r <= i64::MAX as f64 {
+                        Some(Ok(Value::Int(r as i64)))
+                    } else {
+                        Some(Ok(Value::Num(r)))
+                    }
                 }
-            } else {
-                let (n, d) = f64_to_rat(result);
-                Some(Ok(Value::Rat(n, d)))
+                RoundResult::Num => Some(Ok(Value::Num(result))),
+                RoundResult::Rat => {
+                    let (n, d) = f64_to_rat(result);
+                    Some(Ok(Value::Rat(n, d)))
+                }
             }
         }
         "pick" => {

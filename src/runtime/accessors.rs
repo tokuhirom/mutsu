@@ -2,6 +2,12 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn normalize_categorical_operator_name(name: &str) -> String {
+        // Keep categorical operator names as-written. Parenthesized operators
+        // like infix:<(==)> are distinct from infix:<==>.
+        name.to_string()
+    }
+
     fn inferred_operator_arity(name: &str) -> Option<usize> {
         if name.starts_with("infix:<") && name.ends_with('>') {
             return Some(2);
@@ -108,6 +114,33 @@ impl Interpreter {
         let mut err = RuntimeError::new(&message);
         err.exception = Some(Box::new(exception.clone()));
         err
+    }
+
+    pub(crate) fn failure_to_runtime_error_if_unhandled(
+        &self,
+        value: &Value,
+    ) -> Option<RuntimeError> {
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+        else {
+            return None;
+        };
+        if class_name != "Failure" {
+            return None;
+        }
+        let handled = attributes
+            .get("handled")
+            .is_some_and(crate::value::Value::truthy);
+        if handled {
+            return None;
+        }
+        if let Some(exception) = attributes.get("exception") {
+            return Some(Self::failure_value_to_error(exception));
+        }
+        Some(RuntimeError::new("Failed"))
     }
 
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
@@ -656,14 +689,15 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
-        if (name.starts_with("infix:<")
-            || name.starts_with("prefix:<")
-            || name.starts_with("postfix:<"))
-            && name.ends_with('>')
+        let normalized_name = Self::normalize_categorical_operator_name(name);
+        if (normalized_name.starts_with("infix:<")
+            || normalized_name.starts_with("prefix:<")
+            || normalized_name.starts_with("postfix:<"))
+            && normalized_name.ends_with('>')
         {
             return Value::Routine {
                 package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(name),
+                name: Symbol::intern(&normalized_name),
                 is_regex: false,
             };
         }
@@ -877,6 +911,10 @@ impl Interpreter {
         text: &str,
     ) -> Option<(usize, usize)> {
         self.regex_find_first(pattern, text)
+    }
+
+    pub(crate) fn regex_find_all_bridge(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        self.regex_find_all(pattern, text)
     }
 
     pub(crate) fn take_value(&mut self, val: Value) {

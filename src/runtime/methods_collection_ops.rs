@@ -2,6 +2,13 @@ use super::*;
 use crate::ast::{CallArg, ControlFlowKind};
 use crate::symbol::Symbol;
 
+use std::sync::Mutex;
+
+static THREAD_HANDLES: std::sync::LazyLock<Mutex<HashMap<u64, std::thread::JoinHandle<()>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 impl Interpreter {
     pub(super) fn dispatch_rotate(
         &self,
@@ -24,6 +31,11 @@ impl Interpreter {
         let by = match args.first() {
             Some(Value::Int(i)) => *i,
             Some(Value::Num(n)) => *n as i64,
+            Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
+            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+                use num_traits::ToPrimitive;
+                (n / d).to_i64().unwrap_or(1)
+            }
             Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
             None => 1,
         };
@@ -1239,6 +1251,7 @@ impl Interpreter {
             encoding: "utf-8".to_string(),
             file: None,
             socket: Some(stream),
+            listener: None,
             closed: false,
             out_buffer_capacity: None,
             out_buffer_pending: Vec::new(),
@@ -1255,17 +1268,193 @@ impl Interpreter {
         ))
     }
 
+    /// Thread.start({ block }) — spawn a real OS thread
+    pub(super) fn dispatch_thread_start(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let block = args.first().cloned().unwrap_or(Value::Nil);
+        let thread_id = NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let mut thread_interp = self.clone_for_thread();
+        let handle = std::thread::spawn(move || {
+            match thread_interp.call_sub_value(block, vec![], false) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Thread error: {}", e.message);
+                }
+            }
+            // Flush any output from the thread
+            let output = std::mem::take(&mut thread_interp.output);
+            if !output.is_empty() {
+                print!("{}", output);
+            }
+            let stderr = std::mem::take(&mut thread_interp.stderr_output);
+            if !stderr.is_empty() {
+                eprint!("{}", stderr);
+            }
+        });
+
+        THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
+
+        let mut attrs = HashMap::new();
+        attrs.insert("thread_id".to_string(), Value::Int(thread_id as i64));
+        Ok(Value::make_instance(Symbol::intern("Thread"), attrs))
+    }
+
+    /// Thread.finish — join the thread (block until it completes)
+    pub(super) fn dispatch_thread_finish(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+    ) -> Result<Value, RuntimeError> {
+        let thread_id = attributes
+            .get("thread_id")
+            .and_then(|v| {
+                if let Value::Int(i) = v {
+                    Some(*i as u64)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| RuntimeError::new("Thread has no thread_id"))?;
+
+        let handle = THREAD_HANDLES.lock().unwrap().remove(&thread_id);
+        if let Some(handle) = handle {
+            handle
+                .join()
+                .map_err(|_| RuntimeError::new("Thread panicked"))?;
+        }
+        Ok(Value::Bool(true))
+    }
+
+    /// IO::Socket::INET.new — handles both :listen (server) and client modes.
+    pub(super) fn dispatch_socket_inet_new(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut host = String::new();
+        let mut localhost = String::new();
+        let mut port: u16 = 0;
+        let mut localport: u16 = 0;
+        let mut listen = false;
+        let mut family: Option<i64> = None;
+
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "host" => host = value.to_string_value(),
+                    "localhost" => localhost = value.to_string_value(),
+                    "port" => {
+                        port = match value.as_ref() {
+                            Value::Int(i) => *i as u16,
+                            Value::Num(f) => *f as u16,
+                            other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                        }
+                    }
+                    "localport" => {
+                        localport = match value.as_ref() {
+                            Value::Int(i) => *i as u16,
+                            Value::Num(f) => *f as u16,
+                            other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                        }
+                    }
+                    "listen" => listen = value.as_ref().truthy(),
+                    "family" => {
+                        family = Some(match value.as_ref() {
+                            Value::Int(i) => *i,
+                            Value::Enum { value: v, .. } => *v,
+                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Validate family if provided — must match a known ProtocolFamily value
+        if let Some(f) = family {
+            let valid_families = [0, 1, 2, 3, 4]; // PF_UNSPEC, PF_INET, PF_INET6, PF_LOCAL/PF_UNIX, PF_MAX
+            if !valid_families.contains(&f) {
+                return Err(RuntimeError::new(format!(
+                    "Failed to create socket: unsupported family {}",
+                    f
+                )));
+            }
+        }
+
+        if listen {
+            // Server mode: bind and listen
+            let bind_addr = if localhost.is_empty() {
+                format!("0.0.0.0:{}", localport)
+            } else {
+                format!("{}:{}", localhost, localport)
+            };
+            let listener = std::net::TcpListener::bind(&bind_addr).map_err(|e| {
+                RuntimeError::new(format!("Failed to bind to '{}': {}", bind_addr, e))
+            })?;
+            let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(localport);
+            let id = self.next_handle_id;
+            self.next_handle_id += 1;
+            let state = IoHandleState {
+                target: IoHandleTarget::Socket,
+                mode: IoHandleMode::ReadWrite,
+                path: None,
+                line_separators: self.default_line_separators(),
+                line_chomp: true,
+                encoding: "utf-8".to_string(),
+                file: None,
+                socket: None,
+                listener: Some(listener),
+                closed: false,
+                out_buffer_capacity: None,
+                out_buffer_pending: Vec::new(),
+                bin: false,
+            };
+            self.handles.insert(id, state);
+            let mut attrs = HashMap::new();
+            attrs.insert("handle".to_string(), Value::Int(id as i64));
+            attrs.insert("localport".to_string(), Value::Int(actual_port as i64));
+            attrs.insert(
+                "localhost".to_string(),
+                Value::str(if localhost.is_empty() {
+                    "0.0.0.0".to_string()
+                } else {
+                    localhost
+                }),
+            );
+            Ok(Value::make_instance(
+                Symbol::intern("IO::Socket::INET"),
+                attrs,
+            ))
+        } else {
+            // Client mode: connect
+            if host.is_empty() {
+                host = "127.0.0.1".to_string();
+            }
+            self.dispatch_socket_connect(&[Value::str(host), Value::Int(port as i64)])
+        }
+    }
+
     /// Replay deferred Proc::Async taps on the main thread.
     /// Called when a Proc result is retrieved via .result or await.
     pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
-        let stdout_taps = match attributes.get("stdout_taps") {
+        let mut stdout_taps = match attributes.get("stdout_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        let stderr_taps = match attributes.get("stderr_taps") {
+        let mut stderr_taps = match attributes.get("stderr_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
+        if let Some(Value::Int(sid)) = attributes.get("stdout_supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                stdout_taps = live;
+            }
+        }
+        if let Some(Value::Int(sid)) = attributes.get("stderr_supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                stderr_taps = live;
+            }
+        }
         let collected_stdout = match attributes.get("collected_stdout") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
@@ -1273,6 +1462,20 @@ impl Interpreter {
         let collected_stderr = match attributes.get("collected_stderr") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
+        };
+        let mut supply_taps = match attributes.get("supply_taps") {
+            Some(Value::Array(taps, ..)) => taps.to_vec(),
+            _ => Vec::new(),
+        };
+        if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                supply_taps = live;
+            }
+        }
+        let collected_merged = match attributes.get("collected_merged") {
+            Some(Value::Str(s)) => s.to_string(),
+            _ => format!("{}{}", collected_stdout, collected_stderr),
         };
 
         if !collected_stdout.is_empty() && !stdout_taps.is_empty() {
@@ -1289,6 +1492,15 @@ impl Interpreter {
                 let _ = self.call_sub_value(
                     tap.clone(),
                     vec![Value::str(collected_stderr.clone())],
+                    true,
+                );
+            }
+        }
+        if !collected_merged.is_empty() && !supply_taps.is_empty() {
+            for tap in &supply_taps {
+                let _ = self.call_sub_value(
+                    tap.clone(),
+                    vec![Value::str(collected_merged.clone())],
                     true,
                 );
             }

@@ -254,6 +254,14 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 ],
             },
         )),
+        Expr::MultiDimIndex { target, dimensions } => Ok((
+            r,
+            Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(rhs),
+            },
+        )),
         Expr::CallOn { target, args } => Ok((
             r,
             if args.is_empty() {
@@ -645,6 +653,20 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
+        if r.starts_with("X.") && !r.starts_with("X..") {
+            let after = &r[2..];
+            let after_trimmed = after.trim_start();
+            if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+                return Err(PError::expected_at(
+                    "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                    r,
+                ));
+            }
+            return Err(PError::expected_at(
+                "X::Syntax::CannotMeta: Cannot do . because it is too fiddly",
+                r,
+            ));
+        }
         // Infixed function call: [&func], R[&func], X[&func], Z[&func]
         if let Some((modifier, name, len)) = parse_infix_func_op(r) {
             let r = &r[len..];
@@ -867,6 +889,22 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         }
         // Meta operators: R-, X+, Z~, bare Z, bare X, R[...], etc.
         if let Some((meta, op, len)) = parse_meta_op(r) {
+            if meta == "X"
+                && op == "cmp"
+                && matches!(
+                    &left,
+                    Expr::MetaOp {
+                        meta: prev_meta,
+                        op: prev_op,
+                        ..
+                    } if prev_meta == "X" && prev_op == "cmp"
+                )
+            {
+                return Err(PError::expected_at(
+                    "Non-associative operator 'Xcmp' cannot be chained",
+                    r,
+                ));
+            }
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let needs_comma_list = (meta == "Z" || meta == "X")
@@ -1082,6 +1120,11 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::Index { target, index } => Expr::IndexAssign {
             target,
             index,
+            value: Box::new(source),
+        },
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+            target,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
             value: Box::new(source),
         },
         Expr::Call { name, mut args } => {
@@ -1390,6 +1433,21 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             r,
         ));
     }
+    // Detect X. metaop misuse.
+    if r.starts_with("X.") && !r.starts_with("X..") {
+        let after = &r[2..];
+        let after_trimmed = after.trim_start();
+        if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+            return Err(PError::expected_at(
+                "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                r,
+            ));
+        }
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot do . because it is too fiddly",
+            r,
+        ));
+    }
     if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
@@ -1695,6 +1753,9 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     }
     if r.starts_with("=~=") {
         return Some((ComparisonOp::ApproxEq, 3));
+    }
+    if r.starts_with("!=:=") {
+        return Some((ComparisonOp::ContainerNe, 4));
     }
     if r.starts_with("=:=") {
         return Some((ComparisonOp::ContainerEq, 3));

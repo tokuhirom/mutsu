@@ -42,6 +42,28 @@ fn parse_exists_secondary_adverb(input: &str) -> (&str, ExistsAdverb) {
     (input, ExistsAdverb::None)
 }
 
+/// Parse dynamic subscript adverb: :$delete, :$exists — the variable value
+/// determines whether the adverb is active at runtime.
+fn parse_dynamic_subscript_adverb(input: &str) -> Option<&str> {
+    if !input.starts_with(":$") {
+        return None;
+    }
+    let r = &input[2..];
+    // Read identifier
+    let end = r
+        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .unwrap_or(r.len());
+    if end == 0 {
+        return None;
+    }
+    let name = &r[..end];
+    // Only recognize known subscript adverb names
+    match name {
+        "delete" | "exists" => Some(&r[end..]),
+        _ => None,
+    }
+}
+
 fn parse_subscript_adverb(input: &str) -> Option<(&str, &'static str)> {
     if input.starts_with(":!kv") && !is_ident_char(input.as_bytes().get(4).copied()) {
         return Some((&input[4..], "not-kv"));
@@ -70,7 +92,26 @@ fn parse_subscript_adverb(input: &str) -> Option<(&str, &'static str)> {
     None
 }
 
+/// Extract the variable name from a MultiDimIndex target expression.
+fn multidim_target_var_name(target: &Expr) -> String {
+    match target {
+        Expr::ArrayVar(name) => format!("@{}", name),
+        Expr::HashVar(name) => format!("%{}", name),
+        Expr::Var(name) => name.clone(),
+        _ => String::new(),
+    }
+}
+
 fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
+    // Handle MultiDimIndex: @a[0;0;0]:kv etc.
+    if let Expr::MultiDimIndex { target, dimensions } = expr {
+        let mut args = vec![*target, Expr::Literal(Value::str(adverb.to_string()))];
+        args.extend(dimensions);
+        return Expr::Call {
+            name: Symbol::intern("__mutsu_multidim_subscript_adverb"),
+            args,
+        };
+    }
     let Expr::Index { target, index } = expr else {
         return expr;
     };
@@ -175,28 +216,76 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     }
 }
 
+/// Result of parsing bracket indices — either a single-dimension index or
+/// a multi-dimensional (semicolon-separated) index.
+enum ParsedBracketIndex {
+    /// Normal single-dimension index (possibly comma-separated list).
+    Single(Expr),
+    /// Multi-dimensional index: dimensions separated by semicolons.
+    /// Each dimension can itself be a comma-separated list.
+    MultiDim(Vec<Expr>),
+}
+
 fn parse_bracket_indices(input: &str) -> PResult<'_, Expr> {
+    let (rest, parsed) = parse_bracket_indices_inner(input)?;
+    match parsed {
+        ParsedBracketIndex::Single(expr) => Ok((rest, expr)),
+        // For callers that don't handle MultiDim, flatten to ArrayLiteral.
+        // The postfix parser will use parse_bracket_indices_inner directly.
+        ParsedBracketIndex::MultiDim(dims) => Ok((rest, Expr::ArrayLiteral(dims))),
+    }
+}
+
+fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
     let (r, first) = expression(input)?;
-    let mut indices = vec![first];
+    let mut current_dim = vec![first];
+    let mut dimensions: Vec<Expr> = Vec::new();
+    let mut has_semicolons = false;
     let mut r = r;
     loop {
         let (r2, _) = ws(r)?;
-        if r2.starts_with(',') || (r2.starts_with(';') && !r2.starts_with(";;")) {
-            let sep = if r2.starts_with(',') { ',' } else { ';' };
-            let (r3, _) = parse_char(r2, sep)?;
+        if r2.starts_with(',') {
+            let (r3, _) = parse_char(r2, ',')?;
             let (r3, _) = ws(r3)?;
             let (r3, next) = expression(r3)?;
-            indices.push(next);
+            current_dim.push(next);
             r = r3;
             continue;
         }
+        if r2.starts_with(';') && !r2.starts_with(";;") {
+            has_semicolons = true;
+            // Finish current dimension
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(std::mem::take(&mut current_dim))
+            };
+            dimensions.push(dim_expr);
+            current_dim = Vec::new();
+            let (r3, _) = parse_char(r2, ';')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if has_semicolons {
+            // Finish last dimension
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            };
+            dimensions.push(dim_expr);
+            return Ok((r2, ParsedBracketIndex::MultiDim(dimensions)));
+        }
         return Ok((
             r2,
-            if indices.len() == 1 {
-                indices.remove(0)
+            ParsedBracketIndex::Single(if current_dim.len() == 1 {
+                current_dim.remove(0)
             } else {
-                Expr::ArrayLiteral(indices)
-            },
+                Expr::ArrayLiteral(current_dim)
+            }),
         ));
     }
 }
@@ -580,7 +669,8 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
     if input.starts_with('^') && !input.starts_with("^..") {
         let rest = &input[1..];
-        if let Ok((rest, expr)) = postfix_expr_tight(rest) {
+        let parsed_operand = postfix_expr_tight(rest).or_else(|_| prefix_expr(rest));
+        if let Ok((rest, expr)) = parsed_operand {
             return postfix_expr_continue(
                 rest,
                 Expr::Binary {
@@ -1182,7 +1272,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Array indexing: [expr] or zen slice []
+        // Array indexing: [expr] or zen slice [] or multislice [a;b;c]
         if rest.starts_with('[') {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
@@ -1199,13 +1289,57 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = after;
                 continue;
             }
-            let (r, index) = parse_bracket_indices(r)?;
+            // Check for || syntax: @a[|| @indices]
+            // || takes a list and treats each element as a dimension separator.
+            if r.starts_with("||") && !r.starts_with("|||") {
+                let r2 = &r[2..];
+                let (r2, _) = ws(r2)?;
+                // Parse comma-separated list of dimension expressions
+                let (r2, first) = expression(r2)?;
+                let (mut r2, _) = ws(r2)?;
+                let mut items = vec![first];
+                while r2.starts_with(',') && !r2.starts_with(",,") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    if r3.starts_with(']') {
+                        r2 = r3;
+                        break;
+                    }
+                    let (r3, item) = expression(r3)?;
+                    items.push(item);
+                    let (r3, _) = ws(r3)?;
+                    r2 = r3;
+                }
+                let (r2, _) = parse_char(r2, ']')?;
+                let list_expr = if items.len() == 1 {
+                    items.remove(0)
+                } else {
+                    Expr::ArrayLiteral(items)
+                };
+                expr = Expr::MultiDimIndex {
+                    target: Box::new(expr),
+                    dimensions: vec![list_expr],
+                };
+                rest = r2;
+                continue;
+            }
+            let (r, parsed) = parse_bracket_indices_inner(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
-            expr = Expr::Index {
-                target: Box::new(expr),
-                index: Box::new(index),
-            };
+            match parsed {
+                ParsedBracketIndex::Single(index) => {
+                    expr = Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(index),
+                    };
+                }
+                ParsedBracketIndex::MultiDim(dimensions) => {
+                    expr = Expr::MultiDimIndex {
+                        target: Box::new(expr),
+                        dimensions,
+                    };
+                }
+            }
             rest = r;
             continue;
         }
@@ -1442,7 +1576,15 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
         // Adverbs on subscript expressions: :exists / :!exists / :delete
         // These can appear with whitespace after ] or } subscripts
-        if matches!(&expr, Expr::Index { .. } | Expr::ZenSlice(_)) {
+        // Also on expressions already wrapped with adverbs (Exists, __mutsu_multidim_adverb)
+        if matches!(
+            &expr,
+            Expr::Index { .. }
+                | Expr::ZenSlice(_)
+                | Expr::MultiDimIndex { .. }
+                | Expr::Exists { .. }
+        ) || matches!(&expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb" || name == "__mutsu_multidim_adverb" || name == "__mutsu_multidim_subscript_adverb" || name == "__mutsu_multidim_delete" || name == "__mutsu_multidim_dynamic_adverb")
+        {
             let (r_adv2, _) = ws(rest)?;
             if let Some((r_after_adv, adv_name)) = parse_subscript_adverb(r_adv2) {
                 // Avoid consuming ternary `:v` separator in `?? !!` expressions.
@@ -1459,13 +1601,145 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
             if r_adv2.starts_with(":delete") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {
                 rest = &r_adv2[7..];
-                expr = Expr::MethodCall {
-                    target: Box::new(expr),
-                    name: Symbol::intern("DELETE-KEY"),
-                    args: vec![],
-                    modifier: None,
-                    quoted: false,
-                };
+                if let Expr::MultiDimIndex {
+                    target: mdt,
+                    dimensions: dims,
+                } = expr
+                {
+                    let var_name = multidim_target_var_name(&mdt);
+                    let mut args = vec![Expr::Literal(Value::str(var_name))];
+                    args.extend(dims);
+                    expr = Expr::Call {
+                        name: Symbol::intern("__mutsu_multidim_delete"),
+                        args,
+                    };
+                } else {
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern("DELETE-KEY"),
+                        args: vec![],
+                        modifier: None,
+                        quoted: false,
+                    };
+                }
+                continue;
+            }
+            if r_adv2.starts_with(":!delete") && !is_ident_char(r_adv2.as_bytes().get(8).copied()) {
+                // :!delete is a no-op — just skip the adverb
+                rest = &r_adv2[8..];
+                continue;
+            }
+            // Dynamic adverb: :$delete — runtime-decided delete
+            if let Some(r_after) = parse_dynamic_subscript_adverb(r_adv2) {
+                let adverb_var = &r_adv2[2..r_adv2.len() - r_after.len()];
+                if let Expr::MultiDimIndex {
+                    target: mdt,
+                    dimensions: dims,
+                } = expr
+                {
+                    // For MultiDimIndex, pass var_name + adverb info + indices
+                    let var_name = multidim_target_var_name(&mdt);
+                    let mut args = vec![
+                        Expr::Literal(Value::str(var_name)),
+                        Expr::Literal(Value::str(adverb_var.to_string())),
+                        Expr::Var(adverb_var.to_string()),
+                    ];
+                    args.extend(dims);
+                    expr = Expr::Call {
+                        name: Symbol::intern("__mutsu_multidim_dynamic_adverb"),
+                        args,
+                    };
+                } else if matches!(&expr, Expr::Call { name, .. }
+                    if name == "__mutsu_multidim_subscript_adverb"
+                    || name == "__mutsu_multidim_exists_adverb")
+                {
+                    // Wrap adverb calls: inject delete flag into the call
+                    // by converting to a combined handler
+                    if let Expr::Call {
+                        name: inner_name,
+                        mut args,
+                    } = expr
+                    {
+                        // Insert dynamic delete flag after adverb name
+                        // Original args: [target_expr, adverb_name, dim0, dim1, ...]
+                        // New args: [var_name_str, adverb_name, delete_var, dim0, dim1, ...]
+                        let target = args.remove(0);
+                        let var_name_str = multidim_target_var_name(&target);
+                        let adverb_name = args.remove(0);
+                        let dims = args;
+                        let mut new_args = vec![
+                            Expr::Literal(Value::str(var_name_str)),
+                            adverb_name,
+                            Expr::Var(adverb_var.to_string()),
+                        ];
+                        new_args.extend(dims);
+                        let fn_name = if inner_name == "__mutsu_multidim_subscript_adverb" {
+                            "__mutsu_multidim_subscript_adverb_dyn"
+                        } else {
+                            "__mutsu_multidim_exists_adverb_dyn"
+                        };
+                        expr = Expr::Call {
+                            name: Symbol::intern(fn_name),
+                            args: new_args,
+                        };
+                    } else {
+                        unreachable!()
+                    }
+                } else if let Expr::Exists {
+                    target,
+                    negated,
+                    adverb: exists_adv,
+                    ..
+                } = &expr
+                {
+                    // :$delete on Exists { target: MultiDimIndex }
+                    if let Expr::MultiDimIndex {
+                        target: mdt,
+                        dimensions: dims,
+                    } = target.as_ref()
+                    {
+                        let var_name = multidim_target_var_name(mdt);
+                        let adverb_str = match exists_adv {
+                            ExistsAdverb::Kv => "kv",
+                            ExistsAdverb::P => "p",
+                            ExistsAdverb::InvalidK => "k",
+                            ExistsAdverb::InvalidV => "v",
+                            _ => "none",
+                        };
+                        let negated_val = *negated;
+                        let dims = dims.clone();
+                        let mut new_args = vec![
+                            Expr::Literal(Value::str(var_name)),
+                            Expr::Literal(Value::Bool(negated_val)),
+                            Expr::Var(adverb_var.to_string()),
+                            Expr::Literal(Value::str(adverb_str.to_string())),
+                        ];
+                        new_args.extend(dims);
+                        expr = Expr::Call {
+                            name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
+                            args: new_args,
+                        };
+                    } else {
+                        expr = Expr::Call {
+                            name: Symbol::intern("__mutsu_multidim_adverb"),
+                            args: vec![
+                                expr,
+                                Expr::Literal(Value::str(adverb_var.to_string())),
+                                Expr::Var(adverb_var.to_string()),
+                            ],
+                        };
+                    }
+                } else {
+                    expr = Expr::Call {
+                        name: Symbol::intern("__mutsu_multidim_adverb"),
+                        args: vec![
+                            expr,
+                            Expr::Literal(Value::str(adverb_var.to_string())),
+                            Expr::Var(adverb_var.to_string()),
+                        ],
+                    };
+                }
+                rest = r_after;
                 continue;
             }
         }
