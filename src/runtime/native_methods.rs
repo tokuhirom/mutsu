@@ -20,6 +20,13 @@ fn supply_taps_map() -> &'static SupplyTapsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+type SupplyCollectedMap = std::sync::Mutex<HashMap<u64, String>>;
+
+fn supply_collected_map() -> &'static SupplyCollectedMap {
+    static MAP: OnceLock<SupplyCollectedMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 type CancellationMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
 
 fn cancellation_map() -> &'static CancellationMap {
@@ -511,6 +518,19 @@ pub(super) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
     }
 }
 
+pub(super) fn set_supply_collected_output(supply_id: u64, output: String) {
+    if let Ok(mut map) = supply_collected_map().lock() {
+        map.insert(supply_id, output);
+    }
+}
+
+pub(super) fn get_supply_collected_output(supply_id: u64) -> Option<String> {
+    supply_collected_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&supply_id).cloned())
+}
+
 pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds: f64) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
@@ -980,7 +1000,7 @@ impl Interpreter {
             "Compiler" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),
-            "Proc::Async" => Ok(self.native_proc_async(attributes, method)),
+            "Proc::Async" => self.native_proc_async(attributes, method, args),
             "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" => self.native_supplier(attributes, method, args),
@@ -1469,19 +1489,93 @@ impl Interpreter {
 
     // --- Proc::Async immutable ---
 
-    fn native_proc_async(&self, attributes: &HashMap<String, Value>, method: &str) -> Value {
+    fn native_proc_async(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let proc_async_error = |class_name: &str, attrs: &[(&str, Value)]| {
+            let mut ex_attrs = HashMap::new();
+            for (k, v) in attrs {
+                ex_attrs.insert((*k).to_string(), v.clone());
+            }
+            let message = class_name.to_string();
+            ex_attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern(class_name), ex_attrs);
+            RuntimeError {
+                exception: Some(Box::new(ex)),
+                ..RuntimeError::new(message)
+            }
+        };
         match method {
-            "command" => attributes
-                .get("cmd")
-                .cloned()
-                .unwrap_or(Value::array(Vec::new())),
-            "started" => attributes
+            "command" => {
+                let mut cmd = attributes
+                    .get("cmd")
+                    .cloned()
+                    .unwrap_or(Value::array(Vec::new()));
+                if let Value::Array(items, ..) = &cmd
+                    && items.len() == 1
+                {
+                    cmd = match &items[0] {
+                        Value::Array(inner, kind) => Value::Array(inner.clone(), *kind),
+                        Value::Seq(inner) => Value::real_array(inner.to_vec()),
+                        Value::Slip(inner) => Value::real_array(inner.to_vec()),
+                        _ => cmd,
+                    };
+                }
+                Ok(cmd)
+            }
+            "started" => Ok(attributes
                 .get("started")
                 .cloned()
-                .unwrap_or(Value::Bool(false)),
-            "stdout" => attributes.get("stdout").cloned().unwrap_or(Value::Nil),
-            "stderr" => attributes.get("stderr").cloned().unwrap_or(Value::Nil),
-            _ => Value::Nil,
+                .unwrap_or(Value::Bool(false))),
+            "w" => Ok(attributes.get("w").cloned().unwrap_or(Value::Bool(false))),
+            "pid" => {
+                if let Some(Value::Int(pid)) = attributes.get("pid") {
+                    let promise = SharedPromise::new();
+                    promise.keep(Value::Int(*pid), String::new(), String::new());
+                    Ok(Value::Promise(promise))
+                } else if let Some(promise @ Value::Promise(_)) = attributes.get("ready_promise") {
+                    Ok(promise.clone())
+                } else {
+                    Ok(Value::Promise(SharedPromise::new()))
+                }
+            }
+            "stdout" | "stderr" => {
+                if attributes
+                    .get("supply_selected")
+                    .is_some_and(|v| v.truthy())
+                {
+                    return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
+                }
+                if attributes.get("started").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::TapBeforeSpawn",
+                        &[("handle", Value::str_from(method))],
+                    ));
+                }
+                if !args.is_empty() {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::CharsOrBytes",
+                        &[("handle", Value::str_from(method))],
+                    ));
+                }
+                Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+            }
+            "Supply" => {
+                if attributes
+                    .get("stdout_selected")
+                    .is_some_and(|v| v.truthy())
+                    || attributes
+                        .get("stderr_selected")
+                        .is_some_and(|v| v.truthy())
+                {
+                    return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
+                }
+                Ok(attributes.get("supply").cloned().unwrap_or(Value::Nil))
+            }
+            _ => Ok(Value::Nil),
         }
     }
 

@@ -1,5 +1,5 @@
 use Test;
-plan 11;
+plan 14;
 
 # Basic construction and start
 my $p = Proc::Async.new("echo", "hi");
@@ -59,3 +59,25 @@ is $promise.result, 0, 'start returns exit code';
     await $pr;
     is $out, "hello from stdin", '.write sends data to stdin';
 }
+
+# .Supply merges stdout and stderr streams
+{
+    my $p7 = Proc::Async.new($*EXECUTABLE, '-e', 'say "boo"; note "boo";');
+    my $merged = '';
+    $p7.Supply.tap({ $merged ~= $_ });
+    await $p7.start;
+    is $merged, "boo\nboo\n", '.Supply merges stdout and stderr';
+}
+
+# .Supply and .stdout/.stderr are mutually exclusive
+throws-like {
+    my $p8 = Proc::Async.new($*EXECUTABLE);
+    $ = $p8.Supply;
+    $ = $p8.stdout;
+}, X::Proc::Async::SupplyOrStd, 'cannot call .stdout after .Supply';
+
+throws-like {
+    my $p9 = Proc::Async.new($*EXECUTABLE);
+    $ = $p9.stdout;
+    $ = $p9.Supply;
+}, X::Proc::Async::SupplyOrStd, 'cannot call .Supply after .stdout';

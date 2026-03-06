@@ -494,6 +494,28 @@ impl VM {
         {
             skip_native = true;
         }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(
+                method.as_str(),
+                "start"
+                    | "kill"
+                    | "write"
+                    | "close-stdin"
+                    | "ready"
+                    | "print"
+                    | "say"
+                    | "command"
+                    | "started"
+                    | "w"
+                    | "pid"
+                    | "stdout"
+                    | "stderr"
+                    | "Supply"
+            )
+        {
+            skip_native = true;
+        }
         if quoted
             && skip_native
             && matches!(
@@ -1059,6 +1081,28 @@ impl VM {
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(
+                method.as_str(),
+                "start"
+                    | "kill"
+                    | "write"
+                    | "close-stdin"
+                    | "ready"
+                    | "print"
+                    | "say"
+                    | "command"
+                    | "started"
+                    | "w"
+                    | "pid"
+                    | "stdout"
+                    | "stderr"
+                    | "Supply"
+            )
         {
             skip_native = true;
         }
