@@ -44,6 +44,147 @@ pub(crate) mod temporal_dispatch;
 
 use std::collections::HashMap;
 
+fn parse_raku_int_from_str(s: &str) -> Option<Value> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let normalized = trimmed.replace('\u{2212}', "-");
+    let (sign, body) = if let Some(rest) = normalized.strip_prefix('-') {
+        (-1_i32, rest)
+    } else if let Some(rest) = normalized.strip_prefix('+') {
+        (1_i32, rest)
+    } else {
+        (1_i32, normalized.as_str())
+    };
+    let body_no_underscores = body.replace('_', "");
+    if body_no_underscores.is_empty() {
+        return None;
+    }
+    if let Some((radix, digits)) = body_no_underscores
+        .strip_prefix("0x")
+        .or_else(|| body_no_underscores.strip_prefix("0X"))
+        .map(|digits| (16_u32, digits))
+        .or_else(|| {
+            body_no_underscores
+                .strip_prefix("0o")
+                .or_else(|| body_no_underscores.strip_prefix("0O"))
+                .map(|digits| (8_u32, digits))
+        })
+        .or_else(|| {
+            body_no_underscores
+                .strip_prefix("0b")
+                .or_else(|| body_no_underscores.strip_prefix("0B"))
+                .map(|digits| (2_u32, digits))
+        })
+        .or_else(|| {
+            body_no_underscores
+                .strip_prefix("0d")
+                .or_else(|| body_no_underscores.strip_prefix("0D"))
+                .map(|digits| (10_u32, digits))
+        })
+    {
+        if digits.is_empty() {
+            return None;
+        }
+        let mut n = num_bigint::BigInt::parse_bytes(digits.as_bytes(), radix)?;
+        if sign < 0 {
+            n = -n;
+        }
+        return Some(Value::from_bigint(n));
+    }
+
+    let signed_no_underscores = if sign < 0 {
+        format!("-{}", body_no_underscores)
+    } else {
+        body_no_underscores
+    };
+    if let Ok(n) = signed_no_underscores.parse::<num_bigint::BigInt>() {
+        return Some(Value::from_bigint(n));
+    }
+
+    if let Ok(f) = signed_no_underscores.parse::<f64>()
+        && f.is_finite()
+    {
+        let truncated = f.trunc();
+        let digits = format!("{:.0}", truncated);
+        if let Ok(n) = digits.parse::<num_bigint::BigInt>() {
+            return Some(Value::from_bigint(n));
+        }
+    }
+    None
+}
+
+fn int_lsb_value(target: &Value) -> Option<Value> {
+    match target {
+        Value::Int(i) => {
+            if *i == 0 {
+                Some(Value::Nil)
+            } else {
+                Some(Value::Int(i.unsigned_abs().trailing_zeros() as i64))
+            }
+        }
+        Value::BigInt(n) => {
+            if n.is_zero() {
+                return Some(Value::Nil);
+            }
+            let one = num_bigint::BigInt::from(1u8);
+            let mut x = n.as_ref().abs();
+            let mut pos = 0_i64;
+            while (&x & &one).is_zero() {
+                x >>= 1;
+                pos += 1;
+            }
+            Some(Value::Int(pos))
+        }
+        _ => None,
+    }
+}
+
+fn int_msb_value(target: &Value) -> Option<Value> {
+    match target {
+        Value::Int(i) => {
+            if *i == 0 {
+                return Some(Value::Nil);
+            }
+            if *i > 0 {
+                return Some(Value::Int((63 - i.leading_zeros()) as i64));
+            }
+            if *i == -1 {
+                return Some(Value::Int(0));
+            }
+            let m = i.unsigned_abs().saturating_sub(1);
+            let bitlen = (64 - m.leading_zeros()) as i64;
+            Some(Value::Int(bitlen))
+        }
+        Value::BigInt(n) => {
+            if n.is_zero() {
+                return Some(Value::Nil);
+            }
+            if n.sign() == num_bigint::Sign::Minus {
+                if **n == num_bigint::BigInt::from(-1i8) {
+                    return Some(Value::Int(0));
+                }
+                let mut x = n.as_ref().abs() - num_bigint::BigInt::from(1u8);
+                let mut bitlen = 0_i64;
+                while !x.is_zero() {
+                    x >>= 1;
+                    bitlen += 1;
+                }
+                return Some(Value::Int(bitlen));
+            }
+            let mut x = n.as_ref().clone();
+            let mut msb = -1_i64;
+            while !x.is_zero() {
+                x >>= 1;
+                msb += 1;
+            }
+            Some(Value::Int(msb))
+        }
+        _ => None,
+    }
+}
+
 /// Produce Raku-compatible `.raku` representation for a Match object.
 fn match_raku_repr(attributes: &HashMap<String, Value>) -> String {
     let orig = attributes
@@ -269,7 +410,13 @@ pub(crate) fn native_method_0arg(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.resolve();
     let method = method.as_str();
-    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner
+
+    // Scalar containers are transparent for method dispatch.
+    if let Value::Scalar(inner) = target {
+        return native_method_0arg(inner, method_sym);
+    }
+
+    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
@@ -522,7 +669,7 @@ fn range_gist_string(value: &Value) -> String {
 
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => format!("$({})", inner),
@@ -531,7 +678,7 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
 
 fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => format!("$({})", inner),
@@ -656,6 +803,8 @@ fn raku_value(v: &Value) -> String {
             };
             format!("{} => {}", key_repr, raku_value(value))
         }
+        Value::Nil => "Nil".to_string(),
+        Value::Package(name) => name.resolve().to_string(),
         other => other.to_string_value(),
     }
 }
@@ -1091,10 +1240,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Num(f) => Value::Int(*f as i64),
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::Str(s) => {
-                    if let Ok(i) = s.trim().parse::<i64>() {
-                        Value::Int(i)
-                    } else if let Ok(f) = s.trim().parse::<f64>() {
-                        Value::Int(f as i64)
+                    if let Some(v) = parse_raku_int_from_str(s) {
+                        v
                     } else {
                         return Some(Err(RuntimeError::new(format!(
                             "X::Str::Numeric: Cannot convert string '{}' to a number",
@@ -1309,8 +1456,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
-                // LazyList needs interpreter to force; fall through to runtime
-                Value::LazyList(_) => return None,
+                // LazyList is lazy — .elems returns a Failure
+                Value::LazyList(_) => {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str("Cannot .elems a lazy list".to_string()),
+                    );
+                    let exception =
+                        Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    return Some(Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    )));
+                }
                 _ => Value::Int(1),
             };
             Some(Ok(result))
@@ -1341,6 +1503,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "lsb" => int_lsb_value(target).map(Ok),
+        "msb" => int_msb_value(target).map(Ok),
         "rand" => {
             let max = match target {
                 Value::Int(n) => *n as f64,
@@ -1825,6 +1989,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
         "lazy" => {
             if is_value_lazy(target) {
+                if let Value::LazyList(list) = target {
+                    let mut env = list.env.clone();
+                    env.insert(
+                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                        Value::Bool(true),
+                    );
+                    let cache = list.cache.lock().unwrap().clone();
+                    return Some(Ok(Value::LazyList(std::sync::Arc::new(
+                        crate::value::LazyList {
+                            body: list.body.clone(),
+                            env,
+                            cache: std::sync::Mutex::new(cache),
+                        },
+                    ))));
+                }
                 return Some(Ok(target.clone()));
             }
             let items = if let Some(items) = target.as_list_items() {
@@ -1832,10 +2011,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             } else {
                 return Some(Ok(target.clone()));
             };
+            let mut env = crate::env::Env::new();
+            env.insert(
+                "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                Value::Bool(true),
+            );
             Some(Ok(Value::LazyList(std::sync::Arc::new(
                 crate::value::LazyList {
                     body: vec![],
-                    env: crate::env::Env::new(),
+                    env,
                     cache: std::sync::Mutex::new(Some(items)),
                 },
             ))))
@@ -2056,16 +2240,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
                 Some(Ok(Value::str(format!("slip({})", inner))))
             }
-            Value::Junction { kind, values } if method == "raku" || method == "perl" => {
-                let kind_str = match kind {
-                    crate::value::JunctionKind::Any => "any",
-                    crate::value::JunctionKind::All => "all",
-                    crate::value::JunctionKind::One => "one",
-                    crate::value::JunctionKind::None => "none",
-                };
-                let inner = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                Some(Ok(Value::str(format!("{}({})", kind_str, inner))))
-            }
+            Value::Junction { .. } if method == "raku" || method == "perl" => None,
             Value::Pair(k, v) => {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(raku_value(target))))
@@ -2226,6 +2401,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
+        },
+        "of" => match target {
+            Value::Hash(_) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
+                Some(Ok(Value::Package(Symbol::intern("Mu"))))
+            }
+            Value::Array(..) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            _ => None,
         },
         "tclc" => Some(Ok(Value::str(crate::value::tclc_str(
             &target.to_string_value(),
@@ -2501,7 +2684,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "item" => match target {
             Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
-            other => Some(Ok(other.clone())),
+            other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         },
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array

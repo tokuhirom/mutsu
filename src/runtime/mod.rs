@@ -175,6 +175,7 @@ struct RoleCandidateDef {
 struct SubsetDef {
     base: String,
     predicate: Option<Expr>,
+    version: String,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +187,8 @@ pub(crate) struct MethodDef {
     pub(crate) is_private: bool,
     pub(crate) is_multi: bool,
     pub(crate) is_my: bool,
+    /// Role where this method was originally declared when composed into a class.
+    pub(crate) role_origin: Option<String>,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
 }
@@ -247,6 +250,8 @@ struct IoHandleState {
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
     closed: bool,
+    out_buffer_capacity: Option<usize>,
+    out_buffer_pending: Vec<u8>,
     #[allow(dead_code)]
     bin: bool,
 }
@@ -989,6 +994,7 @@ impl Interpreter {
                     "spurt",
                     "unlink",
                     "starts-with",
+                    "watch",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -1005,8 +1011,25 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "put", "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
+                    "close",
+                    "get",
+                    "getc",
+                    "lines",
+                    "words",
+                    "read",
+                    "write",
+                    "print",
+                    "say",
+                    "put",
+                    "flush",
+                    "seek",
+                    "tell",
+                    "eof",
+                    "encoding",
+                    "opened",
+                    "slurp",
+                    "out-buffer",
+                    "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -1540,6 +1563,7 @@ impl Interpreter {
                         is_private: false,
                         is_multi: false,
                         is_my: false,
+                        role_origin: None,
                         return_type: None,
                         compiled_code: None,
                     };
@@ -2572,6 +2596,33 @@ impl Interpreter {
             }
         }
         self.shared_vars_active = true;
+        let mut referenced_handle_ids = std::collections::HashSet::new();
+        for value in self.env.values() {
+            if let Some(id) = Self::handle_id_from_value(value) {
+                referenced_handle_ids.insert(id);
+            }
+        }
+        let mut cloned_handles = HashMap::new();
+        for (id, handle) in &self.handles {
+            if handle.closed || !referenced_handle_ids.contains(id) {
+                continue;
+            }
+            let cloned = IoHandleState {
+                target: handle.target,
+                mode: handle.mode,
+                path: handle.path.clone(),
+                line_separators: handle.line_separators.clone(),
+                line_chomp: handle.line_chomp,
+                encoding: handle.encoding.clone(),
+                file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
+                socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
+                closed: handle.closed,
+                out_buffer_capacity: handle.out_buffer_capacity,
+                out_buffer_pending: handle.out_buffer_pending.clone(),
+                bin: handle.bin,
+            };
+            cloned_handles.insert(*id, cloned);
+        }
         let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
@@ -2590,8 +2641,8 @@ impl Interpreter {
             proto_functions: self.proto_functions.clone(),
             token_defs: self.token_defs.clone(),
             lib_paths: self.lib_paths.clone(),
-            handles: HashMap::new(),
-            next_handle_id: 1,
+            handles: cloned_handles,
+            next_handle_id: self.next_handle_id,
             program_path: self.program_path.clone(),
             current_package: self.current_package.clone(),
             routine_stack: Vec::new(),
@@ -2696,12 +2747,36 @@ impl Interpreter {
             // shared_vars first when shared_vars_active is true.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
+            if let Some(shared_value) = sv.remove(key) {
+                if let Value::Array(mut arc_items, kind) = shared_value {
+                    let items = Arc::make_mut(&mut arc_items);
+                    items.extend(values);
+                    let result = Value::Array(Arc::clone(&arc_items), kind);
+                    sv.insert(key.to_string(), Value::Array(arc_items, kind));
+                    drop(sv);
+                    let needs_mark_dirty = self
+                        .shared_vars_dirty
+                        .read()
+                        .map(|dirty| !dirty.contains(key))
+                        .unwrap_or(false);
+                    if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(key.to_string());
+                    }
+                    return result;
+                }
+                sv.insert(key.to_string(), shared_value);
+            }
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                let needs_mark_dirty = self
+                    .shared_vars_dirty
+                    .read()
+                    .map(|dirty| !dirty.contains(key))
+                    .unwrap_or(false);
+                if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(key.to_string());
                 }
                 return result;
@@ -2711,8 +2786,8 @@ impl Interpreter {
         if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(key) {
             let items = Arc::make_mut(arc_items);
             items.extend(values);
-            // Normalize @-variables to ArrayKind::Array (matching set_shared_var behavior)
-            if key.starts_with('@') && !kind.is_itemized() {
+            // Normalize @-variables only from List to Array while preserving Shaped.
+            if key.starts_with('@') && *kind == ArrayKind::List {
                 *kind = ArrayKind::Array;
             }
             return Value::Array(Arc::clone(arc_items), *kind);
@@ -2743,9 +2818,8 @@ impl Interpreter {
         // Ensure @-variables always store Array(true) (real Arrays)
         let value = if key.starts_with('@') {
             match value {
-                Value::Array(items, kind) if !kind.is_itemized() => {
-                    Value::Array(items, ArrayKind::Array)
-                }
+                // Preserve Shaped arrays; only normalize List to Array.
+                Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
                 other => other,
             }
         } else {

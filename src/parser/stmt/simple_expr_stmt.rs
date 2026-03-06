@@ -13,6 +13,18 @@ use crate::value::Value;
 use super::simple::{TMP_INDEX_COUNTER, add_xor_sink_warnings, parse_hyper_assign_op};
 use super::{is_stmt_modifier_keyword, keyword, parse_comma_or_expr, parse_statement_modifier};
 
+fn starts_with_term_token(input: &str) -> bool {
+    let Some(ch) = input.chars().next() else {
+        return false;
+    };
+    ch.is_ascii_digit()
+        || ch.is_alphabetic()
+        || matches!(
+            ch,
+            '$' | '@' | '%' | '&' | '\'' | '"' | '‘' | '’' | '“' | '”' | '(' | '[' | '{' | ':'
+        )
+}
+
 fn method_lvalue_assign_expr(
     target: Expr,
     target_var_name: Option<String>,
@@ -52,6 +64,84 @@ fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) 
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
     }
+}
+
+fn bind_source_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Var(name) => Some(name.clone()),
+        Expr::ArrayVar(name) => Some(format!("@{}", name)),
+        Expr::HashVar(name) => Some(format!("%{}", name)),
+        _ => None,
+    }
+}
+
+fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
+    match rhs {
+        Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
+            items
+                .iter()
+                .map(|item| {
+                    if let Some(name) = bind_source_name(item) {
+                        Expr::Literal(Value::str(name))
+                    } else {
+                        Expr::Literal(Value::Nil)
+                    }
+                })
+                .collect(),
+        ),
+        other => {
+            if let Some(name) = bind_source_name(other) {
+                Expr::ArrayLiteral(vec![Expr::Literal(Value::str(name))])
+            } else {
+                Expr::ArrayLiteral(vec![Expr::Literal(Value::Nil)])
+            }
+        }
+    }
+}
+
+fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
+    let Expr::ArrayLiteral(items) = lhs else {
+        return None;
+    };
+    let mut saw_whatever = false;
+    let mut lvalues: Vec<Expr> = Vec::new();
+    for item in items {
+        if matches!(item, Expr::Whatever) {
+            saw_whatever = true;
+            continue;
+        }
+        lvalues.push(item);
+    }
+    if !saw_whatever || lvalues.len() != 1 {
+        return None;
+    }
+    let target = lvalues.into_iter().next()?;
+    Some(match target {
+        Expr::Var(name) => Stmt::Assign {
+            name,
+            expr: rhs,
+            op: AssignOp::Assign,
+        },
+        Expr::ArrayVar(name) => Stmt::Assign {
+            name: format!("@{}", name),
+            expr: Expr::Call {
+                name: Symbol::intern("__mutsu_star_lvalue_rhs"),
+                args: vec![Expr::Literal(Value::str(format!("@{}", name))), rhs],
+            },
+            op: AssignOp::Assign,
+        },
+        Expr::HashVar(name) => Stmt::Assign {
+            name: format!("%{}", name),
+            expr: rhs,
+            op: AssignOp::Assign,
+        },
+        Expr::Index { target, index } => Stmt::Expr(Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(rhs),
+        }),
+        _ => return None,
+    })
 }
 
 /// Parse an expression statement (fallback).
@@ -100,7 +190,23 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     })?;
 
     // Check for index assignment after expression
+    let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
+    let separator = &rest_before_ws[..rest_before_ws.len() - rest.len()];
+    let separated_by_newline = separator.contains('\n') || separator.contains('\r');
+    if !separated_by_newline
+        && matches!(&expr, Expr::BareWord(name) if name == "int")
+        && !rest.is_empty()
+        && !rest.starts_with(';')
+        && !rest.starts_with('}')
+        && !rest.starts_with(')')
+        && !rest.starts_with(']')
+        && !rest.starts_with(',')
+        && !is_stmt_modifier_keyword(rest)
+        && starts_with_term_token(rest)
+    {
+        return Err(PError::expected("statement end"));
+    }
     if let Some(stripped) = rest
         .strip_prefix("\u{00BB}.=")
         .or_else(|| rest.strip_prefix(">>.="))
@@ -299,7 +405,10 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
         }
     }
-    if matches!(expr, Expr::Index { .. }) && rest.starts_with('=') && !rest.starts_with("==") {
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
+        && rest.starts_with('=')
+        && !rest.starts_with("==")
+    {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
@@ -310,6 +419,14 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
+        if let Expr::MultiDimIndex { target, dimensions } = expr {
+            let stmt = Stmt::Expr(Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(value),
+            });
+            return parse_statement_modifier(rest, stmt);
+        }
         if let Expr::Index { target, index } = expr {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
@@ -351,9 +468,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         });
         return parse_statement_modifier(rest, stmt);
     }
-    if matches!(&expr, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::ArrayVar(_)))
-        && rest.starts_with(":=")
-    {
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) && rest.starts_with(":=") {
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
@@ -364,16 +479,29 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        if let Expr::Index { target, index } = expr {
-            let stmt = Stmt::Expr(Expr::IndexAssign {
-                target,
-                index,
-                value: Box::new(Expr::Call {
-                    name: Symbol::intern("__mutsu_bind_index_value"),
-                    args: vec![value],
-                }),
-            });
-            return parse_statement_modifier(rest, stmt);
+        let source_meta = bind_source_metadata_expr(&value);
+        let bind_value = Expr::Call {
+            name: Symbol::intern("__mutsu_bind_index_value"),
+            args: vec![value, source_meta],
+        };
+        match expr {
+            Expr::Index { target, index } => {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index,
+                    value: Box::new(bind_value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
+            Expr::MultiDimIndex { target, dimensions } => {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index: Box::new(Expr::ArrayLiteral(dimensions)),
+                    value: Box::new(bind_value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
+            _ => {}
         }
     }
 
@@ -486,7 +614,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 expr,
                 op: AssignOp::Assign,
             },
-            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr)),
+            target => {
+                if let Some(stmt) = single_target_list_lvalue_stmt(target.clone(), expr.clone()) {
+                    stmt
+                } else {
+                    Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr))
+                }
+            }
         };
         return parse_statement_modifier(r, stmt);
     }
@@ -561,7 +695,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::Literal(_) | Expr::BareWord(_) => {
                 Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
             }
-            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs)),
+            target => {
+                if let Some(stmt) = single_target_list_lvalue_stmt(target.clone(), rhs.clone()) {
+                    stmt
+                } else {
+                    Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs))
+                }
+            }
         };
         return parse_statement_modifier(r, stmt);
     }

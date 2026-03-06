@@ -134,6 +134,11 @@ pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Some((name, consumed_len, callable)) =
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
     {
+        // If the declared callable is immediately followed by `(`, defer to
+        // identifier_or_call so `name(...)` parses as a single call expression.
+        if callable && input[consumed_len..].starts_with('(') {
+            return Err(PError::expected("declared term symbol"));
+        }
         let expr = if callable {
             Expr::Call {
                 name: Symbol::intern(&name),
@@ -1654,6 +1659,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);
+        // Raku removed prefix/listop `int`; only `int(...)` should parse as the builtin.
+        if name == "int" && !is_user_sub && !is_user_prefix_sub {
+            return Ok((rest, Expr::BareWord(name)));
+        }
+        let is_imported_sub = crate::parser::stmt::simple::is_imported_function(&name);
         let call_name = if is_user_prefix_sub {
             format!("prefix:<{}>", name)
         } else {
@@ -1666,6 +1676,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
             }
         } else if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone()) {
+            return Ok((r2, expr));
+        } else if is_imported_sub
+            && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone())
+        {
             return Ok((r2, expr));
         }
         if hyphen_forward_call && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
@@ -1688,7 +1702,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next.is_ascii_digit()
             || starts_with_term_keyword(r)
             || hyphen_forward_call
-            || is_user_sub)
+            || is_user_sub
+            || is_imported_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
             let (r2, invocant_colon_call) =

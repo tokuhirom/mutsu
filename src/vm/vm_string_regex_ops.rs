@@ -48,15 +48,26 @@ fn samemark_per_word(target: &str, source: &str) -> String {
 }
 
 impl VM {
+    fn should_retry_with_canonical_infix_name(name: &str) -> bool {
+        matches!(
+            name,
+            "(<=)" | "⊆" | "(>=)" | "⊇" | "(<)" | "⊂" | "(>)" | "⊃" | "⊈" | "⊉"
+        )
+    }
+
     pub(super) fn exec_subst_op(
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        nth_idx: Option<u32>,
+        x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = Self::const_str(code, replacement_idx).to_string();
+        let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let x_count = x_count.map(|n| n as usize);
         let target = self
             .interpreter
             .env()
@@ -64,33 +75,31 @@ impl VM {
             .cloned()
             .unwrap_or(Value::Nil);
         let text = target.to_string_value();
-        if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
-            let start_b = runtime::char_idx_to_byte(&text, start);
-            let end_b = runtime::char_idx_to_byte(&text, end);
-            let matched_text = &text[start_b..end_b];
-            let replacement = if samemark {
-                // Use per-word samemark when both source and replacement contain whitespace
-                if matched_text.contains(char::is_whitespace)
-                    && replacement.contains(char::is_whitespace)
-                {
-                    samemark_per_word(&replacement, matched_text)
-                } else {
-                    crate::builtins::samemark_string(&replacement, matched_text)
-                }
+
+        if nth_spec.is_none() && x_count.is_none() {
+            if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
+                let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
+                let result = Value::str(out);
+                self.interpreter.env_mut().insert("_".to_string(), result);
+                self.stack.push(Value::Bool(true));
             } else {
-                replacement
-            };
-            let mut out = String::new();
-            out.push_str(&text[..start_b]);
-            out.push_str(&replacement);
-            out.push_str(&text[end_b..]);
-            let result = Value::str(out);
-            self.interpreter.env_mut().insert("_".to_string(), result);
-            // Push Bool::True so `$x ~~ s///` returns True on match
-            self.stack.push(Value::Bool(true));
-        } else {
-            self.stack.push(Value::Nil);
+                self.stack.push(Value::Nil);
+            }
+            return Ok(());
         }
+
+        let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
+        let ranges = Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?;
+        if ranges.is_empty() {
+            self.stack.push(Value::Nil);
+            return Ok(());
+        }
+
+        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark);
+        let result = Value::str(out);
+        self.interpreter.env_mut().insert("_".to_string(), result);
+        // Push Bool::True so `$x ~~ s///` returns True on match
+        self.stack.push(Value::Bool(true));
         Ok(())
     }
 
@@ -100,9 +109,13 @@ impl VM {
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        nth_idx: Option<u32>,
+        x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = Self::const_str(code, replacement_idx).to_string();
+        let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let x_count = x_count.map(|n| n as usize);
         let target = self
             .interpreter
             .env()
@@ -110,24 +123,98 @@ impl VM {
             .cloned()
             .unwrap_or(Value::Nil);
         let text = target.to_string_value();
-        if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
-            let start_b = runtime::char_idx_to_byte(&text, start);
-            let end_b = runtime::char_idx_to_byte(&text, end);
-            let matched_text = &text[start_b..end_b];
-            let replacement = if samemark {
-                crate::builtins::samemark_string(&replacement, matched_text)
+
+        if nth_spec.is_none() && x_count.is_none() {
+            if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
+                let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
+                self.stack.push(Value::str(out));
             } else {
-                replacement
-            };
-            let mut out = String::new();
-            out.push_str(&text[..start_b]);
-            out.push_str(&replacement);
-            out.push_str(&text[end_b..]);
-            self.stack.push(Value::str(out));
-        } else {
-            self.stack.push(Value::str(text));
+                self.stack.push(Value::str(text));
+            }
+            return Ok(());
         }
+
+        let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
+        let ranges = Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?;
+        if ranges.is_empty() {
+            self.stack.push(Value::str(text));
+            return Ok(());
+        }
+        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark);
+        self.stack.push(Value::str(out));
         Ok(())
+    }
+
+    fn select_substitution_ranges(
+        all_matches: &[(usize, usize)],
+        nth_spec: Option<&str>,
+        x_count: Option<usize>,
+    ) -> Result<Vec<(usize, usize)>, RuntimeError> {
+        if let Some(raw) = nth_spec {
+            let n = Self::parse_subst_nth_spec(raw)?;
+            if n == 0 {
+                return Err(RuntimeError::new("Invalid :nth index (must be >= 1)"));
+            }
+            if n > all_matches.len() {
+                return Ok(Vec::new());
+            }
+            return Ok(vec![all_matches[n - 1]]);
+        }
+        if let Some(n) = x_count {
+            if n == 0 {
+                return Ok(Vec::new());
+            }
+            if all_matches.len() < n {
+                return Ok(Vec::new());
+            }
+            return Ok(all_matches.iter().copied().take(n).collect());
+        }
+        Ok(all_matches.first().copied().into_iter().collect())
+    }
+
+    fn parse_subst_nth_spec(raw: &str) -> Result<usize, RuntimeError> {
+        let token = raw.trim();
+        if token.eq_ignore_ascii_case("-Inf") {
+            return Err(RuntimeError::new("Invalid :nth index (-Inf)"));
+        }
+        let n = token
+            .parse::<i64>()
+            .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({token})")))?;
+        if n <= 0 {
+            return Err(RuntimeError::new(format!("Invalid :nth index ({token})")));
+        }
+        Ok(n as usize)
+    }
+
+    fn apply_substitutions(
+        text: &str,
+        ranges: &[(usize, usize)],
+        replacement: &str,
+        samemark: bool,
+    ) -> String {
+        let mut out = String::new();
+        let mut prev_end_b = 0usize;
+        for (start, end) in ranges {
+            let start_b = runtime::char_idx_to_byte(text, *start);
+            let end_b = runtime::char_idx_to_byte(text, *end);
+            out.push_str(&text[prev_end_b..start_b]);
+            let matched_text = &text[start_b..end_b];
+            let repl = if samemark {
+                if matched_text.contains(char::is_whitespace)
+                    && replacement.contains(char::is_whitespace)
+                {
+                    samemark_per_word(replacement, matched_text)
+                } else {
+                    crate::builtins::samemark_string(replacement, matched_text)
+                }
+            } else {
+                replacement.to_string()
+            };
+            out.push_str(&repl);
+            prev_end_b = end_b;
+        }
+        out.push_str(&text[prev_end_b..]);
+        out
     }
 
     pub(super) fn exec_transliterate_op(
@@ -244,8 +331,31 @@ impl VM {
                 }
             }
             "X" => {
-                let left_list = runtime::value_to_list(&left);
-                let right_list = runtime::value_to_list(&right);
+                let value_is_lazy = |v: &Value| match v {
+                    Value::LazyList(_) => true,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                    Value::GenericRange { end, .. } => {
+                        let end_f = end.to_f64();
+                        end_f.is_infinite() && end_f.is_sign_positive()
+                    }
+                    _ => false,
+                };
+                let lazy_inputs = value_is_lazy(&left) || value_is_lazy(&right);
+                let lazy_limit = 256usize;
+                let materialize_side = |v: &Value| -> Vec<Value> {
+                    if value_is_lazy(v) {
+                        let iter = ZipIter::from_value(v);
+                        let len = iter.len().min(lazy_limit);
+                        (0..len).map(|i| iter.nth(i)).collect()
+                    } else {
+                        runtime::value_to_list(v)
+                    }
+                };
+                let left_list = materialize_side(&left);
+                let right_list = materialize_side(&right);
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for l in &left_list {
@@ -266,7 +376,17 @@ impl VM {
                         }
                     }
                 }
-                Value::array(results)
+                if lazy_inputs {
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+                        body: Vec::new(),
+                        env: crate::env::Env::new(),
+                        cache: std::sync::Mutex::new(Some(results)),
+                    }))
+                } else if results.is_empty() {
+                    Value::Seq(std::sync::Arc::new(Vec::new()))
+                } else {
+                    Value::array(results)
+                }
             }
             "Z" => {
                 // Use lazy index-based iteration for ranges to avoid
@@ -618,6 +738,12 @@ impl VM {
         {
             return Ok(v);
         }
+        if Self::should_retry_with_canonical_infix_name(name)
+            && let Some(op_name) = infix_name
+            && let Ok(v) = self.interpreter.call_function(op_name, call_args.clone())
+        {
+            return Ok(v);
+        }
         match self.interpreter.call_function(name, call_args.clone()) {
             Ok(v) => Ok(v),
             Err(err) => {
@@ -629,6 +755,12 @@ impl VM {
                     || err.message.starts_with("Unexpected named argument '");
                 if is_empty_sig_rejection {
                     if let Ok(v) = self.interpreter.call_function(name, Vec::new()) {
+                        return Ok(v);
+                    }
+                    if Self::should_retry_with_canonical_infix_name(name)
+                        && let Some(op_name) = infix_name
+                        && let Ok(v) = self.interpreter.call_function(op_name, Vec::new())
+                    {
                         return Ok(v);
                     }
                     if let Some(op_name) = infix_name {

@@ -101,11 +101,15 @@ pub(crate) enum Expr {
         pattern: String,
         replacement: String,
         samemark: bool,
+        nth: Option<String>,
+        x: Option<usize>,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
         samemark: bool,
+        nth: Option<String>,
+        x: Option<usize>,
     },
     Transliterate {
         from: String,
@@ -184,6 +188,17 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         index: Box<Expr>,
     },
+    /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
+    MultiDimIndex {
+        target: Box<Expr>,
+        dimensions: Vec<Expr>,
+    },
+    /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
+    MultiDimIndexAssign {
+        target: Box<Expr>,
+        dimensions: Vec<Expr>,
+        value: Box<Expr>,
+    },
     IndexAssign {
         target: Box<Expr>,
         index: Box<Expr>,
@@ -221,6 +236,7 @@ pub(crate) enum Expr {
         catch: Option<Vec<Stmt>>,
     },
     Gather(Vec<Stmt>),
+    Eager(Box<Expr>),
     Reduction {
         op: String,
         expr: Box<Expr>,
@@ -553,6 +569,7 @@ pub(crate) enum Stmt {
         name: Symbol,
         base: String,
         predicate: Option<Expr>,
+        version: String,
     },
     Phaser {
         kind: PhaserKind,
@@ -887,7 +904,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::CodeVar(_) => {}
         Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
         Expr::SymbolicDeref { expr, .. } => collect_ph_expr(expr, out),
-        Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
+        Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. } | Expr::MetaOp { left, right, .. } => {
             collect_ph_expr(left, out);
             collect_ph_expr(right, out);

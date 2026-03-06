@@ -333,13 +333,26 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
             "slurp" => {
+                let (_, _, _, bin, _, _, _) = self.parse_io_flags_values(&args);
+                if bin {
+                    let bytes = fs::read(&path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                    })?;
+                    let byte_vals: Vec<Value> = bytes
+                        .into_iter()
+                        .map(|b| Value::Int(i64::from(b)))
+                        .collect();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
+                    return Ok(Value::make_instance(Symbol::intern("Buf"), attrs));
+                }
                 let content = fs::read_to_string(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
                 })?;
                 Ok(Value::str(content))
             }
             "open" => {
-                let (read, write, append, bin, line_chomp, line_separators) =
+                let (read, write, append, bin, line_chomp, line_separators, out_buffer_capacity) =
                     self.parse_io_flags_values(&args);
                 self.open_file_handle(
                     &path_buf,
@@ -349,6 +362,7 @@ impl Interpreter {
                     bin,
                     line_chomp,
                     line_separators,
+                    out_buffer_capacity,
                 )
             }
             "copy" => {
@@ -467,6 +481,60 @@ impl Interpreter {
                     p, err
                 ))),
             },
+            "watch" => {
+                let supply_id = super::native_methods::next_supply_id();
+                let (tx, rx) = std::sync::mpsc::channel();
+                if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+                    map.insert(supply_id, rx);
+                }
+
+                let watched_path = path_buf.clone();
+                std::thread::spawn(move || {
+                    let poll_interval = std::time::Duration::from_millis(10);
+                    let mut last_state = fs::metadata(&watched_path).ok().map(|meta| {
+                        let modified = meta
+                            .modified()
+                            .ok()
+                            .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|dur| dur.as_nanos())
+                            .unwrap_or(0);
+                        (meta.len(), modified)
+                    });
+
+                    loop {
+                        let state = fs::metadata(&watched_path).ok().map(|meta| {
+                            let modified = meta
+                                .modified()
+                                .ok()
+                                .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map(|dur| dur.as_nanos())
+                                .unwrap_or(0);
+                            (meta.len(), modified)
+                        });
+
+                        if state != last_state {
+                            // Emit the watched path on each observable filesystem change.
+                            if tx
+                                .send(super::native_methods::SupplyEvent::Emit(Value::str(
+                                    Self::stringify_path(&watched_path),
+                                )))
+                                .is_err()
+                            {
+                                break;
+                            }
+                            last_state = state;
+                        }
+
+                        std::thread::sleep(poll_interval);
+                    }
+                });
+
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Path",
                 method
@@ -773,14 +841,24 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "flush" => {
-                if let Ok(state) = self.handle_state_mut(&target_val)
-                    && let Some(file) = state.file.as_mut()
-                {
-                    file.flush().map_err(|err| {
-                        RuntimeError::new(format!("Failed to flush handle: {}", err))
-                    })?;
+                if let Ok(state) = self.handle_state_mut(&target_val) {
+                    Self::flush_file_handle_buffer(state)?;
+                    if let Some(file) = state.file.as_mut() {
+                        file.flush().map_err(|err| {
+                            RuntimeError::new(format!("Failed to flush handle: {}", err))
+                        })?;
+                    }
                 }
                 Ok(Value::Bool(true))
+            }
+            "out-buffer" => {
+                let state = self.handle_state_mut(&target_val)?;
+                if let Some(arg) = args.first() {
+                    Self::flush_file_handle_buffer(state)?;
+                    state.out_buffer_capacity = Self::parse_out_buffer_size(arg);
+                }
+                let size = state.out_buffer_capacity.unwrap_or(0);
+                Ok(Value::Int(size as i64))
             }
             "seek" => {
                 let pos = args

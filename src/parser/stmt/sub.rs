@@ -86,30 +86,61 @@ pub(super) fn literal_value_from_expr(expr: &Expr) -> Option<Value> {
 }
 
 fn constraint_base_type(constraint: &str) -> &str {
-    let mut end = constraint.len();
-    for (idx, ch) in constraint.char_indices() {
-        if ch == '[' || ch == '(' || ch == ':' {
-            end = idx;
+    let bytes = constraint.as_bytes();
+    let mut end = bytes.len();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'[' || b == b'(' {
+            end = i;
             break;
         }
+        if b == b':' {
+            let prev_is_colon = i > 0 && bytes[i - 1] == b':';
+            let next_is_colon = i + 1 < bytes.len() && bytes[i + 1] == b':';
+            if !prev_is_colon && !next_is_colon {
+                end = i;
+                break;
+            }
+        }
+        i += 1;
     }
     &constraint[..end]
 }
 
-fn default_type_matches_constraint(constraint: &str, default_type: &str) -> bool {
+fn default_type_matches_constraint(
+    constraint: &str,
+    default_type: &str,
+    default_value: Option<&Value>,
+) -> Option<bool> {
     let base = constraint_base_type(constraint);
     if matches!(base, "Any" | "Mu" | "Cool") {
-        return true;
+        return Some(true);
+    }
+    if base == "UInt" {
+        if let Some(value) = default_value {
+            return Some(match value {
+                Value::Int(n) => *n >= 0,
+                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                _ => false,
+            });
+        }
+        return Some(default_type == "Int");
     }
     if base == default_type {
-        return true;
+        return Some(true);
+    }
+    if base.contains("::") {
+        return Some(false);
     }
     match base {
-        "Numeric" | "Real" => matches!(default_type, "Int" | "Num" | "Rat"),
-        "Num" => matches!(default_type, "Int" | "Num" | "Rat"),
-        "Rat" => matches!(default_type, "Int" | "Rat"),
-        "Callable" | "Code" | "Block" => default_type == "Callable",
-        _ => false,
+        "Int" | "UInt" | "Bool" | "Str" | "List" | "Array" | "Hash" | "Pair" | "Junction"
+        | "Complex" | "Signature" | "Capture" => Some(false),
+        "Numeric" | "Real" => Some(matches!(default_type, "Int" | "Num" | "Rat")),
+        "Num" => Some(matches!(default_type, "Int" | "Num" | "Rat")),
+        "Rat" => Some(matches!(default_type, "Int" | "Rat")),
+        "Callable" | "Code" | "Block" => Some(default_type == "Callable"),
+        _ => None,
     }
 }
 
@@ -123,7 +154,14 @@ pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
         }
         if let (Some(constraint), Some(default_expr)) = (&pd.type_constraint, &pd.default)
             && let Some(default_type) = static_default_type(default_expr)
-            && !default_type_matches_constraint(constraint, &default_type)
+            && matches!(
+                default_type_matches_constraint(
+                    constraint,
+                    &default_type,
+                    literal_value_from_expr(default_expr).as_ref(),
+                ),
+                Some(false)
+            )
         {
             return Err(PError::fatal(format!(
                 "X::Parameter::Default::TypeCheck: Default value type '{}' does not satisfy '{}'",

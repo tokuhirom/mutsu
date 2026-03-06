@@ -50,18 +50,32 @@ impl Interpreter {
 
     pub(super) fn dispatch_to_bag(&self, target: Value) -> Result<Value, RuntimeError> {
         let mut counts: HashMap<String, i64> = HashMap::new();
+        let pair_weight = |v: &Value| -> i64 {
+            match v {
+                Value::Int(i) => *i,
+                Value::Num(n) => *n as i64,
+                Value::Rat(n, d) if *d != 0 => n / d,
+                Value::FatRat(n, d) if *d != 0 => n / d,
+                Value::Bool(b) => i64::from(*b),
+                _ => i64::from(v.truthy()),
+            }
+        };
+        let add_pair_key = |map: &mut HashMap<String, i64>, key: String, weight: i64| {
+            if weight > 0 {
+                let pair_key = format!("{key}\t{weight}");
+                *map.entry(pair_key).or_insert(0) += 1;
+            }
+        };
         match target {
             Value::Bag(_) => return Ok(target),
             Value::Array(items, ..) => {
                 for item in items.iter() {
                     match item {
                         Value::Pair(k, v) => {
-                            let c = match v.as_ref() {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => *n as i64,
-                                _ => 1,
-                            };
-                            *counts.entry(k.clone()).or_insert(0) += c;
+                            add_pair_key(&mut counts, k.clone(), pair_weight(v));
+                        }
+                        Value::ValuePair(k, v) => {
+                            add_pair_key(&mut counts, k.to_string_value(), pair_weight(v));
                         }
                         _ => {
                             *counts.entry(item.to_string_value()).or_insert(0) += 1;
@@ -81,26 +95,14 @@ impl Interpreter {
             }
             Value::Hash(h) => {
                 for (k, v) in h.iter() {
-                    let c = match v {
-                        Value::Int(i) => *i,
-                        Value::Num(n) => *n as i64,
-                        Value::Bool(b) => i64::from(*b),
-                        _ => i64::from(v.truthy()),
-                    };
-                    if c > 0 {
-                        counts.insert(k.clone(), c);
-                    }
+                    add_pair_key(&mut counts, k.clone(), pair_weight(v));
                 }
             }
             Value::Pair(k, v) => {
-                let c = match v.as_ref() {
-                    Value::Int(i) => *i,
-                    Value::Num(n) => *n as i64,
-                    _ => 1,
-                };
-                if c > 0 {
-                    counts.insert(k, c);
-                }
+                add_pair_key(&mut counts, k, pair_weight(&v));
+            }
+            Value::ValuePair(k, v) => {
+                add_pair_key(&mut counts, k.to_string_value(), pair_weight(&v));
             }
             other => {
                 counts.insert(other.to_string_value(), 1);

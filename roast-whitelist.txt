@@ -86,6 +86,7 @@ roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
 roast/S03-buf/read-write-bits.t
 roast/S03-feeds/basic.t
+roast/S03-metaops/cross.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
@@ -116,6 +117,9 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
+roast/S03-operators/set_equality.t
+roast/S03-operators/set_multiply.t
+roast/S03-operators/set_subset.t
 roast/S03-operators/set_union.t
 roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
@@ -213,6 +217,7 @@ roast/S05-modifier/Perl_5.t
 roast/S05-modifier/Perl_6.t
 roast/S05-modifier/Perl_7.t
 roast/S05-modifier/Perl_8.t
+roast/S05-modifier/counted.t
 roast/S05-modifier/exhaustive.t
 roast/S05-modifier/global.t
 roast/S05-modifier/my.t
@@ -325,6 +330,7 @@ roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
 roast/S12-methods/what.t
+roast/S12-subset/multi-dispatch.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/metaoperators.t
@@ -521,6 +527,7 @@ roast/S32-io/note.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
+roast/S32-io/out-buffering.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
 roast/S32-list/cross.t

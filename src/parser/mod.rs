@@ -434,4 +434,30 @@ use Test;
         let parsed = parse_program(src);
         assert!(parsed.is_ok(), "{parsed:?}");
     }
+
+    #[test]
+    fn parse_program_accepts_q_to_quoted_delim_inside_call_then_method() {
+        let src = r#"
+my @precompiled = Test::Util::run( "use lib x\n" ~ q:to"--END--").lines;
+    for <C A B> {
+        say 1;
+    }
+    --END--
+say @precompiled.elems;
+"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_listop_q_concat_argument_for_user_sub() {
+        let src = r#"
+sub is_run($a, $b, $c) { }
+is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).join(",").print>,
+       { :err(''), :out('0,1,2'), :status => 0 },
+       'closure is preserved after deserialzation';
+"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
 }

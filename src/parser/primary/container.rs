@@ -100,12 +100,18 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     {
         let (r_full_ws, _) = ws(r_full)?;
         if let Ok((r_after, _)) = parse_char(r_full_ws, ')') {
-            return Ok((r_after, normalize_sequence_waypoints(full_expr)));
+            return Ok((
+                r_after,
+                normalize_chained_zip_meta(normalize_sequence_waypoints(full_expr)),
+            ));
         }
         // When content starts with nested parens, the full parse can already
         // consume the closing ')' of this paren expression (e.g. `(() ... *)`).
         if content_start.starts_with('(') && r_full_ws.is_empty() {
-            return Ok((r_full_ws, normalize_sequence_waypoints(full_expr)));
+            return Ok((
+                r_full_ws,
+                normalize_chained_zip_meta(normalize_sequence_waypoints(full_expr)),
+            ));
         }
     }
     // Check for inline statement modifier: ($_ with data), (expr if cond), etc.
@@ -133,7 +139,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             first
         };
-        return Ok((input, first));
+        return Ok((input, normalize_chained_zip_meta(first)));
     }
     // Comma-separated list with sequence operator detection
     // Use expression_no_sequence so that `...` is not consumed as part of an item
@@ -199,7 +205,10 @@ fn finalize_paren_list(items: Vec<Expr>) -> Expr {
     }
     // If lifting produced a single MetaOp, return it unwrapped
     // (the Z/X meta-op already produces a list result)
-    if lifted.len() == 1 && matches!(&lifted[0], Expr::MetaOp { .. }) {
+    if lifted.len() == 1
+        && (matches!(&lifted[0], Expr::MetaOp { .. })
+            || matches!(&lifted[0], Expr::Call { name, .. } if *name == Symbol::intern("zip")))
+    {
         return lifted.into_iter().next().unwrap();
     }
     Expr::ArrayLiteral(lifted)
@@ -292,6 +301,63 @@ fn normalize_sequence_waypoints(expr: Expr) -> Expr {
     }
 }
 
+fn normalize_chained_zip_meta(expr: Expr) -> Expr {
+    match expr {
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } if meta == "Z" => {
+            let left = normalize_chained_zip_meta(*left);
+            let right = normalize_chained_zip_meta(*right);
+            if let Expr::ArrayLiteral(mut left_items) = left.clone()
+                && let Expr::ArrayLiteral(right_items) = right.clone()
+                && let Some(Expr::MetaOp {
+                    meta: inner_meta,
+                    op: inner_op,
+                    left: inner_left,
+                    right: inner_right,
+                }) = left_items.pop()
+                && inner_meta == "Z"
+                && inner_op == op
+                && let Expr::ArrayLiteral(inner_right_items) = *inner_right
+            {
+                let mut first_col = left_items;
+                first_col.push(*inner_left);
+                let to_expr = |col: Vec<Expr>| {
+                    if col.len() == 1 {
+                        col.into_iter().next().unwrap()
+                    } else {
+                        Expr::ArrayLiteral(col)
+                    }
+                };
+                let mut args = vec![
+                    to_expr(first_col),
+                    to_expr(inner_right_items),
+                    to_expr(right_items),
+                ];
+                args.push(Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str_from("with"))),
+                    op: TokenKind::FatArrow,
+                    right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                });
+                return Expr::Call {
+                    name: Symbol::intern("zip"),
+                    args,
+                };
+            }
+            Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        }
+        other => other,
+    }
+}
+
 fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
     let meta_idx = items.iter().position(|e| matches!(e, Expr::MetaOp { .. }));
     if let Some(idx) = meta_idx
@@ -303,15 +369,78 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
             right,
         } = &items[idx]
     {
-        let mut seeds: Vec<Expr> = items[..idx].to_vec();
-        seeds.push(*left.clone());
-        let new_meta = Expr::MetaOp {
-            meta: meta.clone(),
-            op: op.clone(),
-            left: Box::new(Expr::ArrayLiteral(seeds)),
-            right: right.clone(),
+        // Flatten left-nested same-op chains into column lists.
+        // Example source shape:
+        //   (a, (b Zop c,d) Zop e,f)
+        // becomes columns:
+        //   (a,b), (c,d), (e,f)
+        let as_column = |expr: &Expr| match expr {
+            Expr::ArrayLiteral(items) => items.clone(),
+            other => vec![other.clone()],
         };
-        let mut result = vec![new_meta];
+        let mut columns_rev: Vec<Vec<Expr>> = vec![as_column(right)];
+        let mut chain_left = left.as_ref().clone();
+        while let Expr::MetaOp {
+            meta: inner_meta,
+            op: inner_op,
+            left: inner_left,
+            right: inner_right,
+        } = &chain_left
+        {
+            if *inner_meta != *meta || *inner_op != *op {
+                break;
+            }
+            columns_rev.push(as_column(inner_right));
+            chain_left = *inner_left.clone();
+        }
+        let mut first_col: Vec<Expr> = items[..idx].to_vec();
+        first_col.push(chain_left);
+        columns_rev.push(first_col);
+        columns_rev.reverse();
+
+        let lifted_expr = if *meta == "Z" && columns_rev.len() > 2 {
+            let mut args: Vec<Expr> = columns_rev
+                .into_iter()
+                .map(|col| {
+                    if col.len() == 1 {
+                        col.into_iter().next().unwrap()
+                    } else {
+                        Expr::ArrayLiteral(col)
+                    }
+                })
+                .collect();
+            args.push(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str_from("with"))),
+                op: TokenKind::FatArrow,
+                right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+            });
+            Expr::Call {
+                name: Symbol::intern("zip"),
+                args,
+            }
+        } else {
+            let mut iter = columns_rev.into_iter();
+            let lhs = iter.next().unwrap_or_default();
+            let rhs = iter.next().unwrap_or_default();
+            let lhs = if lhs.len() == 1 {
+                lhs.into_iter().next().unwrap()
+            } else {
+                Expr::ArrayLiteral(lhs)
+            };
+            let rhs = if rhs.len() == 1 {
+                rhs.into_iter().next().unwrap()
+            } else {
+                Expr::ArrayLiteral(rhs)
+            };
+            Expr::MetaOp {
+                meta: meta.clone(),
+                op: op.clone(),
+                left: Box::new(lhs),
+                right: Box::new(rhs),
+            }
+        };
+
+        let mut result = vec![lifted_expr];
         result.extend(items[idx + 1..].to_vec());
         return result;
     }
@@ -332,7 +461,17 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("itemized parenthesized expression"));
     }
     let (rest, inner) = paren_expr(rest)?;
-    Ok((rest, Expr::CaptureLiteral(vec![inner])))
+    // Lower $(expr) to expr.item — wraps the value in a Scalar container
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: Symbol::intern("item"),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
 }
 
 /// Parse itemized brace expression: `${ }`.

@@ -334,6 +334,26 @@ impl Interpreter {
         None
     }
 
+    pub(crate) fn resolve_private_method_for_vm(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
+        let private_rest = method.strip_prefix('!')?;
+        if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+            self.resolve_private_method_with_owner(class_name, owner_class, pm_name, arg_values)
+        } else {
+            self.resolve_private_method_any_owner(class_name, private_rest, arg_values)
+        }
+    }
+
+    pub(crate) fn can_fast_dispatch_private_method_vm(&self, owner_class: &str) -> bool {
+        self.method_class_stack
+            .last()
+            .is_some_and(|caller| caller == owner_class)
+    }
+
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
         if !self.classes.contains_key(class_name)
             && let Some((base, _)) = class_name.split_once('[')
@@ -519,6 +539,13 @@ impl Interpreter {
                 }
             }
             return self.call_function(&name.resolve(), args);
+        }
+        if let Value::Junction { kind, values } = func {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.call_sub_value(callable.clone(), args.clone(), merge_all)?);
+            }
+            return Ok(Value::junction(kind, results));
         }
         if let Value::Sub(data) = func {
             // Check for wrap chain — if wrappers exist, dispatch through them
@@ -776,7 +803,23 @@ impl Interpreter {
             };
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             let fetch_rw = data.is_rw && !data.is_raw;
-            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, fetch_rw));
+            return finalized.and_then(|v| {
+                let v = if let Value::LazyList(list) = v {
+                    let mut env = list.env.clone();
+                    env.insert(
+                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                        Value::Bool(true),
+                    );
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+                        body: list.body.clone(),
+                        env,
+                        cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),
+                    }))
+                } else {
+                    v
+                };
+                self.maybe_fetch_rw_proxy(v, fetch_rw)
+            });
         }
         Err(RuntimeError::new("Callable expected"))
     }

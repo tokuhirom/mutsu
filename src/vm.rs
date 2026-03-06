@@ -797,6 +797,10 @@ impl VM {
                 self.exec_set_intersect_op()?;
                 *ip += 1;
             }
+            OpCode::SetMultiply => {
+                self.exec_set_multiply_op()?;
+                *ip += 1;
+            }
             OpCode::SetDiff => {
                 self.exec_set_diff_op();
                 *ip += 1;
@@ -1136,6 +1140,18 @@ impl VM {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
+            OpCode::MultiDimIndex(ndims) => {
+                self.exec_multi_dim_index_op(*ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssign { name_idx, ndims } => {
+                self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssignGeneric(ndims) => {
+                self.exec_multi_dim_index_assign_generic_op(*ndims)?;
+                *ip += 1;
+            }
             OpCode::HyperSlice(adverb) => {
                 self.exec_hyper_slice_op(*adverb)?;
                 *ip += 1;
@@ -1421,20 +1437,33 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
+                self.exec_subst_op(
+                    code,
+                    *pattern_idx,
+                    *replacement_idx,
+                    *samemark,
+                    *nth_idx,
+                    *x_count,
+                )?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
                     *pattern_idx,
                     *replacement_idx,
                     *samemark,
+                    *nth_idx,
+                    *x_count,
                 )?;
                 *ip += 1;
             }
@@ -1584,6 +1613,29 @@ impl VM {
             // -- Closures and registration --
             OpCode::MakeGather(idx) => {
                 self.exec_make_gather_op(code, *idx)?;
+                *ip += 1;
+            }
+            OpCode::Eager => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let result = match val {
+                    Value::LazyList(ref ll) => {
+                        let items = self.interpreter.force_lazy_list_bridge(ll)?;
+                        // Sync interpreter env changes back to VM locals.
+                        // This ensures side effects from gather bodies propagate
+                        // to outer-scope variables (e.g., `$was-lazy = 0`).
+                        for (i, name) in code.locals.iter().enumerate() {
+                            if let Some(v) = self.interpreter.env().get(name)
+                                && i < self.locals.len()
+                            {
+                                self.locals[i] = v.clone();
+                            }
+                        }
+                        Value::array(items)
+                    }
+                    Value::Seq(items) => Value::array(items.to_vec()),
+                    other => other,
+                };
+                self.stack.push(result);
                 *ip += 1;
             }
             OpCode::MakeAnonSub(idx, cc_idx) => {
