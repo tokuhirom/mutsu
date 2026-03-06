@@ -1,4 +1,6 @@
-use super::methods_signature::{make_method_not_found_error, make_private_permission_error};
+use super::methods_signature::{
+    make_method_not_found_error, make_private_permission_error, make_x_immutable_error,
+};
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
@@ -80,6 +82,28 @@ impl Interpreter {
                 parts.push(rendered.to_string_value());
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
+        }
+        // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw X::Immutable
+        if matches!(
+            method,
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+        ) {
+            let is_immutable = match &target {
+                Value::Array(_, kind) => !kind.is_real_array(),
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. } => true,
+                _ => false,
+            };
+            if is_immutable {
+                let typename = match &target {
+                    Value::Array(..) => "List",
+                    _ => "Range",
+                };
+                return Err(make_x_immutable_error(method, typename));
+            }
         }
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {

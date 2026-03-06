@@ -1,3 +1,4 @@
+use super::methods_signature::make_x_immutable_error;
 use super::*;
 use crate::symbol::Symbol;
 use num_bigint::BigInt;
@@ -746,9 +747,7 @@ impl Interpreter {
                 "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
             )
         {
-            return Err(RuntimeError::new(
-                "X::Immutable: Cannot modify an immutable List",
-            ));
+            return Err(make_x_immutable_error(method, "List"));
         }
         if scalar_like_target
             && args.is_empty()
