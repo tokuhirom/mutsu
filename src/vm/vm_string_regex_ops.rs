@@ -331,8 +331,31 @@ impl VM {
                 }
             }
             "X" => {
-                let left_list = runtime::value_to_list(&left);
-                let right_list = runtime::value_to_list(&right);
+                let value_is_lazy = |v: &Value| match v {
+                    Value::LazyList(_) => true,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                    Value::GenericRange { end, .. } => {
+                        let end_f = end.to_f64();
+                        end_f.is_infinite() && end_f.is_sign_positive()
+                    }
+                    _ => false,
+                };
+                let lazy_inputs = value_is_lazy(&left) || value_is_lazy(&right);
+                let lazy_limit = 256usize;
+                let materialize_side = |v: &Value| -> Vec<Value> {
+                    if value_is_lazy(v) {
+                        let iter = ZipIter::from_value(v);
+                        let len = iter.len().min(lazy_limit);
+                        (0..len).map(|i| iter.nth(i)).collect()
+                    } else {
+                        runtime::value_to_list(v)
+                    }
+                };
+                let left_list = materialize_side(&left);
+                let right_list = materialize_side(&right);
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for l in &left_list {
@@ -353,7 +376,17 @@ impl VM {
                         }
                     }
                 }
-                Value::array(results)
+                if lazy_inputs {
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+                        body: Vec::new(),
+                        env: crate::env::Env::new(),
+                        cache: std::sync::Mutex::new(Some(results)),
+                    }))
+                } else if results.is_empty() {
+                    Value::Seq(std::sync::Arc::new(Vec::new()))
+                } else {
+                    Value::array(results)
+                }
             }
             "Z" => {
                 // Use lazy index-based iteration for ranges to avoid

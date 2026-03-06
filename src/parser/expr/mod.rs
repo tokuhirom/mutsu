@@ -1089,6 +1089,44 @@ mod tests {
     }
 
     #[test]
+    fn parse_container_not_equal_operator() {
+        let (rest, expr) = expression("$a !=:= $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::Ident(op),
+                    ..
+                } => assert_eq!(op, "=:="),
+                _ => panic!("Expected !=:= to lower to !(=:=)"),
+            },
+            _ => panic!("Expected unary ! expression"),
+        }
+    }
+
+    #[test]
+    fn parse_cross_with_container_not_equal_operator() {
+        let (rest, expr) = expression("$a X!=:= $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MetaOp { meta, op, .. } => {
+                assert_eq!(meta, "X");
+                assert_eq!(op, "!=:=");
+            }
+            _ => panic!("Expected cross meta operator expression"),
+        }
+    }
+
+    #[test]
+    fn parse_cross_dot_string_reports_obsolete_error() {
+        let err = expression("3 X. \"foo\"").unwrap_err();
+        assert!(err.message().contains("X::Obsolete"));
+    }
+
+    #[test]
     fn chained_comparison_requires_rhs_expression() {
         let err = expression("1 < 2 <").unwrap_err();
         assert!(err.message().contains("chained comparison operator"));

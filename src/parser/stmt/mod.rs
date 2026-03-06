@@ -1602,6 +1602,70 @@ mod tests {
     }
 
     #[test]
+    fn assign_expr_parses_unbracketed_cross_metaop_assign() {
+        let (rest, expr) = assign::try_parse_assign_expr("@a X*= 10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "@a");
+                match *expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "*");
+                        assert!(matches!(*left, Expr::ArrayVar(ref n) if n == "a"));
+                        assert!(matches!(*right, Expr::Literal(Value::Int(10))));
+                    }
+                    other => panic!("expected meta-op assignment expr, got {other:?}"),
+                }
+            }
+            other => panic!("expected AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
+        let (rest, stmt) = assign::assign_stmt("@a X*= 10;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp { meta, op, .. } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "*");
+                    }
+                    other => panic!("expected meta-op assignment stmt, got {other:?}"),
+                }
+            }
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_parses_unbracketed_cross_plain_assign() {
+        let (rest, stmt) = assign::assign_stmt("@a X= 10;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp { meta, op, .. } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "=");
+                    }
+                    other => panic!("expected meta-op assignment stmt, got {other:?}"),
+                }
+            }
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn known_call_stmt_accepts_bracket_metaop_assign_argument() {
         simple::register_module_exports("Test");
         let parsed = simple::known_call_stmt("is $y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";");
