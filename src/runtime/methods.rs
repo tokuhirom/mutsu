@@ -2232,6 +2232,20 @@ impl Interpreter {
                 }
                 return self.call_function("produce", vec![callable, target]);
             }
+            "reduce" => {
+                let callable = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
+                let mut items = Self::value_to_list(&target).into_iter();
+                let Some(mut acc) = items.next() else {
+                    return Ok(Value::Nil);
+                };
+                for item in items {
+                    acc = self.call_sub_value(callable.clone(), vec![acc, item], true)?;
+                }
+                return Ok(acc);
+            }
             "map" => {
                 if let Value::Instance {
                     ref class_name,
@@ -2619,6 +2633,30 @@ impl Interpreter {
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
                     return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                }
+            }
+            "join" if args.len() <= 1 => {
+                if matches!(
+                    target,
+                    Value::Array(..)
+                        | Value::Seq(..)
+                        | Value::Slip(..)
+                        | Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }
+                ) {
+                    let sep = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let joined = Self::value_to_list(&target)
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    return Ok(Value::str(joined));
                 }
             }
             "grep" => {
