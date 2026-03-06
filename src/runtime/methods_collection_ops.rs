@@ -24,6 +24,11 @@ impl Interpreter {
         let by = match args.first() {
             Some(Value::Int(i)) => *i,
             Some(Value::Num(n)) => *n as i64,
+            Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
+            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+                use num_traits::ToPrimitive;
+                (n / d).to_i64().unwrap_or(1)
+            }
             Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
             None => 1,
         };
@@ -353,6 +358,31 @@ impl Interpreter {
                 let is_same = if let Some(func) = with_func.clone() {
                     self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
                         .truthy()
+                } else if let (
+                    Value::Instance {
+                        class_name: seen_class,
+                        id: seen_id,
+                        ..
+                    },
+                    Value::Instance {
+                        class_name: key_class,
+                        id: key_id,
+                        ..
+                    },
+                ) = (seen, &key)
+                {
+                    // Some instances still use placeholder id=0; treat those as
+                    // distinct for unique's default identity semantics.
+                    if *seen_id == 0
+                        && *key_id == 0
+                        && seen_class == key_class
+                        && seen_class.resolve() != "Stash"
+                        && seen_class.resolve() != "Supply"
+                    {
+                        false
+                    } else {
+                        values_identical(seen, &key)
+                    }
                 } else {
                     values_identical(seen, &key)
                 };
@@ -1233,14 +1263,26 @@ impl Interpreter {
     /// Replay deferred Proc::Async taps on the main thread.
     /// Called when a Proc result is retrieved via .result or await.
     pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
-        let stdout_taps = match attributes.get("stdout_taps") {
+        let mut stdout_taps = match attributes.get("stdout_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        let stderr_taps = match attributes.get("stderr_taps") {
+        let mut stderr_taps = match attributes.get("stderr_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
+        if let Some(Value::Int(sid)) = attributes.get("stdout_supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                stdout_taps = live;
+            }
+        }
+        if let Some(Value::Int(sid)) = attributes.get("stderr_supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                stderr_taps = live;
+            }
+        }
         let collected_stdout = match attributes.get("collected_stdout") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
@@ -1248,6 +1290,20 @@ impl Interpreter {
         let collected_stderr = match attributes.get("collected_stderr") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
+        };
+        let mut supply_taps = match attributes.get("supply_taps") {
+            Some(Value::Array(taps, ..)) => taps.to_vec(),
+            _ => Vec::new(),
+        };
+        if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                supply_taps = live;
+            }
+        }
+        let collected_merged = match attributes.get("collected_merged") {
+            Some(Value::Str(s)) => s.to_string(),
+            _ => format!("{}{}", collected_stdout, collected_stderr),
         };
 
         if !collected_stdout.is_empty() && !stdout_taps.is_empty() {
@@ -1264,6 +1320,15 @@ impl Interpreter {
                 let _ = self.call_sub_value(
                     tap.clone(),
                     vec![Value::str(collected_stderr.clone())],
+                    true,
+                );
+            }
+        }
+        if !collected_merged.is_empty() && !supply_taps.is_empty() {
+            for tap in &supply_taps {
+                let _ = self.call_sub_value(
+                    tap.clone(),
+                    vec![Value::str(collected_merged.clone())],
                     true,
                 );
             }

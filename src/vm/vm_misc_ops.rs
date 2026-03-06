@@ -122,6 +122,7 @@ impl VM {
                 | "<=>"
                 | "==="
                 | "=:="
+                | "!=:="
                 | "=>"
                 | "eqv"
                 | "eq"
@@ -168,7 +169,7 @@ impl VM {
             "**" => ReductionAssoc::Right,
             "=" | ":=" | "=>" | "x" | "xx" => ReductionAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
-            | "le" | "ge" | "~~" | "=~=" | "=:=" => ReductionAssoc::Chain,
+            | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => ReductionAssoc::Chain,
             _ => ReductionAssoc::Left,
         }
     }
@@ -581,20 +582,29 @@ impl VM {
             }
         }
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
-        let val = if name.starts_with('%') {
+        let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
             runtime::coerce_to_array(raw_val)
         } else {
-            raw_val
+            Self::normalize_scalar_assignment_value(raw_val)
         };
+        if matches!(val, Value::Nil)
+            && let Some(def) = self.interpreter.var_default(&name)
+        {
+            val = def.clone();
+        }
         // When assigning Nil to a typed variable, reset to the type object
         let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
             if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
-                Value::Package(Symbol::intern(&nominal))
+                if constraint == "Mu" {
+                    val
+                } else {
+                    let nominal = self
+                        .interpreter
+                        .nominal_type_object_name_for_constraint(&constraint);
+                    Value::Package(Symbol::intern(&nominal))
+                }
             } else {
                 val
             }
@@ -703,9 +713,9 @@ impl VM {
         const KNOWN_BASE_OPS: &[&str] = &[
             "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
-            ">=", "<=>", "===", "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg",
-            "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
-            "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
+            ">=", "<=>", "===", "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge",
+            "leg", "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after",
+            "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
@@ -1003,6 +1013,9 @@ impl VM {
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, &value)
             {
+                if base_constraint == "Int" && matches!(value, Value::Num(f) if f.is_nan()) {
+                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                }
                 let coerced = match base_constraint {
                     "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),
                     _ => None,
@@ -1010,7 +1023,9 @@ impl VM {
                 if let Some(new_val) = coerced {
                     *self.stack.last_mut().unwrap() = new_val;
                 } else {
-                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                    return Err(RuntimeError::new(
+                        "X::TypeCheck::Assignment: Type check failed in assignment",
+                    ));
                 }
             }
         } else if !self.interpreter.has_type(declared_constraint)

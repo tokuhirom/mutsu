@@ -356,6 +356,13 @@ impl Interpreter {
                     });
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
+                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                    && let Some(collected) = get_supply_collected_output(*sid as u64)
+                    && !collected.is_empty()
+                {
+                    let _ = self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                }
 
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
@@ -780,6 +787,14 @@ impl Interpreter {
                     std::thread::spawn(move || {
                         Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
                     });
+                    let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
+                    return Ok((tap_instance, attrs));
+                }
+                if let Some(Value::Int(sid)) = attrs.get("supply_id")
+                    && let Some(collected) = get_supply_collected_output(*sid as u64)
+                    && !collected.is_empty()
+                {
+                    let _ = self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
                 }

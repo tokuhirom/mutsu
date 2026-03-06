@@ -49,6 +49,30 @@ impl VM {
         })
     }
 
+    pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
+        let is_nilish = |v: &Value| match v {
+            Value::Nil => true,
+            Value::Package(sym) => sym.resolve() == "Any",
+            _ => false,
+        };
+        match val {
+            Value::Array(items, kind) if items.len() == 1 => {
+                if items.first().is_some_and(is_nilish) {
+                    Value::Nil
+                } else {
+                    Value::Array(items, kind)
+                }
+            }
+            Value::Seq(items) if items.len() == 1 && items.first().is_some_and(is_nilish) => {
+                Value::Nil
+            }
+            Value::Slip(items) if items.len() == 1 && items.first().is_some_and(is_nilish) => {
+                Value::Nil
+            }
+            other => other,
+        }
+    }
+
     fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
         match idx {
             Value::Range(a, b) => {
@@ -270,6 +294,8 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
+        let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let (val, bind_mode, bind_sources) = match raw_val {
@@ -325,7 +351,8 @@ impl VM {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
-                    let is_shaped = crate::runtime::utils::is_shaped_array(container);
+                    let is_shaped =
+                        has_declared_shape || crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
                     if is_shaped {
                         if bind_mode && is_bound_index {
@@ -451,7 +478,9 @@ impl VM {
                             }
                         }
                         Value::Array(..) => {
-                            if crate::runtime::utils::is_shaped_array(container) {
+                            if has_declared_shape
+                                || crate::runtime::utils::is_shaped_array(container)
+                            {
                                 if bind_mode && is_bound_index {
                                     return Err(RuntimeError::new("X::Assignment::RO"));
                                 }
@@ -699,8 +728,16 @@ impl VM {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            if !name.starts_with('@') && !name.starts_with('%') {
+                val = Self::normalize_scalar_assignment_value(val);
+            }
+            if matches!(val, Value::Nil)
+                && let Some(def) = self.interpreter.var_default(name)
+            {
+                val = def.clone();
+            }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
                 {
@@ -743,8 +780,14 @@ impl VM {
                 other => runtime::coerce_to_array(other),
             }
         } else {
-            val
+            Self::normalize_scalar_assignment_value(val)
         };
+        if matches!(val, Value::Nil)
+            && !matches!(self.locals[idx], Value::Nil)
+            && let Some(def) = self.interpreter.var_default(name)
+        {
+            val = def.clone();
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
@@ -886,14 +929,27 @@ impl VM {
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
-            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let mut val = self.stack.pop().unwrap_or(Value::Nil);
             let name = &code.locals[idx];
+            if !name.starts_with('@') && !name.starts_with('%') {
+                val = Self::normalize_scalar_assignment_value(val);
+            }
+            if matches!(val, Value::Nil)
+                && !matches!(self.locals[idx], Value::Nil)
+                && let Some(def) = self.interpreter.var_default(name)
+            {
+                val = def.clone();
+            }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 let val = if matches!(val, Value::Nil) {
-                    let nominal = self
-                        .interpreter
-                        .nominal_type_object_name_for_constraint(&constraint);
-                    Value::Package(Symbol::intern(&nominal))
+                    if constraint == "Mu" {
+                        val
+                    } else {
+                        let nominal = self
+                            .interpreter
+                            .nominal_type_object_name_for_constraint(&constraint);
+                        Value::Package(Symbol::intern(&nominal))
+                    }
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
                     return Err(RuntimeError::new(
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
@@ -928,18 +984,25 @@ impl VM {
                 other => runtime::coerce_to_array(other),
             }
         } else {
-            raw_val
+            Self::normalize_scalar_assignment_value(raw_val)
         };
+        if matches!(val, Value::Nil)
+            && let Some(def) = self.interpreter.var_default(name)
+        {
+            val = def.clone();
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
             if matches!(val, Value::Nil) {
-                // Assigning Nil to a typed variable resets it to the type object
-                let nominal = self
-                    .interpreter
-                    .nominal_type_object_name_for_constraint(&constraint);
-                val = Value::Package(Symbol::intern(&nominal));
+                if constraint != "Mu" {
+                    // Assigning Nil to a typed variable resets it to the type object
+                    let nominal = self
+                        .interpreter
+                        .nominal_type_object_name_for_constraint(&constraint);
+                    val = Value::Package(Symbol::intern(&nominal));
+                }
             } else if !self.interpreter.type_matches_value(&constraint, &val) {
                 return Err(RuntimeError::new(
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),

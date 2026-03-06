@@ -461,6 +461,14 @@ impl VM {
                     method.as_str(),
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 ));
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -483,6 +491,28 @@ impl VM {
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(
+                method.as_str(),
+                "start"
+                    | "kill"
+                    | "write"
+                    | "close-stdin"
+                    | "ready"
+                    | "print"
+                    | "say"
+                    | "command"
+                    | "started"
+                    | "w"
+                    | "pid"
+                    | "stdout"
+                    | "stderr"
+                    | "Supply"
+            )
         {
             skip_native = true;
         }
@@ -1021,6 +1051,14 @@ impl VM {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -1043,6 +1081,28 @@ impl VM {
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(
+                method.as_str(),
+                "start"
+                    | "kill"
+                    | "write"
+                    | "close-stdin"
+                    | "ready"
+                    | "print"
+                    | "say"
+                    | "command"
+                    | "started"
+                    | "w"
+                    | "pid"
+                    | "stdout"
+                    | "stderr"
+                    | "Supply"
+            )
         {
             skip_native = true;
         }

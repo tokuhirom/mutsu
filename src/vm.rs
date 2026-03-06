@@ -1140,6 +1140,18 @@ impl VM {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
+            OpCode::MultiDimIndex(ndims) => {
+                self.exec_multi_dim_index_op(*ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssign { name_idx, ndims } => {
+                self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssignGeneric(ndims) => {
+                self.exec_multi_dim_index_assign_generic_op(*ndims)?;
+                *ip += 1;
+            }
             OpCode::HyperSlice(adverb) => {
                 self.exec_hyper_slice_op(*adverb)?;
                 *ip += 1;
@@ -1425,20 +1437,33 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
+                self.exec_subst_op(
+                    code,
+                    *pattern_idx,
+                    *replacement_idx,
+                    *samemark,
+                    *nth_idx,
+                    *x_count,
+                )?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
                     *pattern_idx,
                     *replacement_idx,
                     *samemark,
+                    *nth_idx,
+                    *x_count,
                 )?;
                 *ip += 1;
             }

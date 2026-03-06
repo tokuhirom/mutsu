@@ -166,6 +166,11 @@ impl Interpreter {
             match arg {
                 Value::Array(items, ..) => elems.extend(items.iter().cloned()),
                 Value::Seq(items) | Value::Slip(items) => elems.extend(items.iter().cloned()),
+                range @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => elems.extend(Self::value_to_list(&range)),
                 other => elems.push(other),
             }
         }
@@ -1193,7 +1198,21 @@ impl Interpreter {
                     with_func = Some(v.as_ref().clone());
                 }
                 _ => {
-                    lists.push(super::utils::value_to_list(arg));
+                    let mut values = super::utils::value_to_list(arg);
+                    if values.len() == 1
+                        && let Some(single) = values.first()
+                    {
+                        match single {
+                            Value::Array(items, _) => {
+                                values = items.as_ref().clone();
+                            }
+                            Value::Seq(items) | Value::Slip(items) => {
+                                values = items.as_ref().clone();
+                            }
+                            _ => {}
+                        }
+                    }
+                    lists.push(values);
                 }
             }
         }

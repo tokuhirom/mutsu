@@ -623,6 +623,7 @@ impl Value {
                 exhaustive,
                 overlap,
                 repeat,
+                nth,
                 perl5,
                 ignore_case,
                 sigspace,
@@ -648,6 +649,9 @@ impl Value {
                 }
                 if let Some(count) = repeat {
                     prefix.push_str(&format!(":x({count})"));
+                }
+                if let Some(raw) = nth {
+                    prefix.push_str(&format!(":nth({raw})"));
                 }
                 if *perl5 {
                     prefix.push_str(":P5");

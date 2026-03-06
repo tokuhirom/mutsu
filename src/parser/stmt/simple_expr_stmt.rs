@@ -13,6 +13,18 @@ use crate::value::Value;
 use super::simple::{TMP_INDEX_COUNTER, add_xor_sink_warnings, parse_hyper_assign_op};
 use super::{is_stmt_modifier_keyword, keyword, parse_comma_or_expr, parse_statement_modifier};
 
+fn starts_with_term_token(input: &str) -> bool {
+    let Some(ch) = input.chars().next() else {
+        return false;
+    };
+    ch.is_ascii_digit()
+        || ch.is_alphabetic()
+        || matches!(
+            ch,
+            '$' | '@' | '%' | '&' | '\'' | '"' | '‘' | '’' | '“' | '”' | '(' | '[' | '{' | ':'
+        )
+}
+
 fn method_lvalue_assign_expr(
     target: Expr,
     target_var_name: Option<String>,
@@ -178,7 +190,23 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     })?;
 
     // Check for index assignment after expression
+    let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
+    let separator = &rest_before_ws[..rest_before_ws.len() - rest.len()];
+    let separated_by_newline = separator.contains('\n') || separator.contains('\r');
+    if !separated_by_newline
+        && matches!(&expr, Expr::BareWord(name) if name == "int")
+        && !rest.is_empty()
+        && !rest.starts_with(';')
+        && !rest.starts_with('}')
+        && !rest.starts_with(')')
+        && !rest.starts_with(']')
+        && !rest.starts_with(',')
+        && !is_stmt_modifier_keyword(rest)
+        && starts_with_term_token(rest)
+    {
+        return Err(PError::expected("statement end"));
+    }
     if let Some(stripped) = rest
         .strip_prefix("\u{00BB}.=")
         .or_else(|| rest.strip_prefix(">>.="))
@@ -377,7 +405,10 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
         }
     }
-    if matches!(expr, Expr::Index { .. }) && rest.starts_with('=') && !rest.starts_with("==") {
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
+        && rest.starts_with('=')
+        && !rest.starts_with("==")
+    {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
@@ -388,6 +419,14 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
+        if let Expr::MultiDimIndex { target, dimensions } = expr {
+            let stmt = Stmt::Expr(Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(value),
+            });
+            return parse_statement_modifier(rest, stmt);
+        }
         if let Expr::Index { target, index } = expr {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
@@ -429,7 +468,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         });
         return parse_statement_modifier(rest, stmt);
     }
-    if matches!(expr, Expr::Index { .. }) && rest.starts_with(":=") {
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) && rest.starts_with(":=") {
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
@@ -440,17 +479,29 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        if let Expr::Index { target, index } = expr {
-            let source_meta = bind_source_metadata_expr(&value);
-            let stmt = Stmt::Expr(Expr::IndexAssign {
-                target,
-                index,
-                value: Box::new(Expr::Call {
-                    name: Symbol::intern("__mutsu_bind_index_value"),
-                    args: vec![value, source_meta],
-                }),
-            });
-            return parse_statement_modifier(rest, stmt);
+        let source_meta = bind_source_metadata_expr(&value);
+        let bind_value = Expr::Call {
+            name: Symbol::intern("__mutsu_bind_index_value"),
+            args: vec![value, source_meta],
+        };
+        match expr {
+            Expr::Index { target, index } => {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index,
+                    value: Box::new(bind_value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
+            Expr::MultiDimIndex { target, dimensions } => {
+                let stmt = Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index: Box::new(Expr::ArrayLiteral(dimensions)),
+                    value: Box::new(bind_value),
+                });
+                return parse_statement_modifier(rest, stmt);
+            }
+            _ => {}
         }
     }
 

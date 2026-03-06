@@ -307,7 +307,7 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    return Ok(Value::array(codepoints));
+                    return Ok(Value::real_array(codepoints));
                 }
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator
@@ -647,11 +647,13 @@ impl Interpreter {
                             Value::Pair(key, value) if key == "w" => {
                                 w_flag = value.truthy();
                             }
+                            Value::Pair(key, _value) if key == "out" => {}
                             _ => positional.push(arg.clone()),
                         }
                     }
                     let stdout_id = super::native_methods::next_supply_id();
                     let stderr_id = super::native_methods::next_supply_id();
+                    let supply_id = super::native_methods::next_supply_id();
                     let mut stdout_supply_attrs = HashMap::new();
                     stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -662,6 +664,11 @@ impl Interpreter {
                     stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     stderr_supply_attrs
                         .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+                    let mut merged_supply_attrs = HashMap::new();
+                    merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs
+                        .insert("supply_id".to_string(), Value::Int(supply_id as i64));
 
                     let mut attrs = HashMap::new();
                     attrs.insert("cmd".to_string(), Value::array(positional));
@@ -673,6 +680,10 @@ impl Interpreter {
                     attrs.insert(
                         "stderr".to_string(),
                         Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
+                    );
+                    attrs.insert(
+                        "supply".to_string(),
+                        Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
                     );
                     if w_flag {
                         attrs.insert("w".to_string(), Value::Bool(true));
@@ -787,15 +798,28 @@ impl Interpreter {
                     return Ok(make_rat(a, b));
                 }
                 "FatRat" => {
+                    use num_bigint::BigInt;
+                    use num_traits::ToPrimitive;
                     let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(0),
                     };
                     let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(1),
                     };
-                    return Ok(Value::FatRat(a, b));
+                    if let (Some(ai), Some(bi)) = (a.to_i64(), b.to_i64()) {
+                        return Ok(Value::FatRat(ai, bi));
+                    }
+                    return Ok(Value::BigRat(a, b));
+                }
+                "Pair" => {
+                    // Pair.new(key, value)
+                    let key = args.first().cloned().unwrap_or(Value::Nil);
+                    let value = args.get(1).cloned().unwrap_or(Value::Nil);
+                    return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
                 }
                 "Set" | "SetHash" => {
                     let mut elems = HashSet::new();
@@ -1173,6 +1197,14 @@ impl Interpreter {
                         }
                     }
                 }
+                let int_ctor_val =
+                    if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
+                        return Err(RuntimeError::new("Cannot convert type object to Int"));
+                    } else {
+                        positional_ctor_args
+                            .first()
+                            .map_or(0, crate::runtime::to_int)
+                    };
                 if class_mro.iter().any(|name| name == "Array")
                     && !attrs.contains_key("__array_items")
                     && !positional_ctor_args.is_empty()
@@ -1181,6 +1213,11 @@ impl Interpreter {
                         "__array_items".to_string(),
                         Value::array(positional_ctor_args),
                     );
+                }
+                if class_mro.iter().any(|name| name == "Int")
+                    && !attrs.contains_key("__mutsu_int_value")
+                {
+                    attrs.insert("__mutsu_int_value".to_string(), Value::Int(int_ctor_val));
                 }
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
@@ -1322,7 +1359,13 @@ impl Interpreter {
             Value::Package(name) => {
                 // Built-in type objects: .new creates a default defined instance
                 match name.resolve().as_str() {
-                    "Int" => Ok(Value::Int(0)),
+                    "Int" => {
+                        if matches!(args.first(), Some(Value::Package(_))) {
+                            return Err(RuntimeError::new("Cannot convert type object to Int"));
+                        }
+                        let int_val = args.first().map_or(0, crate::runtime::to_int);
+                        Ok(Value::Int(int_val))
+                    }
                     "Str" => Ok(Value::str(String::new())),
                     "Num" => Ok(Value::Num(0.0)),
                     "Bool" => Ok(Value::Bool(false)),

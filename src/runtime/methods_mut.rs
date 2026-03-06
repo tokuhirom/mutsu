@@ -1,3 +1,4 @@
+use super::methods_signature::make_x_immutable_error;
 use super::*;
 use crate::symbol::Symbol;
 use num_bigint::BigInt;
@@ -746,9 +747,7 @@ impl Interpreter {
                 "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
             )
         {
-            return Err(RuntimeError::new(
-                "X::Immutable: Cannot modify an immutable List",
-            ));
+            return Err(make_x_immutable_error(method, "List"));
         }
         if scalar_like_target
             && args.is_empty()
@@ -1644,7 +1643,7 @@ impl Interpreter {
                 return Ok(ret);
             }
 
-            if args.len() == 1 {
+            if args.len() == 1 && !self.is_native_method(&class_name.resolve(), method) {
                 let class_attrs = self.collect_class_attributes(&class_name.resolve());
                 let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
@@ -1733,13 +1732,16 @@ impl Interpreter {
                         );
                         return Ok(result);
                     }
-                    Err(_) => {
-                        return self.call_native_instance_method(
-                            &class_name.resolve(),
-                            &attributes,
-                            method,
-                            args,
-                        );
+                    Err(err) => {
+                        if err.message.starts_with("No native mutable method") {
+                            return self.call_native_instance_method(
+                                &class_name.resolve(),
+                                &attributes,
+                                method,
+                                args,
+                            );
+                        }
+                        return Err(err);
                     }
                 }
             }
