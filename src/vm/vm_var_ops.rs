@@ -885,7 +885,9 @@ impl VM {
             (Value::Mix(m), Value::Array(indices, ..)) => Value::array(
                 indices
                     .iter()
-                    .map(|idx| Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0)))
+                    .map(|idx| {
+                        Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+                    })
                     .collect(),
             ),
             (Value::Mix(m), idx) => {
