@@ -30,6 +30,7 @@ static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompoundAssignOp {
+    Comma,
     DefinedOr,
     LogicalOr,
     LogicalAnd,
@@ -42,7 +43,6 @@ pub(crate) enum CompoundAssignOp {
     Power,
     Repeat,
     ListRepeat,
-    Comma,
     BitOr,
     BitAnd,
     BitXor,
@@ -62,6 +62,7 @@ pub(crate) enum CompoundAssignOp {
 impl CompoundAssignOp {
     pub(super) fn symbol(self) -> &'static str {
         match self {
+            CompoundAssignOp::Comma => ",=",
             CompoundAssignOp::DefinedOr => "//=",
             CompoundAssignOp::LogicalOr => "||=",
             CompoundAssignOp::LogicalAnd => "&&=",
@@ -74,7 +75,6 @@ impl CompoundAssignOp {
             CompoundAssignOp::Power => "**=",
             CompoundAssignOp::Repeat => "x=",
             CompoundAssignOp::ListRepeat => "xx=",
-            CompoundAssignOp::Comma => ",=",
             CompoundAssignOp::BitOr => "+|=",
             CompoundAssignOp::BitAnd => "+&=",
             CompoundAssignOp::BitXor => "+^=",
@@ -94,6 +94,7 @@ impl CompoundAssignOp {
 
     pub(crate) fn token_kind(self) -> TokenKind {
         match self {
+            CompoundAssignOp::Comma => TokenKind::Comma,
             CompoundAssignOp::DefinedOr => TokenKind::SlashSlash,
             CompoundAssignOp::LogicalOr => TokenKind::OrOr,
             CompoundAssignOp::LogicalAnd => TokenKind::AndAnd,
@@ -106,7 +107,6 @@ impl CompoundAssignOp {
             CompoundAssignOp::Power => TokenKind::StarStar,
             CompoundAssignOp::Repeat => TokenKind::Ident("x".to_string()),
             CompoundAssignOp::ListRepeat => TokenKind::Ident("xx".to_string()),
-            CompoundAssignOp::Comma => TokenKind::Comma,
             CompoundAssignOp::BitOr => TokenKind::BitOr,
             CompoundAssignOp::BitAnd => TokenKind::BitAnd,
             CompoundAssignOp::BitXor => TokenKind::BitXor,
@@ -160,6 +160,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
 }
 
 pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
+    CompoundAssignOp::Comma,
     CompoundAssignOp::DefinedOr,
     CompoundAssignOp::LogicalOr,
     CompoundAssignOp::LogicalAnd,
@@ -172,7 +173,6 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Mod,
     CompoundAssignOp::ListRepeat, // xx= before x= to match longest first
     CompoundAssignOp::Repeat,
-    CompoundAssignOp::Comma,
     CompoundAssignOp::BitOr,
     CompoundAssignOp::BitAnd,
     CompoundAssignOp::BitXor,

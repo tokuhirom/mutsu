@@ -535,6 +535,61 @@ impl VM {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
                         }
+                        Value::Set(ref mut set) => {
+                            let s = Arc::make_mut(set);
+                            if val.truthy() {
+                                s.insert(key.clone());
+                            } else {
+                                s.remove(&key);
+                            }
+                        }
+                        Value::Bag(ref mut bag) => {
+                            let b = Arc::make_mut(bag);
+                            let count = match &val {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => *n as i64,
+                                Value::Bool(flag) => i64::from(*flag),
+                                _ => {
+                                    if val.truthy() {
+                                        1
+                                    } else {
+                                        0
+                                    }
+                                }
+                            };
+                            if count == 0 {
+                                b.remove(&key);
+                            } else {
+                                b.insert(key.clone(), count);
+                            }
+                        }
+                        Value::Mix(ref mut mix) => {
+                            let m = Arc::make_mut(mix);
+                            let weight = match &val {
+                                Value::Int(i) => *i as f64,
+                                Value::Num(n) => *n,
+                                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                                Value::Bool(flag) => {
+                                    if *flag {
+                                        1.0
+                                    } else {
+                                        0.0
+                                    }
+                                }
+                                _ => {
+                                    if val.truthy() {
+                                        1.0
+                                    } else {
+                                        0.0
+                                    }
+                                }
+                            };
+                            if weight == 0.0 {
+                                m.remove(&key);
+                            } else {
+                                m.insert(key.clone(), weight);
+                            }
+                        }
                         _ => {
                             let mut hash = std::collections::HashMap::new();
                             hash.insert(key.clone(), val.clone());
@@ -778,7 +833,16 @@ impl VM {
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         let mut val = if name.starts_with('%') {
-            runtime::coerce_to_hash(val)
+            let constraint = self.interpreter.var_type_constraint(name);
+            if let Some(constraint) = constraint {
+                if constraint.starts_with("SetHash") {
+                    runtime::utils::coerce_value_to_quanthash(&val)
+                } else {
+                    runtime::coerce_to_hash(val)
+                }
+            } else {
+                runtime::coerce_to_hash(val)
+            }
         } else if name.starts_with('@') {
             match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
