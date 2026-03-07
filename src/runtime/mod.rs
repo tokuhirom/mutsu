@@ -2870,9 +2870,6 @@ impl Interpreter {
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
-        if !self.shared_vars_active {
-            return None;
-        }
         let sv = self.shared_vars.read().unwrap();
         sv.get(key).cloned()
     }

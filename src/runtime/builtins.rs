@@ -2418,6 +2418,8 @@ impl Interpreter {
                 let shared = self.shared_vars.read().unwrap();
                 self.atomic_current_value(&shared, &name, &value_key)
             };
+            // Keep the lexical/env view in sync with the shared atomic value.
+            self.env.insert(name.clone(), current.clone());
             if current == *expected {
                 let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
                 self.env.insert(name.clone(), coerced.clone());
@@ -2438,6 +2440,7 @@ impl Interpreter {
                 let shared = self.shared_vars.read().unwrap();
                 self.atomic_current_value(&shared, &name, &value_key)
             };
+            self.env.insert(name.clone(), current.clone());
             let new_val = self.call_sub_value(code, vec![current], false)?;
             let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
             self.env.insert(name.clone(), coerced.clone());
