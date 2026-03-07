@@ -1545,6 +1545,15 @@ impl Interpreter {
                     },
                 );
                 roles.insert(
+                    "PredictiveIterator".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                        is_hidden: false,
+                    },
+                );
+                roles.insert(
                     "Iterable".to_string(),
                     RoleDef {
                         attributes: Vec::new(),
@@ -2924,11 +2933,22 @@ impl Interpreter {
             if !key.starts_with("__mutsu_sigilless_alias::") {
                 continue;
             }
+            if !key.starts_with("__mutsu_sigilless_alias::!") {
+                continue;
+            }
             let Value::Str(alias_name) = alias else {
                 continue;
             };
+            saved_env.insert(key.clone(), alias.clone());
             if let Some(value) = current_env.get(alias_name.as_str()).cloned() {
                 saved_env.insert(alias_name.to_string(), value);
+            }
+        }
+        for (key, value) in current_env {
+            if key.starts_with("__mutsu_predictive_seq_iter::")
+                || key.starts_with("__mutsu_sigilless_alias::!")
+            {
+                saved_env.insert(key.clone(), value.clone());
             }
         }
     }

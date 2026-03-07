@@ -119,6 +119,7 @@ impl Compiler {
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
+            Expr::BareWord(name) => Some(name.to_string()),
             _ => None,
         }
     }

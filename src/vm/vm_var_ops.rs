@@ -557,6 +557,8 @@ impl VM {
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
+        } else if name == "i" {
+            Value::Complex(0.0, 1.0)
         } else if name == "NaN" {
             Value::Num(f64::NAN)
         } else if name == "Inf" {
