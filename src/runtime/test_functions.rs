@@ -851,6 +851,31 @@ impl Interpreter {
             nested.env.insert(k.clone(), v.clone());
         }
         let ok = nested.eval_eval_string(&code).is_ok();
+        for raw in nested.output.lines() {
+            let line = raw.trim_start();
+            let (assert_ok, rest) = if let Some(rest) = line.strip_prefix("ok ") {
+                (true, rest)
+            } else if let Some(rest) = line.strip_prefix("not ok ") {
+                (false, rest)
+            } else {
+                continue;
+            };
+            // Keep TODO failures internal to eval-lives-ok canaries.
+            let todo = line.contains("# TODO");
+            if !assert_ok && todo {
+                continue;
+            }
+            let desc = rest
+                .split_once(" - ")
+                .map(|(_, text)| text)
+                .unwrap_or("")
+                .split_once(" #")
+                .map(|(text, _)| text)
+                .unwrap_or_else(|| rest.split_once(' ').map(|(_, text)| text).unwrap_or(""))
+                .trim()
+                .to_string();
+            self.test_ok(assert_ok, &desc, todo)?;
+        }
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }

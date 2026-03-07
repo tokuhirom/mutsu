@@ -73,6 +73,37 @@ impl Interpreter {
             err.exception = Some(Box::new(ex));
             return Err(err);
         }
+        // Calling a type with a type object argument constructs a coercion type
+        // object (e.g. Str(Any), Int(Str), Child(Parent)).
+        if args.len() == 1
+            && (self.has_type(name)
+                || crate::runtime::utils::is_known_type_constraint(name)
+                || self.subsets.contains_key(name)
+                || self.roles.contains_key(name))
+        {
+            let source = match &args[0] {
+                Value::Package(sym) => Some(sym.resolve()),
+                Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } => {
+                    let args_str = type_args
+                        .iter()
+                        .map(|arg| match arg {
+                            Value::Package(n) => n.resolve(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Some(format!("{}[{}]", base_name.resolve(), args_str))
+                }
+                Value::Nil => Some("Any".to_string()),
+                _ => None,
+            };
+            if let Some(source) = source {
+                return Ok(Value::Package(Symbol::intern(&format!("{name}({source})"))));
+            }
+        }
         // Handle zip:with — zip with a custom combining function
         if name == "zip"
             && args
