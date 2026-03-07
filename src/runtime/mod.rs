@@ -701,6 +701,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Promise::Vow".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["keep", "break"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Promise::Vow".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Channel".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -787,6 +799,35 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Blob".to_string(),
+            ClassDef {
+                parents: vec!["Any".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Blob".to_string(), "Any".to_string(), "Mu".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Buf".to_string(),
+            ClassDef {
+                parents: vec!["Blob".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "Buf".to_string(),
+                    "Blob".to_string(),
+                    "Any".to_string(),
+                    "Mu".to_string(),
+                ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Supplier".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -854,7 +895,10 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cancel", "close", "socket-port", "socket-host"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Tap".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
@@ -1127,6 +1171,42 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "IO::Socket::Async".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "close",
+                    "write",
+                    "print",
+                    "Supply",
+                    "socket-port",
+                    "peer-port",
+                    "socket-host",
+                    "peer-host",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["IO::Socket::Async".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "IO::Socket::Async::Listener".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["IO::Socket::Async::Listener".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },

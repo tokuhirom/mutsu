@@ -1843,6 +1843,17 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    Stmt::Whenever { supply, .. } => {
+                        // `do whenever ...` should produce the created Tap in expression context.
+                        self.compile_stmt(stmt);
+                        if let Expr::Var(name) = supply {
+                            self.compile_expr(&Expr::Var(name.clone()));
+                        } else {
+                            self.code.emit(OpCode::LoadNil);
+                        }
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::SubDecl { name, .. } => {
                         self.compile_stmt(stmt);
                         self.compile_expr(&Expr::CodeVar(name.resolve()));

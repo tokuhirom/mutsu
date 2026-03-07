@@ -1793,6 +1793,14 @@ impl Compiler {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);
                 }
+                Stmt::Whenever { supply, .. } => {
+                    self.compile_stmt(stmt);
+                    if let Expr::Var(name) = supply {
+                        self.compile_expr(&Expr::Var(name.clone()));
+                    } else {
+                        self.code.emit(OpCode::LoadNil);
+                    }
+                }
                 _ => {
                     self.compile_stmt(stmt);
                     self.code.emit(OpCode::LoadNil);
