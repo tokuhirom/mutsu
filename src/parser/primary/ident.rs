@@ -667,6 +667,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "reduce"
             | "run"
             | "shell"
+            | "indir"
             | "cross"
             | "await"
             | "dir"

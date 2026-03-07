@@ -694,32 +694,73 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "IO::Path" => {
-                    let mut path = String::new();
+                    let mut positional_path: Option<String> = None;
+                    let mut basename_part: Option<String> = None;
+                    let mut dirname_part: Option<String> = None;
+                    let mut volume_part: Option<String> = None;
                     let mut cwd_attr: Option<String> = None;
+                    let mut spec_attr: Option<Value> = None;
                     for arg in &args {
                         match arg {
                             Value::Pair(key, value) if key == "CWD" => {
                                 cwd_attr = Some(value.to_string_value());
                             }
+                            Value::Pair(key, value) if key == "SPEC" => {
+                                spec_attr = Some((**value).clone());
+                            }
+                            Value::Pair(key, value) if key == "basename" => {
+                                basename_part = Some(value.to_string_value());
+                            }
+                            Value::Pair(key, value) if key == "dirname" => {
+                                dirname_part = Some(value.to_string_value());
+                            }
+                            Value::Pair(key, value) if key == "volume" => {
+                                volume_part = Some(value.to_string_value());
+                            }
                             Value::Instance {
                                 class_name,
                                 attributes,
                                 ..
-                            } if path.is_empty() && class_name == "IO::Path" => {
-                                path = attributes
-                                    .get("path")
-                                    .map(|v| v.to_string_value())
-                                    .unwrap_or_default();
+                            } if positional_path.is_none() && class_name == "IO::Path" => {
+                                positional_path = Some(
+                                    attributes
+                                        .get("path")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default(),
+                                );
                                 if cwd_attr.is_none() {
                                     cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
                                 }
                             }
-                            _ if path.is_empty() => {
-                                path = arg.to_string_value();
+                            Value::Pair(_, _) => {}
+                            _ if positional_path.is_none() => {
+                                positional_path = Some(arg.to_string_value());
                             }
                             _ => {}
                         }
                     }
+                    let path = if let Some(positional) = positional_path {
+                        positional
+                    } else if let Some(basename) = basename_part {
+                        let mut built = match dirname_part {
+                            Some(dirname) if !dirname.is_empty() => {
+                                if dirname.ends_with('/') || dirname.ends_with('\\') {
+                                    format!("{dirname}{basename}")
+                                } else {
+                                    format!("{dirname}/{basename}")
+                                }
+                            }
+                            _ => basename,
+                        };
+                        if let Some(volume) = volume_part
+                            && !volume.is_empty()
+                        {
+                            built = format!("{volume}:{built}");
+                        }
+                        built
+                    } else {
+                        String::new()
+                    };
                     if path.contains('\0') {
                         return Err(RuntimeError::new(
                             "X::IO::Null: Found null byte in pathname",
@@ -729,6 +770,9 @@ impl Interpreter {
                     attrs.insert("path".to_string(), Value::str(path));
                     if let Some(cwd) = cwd_attr {
                         attrs.insert("cwd".to_string(), Value::str(cwd));
+                    }
+                    if let Some(spec) = spec_attr {
+                        attrs.insert("SPEC".to_string(), spec);
                     }
                     return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }

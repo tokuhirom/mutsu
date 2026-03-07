@@ -975,6 +975,7 @@ impl Interpreter {
                     "IO",
                     "basename",
                     "dirname",
+                    "cleanup",
                     "parent",
                     "sibling",
                     "child",
