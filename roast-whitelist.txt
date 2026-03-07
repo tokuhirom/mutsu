@@ -32,6 +32,7 @@ roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
+roast/S02-literals/types.t
 roast/S02-literals/version.t
 roast/S02-magicals/78258.t
 roast/S02-magicals/DISTRO.t
