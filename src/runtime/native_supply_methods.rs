@@ -303,6 +303,7 @@ impl Interpreter {
                 // Immutable tap: emit all values and return a Tap instance
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+                let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(attributes);
 
                 if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
@@ -365,6 +366,7 @@ impl Interpreter {
                 }
 
                 // For on-demand supplies, execute the callback to produce values
+                let mut on_demand_quit: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
@@ -374,8 +376,18 @@ impl Interpreter {
                     });
                     // Use supply_emit_buffer to collect emitted values
                     self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
+                    let callback_result =
+                        self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                    let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                    if let Err(err) = callback_result {
+                        on_demand_quit = Some(
+                            err.exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message)),
+                        );
+                    }
+                    emitted
                 } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
                     v.to_vec()
                 } else {
@@ -398,6 +410,13 @@ impl Interpreter {
                         }
                     }
                     let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+                }
+
+                if let Some(quit_reason) = on_demand_quit {
+                    if let Some(quit_fn) = quit_cb {
+                        let _ = self.call_sub_value(quit_fn, vec![quit_reason], true);
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
 
                 if let Some(done_fn) = done_cb {
@@ -740,6 +759,7 @@ impl Interpreter {
             "tap" | "act" => {
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+                let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(&attrs);
 
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
@@ -801,6 +821,7 @@ impl Interpreter {
 
                 // For on-demand supplies, execute the callback to produce values
                 let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
+                let mut on_demand_quit: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
@@ -809,8 +830,17 @@ impl Interpreter {
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb, vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
+                    let callback_result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+                    let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                    if let Err(err) = callback_result {
+                        on_demand_quit = Some(
+                            err.exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message)),
+                        );
+                    }
+                    emitted
                 } else if has_unique {
                     if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
                         Arc::make_mut(items).push(tap_cb.clone());
@@ -903,6 +933,14 @@ impl Interpreter {
                         }
                     }
                     let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+                }
+
+                if let Some(quit_reason) = on_demand_quit {
+                    if let Some(quit_fn) = quit_cb {
+                        let _ = self.call_sub_value(quit_fn, vec![quit_reason], true);
+                    }
+                    let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
+                    return Ok((tap_instance, attrs));
                 }
 
                 // Call done callback after all values emitted
