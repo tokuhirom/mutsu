@@ -1549,7 +1549,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
 
     // Optional type constraint.
-    let (rest, type_constraint) = {
+    let (rest, mut type_constraint) = {
         let saved = rest;
         if let Some((r, tc)) = parse_type_constraint_expr(rest) {
             let (r2, _) = ws(r)?;
