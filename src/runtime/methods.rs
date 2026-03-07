@@ -442,8 +442,10 @@ impl Interpreter {
                 return Ok(Value::str(format!("({inner})")));
             }
         }
-        if matches!(method, "max" | "min" | "lines" | "delayed" | "reduce")
-            && matches!(&target, Value::Package(name) if name == "Supply")
+        if matches!(
+            method,
+            "max" | "min" | "lines" | "delayed" | "reduce" | "classify"
+        ) && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
                 "Cannot call .{} on a Supply type object",
@@ -1230,7 +1232,8 @@ impl Interpreter {
             "are" => {
                 return self.dispatch_are(target, &args);
             }
-            "classify" | "categorize" => {
+            "classify" | "categorize" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
+            {
                 let mut call_args = Vec::with_capacity(args.len() + 1);
                 call_args.extend(args.iter().cloned());
                 call_args.push(target);

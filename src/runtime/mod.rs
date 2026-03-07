@@ -763,6 +763,7 @@ impl Interpreter {
                     "lines",
                     "merge",
                     "unique",
+                    "classify",
                     "Supply",
                     "Promise",
                     "schedule-on",

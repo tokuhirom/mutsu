@@ -2072,7 +2072,11 @@ impl Interpreter {
             // and named placeholders ($:name) by matching Pair arg keys.
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .filter(|a| match a {
+                    Value::Pair(..) => false,
+                    Value::ValuePair(key, _) => !matches!(key.as_ref(), Value::Str(..)),
+                    _ => true,
+                })
                 .cloned()
                 .collect();
             let named_args: Vec<(String, Value)> = plain_args
