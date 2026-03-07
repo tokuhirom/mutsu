@@ -1000,10 +1000,20 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
-        let method = name_val.to_string_value();
-        let call_result =
+        let call_result = if matches!(
+            &name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target);
+            call_args.extend(args);
             self.interpreter
-                .call_method_mut_with_values(&target_name, target, &method, args)?;
+                .call_sub_value(name_val, call_args, false)?
+        } else {
+            let method = name_val.to_string_value();
+            self.interpreter
+                .call_method_mut_with_values(&target_name, target, &method, args)?
+        };
         self.stack.push(call_result);
         self.env_dirty = true;
         Ok(())
