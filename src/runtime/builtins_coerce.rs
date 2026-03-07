@@ -1,7 +1,11 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn builtin_coerce(&self, name: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_coerce(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         let Some(value) = args.first().cloned() else {
             return Ok(Value::Nil);
         };
@@ -57,7 +61,7 @@ impl Interpreter {
                 Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
                 _ => Value::Num(0.0),
             },
-            "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
+            "Str" => self.call_method_with_values(value, "Str", vec![])?,
             "Bool" => Value::Bool(value.truthy()),
             _ => Value::Nil,
         };
