@@ -358,17 +358,28 @@ impl Compiler {
                         return;
                     }
                     TokenKind::AndThen => {
-                        // a andthen b: result is b if a.defined, else Empty
+                        // a andthen b: result is b if a.defined, else Empty.
+                        // For callable RHS values (e.g. pointy blocks), invoke them with
+                        // the LHS as argument while keeping $_ topicalized to LHS.
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::CallDefined);
                         let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
-                        // Defined path: bind topic $_ to LHS while evaluating RHS,
-                        // then discard LHS and keep RHS result.
+                        // Defined path:
+                        // - topicalize $_ with LHS for RHS evaluation
+                        // - evaluate RHS
+                        // - if RHS is callable, invoke it with LHS argument
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::SetTopic);
-                        self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
+                        let finalize_name_idx = self
+                            .code
+                            .add_constant(Value::str_from("__mutsu_andthen_finalize"));
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx: finalize_name_idx,
+                            arity: 2,
+                            arg_sources_idx: None,
+                        });
                         let jump_end = self.code.emit(OpCode::Jump(0));
                         // Undefined path: replace with Empty
                         self.code.patch_jump(jump_undef);
