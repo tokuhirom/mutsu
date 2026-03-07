@@ -4,7 +4,7 @@ use std::fs;
 use std::io::IsTerminal;
 use std::io::{self, Read};
 
-use mutsu::{Interpreter, RuntimeError};
+use mutsu::{Interpreter, RuntimeError, Value};
 
 fn print_error(prefix: &str, err: &RuntimeError) {
     eprintln!("{}: {}", prefix, err.message);
@@ -122,26 +122,29 @@ fn main() {
         std::process::exit(1);
     }
 
-    let (input, program_name) = if !filtered_args.is_empty() && filtered_args[0] == "-e" {
-        if filtered_args.len() < 2 {
-            eprintln!("Usage: {} -e <code>", args[0]);
-            std::process::exit(1);
-        }
-        (filtered_args[1].clone(), "-e".to_string())
-    } else if !filtered_args.is_empty() {
-        let content = fs::read_to_string(&filtered_args[0]).unwrap_or_else(|err| {
-            eprintln!("Failed to read {}: {}", filtered_args[0], err);
-            std::process::exit(1);
-        });
-        (content, filtered_args[0].clone())
-    } else {
-        let mut buf = String::new();
-        io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
-            eprintln!("Failed to read stdin: {}", err);
-            std::process::exit(1);
-        });
-        (buf, "<stdin>".to_string())
-    };
+    let (input, program_name, script_args) =
+        if !filtered_args.is_empty() && filtered_args[0] == "-e" {
+            if filtered_args.len() < 2 {
+                eprintln!("Usage: {} -e <code>", args[0]);
+                std::process::exit(1);
+            }
+            let rest = filtered_args[2..].to_vec();
+            (filtered_args[1].clone(), "-e".to_string(), rest)
+        } else if !filtered_args.is_empty() {
+            let content = fs::read_to_string(&filtered_args[0]).unwrap_or_else(|err| {
+                eprintln!("Failed to read {}: {}", filtered_args[0], err);
+                std::process::exit(1);
+            });
+            let rest = filtered_args[1..].to_vec();
+            (content, filtered_args[0].clone(), rest)
+        } else {
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
+                eprintln!("Failed to read stdin: {}", err);
+                std::process::exit(1);
+            });
+            (buf, "<stdin>".to_string(), Vec::new())
+        };
 
     if dump_ast {
         match mutsu::dump_ast(&input) {
@@ -185,6 +188,9 @@ fn main() {
         }
     }
     interpreter.set_program_path(&program_name);
+    if !script_args.is_empty() {
+        interpreter.set_args(script_args.into_iter().map(Value::str).collect());
+    }
     match interpreter.run(&input) {
         Ok(_output) => {
             // Output is written directly to stdout during execution.
