@@ -301,13 +301,30 @@ impl VM {
         };
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (
-                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
-                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
-            ) => runtime::to_big_rat_parts(left)
-                .zip(runtime::to_big_rat_parts(right))
-                .and_then(|(a, b)| runtime::compare_big_rat_parts(a, b))
-                .unwrap_or(std::cmp::Ordering::Equal),
+            (l, r)
+                if (is_rationalish(l) || is_rationalish(r))
+                    && matches!(
+                        l,
+                        Value::Int(_)
+                            | Value::BigInt(_)
+                            | Value::Rat(_, _)
+                            | Value::FatRat(_, _)
+                            | Value::BigRat(_, _)
+                    )
+                    && matches!(
+                        r,
+                        Value::Int(_)
+                            | Value::BigInt(_)
+                            | Value::Rat(_, _)
+                            | Value::FatRat(_, _)
+                            | Value::BigRat(_, _)
+                    ) =>
+            {
+                runtime::to_big_rat_parts(l)
+                    .zip(runtime::to_big_rat_parts(r))
+                    .and_then(|(a, b)| runtime::compare_big_rat_parts(a, b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }
             (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
             (Value::Int(a), Value::Num(b)) => (*a as f64)
                 .partial_cmp(b)
