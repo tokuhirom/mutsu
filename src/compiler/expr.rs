@@ -1082,12 +1082,9 @@ impl Compiler {
                                 Expr::ArrayVar(name.clone()),
                             ],
                         }),
-                        Expr::HashVar(name) => self.compile_expr(&Expr::Call {
-                            name: Symbol::intern("join"),
-                            args: vec![
-                                Expr::Literal(Value::str(" ".to_string())),
-                                Expr::HashVar(name.clone()),
-                            ],
+                        Expr::HashVar(name) => self.compile_expr(&Expr::Unary {
+                            op: crate::token_kind::TokenKind::Tilde,
+                            expr: Box::new(Expr::HashVar(name.clone())),
                         }),
                         _ => self.compile_expr(part),
                     }
