@@ -92,6 +92,7 @@ roast/S03-metaops/cross.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
+roast/S03-operators/andthen.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t

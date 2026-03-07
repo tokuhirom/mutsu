@@ -413,6 +413,7 @@ impl Interpreter {
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
+            "__mutsu_andthen_finalize" => self.builtin_andthen_finalize(&args),
             "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
@@ -1893,6 +1894,38 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    fn builtin_andthen_finalize(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_andthen_finalize expects lhs and rhs",
+            ));
+        }
+        let lhs = args[0].clone();
+        let rhs = args[1].clone();
+        if matches!(
+            rhs,
+            Value::Sub(_)
+                | Value::WeakSub(_)
+                | Value::Routine { .. }
+                | Value::Instance { .. }
+                | Value::Mixin(..)
+        ) {
+            let saved_topic = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), lhs.clone());
+            let result = self.eval_call_on_value(rhs, vec![lhs]);
+            match saved_topic {
+                Some(value) => {
+                    self.env.insert("_".to_string(), value);
+                }
+                None => {
+                    self.env.remove("_");
+                }
+            }
+            return result;
+        }
+        Ok(rhs)
     }
 
     fn builtin_cross_shortcircuit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

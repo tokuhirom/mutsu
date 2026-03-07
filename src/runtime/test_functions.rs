@@ -2,6 +2,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn cmp_eqv_bool(left: &Value, right: &Value) -> bool {
+        use crate::value::JunctionKind;
+        match (left, right) {
+            (
+                Value::Junction {
+                    kind: lkind,
+                    values: lvals,
+                },
+                _,
+            ) => match lkind {
+                JunctionKind::Any => lvals.iter().any(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::All => lvals.iter().all(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::One => {
+                    lvals
+                        .iter()
+                        .filter(|lv| Self::cmp_eqv_bool(lv, right))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => lvals.iter().all(|lv| !Self::cmp_eqv_bool(lv, right)),
+            },
+            (
+                _,
+                Value::Junction {
+                    kind: rkind,
+                    values: rvals,
+                },
+            ) => match rkind {
+                JunctionKind::Any => rvals.iter().any(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::All => rvals.iter().all(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::One => {
+                    rvals
+                        .iter()
+                        .filter(|rv| Self::cmp_eqv_bool(left, rv))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => rvals.iter().all(|rv| !Self::cmp_eqv_bool(left, rv)),
+            },
+            _ => left.eqv(right),
+        }
+    }
+
     fn unwrap_test_arg_value(value: &Value) -> Value {
         match value {
             Value::Capture { positional, named }
@@ -373,7 +416,7 @@ impl Interpreter {
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
                 "===" => crate::runtime::utils::values_identical(&left, &right),
                 "!===" => !crate::runtime::utils::values_identical(&left, &right),
-                "eqv" => left.eqv(&right),
+                "eqv" => Self::cmp_eqv_bool(&left, &right),
                 "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal
