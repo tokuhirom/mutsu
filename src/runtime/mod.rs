@@ -17,7 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::env::Env;
-use crate::opcode::{CompiledCode, OpCode};
+use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
     ArrayKind, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
@@ -76,6 +76,13 @@ fn current_process_id() -> i64 {
         0
     }
 }
+
+type ProtectBlockCacheEntry = (
+    Arc<CompiledCode>,
+    Arc<HashMap<String, CompiledFunction>>,
+    Arc<Vec<usize>>,
+);
+type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
 mod accessors;
 mod builtins;
@@ -451,6 +458,7 @@ pub struct Interpreter {
     role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+    attribute_build_overrides: HashMap<(String, String), Value>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -460,6 +468,7 @@ pub struct Interpreter {
     loaded_modules: HashSet<String>,
     need_hidden_classes: HashSet<String>,
     closure_env_overrides: HashMap<u64, Env>,
+    protect_block_cache: ProtectBlockCache,
     module_load_stack: Vec<String>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
@@ -1626,6 +1635,7 @@ impl Interpreter {
             role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
             class_role_param_bindings: HashMap::new(),
+            attribute_build_overrides: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -1635,6 +1645,7 @@ impl Interpreter {
             loaded_modules: HashSet::new(),
             need_hidden_classes: HashSet::new(),
             closure_env_overrides: HashMap::new(),
+            protect_block_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
@@ -2828,6 +2839,7 @@ impl Interpreter {
             role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
             class_role_param_bindings: self.class_role_param_bindings.clone(),
+            attribute_build_overrides: self.attribute_build_overrides.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
@@ -2837,6 +2849,7 @@ impl Interpreter {
             loaded_modules: self.loaded_modules.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
+            protect_block_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
@@ -3022,16 +3035,24 @@ impl Interpreter {
         }
     }
 
-    /// Sync only the specified keys from shared_vars into env.
-    /// More efficient than full sync when we know which keys the block accesses.
-    pub(crate) fn sync_shared_vars_for_keys<'a>(&mut self, keys: impl Iterator<Item = &'a String>) {
+    /// Sync shared vars that are captured by the provided closure env.
+    /// Iterates whichever side is smaller to reduce per-call overhead.
+    pub(crate) fn sync_shared_vars_for_env(&mut self, captured_env: &Env) {
         if !self.shared_vars_active {
             return;
         }
         let sv = self.shared_vars.read().unwrap();
-        for key in keys {
-            if let Some(val) = sv.get(key) {
-                self.env.insert(key.clone(), val.clone());
+        if sv.len() <= captured_env.len() {
+            for (key, val) in sv.iter() {
+                if captured_env.contains_key(key) {
+                    self.env.insert(key.clone(), val.clone());
+                }
+            }
+        } else {
+            for key in captured_env.keys() {
+                if let Some(val) = sv.get(key) {
+                    self.env.insert(key.clone(), val.clone());
+                }
             }
         }
     }

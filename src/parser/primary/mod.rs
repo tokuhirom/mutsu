@@ -404,6 +404,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_pointy_capture_param_method_call() {
+        let (rest, expr) = primary("(-> |c { }).count").unwrap();
+        assert_eq!(rest, ".count");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { ref param_defs, .. }
+                if param_defs.len() == 1
+                    && param_defs[0].slurpy
+                    && param_defs[0].sigilless
+                    && param_defs[0].name == "c"
+        ));
+    }
+
+    #[test]
     fn parse_big_q_to_heredoc() {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
