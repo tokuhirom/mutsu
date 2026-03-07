@@ -310,6 +310,8 @@ impl Interpreter {
                     let has_unique =
                         matches!(attributes.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                    let is_elems =
+                        matches!(attributes.get("elems_filter"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attributes
                             .get("line_chomp")
@@ -332,6 +334,25 @@ impl Interpreter {
                             as_fn,
                             with_fn,
                             expires,
+                        );
+                    } else if is_elems {
+                        let interval = attributes
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attributes
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        register_supplier_elems_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            interval,
+                            initial_count,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -630,6 +651,12 @@ impl Interpreter {
             "done" => {
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_done(supplier_id);
+                    for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    }
+                    for done_cb in take_supplier_done_callbacks(supplier_id) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
                 Ok(Value::Nil)
             }
@@ -640,6 +667,12 @@ impl Interpreter {
                     .unwrap_or_else(|| Value::str_from("Died"));
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason);
+                    for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    }
+                    for done_cb in take_supplier_done_callbacks(supplier_id) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
                 Ok(Value::Nil)
             }
@@ -804,6 +837,7 @@ impl Interpreter {
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
+                    let is_elems = matches!(attrs.get("elems_filter"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
                         register_supplier_lines_tap(
@@ -823,6 +857,25 @@ impl Interpreter {
                             as_fn,
                             with_fn,
                             expires,
+                        );
+                    } else if is_elems {
+                        let interval = attrs
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attrs
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        register_supplier_elems_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            interval,
+                            initial_count,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);

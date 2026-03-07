@@ -404,6 +404,14 @@ struct ClassifyState {
 }
 
 #[derive(Clone)]
+struct ElemsTraceState {
+    interval_seconds: f64,
+    last_emit_at: Option<std::time::Instant>,
+    emitted_count: i64,
+    last_reported_count: i64,
+}
+
+#[derive(Clone)]
 struct SupplierTapSubscription {
     callback: Value,
     line_mode: bool,
@@ -412,6 +420,7 @@ struct SupplierTapSubscription {
     delay_seconds: f64,
     unique_filter: Option<UniqueFilterState>,
     classify_state: Option<ClassifyState>,
+    elems_trace: Option<ElemsTraceState>,
 }
 
 #[derive(Clone, Default)]
@@ -734,6 +743,7 @@ pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds:
                 delay_seconds,
                 unique_filter: None,
                 classify_state: None,
+                elems_trace: None,
             });
     }
 }
@@ -756,6 +766,36 @@ pub(super) fn register_supplier_lines_tap(
                 delay_seconds,
                 unique_filter: None,
                 classify_state: None,
+                elems_trace: None,
+            });
+    }
+}
+
+pub(super) fn register_supplier_elems_tap(
+    supplier_id: u64,
+    tap: Value,
+    delay_seconds: f64,
+    interval_seconds: f64,
+    initial_count: i64,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: tap,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: Some(ElemsTraceState {
+                    interval_seconds: interval_seconds.max(0.0),
+                    last_emit_at: None,
+                    emitted_count: initial_count.max(0),
+                    last_reported_count: initial_count.max(0),
+                }),
             });
     }
 }
@@ -838,6 +878,25 @@ pub(super) fn supplier_emit_callbacks(
                     value: emitted_value.clone(),
                     tap_index: idx,
                 });
+            } else if let Some(ref mut elems) = tap.elems_trace {
+                elems.emitted_count += 1;
+                let now = std::time::Instant::now();
+                let should_emit = if elems.interval_seconds <= 0.0 {
+                    true
+                } else if let Some(last_emit) = elems.last_emit_at {
+                    now.duration_since(last_emit).as_secs_f64() >= elems.interval_seconds
+                } else {
+                    true
+                };
+                if should_emit && elems.emitted_count > elems.last_reported_count {
+                    elems.last_emit_at = Some(now);
+                    elems.last_reported_count = elems.emitted_count;
+                    actions.push(SupplierEmitAction::Call(
+                        tap.callback.clone(),
+                        Value::Int(elems.emitted_count),
+                        tap.delay_seconds,
+                    ));
+                }
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -901,6 +960,7 @@ pub(super) fn register_supplier_unique_tap(
                     seen: Vec::new(),
                 }),
                 classify_state: None,
+                elems_trace: None,
             });
     }
 }
@@ -938,6 +998,7 @@ pub(super) fn register_supplier_classify_tap(
                     seen_keys: Vec::new(),
                     key_supplier_ids: Vec::new(),
                 }),
+                elems_trace: None,
             });
     }
 }

@@ -898,6 +898,7 @@ impl Interpreter {
             || method == "squish"
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
+            || (method == "elems" && matches!(&target, Value::Instance { .. }))
             || (matches!(method, "list" | "Array" | "Seq")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
@@ -2566,6 +2567,55 @@ impl Interpreter {
                 }
                 let items = Self::value_to_list(&target);
                 return self.reduce_items(callable, items);
+            }
+            "elems" => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Supply"
+                {
+                    let interval = args.first().map(Value::to_f64).unwrap_or(0.0).max(0.0);
+
+                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id")
+                        && *supplier_id > 0
+                    {
+                        let (emitted, done, quit_reason) =
+                            crate::runtime::native_methods::supplier_snapshot(*supplier_id as u64);
+                        let mut elems_attrs = HashMap::new();
+                        elems_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                        elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                        elems_attrs.insert("live".to_string(), Value::Bool(false));
+                        elems_attrs.insert("supplier_id".to_string(), Value::Int(*supplier_id));
+                        elems_attrs.insert("supplier_done".to_string(), Value::Bool(done));
+                        elems_attrs.insert("elems_filter".to_string(), Value::Bool(true));
+                        elems_attrs.insert("elems_interval".to_string(), Value::Num(interval));
+                        elems_attrs.insert(
+                            "elems_initial_count".to_string(),
+                            Value::Int(emitted.len() as i64),
+                        );
+                        if let Some(reason) = quit_reason {
+                            elems_attrs.insert("quit_reason".to_string(), reason);
+                        }
+                        return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
+                    }
+
+                    let source_values = self.supply_list_values(attributes, true)?;
+                    let elems_values = if interval > 0.0 {
+                        Vec::new()
+                    } else {
+                        (1..=source_values.len())
+                            .map(|idx| Value::Int(idx as i64))
+                            .collect()
+                    };
+                    let mut elems_attrs = HashMap::new();
+                    elems_attrs.insert("values".to_string(), Value::array(elems_values));
+                    elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    elems_attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
+                }
+                return self.call_function("elems", vec![target]);
             }
             "map" => {
                 if let Value::Instance {
