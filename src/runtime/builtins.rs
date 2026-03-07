@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::token_kind::TokenKind;
 use crate::value::ArrayKind;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -2466,7 +2467,99 @@ impl Interpreter {
                 self.atomic_current_value(&shared, &name, &value_key)
             };
             self.env.insert(name.clone(), current.clone());
-            let new_val = self.call_sub_value(code, vec![current], false)?;
+            let new_val = if let Value::Sub(sub) = &code {
+                if sub.params.len() == 1
+                    && sub.body.len() == 1
+                    && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
+                    && *op == TokenKind::Plus
+                {
+                    let param = &sub.params[0];
+                    let delta_expr = match (left.as_ref(), right.as_ref()) {
+                        (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                        (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                        _ => None,
+                    };
+                    if let Some(delta_expr) = delta_expr {
+                        let delta = match delta_expr {
+                            Expr::Var(var_name) => {
+                                self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                            }
+                            Expr::Literal(v) => v,
+                            other => self.eval_block_value(&[Stmt::Expr(other)])?,
+                        };
+                        crate::builtins::arith_add(current.clone(), delta)?
+                    } else {
+                        let saved_topic = self.env.get("_").cloned();
+                        let saved_dollar_topic = self.env.get("$_").cloned();
+                        self.env.insert("_".to_string(), current.clone());
+                        self.env.insert("$_".to_string(), current.clone());
+                        let result = self.call_sub_value(code, vec![current], false)?;
+                        match saved_topic {
+                            Some(v) => {
+                                self.env.insert("_".to_string(), v);
+                            }
+                            None => {
+                                self.env.remove("_");
+                            }
+                        }
+                        match saved_dollar_topic {
+                            Some(v) => {
+                                self.env.insert("$_".to_string(), v);
+                            }
+                            None => {
+                                self.env.remove("$_");
+                            }
+                        }
+                        result
+                    }
+                } else {
+                    let saved_topic = self.env.get("_").cloned();
+                    let saved_dollar_topic = self.env.get("$_").cloned();
+                    self.env.insert("_".to_string(), current.clone());
+                    self.env.insert("$_".to_string(), current.clone());
+                    let result = self.call_sub_value(code, vec![current], false)?;
+                    match saved_topic {
+                        Some(v) => {
+                            self.env.insert("_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("_");
+                        }
+                    }
+                    match saved_dollar_topic {
+                        Some(v) => {
+                            self.env.insert("$_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("$_");
+                        }
+                    }
+                    result
+                }
+            } else {
+                let saved_topic = self.env.get("_").cloned();
+                let saved_dollar_topic = self.env.get("$_").cloned();
+                self.env.insert("_".to_string(), current.clone());
+                self.env.insert("$_".to_string(), current.clone());
+                let result = self.call_sub_value(code, vec![current], false)?;
+                match saved_topic {
+                    Some(v) => {
+                        self.env.insert("_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                match saved_dollar_topic {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
+                result
+            };
             let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
             self.env.insert(name.clone(), coerced.clone());
             self.shared_vars
