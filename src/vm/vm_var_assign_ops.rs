@@ -23,6 +23,11 @@ impl VM {
                 .interpreter
                 .call_method_with_values(value, trait_name, vec![]);
         }
+        if self.interpreter.check_readonly_for_modify(name).is_err()
+            && matches!(value, Value::Set(_) | Value::Bag(_) | Value::Mix(_))
+        {
+            return Ok(value);
+        }
         Ok(runtime::coerce_to_hash(value))
     }
 

@@ -331,6 +331,13 @@ pub(crate) fn version_cmp_parts(
 }
 
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
+    let mix_weight_value = |weight: f64| {
+        if weight.is_finite() && weight.fract() == 0.0 {
+            Value::Int(weight as i64)
+        } else {
+            Value::Num(weight)
+        }
+    };
     match value {
         Value::Hash(_) => value,
         Value::Array(items, ..) => {
@@ -387,6 +394,27 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         Value::ValuePair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k.to_string_value(), *v);
+            Value::hash(map)
+        }
+        Value::Set(items) => {
+            let mut map = HashMap::new();
+            for key in items.iter() {
+                map.insert(key.clone(), Value::Bool(true));
+            }
+            Value::hash(map)
+        }
+        Value::Bag(items) => {
+            let mut map = HashMap::new();
+            for (key, count) in items.iter() {
+                map.insert(key.clone(), Value::Int(*count));
+            }
+            Value::hash(map)
+        }
+        Value::Mix(items) => {
+            let mut map = HashMap::new();
+            for (key, weight) in items.iter() {
+                map.insert(key.clone(), mix_weight_value(*weight));
+            }
             Value::hash(map)
         }
         Value::Nil => Value::hash(HashMap::new()),
