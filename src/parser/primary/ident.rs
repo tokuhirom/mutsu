@@ -529,6 +529,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "flat"
             | "slip"
             | "produce"
+            | "reduce"
             | "run"
             | "shell"
             | "cross"

@@ -2281,14 +2281,8 @@ impl Interpreter {
                     .first()
                     .cloned()
                     .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
-                let mut items = Self::value_to_list(&target).into_iter();
-                let Some(mut acc) = items.next() else {
-                    return Ok(Value::Nil);
-                };
-                for item in items {
-                    acc = self.call_sub_value(callable.clone(), vec![acc, item], true)?;
-                }
-                return Ok(acc);
+                let items = Self::value_to_list(&target);
+                return self.reduce_items(callable, items);
             }
             "map" => {
                 if let Value::Instance {
