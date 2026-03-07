@@ -1674,11 +1674,54 @@ impl Interpreter {
             {
                 self.supply_emit_buffer.push(Vec::new());
                 self.supply_emit_timed_buffer.push(Vec::new());
+                let after_tap_started_at = std::time::Instant::now();
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                 let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
                 let emitted = if let Value::Instance { ref attributes, .. } = supply {
-                    if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
+                    if matches!(attributes.get("elems_filter"), Some(Value::Bool(true))) {
+                        let interval = attributes
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attributes
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        if interval <= 0.0 {
+                            (1..=emitted.len())
+                                .map(|idx| Value::Int(initial_count + idx as i64))
+                                .collect::<Vec<_>>()
+                        } else {
+                            let events = if timed_emitted.is_empty() {
+                                let now = std::time::Instant::now();
+                                emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                            } else {
+                                timed_emitted.clone()
+                            };
+                            let mut total = initial_count;
+                            let mut last_emit_at: Option<std::time::Instant> = None;
+                            let mut out = Vec::new();
+                            for (_, ts) in events {
+                                total += 1;
+                                let should_emit = if let Some(last) = last_emit_at {
+                                    ts.duration_since(last).as_secs_f64() >= interval
+                                } else {
+                                    let first_threshold = (interval * 0.5).max(0.0);
+                                    ts.duration_since(after_tap_started_at).as_secs_f64()
+                                        >= first_threshold
+                                };
+                                if should_emit {
+                                    out.push(Value::Int(total));
+                                    last_emit_at = Some(ts);
+                                }
+                            }
+                            out
+                        }
+                    } else if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
                         let as_fn = attributes.get("unique_as").cloned();
                         let with_fn = attributes.get("unique_with").cloned();
                         let expires_secs = attributes.get("unique_expires").map(Value::to_f64);

@@ -965,13 +965,15 @@ impl VM {
                 _ => false,
             }
         }
-        let bypass_supply_extrema_fastpath =
-            (method_sym == "max" || method_sym == "min" || method_sym == "lines")
-                && args.len() <= 1
-                && (matches!(
-                    target,
-                    Value::Instance { class_name, .. } if class_name == "Supply"
-                ) || matches!(target, Value::Package(name) if name == "Supply"));
+        let bypass_supply_extrema_fastpath = (method_sym == "max"
+            || method_sym == "min"
+            || method_sym == "lines"
+            || method_sym == "elems")
+            && args.len() <= 1
+            && (matches!(
+                target,
+                Value::Instance { class_name, .. } if class_name == "Supply"
+            ) || matches!(target, Value::Package(name) if name == "Supply"));
         let bypass_supplier_supply_fastpath = method_sym == "Supply"
             && args.is_empty()
             && matches!(

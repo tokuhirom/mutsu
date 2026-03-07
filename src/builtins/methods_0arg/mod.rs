@@ -1322,6 +1322,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Int(*f as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Int(numeric as i64)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::FatRat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::BigRat(n, d) if !d.is_zero() => {
@@ -1354,6 +1375,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Value::Num(n.to_f64().unwrap_or(f64::INFINITY))
                 }
                 Value::Num(f) => Value::Num(*f),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(numeric)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::FatRat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::BigRat(n, d) if !d.is_zero() => {
@@ -1420,6 +1462,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Num(*f),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(numeric)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
                     if let Ok(i) = s.trim().parse::<i64>() {

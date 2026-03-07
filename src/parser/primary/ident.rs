@@ -671,6 +671,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "indir"
             | "cross"
             | "await"
+            | "sleep"
             | "dir"
             | "first"
             | "make"
