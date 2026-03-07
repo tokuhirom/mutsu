@@ -86,7 +86,7 @@ impl Interpreter {
         false
     }
 
-    pub(super) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
