@@ -1487,6 +1487,7 @@ impl VM {
                 delete,
                 complement,
                 squash,
+                non_destructive,
             } => {
                 self.exec_transliterate_op(
                     code,
@@ -1495,6 +1496,7 @@ impl VM {
                     *delete,
                     *complement,
                     *squash,
+                    *non_destructive,
                 )?;
                 *ip += 1;
             }
