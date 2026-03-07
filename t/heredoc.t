@@ -1,5 +1,5 @@
 use Test;
-plan 6;
+plan 7;
 
 my $text = q:to/END/;
 Hello
@@ -34,3 +34,8 @@ my $dedented = q:to/END/;
     green
     END
 is $dedented, "red\ngreen\n", 'q:to strips terminator indentation from content';
+
+my $spaced = q:to /END/;
+spacey
+END
+is $spaced, "spacey\n", 'q:to accepts whitespace before delimiter';

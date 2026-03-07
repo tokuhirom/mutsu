@@ -428,6 +428,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_q_to_heredoc_with_space_before_delimiter() {
+        let src = "q:to /END/;\nhello\nEND\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, ";\n");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
+    }
+
+    #[test]
     fn parse_match_regex_with_repetition_modifiers() {
         let (rest1, expr1) = primary("m:2x/ab/").unwrap();
         assert_eq!(rest1, "");
