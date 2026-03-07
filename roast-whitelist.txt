@@ -556,6 +556,7 @@ roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
+roast/S32-io/io-path-subclasses.t
 roast/S32-io/note.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
