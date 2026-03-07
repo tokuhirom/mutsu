@@ -1152,7 +1152,7 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
         if let Some(role) = role {
-            for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+            for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                 role.attributes.iter().enumerate()
             {
                 let value = if let Some(arg) = role_args.get(idx) {

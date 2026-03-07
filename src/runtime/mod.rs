@@ -141,12 +141,13 @@ pub(super) type ClassAttributeDef = (
     bool,
     Option<Option<String>>,
     char,
+    Option<Expr>,
 );
 
 #[derive(Clone, Default)]
 struct ClassDef {
     parents: Vec<String>,
-    // (name, is_public, default, is_rw, is_required, sigil)
+    // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
     attributes: Vec<ClassAttributeDef>,
     attribute_types: HashMap<String, String>, // attr_name -> type constraint
     methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
