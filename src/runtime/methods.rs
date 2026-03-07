@@ -2629,7 +2629,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name.resolve()) {
-                    for (attr_name, _is_public, default, _is_rw, _, _) in
+                    for (attr_name, _is_public, default, _is_rw, _, _, _) in
                         self.collect_class_attributes(&class_name.resolve())
                     {
                         let val = if let Some(expr) = default {
