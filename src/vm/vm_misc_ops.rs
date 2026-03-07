@@ -485,6 +485,7 @@ impl VM {
             if !trimmed.is_empty()
                 && trimmed.parse::<i64>().is_err()
                 && trimmed.parse::<f64>().is_err()
+                && crate::runtime::utils::parse_prefixed_generic_radix_literal(trimmed).is_none()
             {
                 let mut ex_attrs = std::collections::HashMap::new();
                 ex_attrs.insert(
@@ -650,6 +651,18 @@ impl VM {
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.interpreter.check_readonly_for_modify(&name)?;
+        if name.starts_with('%')
+            && self
+                .interpreter
+                .var_type_constraint_fast(&name)
+                .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()))
+                == Some("Mix")
+            && self
+                .get_env_with_main_alias(&name)
+                .is_some_and(|current| !matches!(current, Value::Nil))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
             let has_variable_slot = self.interpreter.env().contains_key(&name);

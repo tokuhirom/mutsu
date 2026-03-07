@@ -93,6 +93,10 @@ impl Interpreter {
                     .unwrap_or_else(|| ".".to_string());
                 Ok(Value::str(dname))
             }
+            "cleanup" => {
+                let normalized = Self::cleanup_io_path_lexical(&p);
+                Ok(self.make_io_path_instance(&normalized))
+            }
             "parent" => {
                 let mut levels = 1i64;
                 if let Some(Value::Int(i)) = args.first() {
@@ -553,6 +557,56 @@ impl Interpreter {
     fn io_path_extension_part_count(path: &str) -> i64 {
         let (_, basename) = Self::split_path_for_extension(path);
         basename.chars().filter(|&c| c == '.').count() as i64
+    }
+
+    fn cleanup_io_path_lexical(path: &str) -> String {
+        if path.is_empty() {
+            return ".".to_string();
+        }
+        let mut prefix = "";
+        let mut rest = path;
+        if path.len() >= 2 {
+            let bytes = path.as_bytes();
+            if bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+                prefix = &path[..2];
+                rest = &path[2..];
+            }
+        }
+        let is_absolute = rest.starts_with('/') || rest.starts_with('\\');
+        let sep = if path.contains('\\') && !path.contains('/') {
+            '\\'
+        } else {
+            '/'
+        };
+        let mut stack: Vec<&str> = Vec::new();
+        for seg in rest.split(['/', '\\']) {
+            if seg.is_empty() || seg == "." {
+                continue;
+            }
+            if seg == ".." {
+                if let Some(last) = stack.last().copied()
+                    && last != ".."
+                {
+                    stack.pop();
+                    continue;
+                }
+                if !is_absolute {
+                    stack.push(seg);
+                }
+                continue;
+            }
+            stack.push(seg);
+        }
+        let joined = stack.join(&sep.to_string());
+        let mut out = String::new();
+        out.push_str(prefix);
+        if is_absolute {
+            out.push(sep);
+        }
+        if !joined.is_empty() {
+            out.push_str(&joined);
+        }
+        if out.is_empty() { ".".to_string() } else { out }
     }
 
     fn io_path_extension_dot_index_for_n_parts(basename: &str, parts: i64) -> Option<usize> {

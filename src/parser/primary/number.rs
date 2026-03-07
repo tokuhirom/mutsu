@@ -306,13 +306,52 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("closing '>' for generic radix literal"));
     };
     let body = &r[..close_pos];
+    let body: String = body.chars().filter(|c| !c.is_whitespace()).collect();
     if body.is_empty() {
         return Err(PError::expected("generic radix digits"));
     }
+    let (digits_body, exponent_scale) = if let Some((digits, exp_part)) = body.split_once("*10**") {
+        let exp_part = exp_part.trim();
+        if exp_part.is_empty() {
+            return Err(PError::expected("generic radix exponent"));
+        }
+        let (sign, after_sign) = if let Some(rest) = exp_part.strip_prefix('+') {
+            (1_i64, rest)
+        } else if let Some(rest) = exp_part.strip_prefix('-') {
+            (-1_i64, rest)
+        } else {
+            (1_i64, exp_part)
+        };
+        let Some((exp_rest, exp_clean)) = scan_decimal_digits(after_sign) else {
+            return Err(PError::expected("generic radix exponent"));
+        };
+        if !exp_rest.is_empty() {
+            return Err(PError::expected("generic radix exponent"));
+        }
+        let exp_abs: i64 = exp_clean
+            .parse()
+            .map_err(|_| PError::expected("generic radix exponent"))?;
+        (digits.trim(), sign * exp_abs)
+    } else {
+        (body.trim(), 0_i64)
+    };
+    if digits_body.is_empty() {
+        return Err(PError::expected("generic radix digits"));
+    }
 
-    let mut clean = String::new();
-    for c in body.chars() {
+    let mut int_clean = String::new();
+    let mut frac_clean = String::new();
+    let mut saw_dot = false;
+    let mut saw_digit = false;
+    for c in digits_body.chars() {
         if c == '_' {
+            continue;
+        }
+        if c == '.' {
+            if saw_dot {
+                return Err(PError::expected("generic radix digits"));
+            }
+            saw_dot = true;
             continue;
         }
         let Some(value) = decimal_digit_value(c).or_else(|| radix_alpha_value(c)) else {
@@ -321,12 +360,54 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
         if value >= base {
             return Err(PError::expected("generic radix digits"));
         }
-        clean.push(char::from_digit(value, 36).unwrap());
+        saw_digit = true;
+        let digit = char::from_digit(value, 36).unwrap();
+        if saw_dot {
+            frac_clean.push(digit);
+        } else {
+            int_clean.push(digit);
+        }
     }
-    if clean.is_empty() {
+    if !saw_digit {
         return Err(PError::expected("generic radix digits"));
     }
-    Ok((&r[close_pos + 1..], parse_int_radix(&clean, base)))
+
+    // Fast path for plain integer generic radix literals.
+    if !saw_dot && exponent_scale == 0 {
+        return Ok((&r[close_pos + 1..], parse_int_radix(&int_clean, base)));
+    }
+
+    let base_big = num_bigint::BigInt::from(base);
+    let int_value = if int_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base)
+            .unwrap_or_else(|| num_bigint::BigInt::from(0_i64))
+    };
+    let frac_value = if frac_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(frac_clean.as_bytes(), base)
+            .unwrap_or_else(|| num_bigint::BigInt::from(0_i64))
+    };
+    let frac_scale = base_big.pow(frac_clean.len() as u32);
+    let mut numerator = int_value * &frac_scale + frac_value;
+    let mut denominator = frac_scale;
+
+    if exponent_scale != 0 {
+        let exp_abs = exponent_scale.unsigned_abs() as u32;
+        let scale10 = num_bigint::BigInt::from(10_u32).pow(exp_abs);
+        if exponent_scale > 0 {
+            numerator *= scale10;
+        } else {
+            denominator *= scale10;
+        }
+    }
+
+    Ok((
+        &r[close_pos + 1..],
+        Expr::Literal(crate::value::make_big_rat(numerator, denominator)),
+    ))
 }
 
 /// Parse a single Unicode numeric literal (vulgar fractions and superscript digits).

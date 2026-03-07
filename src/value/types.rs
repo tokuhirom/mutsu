@@ -82,9 +82,31 @@ impl Value {
             | (Value::Regex(_), Value::Regex(_))
             | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })
             | (Value::Routine { .. }, Value::Routine { .. })
-            | (Value::Sub(_), Value::Sub(_))
-            | (Value::Instance { .. }, Value::Instance { .. })
-            | (Value::Range(_, _), Value::Range(_, _))
+            | (Value::Sub(_), Value::Sub(_)) => self == other,
+            // Signature instances: compare by .raku string (structural equality)
+            (
+                Value::Instance {
+                    class_name: cn_a, ..
+                },
+                Value::Instance {
+                    class_name: cn_b, ..
+                },
+            ) if cn_a == "Signature" && cn_b == "Signature" => {
+                let raku_a = if let Value::Instance { attributes, .. } = self {
+                    attributes.get("raku").map(|v| v.to_string_value())
+                } else {
+                    None
+                };
+                let raku_b = if let Value::Instance { attributes, .. } = other {
+                    attributes.get("raku").map(|v| v.to_string_value())
+                } else {
+                    None
+                };
+                raku_a == raku_b
+            }
+            // Other Instance types: use identity comparison
+            (Value::Instance { .. }, Value::Instance { .. }) => self == other,
+            (Value::Range(_, _), Value::Range(_, _))
             | (Value::RangeExcl(_, _), Value::RangeExcl(_, _))
             | (Value::RangeExclStart(_, _), Value::RangeExclStart(_, _))
             | (Value::RangeExclBoth(_, _), Value::RangeExclBoth(_, _))

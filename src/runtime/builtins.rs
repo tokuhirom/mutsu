@@ -443,6 +443,7 @@ impl Interpreter {
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
+            "UNBASE" => self.builtin_unbase(&args),
             // Grammar helpers
             "make" => self.builtin_make(&args),
             "made" => self.builtin_made(),
@@ -738,6 +739,40 @@ impl Interpreter {
                 }
             }
             _ => self.call_function_fallback(name, &args),
+        }
+    }
+
+    fn builtin_unbase(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "UNBASE expects a radix and at least one argument",
+            ));
+        }
+        let radix = match args[0] {
+            Value::Int(n) if (2..=36).contains(&n) => n as u32,
+            _ => {
+                return Err(RuntimeError::new(
+                    "UNBASE radix must be an integer in 2..36",
+                ));
+            }
+        };
+
+        let mut out = Vec::with_capacity(args.len() - 1);
+        for arg in args.iter().skip(1) {
+            let text = arg.to_string_value();
+            let Some(parsed) = crate::runtime::parse_radix_number_body(&text, radix) else {
+                return Err(RuntimeError::new(format!(
+                    "Cannot parse '{}' as base {}",
+                    text, radix
+                )));
+            };
+            out.push(parsed);
+        }
+
+        if out.len() == 1 {
+            Ok(out.remove(0))
+        } else {
+            Ok(Value::array(out))
         }
     }
 

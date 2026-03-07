@@ -851,6 +851,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 ));
             }
             let is_builtin = is_supported_variable_trait(&trait_name);
+            if is_hash && (trait_name == "Mix" || trait_name == "MixHash") {
+                type_constraint = Some(trait_name.clone());
+            }
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
             }
@@ -1222,18 +1225,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
-        let stmt = if is_array {
-            Stmt::SyntheticBlock(vec![
-                stmt,
-                Stmt::Expr(Expr::Call {
+        let stmt = if is_array || bound_name.starts_with('%') {
+            let mut stmts = Vec::new();
+            if bound_name.starts_with('%') {
+                stmts.push(Stmt::MarkReadonly(bound_name.clone()));
+            }
+            stmts.push(stmt);
+            if is_array {
+                stmts.push(Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_record_bound_array_len"),
                     args: vec![Expr::Literal(Value::str(bound_name.clone()))],
-                }),
-                Stmt::Expr(Expr::Call {
+                }));
+                stmts.push(Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_record_shaped_array_dims"),
-                    args: vec![Expr::Literal(Value::str(bound_name))],
-                }),
-            ])
+                    args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                }));
+            }
+            Stmt::SyntheticBlock(stmts)
         } else {
             stmt
         };

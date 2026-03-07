@@ -213,6 +213,7 @@ impl Interpreter {
         let mut skip_block_reason: String = String::new();
         let mut skip_block_declared_tests: Option<usize> = None;
         let mut skip_block_declared_emitted = false;
+        let mut skip_stmt_paren_depth: i32 = 0;
         let test_funcs = [
             "is(",
             "is ",
@@ -246,6 +247,19 @@ impl Interpreter {
 
         for line in input.lines() {
             let trimmed = line.trim_start();
+
+            // Skip continuation lines of a multi-line skipped statement.
+            if skip_stmt_paren_depth > 0 {
+                for ch in trimmed.chars() {
+                    match ch {
+                        '(' | '[' | '{' => skip_stmt_paren_depth += 1,
+                        ')' | ']' | '}' => skip_stmt_paren_depth -= 1,
+                        _ => {}
+                    }
+                }
+                output.push('\n');
+                continue;
+            }
 
             // Count-based skip: skip the next N test assertion lines.
             if skip_lines_remaining > 0 {
@@ -304,6 +318,19 @@ impl Interpreter {
                             Self::raku_single_quoted_literal(reason)
                         ));
                         skip_block_pending = None;
+                        // If the statement spans multiple lines, set up to
+                        // skip continuation lines until parens balance.
+                        let mut depth = 0i32;
+                        for ch in trimmed.chars() {
+                            match ch {
+                                '(' | '[' | '{' => depth += 1,
+                                ')' | ']' | '}' => depth -= 1,
+                                _ => {}
+                            }
+                        }
+                        if depth > 0 {
+                            skip_stmt_paren_depth = depth;
+                        }
                         continue;
                     }
                     // Not a block/test line — cancel skip
