@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::value::{ArrayKind, JunctionKind, RuntimeError, Value};
+use num_bigint::BigInt;
+use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
@@ -1192,9 +1194,11 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => val,
         Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
         Value::Enum { value, .. } => Value::Int(value),
@@ -1625,6 +1629,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => left,
         _ => coerce_to_numeric(left),
     };
@@ -1634,6 +1639,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => right,
         _ => coerce_to_numeric(right),
     };
@@ -1655,6 +1661,68 @@ pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
         Value::FatRat(n, d) => Some((*n, *d)),
         _ => None,
     }
+}
+
+pub(crate) fn to_big_rat_parts(val: &Value) -> Option<(BigInt, BigInt)> {
+    match val {
+        Value::Int(i) => Some((BigInt::from(*i), BigInt::from(1))),
+        Value::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
+        Value::Rat(n, d) | Value::FatRat(n, d) => Some((BigInt::from(*n), BigInt::from(*d))),
+        Value::BigRat(n, d) => Some((n.clone(), d.clone())),
+        _ => None,
+    }
+}
+
+fn big_rat_parts_to_f64(num: &BigInt, den: &BigInt) -> f64 {
+    if den.is_zero() {
+        if num.is_zero() {
+            f64::NAN
+        } else if num.is_positive() {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        }
+    } else {
+        num.to_f64().unwrap_or(0.0) / den.to_f64().unwrap_or(1.0)
+    }
+}
+
+pub(crate) fn compare_big_rat_parts(
+    a: (BigInt, BigInt),
+    b: (BigInt, BigInt),
+) -> Option<std::cmp::Ordering> {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad.is_zero() || bd.is_zero() {
+        return big_rat_parts_to_f64(&an, &ad).partial_cmp(&big_rat_parts_to_f64(&bn, &bd));
+    }
+    Some((an * &bd).cmp(&(bn * &ad)))
+}
+
+pub(crate) fn big_rat_parts_equal(a: (BigInt, BigInt), b: (BigInt, BigInt)) -> bool {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad.is_zero() || bd.is_zero() {
+        if (ad.is_zero() && an.is_zero()) || (bd.is_zero() && bn.is_zero()) {
+            return false;
+        }
+        return big_rat_parts_to_f64(&an, &ad) == big_rat_parts_to_f64(&bn, &bd);
+    }
+    let ga = an.gcd(&ad);
+    let gb = bn.gcd(&bd);
+    let mut an = an / &ga;
+    let mut ad = ad / ga;
+    let mut bn = bn / &gb;
+    let mut bd = bd / gb;
+    if ad.is_negative() {
+        an = -an;
+        ad = -ad;
+    }
+    if bd.is_negative() {
+        bn = -bn;
+        bd = -bd;
+    }
+    an == bn && ad == bd
 }
 
 fn rat_parts_to_f64(num: i64, den: i64) -> f64 {
@@ -1781,16 +1849,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
 pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
     match val {
         Value::Complex(r, i) => Some((*r, *i)),
-        Value::Int(n) => Some((*n as f64, 0.0)),
-        Value::Num(f) => Some((*f, 0.0)),
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                Some((*n as f64 / *d as f64, 0.0))
-            } else {
-                None
-            }
-        }
-        _ => None,
+        _ => to_float_value(val).map(|v| (v, 0.0)),
     }
 }
 

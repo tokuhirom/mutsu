@@ -810,7 +810,7 @@ fn raku_value(v: &Value) -> String {
                 }
             }
         }
-        Value::FatRat(n, d) => format!("<{}/{}>", n, d),
+        Value::FatRat(n, d) => format!("FatRat.new({}, {})", n, d),
         Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
         Value::Num(f) => {
             if f.is_nan() {
@@ -1114,6 +1114,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
     }
+    // Numeric type object .Range methods
+    if let Value::Package(name) = target
+        && method == "Range"
+        && matches!(
+            name.resolve().as_str(),
+            "Real" | "Num" | "Rational" | "Rat" | "FatRat" | "BigRat"
+        )
+    {
+        return Some(Ok(Value::GenericRange {
+            start: Arc::new(Value::Num(f64::NEG_INFINITY)),
+            end: Arc::new(Value::Num(f64::INFINITY)),
+            excl_start: false,
+            excl_end: false,
+        }));
+    }
     // Native int type .Range method
     if let Value::Package(name) = target
         && crate::runtime::native_types::is_native_int_type(&name.resolve())
@@ -1306,6 +1321,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Int(*f as i64),
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                Value::FatRat(n, d) if *d != 0 => Value::Int(*n / *d),
+                Value::BigRat(n, d) if !d.is_zero() => {
+                    use num_traits::ToPrimitive;
+                    Value::Int((n / d).to_i64().unwrap_or(i64::MAX))
+                }
                 Value::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {
                         v
@@ -1333,6 +1353,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Value::Num(f) => Value::Num(*f),
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                Value::FatRat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                Value::BigRat(n, d) if !d.is_zero() => {
+                    use num_traits::ToPrimitive;
+                    let num = n.to_f64().unwrap_or(0.0);
+                    let den = d.to_f64().unwrap_or(1.0);
+                    Value::Num(num / den)
+                }
                 Value::Str(s) => {
                     let trimmed = s.trim();
                     // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
@@ -1358,6 +1385,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Num(*f),
                 Value::Rat(n, d) => Value::Rat(*n, *d),
+                Value::FatRat(n, d) => Value::FatRat(*n, *d),
+                Value::BigRat(n, d) => Value::BigRat(n.clone(), d.clone()),
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
                 Value::Complex(r, im) => {
                     if im.abs() <= 1e-15 {
@@ -2182,6 +2211,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             }
             Value::Nil => Some(Ok(Value::str_from("(Any)"))),
+            Value::FatRat(n, d) => {
+                if method == "gist" {
+                    Some(Ok(Value::str(target.to_string_value())))
+                } else {
+                    Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
+                }
+            }
+            Value::BigRat(_, _) => {
+                if method == "gist" {
+                    Some(Ok(Value::str(target.to_string_value())))
+                } else {
+                    Some(Ok(Value::str(raku_value(target))))
+                }
+            }
             Value::Rat(n, d) => {
                 if *d == 0 {
                     if *n == 0 {

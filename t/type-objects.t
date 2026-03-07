@@ -1,6 +1,6 @@
 use Test;
 
-plan 29;
+plan 32;
 
 # Type objects are undefined
 is Int.defined, False, 'Int.defined is False';
@@ -42,3 +42,8 @@ ok 42 ~~ Int:D, '42 ~~ Int:D';
 ok Int ~~ Int:U, 'Int ~~ Int:U';
 nok 42 ~~ Int:U, '42 ~~ Int:U is False';
 nok Int ~~ Int:D, 'Int ~~ Int:D is False (type object is not defined)';
+
+# Numeric type-object ranges are infinite and inclusive.
+is Rat.Range, -Inf..Inf, 'Rat.Range is -Inf..Inf';
+is FatRat.Range, -Inf..Inf, 'FatRat.Range is -Inf..Inf';
+is Num.Range, -Inf..Inf, 'Num.Range is -Inf..Inf';
