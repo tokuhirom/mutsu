@@ -1283,7 +1283,20 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        match class_name {
+        let dispatch_class = if matches!(
+            class_name,
+            "Promise" | "Channel" | "Supply" | "Supplier" | "Proc::Async"
+        ) {
+            Some(class_name.to_string())
+        } else {
+            self.class_mro(class_name).into_iter().find(|candidate| {
+                matches!(
+                    candidate.as_str(),
+                    "Promise" | "Channel" | "Supply" | "Supplier" | "Proc::Async"
+                )
+            })
+        };
+        match dispatch_class.as_deref().unwrap_or(class_name) {
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),
             "Supply" => self.native_supply_mut(attributes, method, args),
@@ -1304,7 +1317,76 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        match class_name {
+        let dispatch_class = if matches!(
+            class_name,
+            "IO::Path"
+                | "IO::Handle"
+                | "IO::Socket::INET"
+                | "IO::Socket::Async"
+                | "IO::Socket::Async::Listener"
+                | "IO::Pipe"
+                | "Lock"
+                | "Lock::Async"
+                | "Lock::ConditionVariable"
+                | "Distro"
+                | "Kernel"
+                | "Perl"
+                | "Compiler"
+                | "Promise"
+                | "Promise::Vow"
+                | "Channel"
+                | "Thread"
+                | "Proc::Async"
+                | "Proc"
+                | "Supply"
+                | "Supplier"
+                | "Tap"
+                | "ThreadPoolScheduler"
+                | "CurrentThreadScheduler"
+                | "FakeScheduler"
+                | "Cancellation"
+                | "Encoding::Builtin"
+                | "Encoding::Encoder"
+                | "Encoding::Decoder"
+        ) {
+            Some(class_name.to_string())
+        } else {
+            self.class_mro(class_name).into_iter().find(|candidate| {
+                matches!(
+                    candidate.as_str(),
+                    "IO::Path"
+                        | "IO::Handle"
+                        | "IO::Socket::INET"
+                        | "IO::Socket::Async"
+                        | "IO::Socket::Async::Listener"
+                        | "IO::Pipe"
+                        | "Lock"
+                        | "Lock::Async"
+                        | "Lock::ConditionVariable"
+                        | "Distro"
+                        | "Kernel"
+                        | "Perl"
+                        | "Compiler"
+                        | "Promise"
+                        | "Promise::Vow"
+                        | "Channel"
+                        | "Thread"
+                        | "Proc::Async"
+                        | "Proc"
+                        | "Supply"
+                        | "Supplier"
+                        | "Tap"
+                        | "ThreadPoolScheduler"
+                        | "CurrentThreadScheduler"
+                        | "FakeScheduler"
+                        | "Cancellation"
+                        | "Encoding::Builtin"
+                        | "Encoding::Encoder"
+                        | "Encoding::Decoder"
+                )
+            })
+        };
+        match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Path" => self.native_io_path(attributes, method, args),
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
