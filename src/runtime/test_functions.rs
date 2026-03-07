@@ -1260,6 +1260,33 @@ impl Interpreter {
                 Vec::new()
             };
         let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
+        let mut has_unsupported_compiler_args = false;
+        let mut ci = 0usize;
+        while ci < compiler_args.len() {
+            let arg = &compiler_args[ci];
+            if arg == "--doc" {
+                ci += 1;
+                continue;
+            }
+            if arg == "-I" {
+                if ci + 1 >= compiler_args.len() {
+                    has_unsupported_compiler_args = true;
+                    break;
+                }
+                ci += 2;
+                continue;
+            }
+            if arg.starts_with("-I") {
+                if arg.len() == 2 {
+                    has_unsupported_compiler_args = true;
+                    break;
+                }
+                ci += 1;
+                continue;
+            }
+            has_unsupported_compiler_args = true;
+            break;
+        }
 
         // Determine if we need to spawn a real subprocess
         // (e.g., for --help, when program is empty with CLI args,
@@ -1267,8 +1294,7 @@ impl Interpreter {
         //  std::process::exit on die)
         let code_needs_subprocess =
             program.contains("Supply.interval") || program.contains("Supply.interval:");
-        let needs_subprocess = !compiler_args.is_empty()
-            && compiler_args.iter().any(|a| a.starts_with("--"))
+        let needs_subprocess = has_unsupported_compiler_args
             || (program.is_empty() && run_args.is_some())
             || code_needs_subprocess;
 
@@ -1743,13 +1769,23 @@ impl Interpreter {
             Value::Str(s) => s.to_string(),
             _ => return Err(RuntimeError::new("get_out expects string code")),
         };
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        nested.set_program_path("<get_out>");
-        let result = nested.run(&program);
-        let (out, err, status) = Self::extract_run_output(&nested, result);
+        let input = Self::positional_value(args, 1)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let run_args: Vec<String> =
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let compiler_args: Vec<String> =
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "compiler-args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let (out, err, status) =
+            Self::run_test_code_subprocess(&program, &input, &run_args, &compiler_args);
         let mut hash = std::collections::HashMap::new();
         hash.insert("out".to_string(), Value::str(out));
         hash.insert("err".to_string(), Value::str(err));
@@ -1944,6 +1980,73 @@ impl Interpreter {
                 (out, err, status)
             }
             Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        }
+    }
+
+    fn run_test_code_subprocess(
+        program: &str,
+        input: &str,
+        run_args: &[String],
+        compiler_args: &[String],
+    ) -> (String, String, i64) {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_code_path = std::env::temp_dir().join(format!(
+            "mutsu-test-util-{}-{}.raku",
+            std::process::id(),
+            stamp
+        ));
+        if std::fs::write(&temp_code_path, program).is_err() {
+            return (
+                String::new(),
+                "Failed to create temporary source file".to_string(),
+                1,
+            );
+        }
+        let mut cmd = Command::new(&exe);
+        for arg in compiler_args {
+            cmd.arg(arg);
+        }
+        cmd.arg(temp_code_path.as_os_str());
+        for arg in run_args {
+            cmd.arg(arg);
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        if !input.is_empty() {
+            cmd.stdin(Stdio::piped());
+        }
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => return (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        };
+        if !input.is_empty()
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+        let output = child.wait_with_output();
+        let _ = std::fs::remove_file(&temp_code_path);
+        match output {
+            Ok(output) => {
+                let out = String::from_utf8_lossy(&output.stdout).to_string();
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                let status = output.status.code().unwrap_or(1) as i64;
+                (out, err, status)
+            }
+            Err(e) => (
+                String::new(),
+                format!("Failed to read subprocess output: {}", e),
+                1,
+            ),
         }
     }
 

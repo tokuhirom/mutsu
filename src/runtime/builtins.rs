@@ -1284,6 +1284,49 @@ impl Interpreter {
         let adverb = args[2].to_string_value();
         let raw_indices = &args[3..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+            && class_name == "Stash"
+            && let Some(Value::Hash(symbols)) = attributes.get("symbols")
+        {
+            let stash_exists = |idx: &Value| {
+                let key = idx.to_string_value();
+                if symbols.contains_key(&key) {
+                    return true;
+                }
+                if !key.starts_with('$')
+                    && !key.starts_with('@')
+                    && !key.starts_with('%')
+                    && !key.starts_with('&')
+                {
+                    return symbols.contains_key(&format!("${key}"));
+                }
+                false
+            };
+            let stash_indices: Vec<Value> = if indices.len() > 1 {
+                indices.clone()
+            } else {
+                match &indices[0] {
+                    Value::Array(items, ..) => items.to_vec(),
+                    one => vec![one.clone()],
+                }
+            };
+            let exists_vals: Vec<bool> = stash_indices.iter().map(stash_exists).collect();
+            let exists_vals: Vec<bool> = if negated {
+                exists_vals.into_iter().map(|v| !v).collect()
+            } else {
+                exists_vals
+            };
+            if stash_indices.len() > 1 {
+                return Ok(Value::array(
+                    exists_vals.into_iter().map(Value::Bool).collect::<Vec<_>>(),
+                ));
+            }
+            return Ok(Value::Bool(*exists_vals.first().unwrap_or(&false)));
+        }
 
         // Multi-result mode for Whatever/list indices
         if has_multi_indices(&indices) {

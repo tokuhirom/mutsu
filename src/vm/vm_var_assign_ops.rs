@@ -728,7 +728,12 @@ impl VM {
                     } else {
                         format!("${key}")
                     };
-                    let fq = format!("{}::{}", package.trim_end_matches("::"), key_name);
+                    let pkg = package.trim_end_matches("::");
+                    let fq = if pkg.is_empty() || pkg == "GLOBAL" {
+                        key_name
+                    } else {
+                        format!("{pkg}::{key_name}")
+                    };
                     self.interpreter.env_mut().insert(fq, val.clone());
                 }
                 self.stack.push(val);
@@ -1188,6 +1193,9 @@ impl VM {
             entries.insert(key, val);
         }
         for (key, val) in self.interpreter.env() {
+            if self.interpreter.should_hide_from_my_global_stash(key) {
+                continue;
+            }
             let display_key = Self::add_sigil_prefix(key);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }

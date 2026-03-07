@@ -509,6 +509,17 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(Symbol::intern(name))
+        } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            let result = self
+                .interpreter
+                .call_sub_value(callable, Vec::new(), false)?;
+            self.env_dirty = true;
+            result
         } else if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(name)
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(name)
@@ -1626,7 +1637,18 @@ impl VM {
             let idx = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
-            if let Value::Hash(map) = &target {
+            if let Some(map) = match &target {
+                Value::Hash(map) => Some(map.clone()),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => match attributes.get("symbols") {
+                    Some(Value::Hash(map)) => Some(map.clone()),
+                    _ => None,
+                },
+                _ => None,
+            } {
                 if adverb_bits == 5 {
                     return Err(crate::value::RuntimeError::new(
                         "Unsupported combination of :exists and :v adverbs".to_string(),
