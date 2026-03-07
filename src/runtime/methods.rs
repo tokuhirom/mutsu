@@ -1996,6 +1996,7 @@ impl Interpreter {
                 let mut overlap = false;
                 let mut global = false;
                 let mut anchored_pos: Option<usize> = None;
+                let mut repeat_bounds: Option<(usize, Option<usize>)> = None;
                 let mut pattern_arg: Option<&Value> = None;
                 for arg in &args {
                     if let Value::Pair(key, value) = arg {
@@ -2005,6 +2006,8 @@ impl Interpreter {
                             anchored_pos = Some(value.to_f64() as usize);
                         } else if (key == "g" || key == "global") && value.truthy() {
                             global = true;
+                        } else if key == "x" {
+                            repeat_bounds = Self::parse_match_repeat_bounds(value);
                         }
                         continue;
                     }
@@ -2021,14 +2024,42 @@ impl Interpreter {
                     _ => return Ok(Value::Nil),
                 };
                 return {
-                    if global {
+                    if global || overlap || repeat_bounds.is_some() {
                         let all = self.regex_match_all_with_captures(&pat, &text);
-                        let non_overlapping = self.select_non_overlapping_matches(all);
-                        if non_overlapping.is_empty() {
+                        let mut selected = if overlap {
+                            let mut best_by_start: std::collections::BTreeMap<
+                                usize,
+                                RegexCaptures,
+                            > = std::collections::BTreeMap::new();
+                            for capture in all {
+                                let key = capture.from;
+                                match best_by_start.get(&key) {
+                                    Some(existing) if capture.to <= existing.to => {}
+                                    _ => {
+                                        best_by_start.insert(key, capture);
+                                    }
+                                }
+                            }
+                            best_by_start.into_values().collect::<Vec<_>>()
+                        } else {
+                            self.select_non_overlapping_matches(all)
+                        };
+                        if let Some((min_required, max_to_return)) = repeat_bounds {
+                            let Some(restricted) = Self::select_matches_by_repeat_bounds(
+                                selected,
+                                min_required,
+                                max_to_return,
+                            ) else {
+                                self.env.insert("/".to_string(), Value::Nil);
+                                return Ok(Value::array(Vec::new()));
+                            };
+                            selected = restricted;
+                        }
+                        if selected.is_empty() {
                             self.env.insert("/".to_string(), Value::Nil);
                             return Ok(Value::array(Vec::new()));
                         }
-                        let matches: Vec<Value> = non_overlapping
+                        let matches: Vec<Value> = selected
                             .iter()
                             .map(|c| {
                                 Value::make_match_object_full(
@@ -2046,36 +2077,6 @@ impl Interpreter {
                         let result = Value::array(matches);
                         self.env.insert("/".to_string(), result.clone());
                         return Ok(result);
-                    }
-                    if overlap {
-                        let all = self.regex_match_all_with_captures(&pat, &text);
-                        if all.is_empty() {
-                            return Ok(Value::Nil);
-                        }
-                        let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
-                            std::collections::BTreeMap::new();
-                        for capture in all {
-                            let key = capture.from;
-                            match best_by_start.get(&key) {
-                                Some(existing) if capture.to <= existing.to => {}
-                                _ => {
-                                    best_by_start.insert(key, capture);
-                                }
-                            }
-                        }
-                        let matches = best_by_start
-                            .into_values()
-                            .map(|c| {
-                                Value::make_match_object_with_captures(
-                                    c.matched,
-                                    c.from as i64,
-                                    c.to as i64,
-                                    &c.positional,
-                                    &c.named,
-                                )
-                            })
-                            .collect::<Vec<_>>();
-                        return Ok(Value::array(matches));
                     }
                     // Use anchored match if :p(N) or :pos(N) is specified
                     let captures = if let Some(pos) = anchored_pos {
