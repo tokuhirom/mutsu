@@ -863,33 +863,30 @@ impl VM {
                 failure_attrs.insert("exception".to_string(), ex);
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
+            (Value::Set(s), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| Value::Bool(s.contains(&k.to_string_value())))
+                    .collect(),
+            ),
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
-            (Value::Set(s), Value::Array(indices, ..)) => Value::array(
-                indices
-                    .iter()
-                    .map(|idx| Value::Bool(s.contains(&idx.to_string_value())))
-                    .collect(),
-            ),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
-            (Value::Bag(b), Value::Array(indices, ..)) => Value::array(
-                indices
-                    .iter()
-                    .map(|idx| Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)))
+            (Value::Bag(b), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| Value::Int(*b.get(&k.to_string_value()).unwrap_or(&0)))
                     .collect(),
             ),
+            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
-            (Value::Mix(m), Value::Str(key)) => {
-                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
-            }
-            (Value::Mix(m), Value::Array(indices, ..)) => Value::array(
-                indices
-                    .iter()
-                    .map(|idx| {
-                        Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+            (Value::Mix(m), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| {
+                        Self::mix_weight_as_value(*m.get(&k.to_string_value()).unwrap_or(&0.0))
                     })
                     .collect(),
             ),
+            (Value::Mix(m), Value::Str(key)) => {
+                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
+            }
             (Value::Mix(m), idx) => {
                 Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
             }
@@ -1177,6 +1174,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         // Sync OS environment and $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
             // Remove from OS environment
@@ -1219,6 +1223,9 @@ impl VM {
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v));
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+            if matches!(container, Value::Mix(_)) && !target_is_mixhash {
+                return Err(RuntimeError::new("X::Immutable"));
+            }
             Self::delete_from_container(container, idx)?
         } else {
             Self::delete_from_missing_container(idx)

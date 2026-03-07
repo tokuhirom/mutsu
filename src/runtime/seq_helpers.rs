@@ -1588,6 +1588,21 @@ impl Interpreter {
                 }
                 true
             }
+            // Set ~~ Mix: all set elements must exist in the Mix with unit weights.
+            (Value::Set(set), Value::Mix(mix)) => {
+                set.len() == mix.len()
+                    && set.iter().all(|key| {
+                        mix.get(key)
+                            .is_some_and(|weight| weight.is_finite() && *weight == 1.0)
+                    })
+            }
+            // Mix ~~ Set: all mix elements must have unit weights and exist in the set.
+            (Value::Mix(mix), Value::Set(set)) => {
+                mix.len() == set.len()
+                    && mix.iter().all(|(key, weight)| {
+                        weight.is_finite() && *weight == 1.0 && set.contains(key)
+                    })
+            }
             // Array ~~ Hash: check if any element exists as a key in the hash
             (Value::Array(items, ..), Value::Hash(map)) => items.iter().any(|item| {
                 let key = item.to_string_value();
