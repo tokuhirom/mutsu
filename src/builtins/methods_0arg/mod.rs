@@ -1634,6 +1634,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::str(s)))
         }
         "elems" => {
+            if let Value::LazyList(list) = target {
+                if matches!(
+                    list.env.get("__mutsu_lazylist_from_gather"),
+                    Some(Value::Bool(true))
+                ) {
+                    return None;
+                }
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::str("Cannot .elems a lazy list".to_string()),
+                );
+                let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+                let mut failure_attrs = std::collections::HashMap::new();
+                failure_attrs.insert("exception".to_string(), exception);
+                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                return Some(Ok(Value::make_instance(
+                    Symbol::intern("Failure"),
+                    failure_attrs,
+                )));
+            }
             if let Some(items) = target.as_list_items() {
                 return Some(Ok(Value::Int(items.len() as i64)));
             }
@@ -1653,23 +1674,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else {
                         Value::Int(0)
                     }
-                }
-                // LazyList is lazy — .elems returns a Failure
-                Value::LazyList(_) => {
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str("Cannot .elems a lazy list".to_string()),
-                    );
-                    let exception =
-                        Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
-                    let mut failure_attrs = std::collections::HashMap::new();
-                    failure_attrs.insert("exception".to_string(), exception);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                    return Some(Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    )));
                 }
                 _ => Value::Int(1),
             };
@@ -2999,6 +3003,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         },
         "race" | "hyper" => {
+            if matches!(target, Value::LazyList(_)) {
+                return None;
+            }
             // Single-threaded: just materialize into an array
             let items = runtime::value_to_list(target);
             Some(Ok(Value::array(items)))

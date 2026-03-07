@@ -2,6 +2,8 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
+
     fn is_stub_method_body(body: &[Stmt]) -> bool {
         body.len() == 1
             && matches!(
@@ -389,10 +391,13 @@ impl Interpreter {
         let saved_len = self.gather_items.len();
         self.env = list.env.clone();
         self.gather_items.push(Vec::new());
+        self.gather_take_limits.push(None);
         let run_res = self.run_block(&list.body);
         let items = self.gather_items.pop().unwrap_or_default();
+        self.gather_take_limits.pop();
         while self.gather_items.len() > saved_len {
             self.gather_items.pop();
+            self.gather_take_limits.pop();
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {
@@ -401,6 +406,51 @@ impl Interpreter {
         self.env = merged_env;
         run_res?;
         *list.cache.lock().unwrap() = Some(items.clone());
+        Ok(items)
+    }
+
+    pub(crate) fn force_lazy_list_prefix_bridge(
+        &mut self,
+        list: &crate::value::LazyList,
+        needed_len: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if needed_len == 0 {
+            return Ok(Vec::new());
+        }
+        if let Some(cached) = list.cache.lock().unwrap().clone()
+            && cached.len() >= needed_len
+        {
+            return Ok(cached[..needed_len].to_vec());
+        }
+
+        let saved_env = self.env.clone();
+        let saved_len = self.gather_items.len();
+        self.env = list.env.clone();
+        self.gather_items.push(Vec::new());
+        self.gather_take_limits.push(Some(needed_len));
+        let run_res = self.run_block(&list.body);
+        let mut items = self.gather_items.pop().unwrap_or_default();
+        self.gather_take_limits.pop();
+        while self.gather_items.len() > saved_len {
+            self.gather_items.pop();
+            self.gather_take_limits.pop();
+        }
+        let mut merged_env = saved_env;
+        for (k, v) in self.env.iter() {
+            merged_env.insert(k.clone(), v.clone());
+        }
+        self.env = merged_env;
+
+        match run_res {
+            Ok(()) => {
+                *list.cache.lock().unwrap() = Some(items.clone());
+            }
+            Err(err) if err.message == Self::LAZY_GATHER_TAKE_LIMIT_SIGNAL => {}
+            Err(err) => return Err(err),
+        }
+        if items.len() > needed_len {
+            items.truncate(needed_len);
+        }
         Ok(items)
     }
 

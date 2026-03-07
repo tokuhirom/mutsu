@@ -10,9 +10,14 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             self.ensure_env_synced(code);
+            let mut env = self.interpreter.env().clone();
+            env.insert(
+                "__mutsu_lazylist_from_gather".to_string(),
+                Value::Bool(true),
+            );
             let list = LazyList {
                 body: body.clone(),
-                env: self.interpreter.env().clone(),
+                env,
                 cache: std::sync::Mutex::new(None),
             };
             let val = Value::LazyList(std::sync::Arc::new(list));

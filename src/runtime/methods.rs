@@ -954,8 +954,6 @@ impl Interpreter {
         }
 
         // Force LazyList and re-dispatch as Seq for methods that need element access.
-        // Save/restore the environment to prevent gather body side effects from leaking
-        // into the outer scope (preserves laziness semantics).
         if let Value::LazyList(ll) = &target
             && matches!(
                 method,
@@ -963,6 +961,9 @@ impl Interpreter {
                     | "Array"
                     | "Numeric"
                     | "Int"
+                    | "elems"
+                    | "hyper"
+                    | "race"
                     | "first"
                     | "grep"
                     | "map"
@@ -990,7 +991,9 @@ impl Interpreter {
         {
             let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(ll)?;
-            self.env = saved_env;
+            if !matches!(method, "elems" | "hyper" | "race") {
+                self.env = saved_env;
+            }
             let seq = Value::Seq(std::sync::Arc::new(items));
             return self.call_method_with_values(seq, method, args);
         }
@@ -2735,7 +2738,7 @@ impl Interpreter {
                 return self.dispatch_collate(target);
             }
             "take" if args.is_empty() => {
-                self.take_value(target.clone());
+                self.take_value(target.clone())?;
                 return Ok(target);
             }
             "rotor" => {

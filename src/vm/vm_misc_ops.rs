@@ -1062,9 +1062,9 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_take_op(&mut self) {
+    pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap_or(Value::Nil);
-        self.interpreter.take_value(val);
+        self.interpreter.take_value(val)
     }
 
     pub(super) fn exec_package_scope_op(
