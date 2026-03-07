@@ -980,6 +980,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
                         if !r4.starts_with(',') {
                             break;
                         }
@@ -1067,6 +1075,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
                         if !r4.starts_with(',') {
                             break;
                         }
