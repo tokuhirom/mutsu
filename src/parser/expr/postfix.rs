@@ -738,6 +738,22 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let (r, expr) = prefix_expr(r)?;
         return Ok((r, expr));
     }
+    // hyper prefix: eager materialization variant (same surface semantics as `.hyper`)
+    if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
+        let r = &input[5..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = prefix_expr(r)?;
+        return Ok((
+            r,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: Symbol::intern("hyper"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // eager prefix: force lazy evaluation
     if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];

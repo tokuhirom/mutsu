@@ -938,10 +938,18 @@ impl Interpreter {
         self.regex_find_all(pattern, text)
     }
 
-    pub(crate) fn take_value(&mut self, val: Value) {
+    pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         if let Some(items) = self.gather_items.last_mut() {
             items.push(val);
+            if let Some(Some(limit)) = self.gather_take_limits.last()
+                && items.len() >= *limit
+            {
+                return Err(RuntimeError::new(
+                    "__mutsu_lazy_gather_take_limit_reached__",
+                ));
+            }
         }
+        Ok(())
     }
 
     pub(crate) fn current_package(&self) -> &str {

@@ -1576,7 +1576,7 @@ impl VM {
 
             // -- Take --
             OpCode::Take => {
-                self.exec_take_op();
+                self.exec_take_op()?;
                 *ip += 1;
             }
 
