@@ -396,6 +396,14 @@ struct UniqueFilterState {
 }
 
 #[derive(Clone)]
+struct ClassifyState {
+    mapper: Value,
+    classify_supplier_id: u64,
+    seen_keys: Vec<Value>,
+    key_supplier_ids: Vec<(Value, u64)>,
+}
+
+#[derive(Clone)]
 struct SupplierTapSubscription {
     callback: Value,
     line_mode: bool,
@@ -403,6 +411,7 @@ struct SupplierTapSubscription {
     line_buffer: String,
     delay_seconds: f64,
     unique_filter: Option<UniqueFilterState>,
+    classify_state: Option<ClassifyState>,
 }
 
 #[derive(Clone, Default)]
@@ -724,6 +733,7 @@ pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds:
                 line_buffer: String::new(),
                 delay_seconds,
                 unique_filter: None,
+                classify_state: None,
             });
     }
 }
@@ -745,6 +755,7 @@ pub(super) fn register_supplier_lines_tap(
                 line_buffer: String::new(),
                 delay_seconds,
                 unique_filter: None,
+                classify_state: None,
             });
     }
 }
@@ -760,6 +771,10 @@ pub(super) enum SupplierEmitAction {
         delay_seconds: f64,
         as_fn: Option<Value>,
         with_fn: Option<Value>,
+        tap_index: usize,
+    },
+    ClassifyCheck {
+        value: Value,
         tap_index: usize,
     },
 }
@@ -818,6 +833,11 @@ pub(super) fn supplier_emit_callbacks(
                         ));
                     }
                 }
+            } else if tap.classify_state.is_some() {
+                actions.push(SupplierEmitAction::ClassifyCheck {
+                    value: emitted_value.clone(),
+                    tap_index: idx,
+                });
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -880,6 +900,7 @@ pub(super) fn register_supplier_unique_tap(
                     expires_seconds,
                     seen: Vec::new(),
                 }),
+                classify_state: None,
             });
     }
 }
@@ -893,6 +914,90 @@ pub(super) fn supplier_tap_count(supplier_id: u64) -> usize {
     } else {
         0
     }
+}
+
+pub(super) fn register_supplier_classify_tap(
+    supplier_id: u64,
+    mapper: Value,
+    classify_supplier_id: u64,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: Some(ClassifyState {
+                    mapper,
+                    classify_supplier_id,
+                    seen_keys: Vec::new(),
+                    key_supplier_ids: Vec::new(),
+                }),
+            });
+    }
+}
+
+/// Get the classify state for a tap. Returns (mapper, classify_supplier_id, seen_keys, key_supplier_ids).
+#[allow(clippy::type_complexity)]
+pub(super) fn get_classify_state(
+    supplier_id: u64,
+    tap_index: usize,
+) -> Option<(Value, u64, Vec<Value>, Vec<(Value, u64)>)> {
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+        && let Some(tap) = subs.taps.get(tap_index)
+        && let Some(ref cs) = tap.classify_state
+    {
+        Some((
+            cs.mapper.clone(),
+            cs.classify_supplier_id,
+            cs.seen_keys.clone(),
+            cs.key_supplier_ids.clone(),
+        ))
+    } else {
+        None
+    }
+}
+
+/// Update classify state after processing a value.
+pub(super) fn update_classify_state(
+    supplier_id: u64,
+    tap_index: usize,
+    seen_keys: Vec<Value>,
+    key_supplier_ids: Vec<(Value, u64)>,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+        && let Some(tap) = subs.taps.get_mut(tap_index)
+        && let Some(ref mut cs) = tap.classify_state
+    {
+        cs.seen_keys = seen_keys;
+        cs.key_supplier_ids = key_supplier_ids;
+    }
+}
+
+/// Get all sub-supplier IDs from classify taps on a given supplier.
+/// Used to propagate done/quit to classify sub-suppliers.
+pub(super) fn get_classify_sub_supplier_ids(supplier_id: u64) -> Vec<u64> {
+    let mut ids = Vec::new();
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        for tap in &subs.taps {
+            if let Some(ref cs) = tap.classify_state {
+                ids.push(cs.classify_supplier_id);
+                for (_, sid) in &cs.key_supplier_ids {
+                    ids.push(*sid);
+                }
+            }
+        }
+    }
+    ids
 }
 
 pub(super) fn flush_supplier_line_taps(supplier_id: u64) -> Vec<(Value, Value)> {
@@ -2408,6 +2513,12 @@ impl Interpreter {
                 } => {
                     Self::sleep_for_supply_delay(delay_seconds);
                     let _ = self.call_sub_value(callback, vec![val], true);
+                }
+                SupplierEmitAction::ClassifyCheck {
+                    value: val,
+                    tap_index,
+                } => {
+                    let _ = self.handle_classify_emit(supplier_id, tap_index, val);
                 }
             }
         }

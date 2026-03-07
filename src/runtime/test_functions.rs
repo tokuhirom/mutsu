@@ -1619,16 +1619,35 @@ impl Interpreter {
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
                     let _ = self.supply_emit_timed_buffer.pop();
                 } else {
-                    let values = attributes
-                        .get("values")
-                        .and_then(|v| {
-                            if let Value::Array(a, ..) = v {
-                                Some(a.to_vec())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
+                    let values = if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
+                        let (snap_values, _, _) =
+                            crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
+                        } else {
+                            attributes
+                                .get("values")
+                                .and_then(|v| {
+                                    if let Value::Array(a, ..) = v {
+                                        Some(a.to_vec())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default()
+                        }
+                    } else {
+                        attributes
+                            .get("values")
+                            .and_then(|v| {
+                                if let Value::Array(a, ..) = v {
+                                    Some(a.to_vec())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default()
+                    };
                     let do_cbs = attributes
                         .get("do_callbacks")
                         .and_then(|v| {
