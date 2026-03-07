@@ -217,6 +217,7 @@ impl VM {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_transliterate_op(
         &mut self,
         code: &CompiledCode,
@@ -225,6 +226,7 @@ impl VM {
         delete: bool,
         complement: bool,
         squash: bool,
+        non_destructive: bool,
     ) -> Result<(), RuntimeError> {
         let from = Self::const_str(code, from_idx).to_string();
         let to = Self::const_str(code, to_idx).to_string();
@@ -247,7 +249,9 @@ impl VM {
         }
 
         let result = self.interpreter.dispatch_trans(target, &args)?;
-        if self.in_smartmatch_rhs {
+        // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
+        // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
+        if !non_destructive || self.in_smartmatch_rhs {
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), result.clone());

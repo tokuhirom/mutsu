@@ -453,6 +453,7 @@ pub(crate) enum OpCode {
         delete: bool,
         complement: bool,
         squash: bool,
+        non_destructive: bool,
     },
 
     // -- Take (gather/take) --

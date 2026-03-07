@@ -1357,6 +1357,7 @@ impl Compiler {
                 delete,
                 complement,
                 squash,
+                non_destructive,
             } => {
                 let from_idx = self.code.add_constant(Value::str(from.clone()));
                 let to_idx = self.code.add_constant(Value::str(to.clone()));
@@ -1366,6 +1367,7 @@ impl Compiler {
                     delete: *delete,
                     complement: *complement,
                     squash: *squash,
+                    non_destructive: *non_destructive,
                 });
             }
             // HyperOp (>>op<<): compile sub-expressions, delegate operation
