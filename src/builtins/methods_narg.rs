@@ -5,6 +5,7 @@ use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 fn flatten_with_depth(
@@ -81,6 +82,31 @@ fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
         }
         _ => Value::Bool(hay.contains(&needle.to_string_value())),
     }
+}
+
+fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+    let mut total = 0.0;
+    for weight in items.values() {
+        if weight.is_finite() && *weight > 0.0 {
+            total += *weight;
+        }
+    }
+    if total <= 0.0 {
+        return None;
+    }
+    let mut needle = crate::builtins::rng::builtin_rand() * total;
+    for (key, weight) in items {
+        if !weight.is_finite() || *weight <= 0.0 {
+            continue;
+        }
+        if needle <= *weight {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *weight;
+    }
+    items
+        .iter()
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
 // ── 1-arg method dispatch ────────────────────────────────────────────
@@ -696,6 +722,11 @@ pub(crate) fn native_method_1arg(
             }
         }
         "pick" => {
+            if matches!(target, Value::Mix(_)) {
+                return Some(Err(RuntimeError::new(
+                    "Cannot call .pick on a Mix (immutable)",
+                )));
+            }
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
                 Value::Whatever => {
@@ -751,6 +782,33 @@ pub(crate) fn native_method_1arg(
                 }
                 _ => return None,
             };
+            if let Value::Mix(items) = target {
+                if count.is_none() {
+                    let generated = 131_072usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
+                        if let Some(v) = sample_weighted_mix_key(items) {
+                            out.push(v);
+                        }
+                    }
+                    return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
+                        body: vec![],
+                        env: crate::env::Env::new(),
+                        cache: std::sync::Mutex::new(Some(out)),
+                    }))));
+                }
+                let count = count.unwrap_or(0);
+                if count == 0 {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let mut result = Vec::with_capacity(count);
+                for _ in 0..count {
+                    if let Some(v) = sample_weighted_mix_key(items) {
+                        result.push(v);
+                    }
+                }
+                return Some(Ok(Value::array(result)));
+            }
             let sample_from_range = |range: &Value| -> Option<Value> {
                 let random_i64 = |lo: i64, hi: i64| -> Value {
                     if hi <= lo {

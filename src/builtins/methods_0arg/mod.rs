@@ -44,6 +44,31 @@ pub(crate) mod temporal_dispatch;
 
 use std::collections::HashMap;
 
+fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+    let mut total = 0.0;
+    for weight in items.values() {
+        if weight.is_finite() && *weight > 0.0 {
+            total += *weight;
+        }
+    }
+    if total <= 0.0 {
+        return None;
+    }
+    let mut needle = builtin_rand() * total;
+    for (key, weight) in items {
+        if !weight.is_finite() || *weight <= 0.0 {
+            continue;
+        }
+        if needle <= *weight {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *weight;
+    }
+    items
+        .iter()
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
+}
+
 fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -2368,6 +2393,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "pick" => match target {
+            Value::Mix(_) => Some(Err(RuntimeError::new(
+                "Cannot call .pick on a Mix (immutable)",
+            ))),
             Value::Hash(items) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
@@ -2396,6 +2424,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "roll" => {
+            if let Value::Mix(items) = target {
+                return Some(Ok(sample_weighted_mix_key(items).unwrap_or(Value::Nil)));
+            }
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))
