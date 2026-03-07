@@ -769,6 +769,8 @@ impl Interpreter {
         let saved_package = self.current_package.clone();
         let saved_env = self.env.clone();
         self.current_package = name.to_string();
+        self.env
+            .insert("?CLASS".to_string(), Value::Package(Symbol::intern(name)));
         for stmt in body {
             match stmt {
                 Stmt::HasDecl {

@@ -1845,19 +1845,14 @@ impl VM {
         _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let (block_cc, captured_env) = match code_val {
+        let (block_cc, block_fns, captured_env, captured_slots) = match code_val {
             Value::Sub(data) => {
                 // Targeted sync: refresh shared vars for keys the closure captures
-                self.interpreter.sync_shared_vars_for_keys(data.env.keys());
-                let block_cc = match &data.compiled_code {
-                    Some(cc) => cc.clone(),
-                    None => {
-                        let compiler = crate::compiler::Compiler::new();
-                        let (compiled, _) = compiler.compile(&data.body);
-                        Arc::new(compiled)
-                    }
-                };
-                (block_cc, Some(&data.env))
+                self.interpreter.sync_shared_vars_for_env(&data.env);
+                let (block_cc, block_fns, captured_slots) = self
+                    .interpreter
+                    .get_or_compile_protect_block_with_slots(data);
+                (block_cc, block_fns, Some(&data.env), captured_slots)
             }
             _ => {
                 return self.interpreter.call_protect_block(code_val);
@@ -1871,8 +1866,9 @@ impl VM {
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if let Some(captured) = captured_env {
-            for (i, name) in block_cc.locals.iter().enumerate() {
-                if captured.contains_key(name)
+            for i in captured_slots.iter().copied() {
+                if let Some(name) = block_cc.locals.get(i)
+                    && captured.contains_key(name)
                     && let Some(val) = self.interpreter.env().get(name)
                 {
                     self.locals[i] = val.clone();
@@ -1881,11 +1877,10 @@ impl VM {
         }
 
         // Execute the block's opcodes inline
-        let empty_fns = HashMap::new();
         let mut sub_ip = 0;
         let mut exec_err = None;
         while sub_ip < block_cc.ops.len() {
-            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &empty_fns) {
+            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &block_fns) {
                 exec_err = Some(e);
                 break;
             }
@@ -1893,8 +1888,10 @@ impl VM {
 
         // Sync locals back to env
         if let Some(captured) = captured_env {
-            for (i, name) in block_cc.locals.iter().enumerate() {
-                if captured.contains_key(name) {
+            for i in captured_slots.iter().copied() {
+                if let Some(name) = block_cc.locals.get(i)
+                    && captured.contains_key(name)
+                {
                     self.interpreter
                         .env_mut()
                         .insert(name.clone(), self.locals[i].clone());

@@ -1347,7 +1347,7 @@ impl Interpreter {
                         }
                     }
                 }
-                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
+                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 let int_ctor_val =
                     if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
                         return Err(RuntimeError::new("Cannot convert type object to Int"));
@@ -1391,7 +1391,14 @@ impl Interpreter {
                     if attrs.contains_key(&attr_name) {
                         continue;
                     }
-                    let val = if let Some(expr) = default {
+                    let val = if let Some(build_override) = self
+                        .attribute_build_overrides
+                        .get(&(class_key.to_string(), attr_name.clone()))
+                        .cloned()
+                    {
+                        let val = self.call_sub_value(build_override, Vec::new(), false)?;
+                        Self::coerce_attr_value_by_sigil(val, sigil)
+                    } else if let Some(expr) = default {
                         let temp_self = Value::make_instance(*class_name, attrs.clone());
                         let old_self = self.env.get("self").cloned();
                         self.env.insert("self".to_string(), temp_self);
@@ -1412,9 +1419,16 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
-                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
-                // Restore env after default evaluation
-                self.env = saved_default_env.clone();
+                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                // Restore env after default evaluation, but preserve side effects
+                // on variables that already existed in the caller environment.
+                let mut restored_env = saved_default_env.clone();
+                for (key, value) in self.env.iter() {
+                    if restored_env.contains_key(key) {
+                        restored_env.insert(key.clone(), value.clone());
+                    }
+                }
+                self.env = restored_env;
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
                 let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
@@ -1448,7 +1462,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
+                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
                 if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let tweak_args = if has_direct_tweak {
@@ -1464,7 +1478,7 @@ impl Interpreter {
                         Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
-                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
+                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
@@ -1573,14 +1587,43 @@ impl Interpreter {
         }
     }
 
+    fn collect_attribute_type_constraints(&mut self, class_name: &str) -> HashMap<String, String> {
+        let mut constraints = HashMap::new();
+        for owner in self.class_mro(class_name) {
+            if let Some(class_def) = self.classes.get(&owner) {
+                for (attr_name, tc) in &class_def.attribute_types {
+                    constraints
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| tc.clone());
+                }
+            }
+        }
+        constraints
+    }
+
     fn enforce_attribute_where_constraints(
         &mut self,
+        class_name: &str,
         class_attrs_info: &[ClassAttributeDef],
         attrs: &HashMap<String, Value>,
     ) -> Result<(), RuntimeError> {
+        let type_constraints = self.collect_attribute_type_constraints(class_name);
         for (attr_name, _is_public, _default, _is_rw, _is_required, _sigil, where_constraint) in
             class_attrs_info
         {
+            if let Some(constraint) = type_constraints.get(attr_name)
+                && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
+                && let Some(value) = attrs.get(attr_name)
+                && !matches!(value, Value::Nil)
+                && !self.type_matches_value(constraint, value)
+            {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to $!{}; expected {}, got {}",
+                    attr_name,
+                    constraint,
+                    super::value_type_name(value)
+                )));
+            }
             let Some(pred) = where_constraint else {
                 continue;
             };
@@ -1643,7 +1686,7 @@ impl Interpreter {
                 extra_attrs.insert(attr_name.clone(), default_val);
             }
         }
-        self.enforce_attribute_where_constraints(&class_attrs_info, &extra_attrs)?;
+        self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
         Ok(Value::Proxy {
