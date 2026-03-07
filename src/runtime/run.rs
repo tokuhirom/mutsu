@@ -269,6 +269,18 @@ impl Interpreter {
                         "skip {}, 1;\n",
                         Self::raku_single_quoted_literal(&skip_reason)
                     ));
+                    // Track paren depth for multi-line statements
+                    let mut depth = 0i32;
+                    for ch in trimmed.chars() {
+                        match ch {
+                            '(' | '[' | '{' => depth += 1,
+                            ')' | ']' | '}' => depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    if depth > 0 {
+                        skip_stmt_paren_depth = depth;
+                    }
                     continue;
                 }
                 output.push_str(line);
