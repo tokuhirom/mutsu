@@ -416,6 +416,12 @@ impl Interpreter {
         let args: Vec<Value> = if args.len() == 1 && !is_set_op {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
+                Value::Hash(map) if matches!(op, "andthen" | "notandthen") => map
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::ValuePair(Box::new(Value::str(k.clone())), Box::new(v.clone()))
+                    })
+                    .collect(),
                 _ => args.to_vec(),
             }
         } else {

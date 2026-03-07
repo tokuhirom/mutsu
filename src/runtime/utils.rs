@@ -249,7 +249,11 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Slip(a), Value::Slip(b)) => {
+            // Empty is a singleton semantic value in Raku even when represented
+            // by distinct empty Slip allocations.
+            (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
+        }
         (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Sub(a), Value::Sub(b)) => {

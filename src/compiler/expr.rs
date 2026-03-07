@@ -334,7 +334,10 @@ impl Compiler {
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::CallDefined);
                         let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
-                        // Defined path: pop original, evaluate right
+                        // Defined path: bind topic $_ to LHS while evaluating RHS,
+                        // then discard LHS and keep RHS result.
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::SetTopic);
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
                         let jump_end = self.code.emit(OpCode::Jump(0));
