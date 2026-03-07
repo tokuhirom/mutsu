@@ -1015,6 +1015,17 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
+                let (r_ws, _) = ws(r)?;
+                for kw in &["while", "until", "for", "given"] {
+                    if keyword(kw, r_ws).is_some() {
+                        return Err(PError::raw(
+                            format!(
+                                "X::Obsolete: Unsupported use of do...{kw}. In Raku please use: repeat...while or repeat...until."
+                            ),
+                            Some(r_ws.len()),
+                        ));
+                    }
+                }
                 return Ok((r, Expr::DoBlock { body, label: None }));
             }
             // do if/unless/given/for/while — wrap the control flow statement
@@ -1164,7 +1175,27 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "sub" => {
-            let (r, _) = ws(rest)?;
+            let (mut r, _) = ws(rest)?;
+            // Expression-context sub literals may include an optional name:
+            // `sub r { ... }`, `sub r ($x) { ... }`, `sub r is rw { ... }`.
+            if !r.starts_with('{')
+                && !r.starts_with('(')
+                && !r.starts_with("is ")
+                && !r.starts_with("returns ")
+                && !r.starts_with("of ")
+                && let Ok((after_name, _name)) =
+                    take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                let (after_name, _) = ws(after_name)?;
+                if after_name.starts_with('{')
+                    || after_name.starts_with('(')
+                    || after_name.starts_with("is ")
+                    || after_name.starts_with("returns ")
+                    || after_name.starts_with("of ")
+                {
+                    r = after_name;
+                }
+            }
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, make_anon_sub(body)));

@@ -730,6 +730,8 @@ impl VM {
         }
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
+            && !source_var.starts_with('@')
+            && !source_var.starts_with('%')
         {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());

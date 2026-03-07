@@ -184,10 +184,10 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let iterable = self.stack.pop().unwrap();
-        let items = if let Value::LazyList(ref ll) = iterable {
-            self.interpreter.force_lazy_list_bridge(ll)?
-        } else {
-            runtime::value_to_list(&iterable)
+        let items = match &iterable {
+            Value::LazyList(ll) => self.interpreter.force_lazy_list_bridge(ll)?,
+            Value::Array(_, kind) if kind.is_itemized() => vec![iterable.clone()],
+            _ => runtime::value_to_list(&iterable),
         };
         self.env_dirty = true;
         let body_start = *ip + 1;
@@ -243,9 +243,11 @@ impl VM {
             None
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
+        let mut deferred_container_refs: Vec<(usize, String)> = Vec::new();
+        let saved_topic = self.interpreter.env().get("_").cloned();
         let saved_topic_source = self.topic_source_var.take();
         let container_binding = self.container_ref_var.take();
-        'for_loop: for item in chunked_items {
+        'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = container_binding.clone();
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
@@ -275,11 +277,21 @@ impl VM {
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => {
+                        if param_name.is_none() {
+                            self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
                                 let val = self.stack.pop().unwrap();
+                                let deferred_ref = self.container_ref_var.take();
+                                let coll_start_len = coll.len();
                                 Self::collect_loop_value(coll, val);
+                                if let Some(name) = deferred_ref
+                                    && coll.len() == coll_start_len + 1
+                                {
+                                    deferred_container_refs.push((coll_start_len, name));
+                                }
                             }
                             // Drain any extra values pushed during this iteration
                             self.stack.truncate(base);
@@ -287,6 +299,9 @@ impl VM {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed => {
+                        if param_name.is_none() {
+                            self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
@@ -311,6 +326,9 @@ impl VM {
                             && e.leave_routine.is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
+                        if param_name.is_none() {
+                            self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -326,12 +344,28 @@ impl VM {
                         break 'for_loop;
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                        if param_name.is_none() {
+                            self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
                         break 'for_loop;
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                        if param_name.is_none() {
+                            self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
                         break 'body_redo;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        match saved_topic.clone() {
+                            Some(v) => {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            }
+                            None => {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                        }
+                        return Err(e);
+                    }
                 }
             }
             if self.interpreter.is_halted() {
@@ -339,10 +373,54 @@ impl VM {
             }
         }
         self.topic_source_var = saved_topic_source;
+        match saved_topic {
+            Some(v) => {
+                self.interpreter.env_mut().insert("_".to_string(), v);
+            }
+            None => {
+                self.interpreter.env_mut().remove("_");
+            }
+        }
         if let Some(coll) = collected {
+            let mut coll = coll;
+            for (idx, name) in deferred_container_refs {
+                if idx < coll.len()
+                    && let Some(v) = self.get_env_with_main_alias(&name)
+                {
+                    coll[idx] = v;
+                }
+            }
             self.stack.push(Value::array(coll));
         }
         Ok(())
+    }
+
+    fn write_back_for_topic_item(
+        &mut self,
+        code: &CompiledCode,
+        source_var: &Option<String>,
+        idx: usize,
+    ) {
+        let Some(source) = source_var else {
+            return;
+        };
+        if !source.starts_with('@') {
+            return;
+        }
+        let Some(current_topic) = self.interpreter.env().get("_").cloned() else {
+            return;
+        };
+        let Some(Value::Array(items, kind)) = self.get_env_with_main_alias(source) else {
+            return;
+        };
+        if idx >= items.len() {
+            return;
+        }
+        let mut updated = items.to_vec();
+        updated[idx] = current_topic;
+        let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+        self.set_env_with_main_alias(source, updated_value.clone());
+        self.update_local_if_exists(code, source, &updated_value);
     }
 
     pub(super) fn exec_cstyle_loop_op(
