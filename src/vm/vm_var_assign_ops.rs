@@ -186,15 +186,28 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_string_concat_op(&mut self, n: u32) {
+    pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
+            // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
+            // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
+            if let Value::Instance { attributes, .. } = &v
+                && Self::is_buf_value(&v)
+                && attributes.contains_key("bytes")
+            {
+                let str_result = self
+                    .interpreter
+                    .call_method_with_values(v, "Str", Vec::new())?;
+                result.push_str(&str_result.to_string_value());
+                continue;
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
+        Ok(())
     }
 
     pub(super) fn exec_post_increment_op(
@@ -946,13 +959,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
-            match val {
+            let mut assigned = match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(val)
         };
@@ -1166,13 +1202,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
-            match raw_val {
+            let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };

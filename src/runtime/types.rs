@@ -1037,6 +1037,32 @@ impl Interpreter {
         {
             return true;
         }
+        // Buf/Blob type hierarchy:
+        // Blob is the immutable base; Buf extends Blob (mutable)
+        // utf8 is a subtype of Blob
+        // buf8/buf16/buf32/buf64 are subtypes of Buf (and transitively Blob)
+        // blob8/blob16/blob32/blob64 are subtypes of Blob
+        if constraint == "Blob"
+            && matches!(
+                value_type,
+                "Buf"
+                    | "utf8"
+                    | "utf16"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+            )
+        {
+            return true;
+        }
+        if constraint == "Buf" && matches!(value_type, "buf8" | "buf16" | "buf32" | "buf64") {
+            return true;
+        }
         false
     }
 
@@ -1443,6 +1469,19 @@ impl Interpreter {
         if let Value::Instance { class_name, .. } = value {
             if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
+            }
+            // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
+            let cn = class_name.resolve();
+            if (constraint == "Buf" || constraint == "Blob")
+                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+            {
+                // Buf constraint accepts any Buf-like, Blob constraint accepts any Blob-like
+                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(&cn) {
+                    return true;
+                }
+                if constraint == "Blob" {
+                    return true; // All Buf/Blob types are Blob (Buf inherits Blob)
+                }
             }
             // Check parent classes of the instance
             if let Some(class_def) = self.classes.get(&class_name.resolve()) {

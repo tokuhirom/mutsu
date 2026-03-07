@@ -443,10 +443,13 @@ impl Interpreter {
                     "todo {};\n",
                     Self::raku_single_quoted_literal(reason)
                 ));
+                output.push_str(line);
+                output.push('\n');
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;
                 }
+                continue; // skip normal append below
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.

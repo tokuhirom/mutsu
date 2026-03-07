@@ -156,6 +156,29 @@ impl VM {
         self.stack.push(Value::Bool(!val.truthy()));
     }
 
+    pub(super) fn exec_str_bit_neg_op(&mut self) {
+        let val = self.stack.pop().unwrap();
+        if Self::is_buf_value(&val) {
+            let bytes = Self::extract_buf_bytes(&val);
+            let negated: Vec<Value> = bytes.iter().map(|b| Value::Int((!b) as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(negated));
+            // Determine result type: if input is utf8, result is utf8; otherwise Buf
+            let result_type = if let Value::Instance { class_name, .. } = &val {
+                class_name.resolve().to_string()
+            } else {
+                "Buf".to_string()
+            };
+            self.stack
+                .push(Value::make_instance(Symbol::intern(&result_type), attrs));
+        } else {
+            let s = crate::runtime::utils::coerce_to_str(&val);
+            let negated: Vec<u8> = s.as_bytes().iter().map(|b| !b).collect();
+            let result = String::from_utf8_lossy(&negated).into_owned();
+            self.stack.push(Value::str(result));
+        }
+    }
+
     pub(super) fn exec_decont_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let new_val = match val {
@@ -219,43 +242,37 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Buf ~ Buf → Buf (byte concatenation)
+        // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            let result_class = if let Value::Instance { class_name, .. } = &left {
+                *class_name
+            } else {
+                crate::symbol::Symbol::intern("Buf")
+            };
             let mut bytes = Self::extract_buf_bytes(&left);
             bytes.extend(Self::extract_buf_bytes(&right));
             let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
-            self.stack.push(Value::make_instance(
-                crate::symbol::Symbol::intern("Buf"),
-                attrs,
-            ));
+            self.stack.push(Value::make_instance(result_class, attrs));
             return;
         }
-        // Buf ~ non-Buf or non-Buf ~ Buf: also produce Buf if one side is Buf
+        // Buf ~ non-Buf or non-Buf ~ Buf: decode the Buf and produce a Str
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
-            let mut bytes = if Self::is_buf_value(&left) {
-                Self::extract_buf_bytes(&left)
+            let left_str = if Self::is_buf_value(&left) {
+                let bytes = Self::extract_buf_bytes(&left);
+                String::from_utf8_lossy(&bytes).into_owned()
             } else {
                 crate::runtime::utils::coerce_to_str(&left)
-                    .as_bytes()
-                    .to_vec()
             };
-            let right_bytes = if Self::is_buf_value(&right) {
-                Self::extract_buf_bytes(&right)
+            let right_str = if Self::is_buf_value(&right) {
+                let bytes = Self::extract_buf_bytes(&right);
+                String::from_utf8_lossy(&bytes).into_owned()
             } else {
                 crate::runtime::utils::coerce_to_str(&right)
-                    .as_bytes()
-                    .to_vec()
             };
-            bytes.extend(right_bytes);
-            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("bytes".to_string(), Value::array(byte_vals));
-            self.stack.push(Value::make_instance(
-                crate::symbol::Symbol::intern("Buf"),
-                attrs,
-            ));
+            self.stack
+                .push(Value::str(format!("{}{}", left_str, right_str)));
             return;
         }
         self.stack.push(Value::str(format!(
@@ -265,11 +282,13 @@ impl VM {
         )));
     }
 
-    fn is_buf_value(val: &Value) -> bool {
+    pub fn is_buf_value(val: &Value) -> bool {
         if let Value::Instance { class_name, .. } = val {
             let cn = class_name.resolve();
             cn == "Buf"
                 || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
                 || cn.starts_with("Buf[")
                 || cn.starts_with("Blob[")
                 || cn.starts_with("buf")
@@ -279,7 +298,7 @@ impl VM {
         }
     }
 
-    fn extract_buf_bytes(val: &Value) -> Vec<u8> {
+    pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {
         if let Value::Instance { attributes, .. } = val
             && let Some(Value::Array(items, ..)) = attributes.get("bytes")
         {

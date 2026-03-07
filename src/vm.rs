@@ -562,6 +562,10 @@ impl VM {
                 self.exec_bool_bit_neg_op();
                 *ip += 1;
             }
+            OpCode::StrBitNeg => {
+                self.exec_str_bit_neg_op();
+                *ip += 1;
+            }
             OpCode::MakeSlip => {
                 self.exec_make_slip_op();
                 *ip += 1;
@@ -1096,6 +1100,13 @@ impl VM {
                 self.exec_call_method_dynamic_op(code, *arity)?;
                 *ip += 1;
             }
+            OpCode::CallMethodDynamicMut {
+                arity,
+                target_name_idx,
+            } => {
+                self.exec_call_method_dynamic_mut_op(code, *arity, *target_name_idx)?;
+                *ip += 1;
+            }
             OpCode::CallMethodMut {
                 name_idx,
                 arity,
@@ -1191,7 +1202,7 @@ impl VM {
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {
-                self.exec_string_concat_op(*n);
+                self.exec_string_concat_op(*n)?;
                 *ip += 1;
             }
 

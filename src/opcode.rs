@@ -37,6 +37,7 @@ pub(crate) enum OpCode {
     Negate,
     IntBitNeg,  // +^ prefix: integer bitwise negation
     BoolBitNeg, // ?^ prefix: boolean bitwise negation
+    StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
     Decont,     // decontainerize: Array(_, true) → Array(_, false) for slurpy flattening
 
@@ -232,6 +233,12 @@ pub(crate) enum OpCode {
     /// Stack layout: [target, name_str, arg0, arg1, ...]
     CallMethodDynamic {
         arity: u32,
+    },
+    /// Dynamic method call on a variable target (allows mutation/writeback).
+    /// Stack layout: [target, name_str, arg0, arg1, ...]
+    CallMethodDynamicMut {
+        arity: u32,
+        target_name_idx: u32,
     },
     /// Statement-level call: pop `arity` args, call name (no push).
     ExecCall {

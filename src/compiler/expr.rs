@@ -214,6 +214,10 @@ impl Compiler {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::BoolBitNeg);
                 }
+                TokenKind::StrBitNeg => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::StrBitNeg);
+                }
                 TokenKind::Pipe => {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::MakeSlip);
@@ -932,13 +936,28 @@ impl Compiler {
                 name_expr,
                 args,
             } => {
+                // If target is a variable, emit CallMethodDynamicMut for writeback
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(n) => Some(n.clone()),
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::HashVar(n) => Some(format!("%{}", n)),
+                    _ => None,
+                };
                 self.compile_expr(target);
                 self.compile_expr(name_expr);
                 let arity = args.len() as u32;
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                self.code.emit(OpCode::CallMethodDynamic { arity });
+                if let Some(var_name) = target_var_name {
+                    let target_name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::CallMethodDynamicMut {
+                        arity,
+                        target_name_idx,
+                    });
+                } else {
+                    self.code.emit(OpCode::CallMethodDynamic { arity });
+                }
             }
             // Hyper method call: target».method(args)
             Expr::HyperMethodCall {
@@ -1028,7 +1047,25 @@ impl Compiler {
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
                 for part in parts {
-                    self.compile_expr(part);
+                    match part {
+                        // Sigiled collection interpolation in strings should
+                        // flatten values rather than force scalar Str coercion.
+                        Expr::ArrayVar(name) => self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("join"),
+                            args: vec![
+                                Expr::Literal(Value::str(" ".to_string())),
+                                Expr::ArrayVar(name.clone()),
+                            ],
+                        }),
+                        Expr::HashVar(name) => self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("join"),
+                            args: vec![
+                                Expr::Literal(Value::str(" ".to_string())),
+                                Expr::HashVar(name.clone()),
+                            ],
+                        }),
+                        _ => self.compile_expr(part),
+                    }
                 }
                 self.code.emit(OpCode::StringConcat(n));
             }
