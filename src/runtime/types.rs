@@ -1977,15 +1977,16 @@ impl Interpreter {
                 } else {
                     has_positional_slurpy = true;
                 }
-            } else {
+            } else if pd.default.is_none() && !pd.optional_marker {
                 required += 1;
             }
         }
+        let max_positional = positional_params.iter().filter(|p| !p.slurpy).count();
         if has_positional_slurpy {
             if positional_arg_count < required {
                 return false;
             }
-        } else if positional_arg_count != required {
+        } else if positional_arg_count < required || positional_arg_count > max_positional {
             return false;
         }
         if !has_hash_slurpy {

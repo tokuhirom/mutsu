@@ -184,7 +184,8 @@ impl VM {
     pub(super) fn exec_container_eq_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left == right));
+        self.stack
+            .push(Value::Bool(crate::runtime::values_identical(&left, &right)));
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {

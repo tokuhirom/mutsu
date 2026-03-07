@@ -374,7 +374,7 @@ impl Interpreter {
                 "===" => crate::runtime::utils::values_identical(&left, &right),
                 "!===" => !crate::runtime::utils::values_identical(&left, &right),
                 "eqv" => left.eqv(&right),
-                "=:=" => left == right,
+                "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal
                     let (lr, li) = match &left {
