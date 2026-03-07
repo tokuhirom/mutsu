@@ -68,6 +68,8 @@ fn cache_dir() -> Option<PathBuf> {
 struct CacheMetadata {
     /// Source file modification time as nanoseconds since UNIX epoch.
     mtime_nanos: u128,
+    /// Hash of source content at cache write time.
+    source_hash: Option<u64>,
     /// Interpreter version at the time of caching.
     version: String,
 }
@@ -123,6 +125,17 @@ pub(crate) fn load_cached_ast(source_path: &Path) -> Option<Vec<Stmt>> {
         let _ = fs::remove_file(&cache_file);
         return None;
     }
+    // Validate source content hash. Missing hash indicates an old cache format;
+    // drop it to avoid stale cache hits on coarse mtime filesystems.
+    let Some(expected_hash) = meta.source_hash else {
+        let _ = fs::remove_file(&cache_file);
+        return None;
+    };
+    let current_hash = source_content_hash(source_path)?;
+    if expected_hash != current_hash {
+        let _ = fs::remove_file(&cache_file);
+        return None;
+    }
 
     // Check format version (stored right after magic)
     // Actually, let me restructure: magic(4) + format_version(4) + meta_len(4) + meta + ast
@@ -151,6 +164,7 @@ pub(crate) fn save_cached_ast(source_path: &Path, stmts: &[Stmt]) {
 
     let meta = CacheMetadata {
         mtime_nanos: source_mtime,
+        source_hash: source_content_hash(source_path),
         version: interpreter_version().to_string(),
     };
 
@@ -189,6 +203,13 @@ fn source_mtime_nanos(path: &Path) -> Option<u128> {
     let modified = metadata.modified().ok()?;
     let duration = modified.duration_since(SystemTime::UNIX_EPOCH).ok()?;
     Some(duration.as_nanos())
+}
+
+fn source_content_hash(path: &Path) -> Option<u64> {
+    let bytes = fs::read(path).ok()?;
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Some(hasher.finish())
 }
 
 #[cfg(test)]

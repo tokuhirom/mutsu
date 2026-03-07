@@ -638,6 +638,7 @@ impl Interpreter {
                         self.make_io_path_instance(&canonical_prefix),
                     );
                     attrs.insert("short-id".to_string(), Value::str_from("file"));
+                    attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(false));
                     let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);

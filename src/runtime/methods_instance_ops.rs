@@ -206,9 +206,21 @@ impl Interpreter {
                         let Some(source_path) = found_path else {
                             return Ok(Value::Nil);
                         };
-                        // Load the module, using precompilation cache when available
-                        let (stmts, precompiled) =
-                            self.parse_module_source(&short_name_str, &source_path)?;
+                        let repo_precomp_enabled = attributes
+                            .get("__mutsu_precomp_enabled")
+                            .is_none_or(Value::truthy);
+                        // Load the module, using precompilation cache when available.
+                        // Explicitly constructed FileSystem repositories default to
+                        // precomp-disabled behavior.
+                        let (stmts, precompiled) = if repo_precomp_enabled {
+                            self.parse_module_source(&short_name_str, &source_path)?
+                        } else {
+                            let saved = self.precomp_enabled;
+                            self.precomp_enabled = false;
+                            let parsed = self.parse_module_source(&short_name_str, &source_path);
+                            self.precomp_enabled = saved;
+                            parsed?
+                        };
                         let compile_time_only = !stmts.is_empty()
                             && stmts
                                 .iter()
@@ -233,7 +245,10 @@ impl Interpreter {
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
                         attrs.insert("short-name".to_string(), Value::str(short_name_str));
-                        attrs.insert("precompiled".to_string(), Value::Bool(precompiled));
+                        attrs.insert(
+                            "precompiled".to_string(),
+                            Value::Bool(precompiled && repo_precomp_enabled),
+                        );
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
                         return Ok(compunit);
