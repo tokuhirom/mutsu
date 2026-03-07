@@ -199,6 +199,24 @@ impl Interpreter {
             });
         }
 
+        if method == "Str"
+            && args.is_empty()
+            && let Value::Instance { class_name, .. } = &target
+        {
+            let receiver = class_name.resolve();
+            if !self.class_mro(&receiver).iter().any(|cn| cn == "Str") {
+                // Non-Str classes should keep normal method lookup/coercion behavior.
+                // Only values in Str's inheritance tree get identity .Str by default.
+                // This preserves custom .Str methods on unrelated classes.
+            } else if let Some((owner, _)) = self.resolve_method_with_owner(&receiver, "Str", &[]) {
+                if owner == "Str" {
+                    return Ok(target.clone());
+                }
+            } else {
+                return Ok(target.clone());
+            }
+        }
+
         // Early check: private method call on non-Instance, non-Package values
         if let Some(private_rest) = method.strip_prefix('!')
             && !matches!(&target, Value::Instance { .. } | Value::Package(_))
