@@ -13,8 +13,15 @@ pub(super) fn ws(input: &str) -> PResult<'_, ()> {
             rest = r;
             continue;
         }
-        // Try embedded comment #`[...] or line comment
+        // Try declarator doc comments (#|{...} / #={...}), embedded comments,
+        // or plain line comments.
         if r.starts_with('#') {
+            if let Some(after) = skip_declarator_doc_comment(r) {
+                let consumed = &r[..r.len() - after.len()];
+                rest = after;
+                at_line_start = consumed.contains('\n');
+                continue;
+            }
             if let Some(after) = skip_embedded_comment(r) {
                 rest = after;
                 at_line_start = false;
@@ -34,6 +41,69 @@ pub(super) fn ws(input: &str) -> PResult<'_, ()> {
         break;
     }
     Ok((rest, ()))
+}
+
+/// Skip a declarator documentation comment.
+///
+/// Supports block forms such as `#|{ ... }` and `#={ ... }`, including multiline
+/// content and nested delimiters.
+fn skip_declarator_doc_comment(input: &str) -> Option<&str> {
+    let rest = input
+        .strip_prefix("#|")
+        .or_else(|| input.strip_prefix("#="))?;
+    if rest.is_empty() {
+        return None;
+    }
+
+    let mut chars = rest.chars();
+    let open_char = chars.next()?;
+    let close_char = matching_bracket(open_char)?;
+
+    // Support repeated delimiters like `#|{{ ... }}`.
+    let mut count = 1usize;
+    let mut scan = chars.as_str();
+    while scan.starts_with(open_char) {
+        count += 1;
+        scan = &scan[open_char.len_utf8()..];
+    }
+
+    let close_seq: String = std::iter::repeat_n(close_char, count).collect();
+    let open_seq: String = std::iter::repeat_n(open_char, count).collect();
+
+    if count == 1 {
+        let mut depth = 1i32;
+        while !scan.is_empty() {
+            let c = scan.chars().next().unwrap();
+            if c == open_char {
+                depth += 1;
+            } else if c == close_char {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[close_char.len_utf8()..]);
+                }
+            }
+            scan = &scan[c.len_utf8()..];
+        }
+        None
+    } else {
+        let mut depth = 1i32;
+        while !scan.is_empty() {
+            if scan.starts_with(&close_seq[..]) {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[close_seq.len()..]);
+                }
+                scan = &scan[close_seq.len()..];
+            } else if scan.starts_with(&open_seq[..]) {
+                depth += 1;
+                scan = &scan[open_seq.len()..];
+            } else {
+                let c = scan.chars().next().unwrap();
+                scan = &scan[c.len_utf8()..];
+            }
+        }
+        None
+    }
 }
 
 /// Parse and skip a Pod block.
@@ -406,6 +476,20 @@ mod tests {
         let input = "=for comment\nsome comment\n\ncode";
         let (rest, _) = ws(input).unwrap();
         assert_eq!(rest, "code");
+    }
+
+    #[test]
+    fn test_ws_declarator_doc_block_comment_multiline() {
+        let input = "#|{\nalpha\n}\nclass C {}";
+        let (rest, _) = ws(input).unwrap();
+        assert_eq!(rest, "class C {}");
+    }
+
+    #[test]
+    fn test_ws_declarator_doc_block_comment_inline() {
+        let input = "#|{alpha}class C {}";
+        let (rest, _) = ws(input).unwrap();
+        assert_eq!(rest, "class C {}");
     }
 
     #[test]
