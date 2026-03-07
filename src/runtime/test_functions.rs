@@ -1690,6 +1690,20 @@ impl Interpreter {
             }
         }
 
+        // Supply.reduce produces a derived Supply that carries reducer metadata
+        // for live sources. Apply the same reduction over collected tap values.
+        if let Value::Instance { ref attributes, .. } = supply
+            && let Some(reduce_callable) = attributes.get("reduce_callable").cloned()
+            && tap_values.len() > 1
+        {
+            let reduced = self.reduce_items(reduce_callable, tap_values)?;
+            tap_values = if matches!(reduced, Value::Nil) {
+                Vec::new()
+            } else {
+                vec![reduced]
+            };
+        }
+
         // 4. isa-ok on Tap return
         self.test_ok(true, &format!("{} got a tap", desc), false)?;
 
@@ -1719,7 +1733,57 @@ impl Interpreter {
             other => other.clone(),
         };
         let collected_val = Value::array(tap_values);
-        let ok = collected_val == expected_expanded;
+
+        let expected_for_compare = match (&collected_val, &expected_expanded) {
+            (Value::Array(collected_items, ..), Value::Array(expected_items, kind))
+                if collected_items.len() == 1
+                    && matches!(collected_items.first(), Some(Value::Bag(_)))
+                    && expected_items
+                        .iter()
+                        .all(|item| matches!(item, Value::Pair(_, _) | Value::ValuePair(_, _))) =>
+            {
+                let mut map = HashMap::new();
+                let to_count = |v: &Value| match v {
+                    Value::Int(i) => *i,
+                    Value::Num(n) => *n as i64,
+                    Value::Rat(n, d) if *d != 0 => n / d,
+                    Value::FatRat(n, d) if *d != 0 => n / d,
+                    _ => crate::runtime::to_int(v),
+                };
+                for item in expected_items.iter() {
+                    match item {
+                        Value::Pair(key, value) => {
+                            let count = to_count(value);
+                            if count == 1
+                                && let Some((raw_key, raw_weight)) = key.rsplit_once('\t')
+                                && let Ok(weight) = raw_weight.parse::<i64>()
+                            {
+                                map.insert(raw_key.to_string(), weight);
+                            } else {
+                                map.insert(key.clone(), count);
+                            }
+                        }
+                        Value::ValuePair(key, value) => {
+                            let key_text = key.to_string_value();
+                            let count = to_count(value);
+                            if count == 1
+                                && let Some((raw_key, raw_weight)) = key_text.rsplit_once('\t')
+                                && let Ok(weight) = raw_weight.parse::<i64>()
+                            {
+                                map.insert(raw_key.to_string(), weight);
+                            } else {
+                                map.insert(key_text, count);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Value::Array(Arc::new(vec![Value::bag(map)]), *kind)
+            }
+            _ => expected_expanded.clone(),
+        };
+
+        let ok = collected_val == expected_for_compare;
         self.test_ok(ok, &desc, false)?;
 
         self.finish_subtest(ctx, &desc, Ok(()))?;

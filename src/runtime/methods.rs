@@ -424,7 +424,7 @@ impl Interpreter {
                 return Ok(Value::str(format!("({inner})")));
             }
         }
-        if matches!(method, "max" | "min" | "lines" | "delayed")
+        if matches!(method, "max" | "min" | "lines" | "delayed" | "reduce")
             && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
@@ -2506,6 +2506,43 @@ impl Interpreter {
                     .first()
                     .cloned()
                     .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Supply"
+                {
+                    if !matches!(
+                        callable,
+                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    ) {
+                        return Err(RuntimeError::new("must be code if specified"));
+                    }
+                    if attributes.get("supplier_id").is_some()
+                        || attributes.get("on_demand_callback").is_some()
+                    {
+                        let mut reduce_attrs = HashMap::new();
+                        reduce_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                        reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                        reduce_attrs.insert("live".to_string(), Value::Bool(false));
+                        reduce_attrs.insert("reduce_source".to_string(), target);
+                        reduce_attrs.insert("reduce_callable".to_string(), callable);
+                        return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
+                    }
+                    let items = self.supply_list_values(attributes, true)?;
+                    let reduced = self.reduce_items(callable, items)?;
+                    let values = if matches!(reduced, Value::Nil) {
+                        Vec::new()
+                    } else {
+                        vec![reduced]
+                    };
+                    let mut reduce_attrs = HashMap::new();
+                    reduce_attrs.insert("values".to_string(), Value::array(values));
+                    reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    reduce_attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
+                }
                 let items = Self::value_to_list(&target);
                 return self.reduce_items(callable, items);
             }

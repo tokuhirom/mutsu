@@ -755,6 +755,28 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
+        let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
+            match value {
+                Value::Bag(items) => Some((**items).clone()),
+                Value::Set(items) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
+                Value::Hash(items) => Some({
+                    let mut counts = std::collections::HashMap::new();
+                    for (k, v) in items.iter() {
+                        let count = match v {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => *n as i64,
+                            Value::Rat(n, d) if *d != 0 => n / d,
+                            Value::FatRat(n, d) if *d != 0 => n / d,
+                            Value::Bool(b) => i64::from(*b),
+                            _ => return None,
+                        };
+                        counts.insert(k.clone(), count);
+                    }
+                    counts
+                }),
+                _ => None,
+            }
+        };
         let to_num = |v: &Value| -> f64 {
             let mut cur = v;
             while let Value::Mixin(inner, _) = cur {
@@ -877,6 +899,14 @@ impl Interpreter {
         }
         match op {
             "+" => {
+                if let (Some(mut left_counts), Some(right_counts)) =
+                    (to_bag_counts(left), to_bag_counts(right))
+                {
+                    for (key, count) in right_counts {
+                        *left_counts.entry(key).or_insert(0) += count;
+                    }
+                    return Ok(Value::bag(left_counts));
+                }
                 if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) + to_num(right)))
                 } else {
