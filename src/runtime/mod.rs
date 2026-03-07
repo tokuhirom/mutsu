@@ -502,6 +502,7 @@ pub struct Interpreter {
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,
@@ -1652,6 +1653,7 @@ impl Interpreter {
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
@@ -2760,6 +2762,7 @@ impl Interpreter {
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),

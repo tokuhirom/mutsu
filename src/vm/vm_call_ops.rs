@@ -603,6 +603,14 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self
+                    .interpreter
+                    .call_method_with_values(target, method, args);
+            }
+        }
         // Pseudo-methods must always go through the interpreter which handles
         // them specially — never intercept via the compiled fast path.
         if matches!(
@@ -763,6 +771,17 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self.interpreter.call_method_mut_with_values(
+                    target_name,
+                    target,
+                    method,
+                    args,
+                );
+            }
+        }
         if matches!(
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
