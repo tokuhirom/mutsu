@@ -506,6 +506,49 @@ impl VM {
             return Ok(());
         }
 
+        // Handle `is Buf/Blob/buf8/...` trait for array variables:
+        // converts the array variable into a native typed buffer.
+        if name.starts_with('@') {
+            let is_buf_trait = matches!(
+                trait_name.as_str(),
+                "Buf"
+                    | "Blob"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+                    | "utf8"
+            );
+            if is_buf_trait {
+                if has_arg {
+                    self.stack.pop(); // discard unused arg
+                }
+                // Get current value, convert to buf
+                let current = self.locals_get_by_name(code, name).unwrap_or(Value::Nil);
+                let items = match &current {
+                    Value::Array(items, ..) => items
+                        .iter()
+                        .map(|v| Value::Int(crate::runtime::to_int(v)))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                let buf = self.interpreter.call_method_with_values(
+                    Value::Package(crate::symbol::Symbol::intern(&trait_name)),
+                    "new",
+                    items,
+                )?;
+                let name_str = name.to_string();
+                self.locals_set_by_name(code, &name_str, buf.clone());
+                self.set_env_with_main_alias(&name_str, buf);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
+
         if !(self.interpreter.has_proto("trait_mod:<is>")
             || self.interpreter.has_multi_candidates("trait_mod:<is>"))
         {

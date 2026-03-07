@@ -110,6 +110,13 @@ fn is_supported_variable_trait(trait_name: &str) -> bool {
     if matches!(trait_name, "default" | "export" | "dynamic") {
         return true;
     }
+    // Native typed buffer traits (e.g. `my @a is buf8`, `my @a is blob16`)
+    if matches!(
+        trait_name,
+        "buf8" | "buf16" | "buf32" | "buf64" | "blob8" | "blob16" | "blob32" | "blob64" | "utf8"
+    ) {
+        return true;
+    }
     // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
     trait_name
         .chars()
@@ -881,9 +888,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 continue;
             }
             let (r2, _) = ws(r2)?;
-            // "default" is a supported trait but needs to be in custom_traits
-            // for runtime processing via ApplyVarTrait.
-            let include_in_traits = !is_builtin || trait_name == "default";
+            // "default" and buf-type traits are supported but need to be in
+            // custom_traits for runtime processing via ApplyVarTrait.
+            let is_buf_trait = matches!(
+                trait_name.as_str(),
+                "Buf"
+                    | "Blob"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+                    | "utf8"
+            );
+            let include_in_traits = !is_builtin || trait_name == "default" || is_buf_trait;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;

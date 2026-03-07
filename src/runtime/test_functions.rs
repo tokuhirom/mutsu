@@ -368,8 +368,8 @@ impl Interpreter {
                 "<=" => super::to_float_value(&left) <= super::to_float_value(&right),
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
-                "===" => left == right,
-                "!===" => left != right,
+                "===" => crate::runtime::utils::values_identical(&left, &right),
+                "!===" => !crate::runtime::utils::values_identical(&left, &right),
                 "eqv" => left.eqv(&right),
                 "=:=" => left == right,
                 "=~=" | "\u{2245}" => {
@@ -1036,6 +1036,7 @@ impl Interpreter {
                         }
                     });
                 let matched = match expected_val {
+                    Value::Whatever => true, // * matches anything
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),

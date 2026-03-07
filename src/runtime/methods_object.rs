@@ -795,7 +795,8 @@ impl Interpreter {
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
-                    let byte_vals: Vec<Value> = args
+                    let cn = class_name.resolve();
+                    let raw_vals: Vec<Value> = args
                         .iter()
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
@@ -823,15 +824,28 @@ impl Interpreter {
                                     Vec::new()
                                 }
                             }
-                            _ => vec![],
+                            other => vec![Value::Int(to_int(other))],
                         })
                         .collect();
-                    let is_blob = class_name.resolve().starts_with("Blob")
-                        || class_name.resolve().starts_with("blob");
-                    let type_name = if is_blob { "Blob" } else { "Buf" }.to_string();
+                    // Mask values to unsigned range based on element size
+                    let byte_vals: Vec<Value> = raw_vals
+                        .into_iter()
+                        .map(|v| {
+                            let i = to_int(&v);
+                            if cn.contains("64") {
+                                Value::Int(i as u64 as i64)
+                            } else if cn.contains("32") {
+                                Value::Int(i as u32 as i64)
+                            } else if cn.contains("16") {
+                                Value::Int(i as u16 as i64)
+                            } else {
+                                Value::Int(i as u8 as i64)
+                            }
+                        })
+                        .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern(&type_name), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Rat" => {
                     let a = match args.first() {

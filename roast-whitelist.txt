@@ -96,6 +96,7 @@ roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
+roast/S03-operators/buf.t
 roast/S03-operators/chained-declarators.t
 roast/S03-operators/comparison-simple.t
 roast/S03-operators/composition.t

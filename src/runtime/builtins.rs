@@ -2054,6 +2054,31 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // subbuf-rw as a function: subbuf-rw($buf, from, len) = $value
+        if name == "subbuf-rw" && !call_args.is_empty() {
+            let target = call_args[0].clone();
+            let method_args = call_args[1..].to_vec();
+            // We need to find the variable name for the target to update it.
+            // Search the env for a variable whose value matches the target by identity.
+            let target_var = {
+                let mut found = None;
+                for (k, v) in self.env.iter() {
+                    if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
+                        found = Some(k.clone());
+                        break;
+                    }
+                }
+                found
+            };
+            return self.assign_method_lvalue_with_values(
+                target_var.as_deref(),
+                target,
+                "subbuf-rw",
+                method_args,
+                value,
+            );
+        }
+
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
             if let Some(target_expr) = Self::rw_sub_target_expr(&def.body) {
                 let allow_target_assign =

@@ -186,15 +186,33 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_string_concat_op(&mut self, n: u32) {
+    pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
+            // Buf/Blob types cannot be coerced to Str — throw X::Buf::AsStr
+            if let Value::Instance { ref class_name, .. } = v
+                && Self::is_buf_value(&v)
+            {
+                let mut err = RuntimeError::new(format!(
+                    "Cannot use a {} as a Str. You can use .decode to convert to Str.",
+                    class_name.resolve()
+                ));
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("method".to_string(), Value::str("Str".to_string()));
+                attrs.insert("payload".to_string(), v.clone());
+                err.exception = Some(Box::new(Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Buf::AsStr"),
+                    attrs,
+                )));
+                return Err(err);
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
+        Ok(())
     }
 
     pub(super) fn exec_post_increment_op(
