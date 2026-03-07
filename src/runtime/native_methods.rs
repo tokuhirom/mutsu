@@ -1394,8 +1394,8 @@ impl Interpreter {
             }
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
             "Cancellation" => self.native_cancellation(attributes, method),
-            "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method)),
-            "Encoding::Encoder" => Ok(Self::native_encoding_encoder(attributes, method, &args)),
+            "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method, &args)),
+            "Encoding::Encoder" => Self::native_encoding_encoder(attributes, method, &args),
             "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
@@ -3237,7 +3237,11 @@ impl Interpreter {
         Ok(Value::Seq(Arc::new(lines)))
     }
 
-    fn native_encoding_builtin(attributes: &HashMap<String, Value>, method: &str) -> Value {
+    fn native_encoding_builtin(
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Value {
         match method {
             "name" => attributes
                 .get("name")
@@ -3248,13 +3252,20 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::array(Vec::new())),
             "encoder" => {
-                // Return a stub encoder object that supports encode-chars
                 let enc_name = attributes
                     .get("name")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let mut attrs = HashMap::new();
                 attrs.insert("encoding".to_string(), Value::str(enc_name));
+                // Extract :replacement named arg from args
+                for arg in args {
+                    if let Value::Pair(key, value) = arg
+                        && key == "replacement"
+                    {
+                        attrs.insert("replacement".to_string(), *value.clone());
+                    }
+                }
                 Value::make_instance(Symbol::intern("Encoding::Encoder"), attrs)
             }
             "decoder" => {
@@ -3279,22 +3290,60 @@ impl Interpreter {
     }
 
     fn native_encoding_encoder(
-        _attributes: &HashMap<String, Value>,
+        attributes: &HashMap<String, Value>,
         method: &str,
         args: &[Value],
-    ) -> Value {
+    ) -> Result<Value, RuntimeError> {
         match method {
             "encode-chars" => {
-                // Stub: encode the string as UTF-8 bytes and return a Buf
                 let input = args
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let bytes: Vec<Value> = input.bytes().map(|b| Value::Int(b as i64)).collect();
-                Value::array(bytes)
+                let enc_name = attributes
+                    .get("encoding")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let replacement = attributes.get("replacement");
+                let is_ascii = matches!(enc_name.to_lowercase().as_str(), "ascii" | "us-ascii");
+
+                let mut bytes: Vec<Value> = Vec::new();
+                if is_ascii {
+                    for ch in input.chars() {
+                        if ch as u32 > 127 {
+                            if let Some(repl) = replacement {
+                                let repl_str = if matches!(repl, Value::Bool(true)) {
+                                    // :replacement (Bool True) → default replacement char '?'
+                                    "?".to_string()
+                                } else {
+                                    repl.to_string_value()
+                                };
+                                for b in repl_str.bytes() {
+                                    bytes.push(Value::Int(b as i64));
+                                }
+                            } else {
+                                return Err(RuntimeError::new(format!(
+                                    "Cannot encode character '{}' (U+{:04X}) in ASCII",
+                                    ch, ch as u32
+                                )));
+                            }
+                        } else {
+                            bytes.push(Value::Int(ch as u32 as i64));
+                        }
+                    }
+                } else {
+                    // UTF-8 encoding
+                    for b in input.as_bytes() {
+                        bytes.push(Value::Int(*b as i64));
+                    }
+                }
+
+                let mut attrs = HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                Ok(Value::make_instance(Symbol::intern("blob8"), attrs))
             }
-            "WHAT" => Value::Package(Symbol::intern("Encoding::Encoder")),
-            _ => Value::Nil,
+            "WHAT" => Ok(Value::Package(Symbol::intern("Encoding::Encoder"))),
+            _ => Ok(Value::Nil),
         }
     }
 
