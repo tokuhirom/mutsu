@@ -73,6 +73,111 @@ impl VM {
         }
     }
 
+    fn coerce_typed_container_assignment(
+        &mut self,
+        var_name: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let coercion_target = |constraint: &str| -> Option<String> {
+            if let Some(open) = constraint.find('(')
+                && constraint.ends_with(')')
+            {
+                let target = &constraint[..open];
+                if !target.is_empty() {
+                    return Some(target.to_string());
+                }
+            }
+            None
+        };
+        if var_name.starts_with('@')
+            && let Some(constraint) = self.interpreter.var_type_constraint(var_name)
+            && let Value::Array(items, kind) = value
+        {
+            let mut coerced_items = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                if matches!(item, Value::Nil) {
+                    coerced_items.push(item.clone());
+                    continue;
+                }
+                let target_type =
+                    coercion_target(&constraint).unwrap_or_else(|| constraint.clone());
+                let coerced = if self.interpreter.type_matches_value(&target_type, item) {
+                    item.clone()
+                } else {
+                    self.interpreter
+                        .try_coerce_value_for_constraint(&constraint, item.clone())?
+                };
+                if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        var_name,
+                        &constraint,
+                        item,
+                    )));
+                }
+                coerced_items.push(coerced);
+            }
+            return Ok(Value::Array(Arc::new(coerced_items), kind));
+        }
+
+        if var_name.starts_with('%')
+            && let Value::Hash(map) = value
+        {
+            let value_constraint = self.interpreter.var_type_constraint(var_name);
+            let key_constraint = self.interpreter.var_hash_key_constraint(var_name);
+            let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
+            for (key, val) in map.iter() {
+                let coerced_key = if let Some(constraint) = &key_constraint {
+                    let key_value = Value::str(key.clone());
+                    let target_type =
+                        coercion_target(constraint).unwrap_or_else(|| constraint.clone());
+                    let coerced = if self
+                        .interpreter
+                        .type_matches_value(&target_type, &key_value)
+                    {
+                        key_value.clone()
+                    } else {
+                        self.interpreter
+                            .try_coerce_value_for_constraint(constraint, key_value.clone())?
+                    };
+                    if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                        return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                            var_name, constraint, &key_value,
+                        )));
+                    }
+                    coerced.to_string_value()
+                } else {
+                    key.clone()
+                };
+                let coerced_val = if let Some(constraint) = &value_constraint {
+                    if matches!(val, Value::Nil) {
+                        val.clone()
+                    } else {
+                        let target_type =
+                            coercion_target(constraint).unwrap_or_else(|| constraint.clone());
+                        let coerced = if self.interpreter.type_matches_value(&target_type, val) {
+                            val.clone()
+                        } else {
+                            self.interpreter
+                                .try_coerce_value_for_constraint(constraint, val.clone())?
+                        };
+                        if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                            return Err(RuntimeError::new(
+                                runtime::utils::type_check_element_error(var_name, constraint, val),
+                            ));
+                        }
+                        coerced
+                    }
+                } else {
+                    val.clone()
+                };
+                coerced_map.insert(coerced_key, coerced_val);
+            }
+            return Ok(Value::hash(coerced_map));
+        }
+
+        Ok(value)
+    }
+
     fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
         match idx {
             Value::Range(a, b) => {
@@ -867,6 +972,9 @@ impl VM {
         {
             val = def.clone();
         }
+        if name.starts_with('@') || name.starts_with('%') {
+            val = self.coerce_typed_container_assignment(name, val)?;
+        }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
@@ -1083,6 +1191,9 @@ impl VM {
             && let Some(def) = self.interpreter.var_default(name)
         {
             val = def.clone();
+        }
+        if name.starts_with('@') || name.starts_with('%') {
+            val = self.coerce_typed_container_assignment(name, val)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')

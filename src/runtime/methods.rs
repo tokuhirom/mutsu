@@ -837,8 +837,14 @@ impl Interpreter {
                 ))
             || (matches!(method, "AT-KEY" | "keys")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash"))
+            || (method == "keys"
+                && args.is_empty()
+                && (matches!(&target, Value::Hash(_))
+                    || matches!(&target, Value::Mixin(inner, _) if matches!(inner.as_ref(), Value::Hash(_)))))
             || (!is_pseudo_method
-                && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)));
+                && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)))
+            || (!is_pseudo_method
+                && matches!(&target, Value::Package(class_name) if self.has_user_method(&class_name.resolve(), method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {
@@ -969,6 +975,7 @@ impl Interpreter {
                     | "concretization"
                     | "curried_role"
                     | "enum_value_list"
+                    | "coerce"
             )
         {
             let mut how_args = args.to_vec();
@@ -1025,6 +1032,14 @@ impl Interpreter {
                 }
                 _ => {}
             }
+        }
+
+        // Type-object coercion: Int.^coerce($x), Int(Str).^coerce($x), etc.
+        if method == "coerce"
+            && args.len() == 1
+            && let Value::Package(type_name) = &target
+        {
+            return self.try_coerce_value_for_constraint(&type_name.resolve(), args[0].clone());
         }
 
         // Custom type method dispatch: delegate to HOW.find_method
@@ -2761,6 +2776,26 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     return Ok(Value::array(keys));
+                }
+                Value::Hash(ref map) => {
+                    if let Some(info) = self.container_type_metadata(&target)
+                        && let Some(key_constraint) = info.key_type
+                    {
+                        let mut keys = Vec::with_capacity(map.len());
+                        for key in map.keys() {
+                            let key_value = Value::str(key.clone());
+                            let coerced = self
+                                .try_coerce_value_for_constraint(&key_constraint, key_value)
+                                .unwrap_or_else(|_| Value::str(key.clone()));
+                            keys.push(coerced);
+                        }
+                        return Ok(Value::array(keys));
+                    }
+                    let keys = map.keys().cloned().map(Value::str).collect::<Vec<Value>>();
+                    return Ok(Value::array(keys));
+                }
+                Value::Mixin(inner, _) if matches!(inner.as_ref(), Value::Hash(_)) => {
+                    return self.call_method_with_values(inner.as_ref().clone(), "keys", vec![]);
                 }
                 _ => {}
             },

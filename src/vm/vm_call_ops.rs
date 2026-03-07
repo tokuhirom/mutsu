@@ -1085,6 +1085,16 @@ impl VM {
             skip_native = true;
         }
         if !skip_native
+            && method == "keys"
+            && target_name.starts_with('%')
+            && self
+                .interpreter
+                .var_hash_key_constraint(&target_name)
+                .is_some()
+        {
+            skip_native = true;
+        }
+        if !skip_native
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
             && matches!(
                 method.as_str(),
