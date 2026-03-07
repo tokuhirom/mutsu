@@ -297,6 +297,129 @@ impl Interpreter {
         }
     }
 
+    fn read_utf8_char<R: Read>(reader: &mut R) -> Result<Option<String>, RuntimeError> {
+        let mut first = [0u8; 1];
+        let n = reader
+            .read(&mut first)
+            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+        if n == 0 {
+            return Ok(None);
+        }
+
+        let expected_len = match first[0] {
+            0x00..=0x7F => 1usize,
+            0xC0..=0xDF => 2usize,
+            0xE0..=0xEF => 3usize,
+            0xF0..=0xF7 => 4usize,
+            _ => 1usize,
+        };
+
+        let mut bytes = vec![first[0]];
+        if expected_len > 1 {
+            let mut rest = vec![0u8; expected_len - 1];
+            let mut total = 0usize;
+            while total < rest.len() {
+                let read = reader
+                    .read(&mut rest[total..])
+                    .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                if read == 0 {
+                    break;
+                }
+                total += read;
+            }
+            bytes.extend_from_slice(&rest[..total]);
+        }
+
+        Ok(Some(String::from_utf8_lossy(&bytes).to_string()))
+    }
+
+    pub(super) fn read_chars_from_handle_value(
+        &mut self,
+        handle_value: &Value,
+        count: Option<usize>,
+    ) -> Result<String, RuntimeError> {
+        let state = self.handle_state_mut(handle_value)?;
+        if state.closed {
+            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+        }
+        match state.target {
+            IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
+                Err(RuntimeError::new("Handle not readable"))
+            }
+            IoHandleTarget::Stdin => {
+                let mut stdin = std::io::stdin().lock();
+                if let Some(limit) = count {
+                    if limit == 0 {
+                        return Ok(String::new());
+                    }
+                    let mut out = String::new();
+                    for _ in 0..limit {
+                        let Some(ch) = Self::read_utf8_char(&mut stdin)? else {
+                            break;
+                        };
+                        out.push_str(&ch);
+                    }
+                    Ok(out)
+                } else {
+                    let mut bytes = Vec::new();
+                    stdin
+                        .read_to_end(&mut bytes)
+                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    Ok(String::from_utf8_lossy(&bytes).to_string())
+                }
+            }
+            IoHandleTarget::ArgFiles => Ok(String::new()),
+            IoHandleTarget::File => {
+                let file = state
+                    .file
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                if let Some(limit) = count {
+                    if limit == 0 {
+                        return Ok(String::new());
+                    }
+                    let mut out = String::new();
+                    for _ in 0..limit {
+                        let Some(ch) = Self::read_utf8_char(file)? else {
+                            break;
+                        };
+                        out.push_str(&ch);
+                    }
+                    Ok(out)
+                } else {
+                    let mut bytes = Vec::new();
+                    file.read_to_end(&mut bytes)
+                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    Ok(String::from_utf8_lossy(&bytes).to_string())
+                }
+            }
+            IoHandleTarget::Socket => {
+                let sock = state
+                    .socket
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
+                if let Some(limit) = count {
+                    if limit == 0 {
+                        return Ok(String::new());
+                    }
+                    let mut out = String::new();
+                    for _ in 0..limit {
+                        let Some(ch) = Self::read_utf8_char(sock)? else {
+                            break;
+                        };
+                        out.push_str(&ch);
+                    }
+                    Ok(out)
+                } else {
+                    let mut bytes = Vec::new();
+                    sock.read_to_end(&mut bytes)
+                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    Ok(String::from_utf8_lossy(&bytes).to_string())
+                }
+            }
+        }
+    }
+
     pub(super) fn seek_handle_value(
         &mut self,
         handle_value: &Value,

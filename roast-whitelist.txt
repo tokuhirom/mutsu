@@ -434,6 +434,7 @@ roast/S16-io/newline.t
 roast/S16-io/note.t
 roast/S16-io/prompt.t
 roast/S16-io/put.t
+roast/S16-io/readchars.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t

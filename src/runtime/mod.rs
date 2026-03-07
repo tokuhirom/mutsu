@@ -1089,6 +1089,7 @@ impl Interpreter {
                     "close",
                     "get",
                     "getc",
+                    "readchars",
                     "lines",
                     "words",
                     "read",
