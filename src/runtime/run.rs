@@ -2,6 +2,71 @@ use super::*;
 use crate::ast::Stmt;
 
 impl Interpreter {
+    fn source_has_no_precompilation(code: &str) -> bool {
+        code.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed == "no precompilation;"
+                || trimmed == "no precompilation"
+                || trimmed.starts_with("no precompilation;")
+                || trimmed.starts_with("no precompilation ")
+        })
+    }
+
+    fn direct_need_dependencies(source: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+            let Some(rest) = trimmed.strip_prefix("need ") else {
+                continue;
+            };
+            let dep = rest
+                .trim()
+                .trim_end_matches(';')
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'');
+            if dep.is_empty() || dep.contains(char::is_whitespace) {
+                continue;
+            }
+            out.push(dep.to_string());
+        }
+        out
+    }
+
+    fn dependency_disables_precomp(&self, source: &str) -> bool {
+        for dep in Self::direct_need_dependencies(source) {
+            let Some(dep_path) = self.resolve_module_path(&dep) else {
+                continue;
+            };
+            let Ok(dep_code) = std::fs::read_to_string(dep_path) else {
+                continue;
+            };
+            if Self::source_has_no_precompilation(&dep_code) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn should_skip_runtime_for_use_only_module(stmts: &[crate::ast::Stmt]) -> bool {
+        if stmts.is_empty()
+            || !stmts
+                .iter()
+                .all(|stmt| matches!(stmt, crate::ast::Stmt::Use { .. }))
+        {
+            return false;
+        }
+        let non_version_use_count = stmts
+            .iter()
+            .filter_map(|stmt| match stmt {
+                crate::ast::Stmt::Use { module, .. } => Some(module.as_str()),
+                _ => None,
+            })
+            .filter(|module| *module != "v6")
+            .count();
+        non_version_use_count > 1
+    }
+
     fn raku_single_quoted_literal(value: &str) -> String {
         let mut escaped = String::with_capacity(value.len() + 2);
         escaped.push('\'');
@@ -148,6 +213,7 @@ impl Interpreter {
         let mut skip_block_reason: String = String::new();
         let mut skip_block_declared_tests: Option<usize> = None;
         let mut skip_block_declared_emitted = false;
+        let mut skip_stmt_paren_depth: i32 = 0;
         let test_funcs = [
             "is(",
             "is ",
@@ -182,6 +248,19 @@ impl Interpreter {
         for line in input.lines() {
             let trimmed = line.trim_start();
 
+            // Skip continuation lines of a multi-line skipped statement.
+            if skip_stmt_paren_depth > 0 {
+                for ch in trimmed.chars() {
+                    match ch {
+                        '(' | '[' | '{' => skip_stmt_paren_depth += 1,
+                        ')' | ']' | '}' => skip_stmt_paren_depth -= 1,
+                        _ => {}
+                    }
+                }
+                output.push('\n');
+                continue;
+            }
+
             // Count-based skip: skip the next N test assertion lines.
             if skip_lines_remaining > 0 {
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
@@ -190,6 +269,18 @@ impl Interpreter {
                         "skip {}, 1;\n",
                         Self::raku_single_quoted_literal(&skip_reason)
                     ));
+                    // Track paren depth for multi-line statements
+                    let mut depth = 0i32;
+                    for ch in trimmed.chars() {
+                        match ch {
+                            '(' | '[' | '{' => depth += 1,
+                            ')' | ']' | '}' => depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    if depth > 0 {
+                        skip_stmt_paren_depth = depth;
+                    }
                     continue;
                 }
                 output.push_str(line);
@@ -239,6 +330,19 @@ impl Interpreter {
                             Self::raku_single_quoted_literal(reason)
                         ));
                         skip_block_pending = None;
+                        // If the statement spans multiple lines, set up to
+                        // skip continuation lines until parens balance.
+                        let mut depth = 0i32;
+                        for ch in trimmed.chars() {
+                            match ch {
+                                '(' | '[' | '{' => depth += 1,
+                                ')' | ']' | '}' => depth -= 1,
+                                _ => {}
+                            }
+                        }
+                        if depth > 0 {
+                            skip_stmt_paren_depth = depth;
+                        }
                         continue;
                     }
                     // Not a block/test line — cancel skip
@@ -351,10 +455,13 @@ impl Interpreter {
                     "todo {};\n",
                     Self::raku_single_quoted_literal(reason)
                 ));
+                output.push_str(line);
+                output.push('\n');
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;
                 }
+                continue; // skip normal append below
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.
@@ -642,26 +749,20 @@ impl Interpreter {
         module: &str,
         source_path: &Path,
     ) -> Result<(Vec<crate::ast::Stmt>, bool), RuntimeError> {
-        // Try loading from precompilation cache
-        if self.precomp_enabled
-            && let Some(stmts) = crate::precomp::load_cached_ast(source_path)
-        {
-            return Ok((stmts, true));
-        }
-
-        // Cache miss or disabled — parse from source
+        // Read source first so we can honor precompilation directives before cache lookup.
         let code = fs::read_to_string(source_path).map_err(|err| {
             RuntimeError::new(format!("Failed to read module {}: {}", module, err))
         })?;
 
-        // Check if the source contains `no precompilation;`
-        let has_no_precompilation = code.lines().any(|line| {
-            let trimmed = line.trim();
-            trimmed == "no precompilation;"
-                || trimmed == "no precompilation"
-                || trimmed.starts_with("no precompilation;")
-                || trimmed.starts_with("no precompilation ")
-        });
+        let has_no_precompilation = Self::source_has_no_precompilation(&code);
+        let dependency_disables_precomp = self.dependency_disables_precomp(&code);
+        let precomp_eligible =
+            self.precomp_enabled && !has_no_precompilation && !dependency_disables_precomp;
+
+        // Try loading from precompilation cache when eligible.
+        if precomp_eligible && let Some(stmts) = crate::precomp::load_cached_ast(source_path) {
+            return Ok((stmts, true));
+        }
 
         let preprocessed = Self::preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
@@ -677,12 +778,12 @@ impl Interpreter {
         })?;
         let stmts = Self::merge_unit_class(stmts);
 
-        // Save to precompilation cache (unless `no precompilation` is in effect)
-        if self.precomp_enabled && !has_no_precompilation {
+        // Save to precompilation cache when the module is eligible.
+        if precomp_eligible {
             crate::precomp::save_cached_ast(source_path, &stmts);
         }
 
-        Ok((stmts, false))
+        Ok((stmts, precomp_eligible))
     }
 
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
@@ -690,7 +791,9 @@ impl Interpreter {
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
-        self.run_block(&stmts)?;
+        if !Self::should_skip_runtime_for_use_only_module(&stmts) {
+            self.run_block(&stmts)?;
+        }
         Ok(())
     }
 }

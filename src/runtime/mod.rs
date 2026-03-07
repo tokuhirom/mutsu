@@ -141,12 +141,13 @@ pub(super) type ClassAttributeDef = (
     bool,
     Option<Option<String>>,
     char,
+    Option<Expr>,
 );
 
 #[derive(Clone, Default)]
 struct ClassDef {
     parents: Vec<String>,
-    // (name, is_public, default, is_rw, is_required, sigil)
+    // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
     attributes: Vec<ClassAttributeDef>,
     attribute_types: HashMap<String, String>, // attr_name -> type constraint
     methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
@@ -249,11 +250,13 @@ struct IoHandleState {
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
+    listener: Option<std::net::TcpListener>,
     closed: bool,
     out_buffer_capacity: Option<usize>,
     out_buffer_pending: Vec<u8>,
     #[allow(dead_code)]
     bin: bool,
+    nl_out: String,
 }
 
 #[derive(Clone)]
@@ -456,6 +459,8 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, Env)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    need_hidden_classes: HashSet<String>,
+    closure_env_overrides: HashMap<u64, Env>,
     module_load_stack: Vec<String>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
@@ -493,12 +498,15 @@ pub struct Interpreter {
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values keyed by Arc pointer identity.
     array_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for Mix values keyed by Arc pointer identity.
+    mix_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Hash values keyed by Arc pointer identity.
     hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,
@@ -694,6 +702,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Promise::Vow".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["keep", "break"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Promise::Vow".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Channel".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -704,6 +724,18 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Channel".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Thread".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["finish", "id"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Thread".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -731,6 +763,7 @@ impl Interpreter {
                     "lines",
                     "merge",
                     "unique",
+                    "classify",
                     "Supply",
                     "Promise",
                     "schedule-on",
@@ -763,6 +796,35 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["utf16".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Blob".to_string(),
+            ClassDef {
+                parents: vec!["Any".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Blob".to_string(), "Any".to_string(), "Mu".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Buf".to_string(),
+            ClassDef {
+                parents: vec!["Blob".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "Buf".to_string(),
+                    "Blob".to_string(),
+                    "Any".to_string(),
+                    "Mu".to_string(),
+                ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -819,7 +881,8 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "exitcode", "signal", "command", "pid", "Numeric", "Int", "Bool", "Str", "gist",
+                    "exitcode", "signal", "command", "pid", "err", "out", "Numeric", "Int", "Bool",
+                    "Str", "gist",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -835,7 +898,10 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cancel", "close", "socket-port", "socket-host"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Tap".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
@@ -960,6 +1026,7 @@ impl Interpreter {
                     "IO",
                     "basename",
                     "dirname",
+                    "cleanup",
                     "parent",
                     "sibling",
                     "child",
@@ -1015,9 +1082,15 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
+                    "path",
+                    "IO",
+                    "Str",
+                    "gist",
+                    "DESTROY",
                     "close",
                     "get",
                     "getc",
+                    "readchars",
                     "lines",
                     "words",
                     "read",
@@ -1034,6 +1107,10 @@ impl Interpreter {
                     "slurp",
                     "out-buffer",
                     "Supply",
+                    "open",
+                    "nl-out",
+                    "nl-in",
+                    "print-nl",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -1088,11 +1165,61 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["close", "getpeername"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                native_methods: [
+                    "close",
+                    "getpeername",
+                    "accept",
+                    "localport",
+                    "print",
+                    "say",
+                    "put",
+                    "write",
+                    "recv",
+                    "read",
+                    "get",
+                    "lines",
+                    "nl-in",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "IO::Socket::Async".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "close",
+                    "write",
+                    "print",
+                    "Supply",
+                    "socket-port",
+                    "peer-port",
+                    "socket-host",
+                    "peer-host",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["IO::Socket::Async".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "IO::Socket::Async::Listener".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["IO::Socket::Async::Listener".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -1608,6 +1735,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            need_hidden_classes: HashSet::new(),
+            closure_env_overrides: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
@@ -1626,10 +1755,12 @@ impl Interpreter {
             container_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
             array_type_metadata: HashMap::new(),
+            mix_type_metadata: HashMap::new(),
             hash_type_metadata: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
@@ -1658,12 +1789,14 @@ impl Interpreter {
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter.init_endian_enum();
+        interpreter.init_protocol_family_enum();
         interpreter.init_signal_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
         {
             let mut attrs = HashMap::new();
             attrs.insert("prefix".to_string(), Value::str_from("."));
+            attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(true));
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);
@@ -1834,7 +1967,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+    pub fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
@@ -1856,6 +1989,8 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
+        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
 
         let result = if module == "Test"
             || matches!(
@@ -1893,6 +2028,51 @@ impl Interpreter {
 
         self.module_load_stack.pop();
         if result.is_ok() {
+            let module_short = if let Some((_, short)) = module.rsplit_once("::") {
+                short
+            } else {
+                module
+            };
+            for class_name in self.classes.keys() {
+                if class_snapshot.contains(class_name) {
+                    continue;
+                }
+                let class_short = class_name
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(class_name.as_str());
+                if class_short != module_short {
+                    self.need_hidden_classes.insert(class_name.clone());
+                    self.need_hidden_classes.insert(class_short.to_string());
+                }
+            }
+            for key in self.env.keys() {
+                if env_snapshot.contains(key) {
+                    continue;
+                }
+                if key.starts_with('$')
+                    || key.starts_with('@')
+                    || key.starts_with('%')
+                    || key.starts_with('&')
+                {
+                    continue;
+                }
+                let key_short = key
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(key.as_str());
+                if !key_short
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    continue;
+                }
+                if key_short != module_short {
+                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_short.to_string());
+                }
+            }
             if module == "strict" {
                 self.strict_mode = true;
             } else if module == "fatal" {
@@ -2065,6 +2245,7 @@ impl Interpreter {
 
     /// Load a module without importing its exports (Raku `need` keyword).
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let is_nested_need = !self.module_load_stack.is_empty();
         if self.loaded_modules.contains(module) {
             return Ok(());
         }
@@ -2077,12 +2258,57 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
+        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
         let saved = self.suppress_exports;
         self.suppress_exports = true;
         let result = self.load_module(module);
         self.suppress_exports = saved;
         self.module_load_stack.pop();
         if result.is_ok() {
+            let short_name = if let Some((_, short)) = module.rsplit_once("::") {
+                short.to_string()
+            } else {
+                module.to_string()
+            };
+            for class_name in self.classes.keys() {
+                if !class_snapshot.contains(class_name) {
+                    self.need_hidden_classes.insert(class_name.clone());
+                    if let Some((_, short)) = class_name.rsplit_once("::") {
+                        self.need_hidden_classes.insert(short.to_string());
+                    }
+                }
+            }
+            for key in self.env.keys() {
+                if env_snapshot.contains(key) {
+                    continue;
+                }
+                if key.starts_with('$')
+                    || key.starts_with('@')
+                    || key.starts_with('%')
+                    || key.starts_with('&')
+                {
+                    continue;
+                }
+                let key_short = key
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(key.as_str());
+                if !key_short
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    continue;
+                }
+                if is_nested_need || key_short != short_name {
+                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_short.to_string());
+                }
+            }
+            if is_nested_need {
+                self.need_hidden_classes.insert(short_name.clone());
+            }
             self.loaded_modules.insert(module.to_string());
         }
         result
@@ -2093,8 +2319,6 @@ impl Interpreter {
             self.strict_mode = false;
         } else if module == "fatal" {
             self.fatal_mode = false;
-        } else if module == "precompilation" {
-            self.precomp_enabled = false;
         }
         Ok(())
     }
@@ -2310,6 +2534,10 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.insert(id, info);
             }
+            Value::Mix(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.mix_type_metadata.insert(id, info);
+            }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.hash_type_metadata.insert(id, info);
@@ -2327,6 +2555,10 @@ impl Interpreter {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.get(&id).cloned()
+            }
+            Value::Mix(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.mix_type_metadata.get(&id).cloned()
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
@@ -2643,10 +2875,12 @@ impl Interpreter {
                 encoding: handle.encoding.clone(),
                 file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
                 socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
+                listener: handle.listener.as_ref().and_then(|l| l.try_clone().ok()),
                 closed: handle.closed,
                 out_buffer_capacity: handle.out_buffer_capacity,
                 out_buffer_pending: handle.out_buffer_pending.clone(),
                 bin: handle.bin,
+                nl_out: handle.nl_out.clone(),
             };
             cloned_handles.insert(*id, cloned);
         }
@@ -2705,6 +2939,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
+            need_hidden_classes: self.need_hidden_classes.clone(),
+            closure_env_overrides: self.closure_env_overrides.clone(),
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
@@ -2723,10 +2959,12 @@ impl Interpreter {
             container_defaults: self.container_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             array_type_metadata: self.array_type_metadata.clone(),
+            mix_type_metadata: self.mix_type_metadata.clone(),
             hash_type_metadata: self.hash_type_metadata.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
@@ -2834,9 +3072,6 @@ impl Interpreter {
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
-        if !self.shared_vars_active {
-            return None;
-        }
         let sv = self.shared_vars.read().unwrap();
         sv.get(key).cloned()
     }
@@ -3166,5 +3401,23 @@ mod tests {
             .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
             .unwrap();
         assert_eq!(output, "3\n");
+    }
+}
+
+impl Interpreter {
+    /// Flush all open file handle buffers. Call before process exit.
+    pub fn flush_all_handles(&mut self) {
+        for state in self.handles.values_mut() {
+            if state.closed {
+                continue;
+            }
+            if !state.out_buffer_pending.is_empty()
+                && let Some(file) = state.file.as_mut()
+            {
+                let _ = file.write_all(&state.out_buffer_pending);
+                let _ = file.flush();
+                state.out_buffer_pending.clear();
+            }
+        }
     }
 }

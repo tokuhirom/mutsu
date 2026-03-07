@@ -102,6 +102,35 @@ fn multidim_target_var_name(target: &Expr) -> String {
     }
 }
 
+enum DeleteAdverb {
+    NoDelete,
+    Delete(Option<Expr>),
+}
+
+fn parse_delete_adverb(input: &str) -> Option<(&str, DeleteAdverb)> {
+    if input.starts_with(":!delete") && !is_ident_char(input.as_bytes().get(8).copied()) {
+        return Some((&input[8..], DeleteAdverb::NoDelete));
+    }
+    if input.starts_with(":delete") && !is_ident_char(input.as_bytes().get(7).copied()) {
+        let mut r = &input[7..];
+        if let Some(r_stripped) = r.strip_prefix('(')
+            && let Ok((r2, _)) = ws(r_stripped)
+            && let Ok((r2, cond)) = expression(r2)
+            && let Ok((r2, _)) = ws(r2)
+            && let Ok((r2, _)) = parse_char(r2, ')')
+        {
+            return Some((r2, DeleteAdverb::Delete(Some(cond))));
+        }
+        // :delete with no argument, or malformed parens (leave for outer parser).
+        if r.starts_with('(') {
+            return None;
+        }
+        r = &input[7..];
+        return Some((r, DeleteAdverb::Delete(None)));
+    }
+    None
+}
+
 fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
     // Handle MultiDimIndex: @a[0;0;0]:kv etc.
     if let Expr::MultiDimIndex { target, dimensions } = expr {
@@ -173,6 +202,7 @@ fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
         Expr::Exists {
             target: Box::new(target),
             negated,
+            delete: false,
             arg,
             adverb,
         },
@@ -369,6 +399,57 @@ fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
     Some((rest, name))
 }
 
+/// Parse the operator name from a prefix-as-postfix construct like `<->`, `«~»`, `<<~>>`, `["~"]`.
+/// Input starts after the `:` in `.:<->`.
+fn parse_prefix_as_postfix(input: &str) -> Option<(&str, String)> {
+    // <<op>> (must be checked before <op>)
+    if let Some(rest) = input.strip_prefix("<<") {
+        // Handle both <<op>> and <<'op'>>
+        let end = rest.find(">>")?;
+        let mut op = &rest[..end];
+        // Strip quotes if present: <<'op'>>
+        if let Some(inner) = op.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+            op = inner;
+        }
+        if op.is_empty() {
+            return None;
+        }
+        return Some((&rest[end + 2..], op.to_string()));
+    }
+    // <op>
+    if let Some(rest) = input.strip_prefix('<') {
+        let end = rest.find('>')?;
+        let op = &rest[..end];
+        if op.is_empty() {
+            return None;
+        }
+        return Some((&rest[end + 1..], op.to_string()));
+    }
+    // «op» (U+00AB / U+00BB)
+    if let Some(rest) = input.strip_prefix('\u{00AB}') {
+        let end = rest.find('\u{00BB}')?;
+        let op = &rest[..end];
+        if op.is_empty() {
+            return None;
+        }
+        return Some((&rest[end + '\u{00BB}'.len_utf8()..], op.to_string()));
+    }
+    // ["op"]
+    if let Some(rest) = input.strip_prefix('[')
+        && let Some(rest) = rest.strip_prefix('"')
+    {
+        let end = rest.find('"')?;
+        let op = &rest[..end];
+        let rest = &rest[end + 1..];
+        let rest = rest.strip_prefix(']')?;
+        if op.is_empty() {
+            return None;
+        }
+        return Some((rest, op.to_string()));
+    }
+    None
+}
+
 fn is_postfix_operator_char(c: char) -> bool {
     if c.is_whitespace() || c.is_alphanumeric() || c == '_' {
         return false;
@@ -398,7 +479,7 @@ fn is_postfix_operator_char(c: char) -> bool {
 fn is_postfix_operator_boundary(rest: &str) -> bool {
     rest.is_empty()
         || rest.starts_with(|c: char| {
-            c.is_whitespace() || matches!(c, ')' | '}' | ']' | ',' | ';' | ':')
+            c.is_whitespace() || matches!(c, '.' | ')' | '}' | ']' | ',' | ';' | ':')
         })
 }
 
@@ -669,7 +750,8 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
     if input.starts_with('^') && !input.starts_with("^..") {
         let rest = &input[1..];
-        if let Ok((rest, expr)) = postfix_expr_tight(rest) {
+        let parsed_operand = postfix_expr_tight(rest).or_else(|_| prefix_expr(rest));
+        if let Ok((rest, expr)) = parsed_operand {
             return postfix_expr_continue(
                 rest,
                 Expr::Binary {
@@ -705,7 +787,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    postfix_expr(input)
+    super::precedence_meta_ops::power_expr(input)
 }
 
 /// Like `postfix_expr` but does NOT allow whitespace-separated dotty method
@@ -723,7 +805,7 @@ pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResu
 }
 
 /// Postfix: method calls (.method), indexing ([]), ++, --
-fn postfix_expr(input: &str) -> PResult<'_, Expr> {
+pub(super) fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     postfix_expr_inner(input, true)
 }
 
@@ -949,6 +1031,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
                         if !r4.starts_with(',') {
                             break;
                         }
@@ -972,6 +1062,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     args: Vec::new(),
                 };
                 rest = r;
+                continue;
+            }
+            // Prefix-as-postfix: .:<op> / .:«op» / .:<<op>> / .:["op"]
+            // Applies prefix operator as postfix: 42.:<-> == -42
+            if let Some(r_colon) = r.strip_prefix(':')
+                && let Some((r_after, op_name)) = parse_prefix_as_postfix(r_colon)
+            {
+                expr = Expr::Call {
+                    name: Symbol::intern(&format!("prefix:<{op_name}>")),
+                    args: vec![expr],
+                };
+                rest = r_after;
                 continue;
             }
             // Parse method name
@@ -1036,6 +1138,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
                         if !r4.starts_with(',') {
                             break;
                         }
@@ -1587,20 +1697,51 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r_after;
                 continue;
             }
-            if r_adv.starts_with(":delete") && !is_ident_char(r_adv.as_bytes().get(7).copied()) {
-                let r = &r_adv[7..];
-                // Use MethodCall as a proxy for delete operation
-                expr = Expr::MethodCall {
-                    target: Box::new(Expr::Index {
-                        target: Box::new(expr),
-                        index: Box::new(index),
-                    }),
-                    name: Symbol::intern("DELETE-KEY"),
-                    args: vec![],
-                    modifier: None,
-                    quoted: false,
+            // Try :delete:exists combination first
+            if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv) {
+                let indexed_expr = Expr::Index {
+                    target: Box::new(expr.clone()),
+                    index: Box::new(index.clone()),
                 };
-                rest = r;
+                if let Some((r_after, mut exists_expr)) =
+                    try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
+                {
+                    if let Expr::Exists { delete, .. } = &mut exists_expr {
+                        *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
+                    }
+                    expr = exists_expr;
+                    rest = r_after;
+                    continue;
+                }
+                rest = r_after_delete;
+                match delete_adv {
+                    DeleteAdverb::NoDelete => {
+                        expr = indexed_expr;
+                    }
+                    DeleteAdverb::Delete(None) => {
+                        expr = Expr::MethodCall {
+                            target: Box::new(indexed_expr),
+                            name: Symbol::intern("DELETE-KEY"),
+                            args: vec![],
+                            modifier: None,
+                            quoted: false,
+                        };
+                    }
+                    DeleteAdverb::Delete(Some(cond)) => {
+                        let delete_expr = Expr::MethodCall {
+                            target: Box::new(indexed_expr.clone()),
+                            name: Symbol::intern("DELETE-KEY"),
+                            args: vec![],
+                            modifier: None,
+                            quoted: false,
+                        };
+                        expr = Expr::Ternary {
+                            cond: Box::new(cond),
+                            then_expr: Box::new(delete_expr),
+                            else_expr: Box::new(indexed_expr),
+                        };
+                    }
+                }
                 continue;
             }
             expr = Expr::Index {
@@ -1623,6 +1764,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         ) || matches!(&expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb" || name == "__mutsu_multidim_adverb" || name == "__mutsu_multidim_subscript_adverb" || name == "__mutsu_multidim_delete" || name == "__mutsu_multidim_dynamic_adverb")
         {
             let (r_adv2, _) = ws(rest)?;
+            if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2)
+                && let Some((r_after, mut exists_expr)) =
+                    try_parse_exists_adverb(r_after_delete, expr.clone())
+            {
+                if let Expr::Exists { delete, .. } = &mut exists_expr {
+                    *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
+                }
+                expr = exists_expr;
+                rest = r_after;
+                continue;
+            }
             if let Some((r_after_adv, adv_name)) = parse_subscript_adverb(r_adv2) {
                 // Avoid consuming ternary `:v` separator in `?? !!` expressions.
                 if !has_ternary_else_after(r_after_adv) {
@@ -1636,34 +1788,70 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r_after;
                 continue;
             }
-            if r_adv2.starts_with(":delete") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {
-                rest = &r_adv2[7..];
-                if let Expr::MultiDimIndex {
-                    target: mdt,
-                    dimensions: dims,
-                } = expr
-                {
-                    let var_name = multidim_target_var_name(&mdt);
-                    let mut args = vec![Expr::Literal(Value::str(var_name))];
-                    args.extend(dims);
-                    expr = Expr::Call {
-                        name: Symbol::intern("__mutsu_multidim_delete"),
-                        args,
-                    };
-                } else {
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name: Symbol::intern("DELETE-KEY"),
-                        args: vec![],
-                        modifier: None,
-                        quoted: false,
-                    };
+            if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2) {
+                rest = r_after_delete;
+                match delete_adv {
+                    DeleteAdverb::NoDelete => {
+                        // Explicitly non-deleting adverb; expression is unchanged.
+                    }
+                    DeleteAdverb::Delete(None) => {
+                        if let Expr::MultiDimIndex {
+                            target: mdt,
+                            dimensions: dims,
+                        } = expr
+                        {
+                            let var_name = multidim_target_var_name(&mdt);
+                            let mut args = vec![Expr::Literal(Value::str(var_name))];
+                            args.extend(dims);
+                            expr = Expr::Call {
+                                name: Symbol::intern("__mutsu_multidim_delete"),
+                                args,
+                            };
+                        } else {
+                            expr = Expr::MethodCall {
+                                target: Box::new(expr),
+                                name: Symbol::intern("DELETE-KEY"),
+                                args: vec![],
+                                modifier: None,
+                                quoted: false,
+                            };
+                        }
+                    }
+                    DeleteAdverb::Delete(Some(cond)) => {
+                        let original_expr = expr.clone();
+                        if let Expr::MultiDimIndex {
+                            target: mdt,
+                            dimensions: dims,
+                        } = original_expr.clone()
+                        {
+                            let var_name = multidim_target_var_name(&mdt);
+                            let mut args = vec![Expr::Literal(Value::str(var_name))];
+                            args.extend(dims);
+                            let delete_expr = Expr::Call {
+                                name: Symbol::intern("__mutsu_multidim_delete"),
+                                args,
+                            };
+                            expr = Expr::Ternary {
+                                cond: Box::new(cond),
+                                then_expr: Box::new(delete_expr),
+                                else_expr: Box::new(original_expr),
+                            };
+                        } else {
+                            let delete_expr = Expr::MethodCall {
+                                target: Box::new(original_expr.clone()),
+                                name: Symbol::intern("DELETE-KEY"),
+                                args: vec![],
+                                modifier: None,
+                                quoted: false,
+                            };
+                            expr = Expr::Ternary {
+                                cond: Box::new(cond),
+                                then_expr: Box::new(delete_expr),
+                                else_expr: Box::new(original_expr),
+                            };
+                        }
+                    }
                 }
-                continue;
-            }
-            if r_adv2.starts_with(":!delete") && !is_ident_char(r_adv2.as_bytes().get(8).copied()) {
-                // :!delete is a no-op — just skip the adverb
-                rest = &r_adv2[8..];
                 continue;
             }
             // Dynamic adverb: :$delete — runtime-decided delete
@@ -1784,15 +1972,34 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // General :delete adverb. Index targets are lowered to dedicated delete
         // opcodes by the compiler; non-index targets die at runtime.
         let (r_delete, _) = ws(rest)?;
-        if r_delete.starts_with(":delete") && !is_ident_char(r_delete.as_bytes().get(7).copied()) {
-            rest = &r_delete[7..];
-            expr = Expr::MethodCall {
-                target: Box::new(expr),
-                name: Symbol::intern("DELETE-KEY"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
-            };
+        if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_delete) {
+            rest = r_after_delete;
+            match delete_adv {
+                DeleteAdverb::NoDelete => {}
+                DeleteAdverb::Delete(None) => {
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern("DELETE-KEY"),
+                        args: vec![],
+                        modifier: None,
+                        quoted: false,
+                    };
+                }
+                DeleteAdverb::Delete(Some(cond)) => {
+                    let delete_expr = Expr::MethodCall {
+                        target: Box::new(expr.clone()),
+                        name: Symbol::intern("DELETE-KEY"),
+                        args: vec![],
+                        modifier: None,
+                        quoted: false,
+                    };
+                    expr = Expr::Ternary {
+                        cond: Box::new(cond),
+                        then_expr: Box::new(delete_expr),
+                        else_expr: Box::new(expr),
+                    };
+                }
+            }
             continue;
         }
 
@@ -1804,6 +2011,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             } else {
                 &rest[2..]
             };
+            let after_hyper = consume_unspace(after_hyper);
             // Hyper `.=` assignment is handled by statement-level assignment parsing.
             if after_hyper.starts_with(".=") {
                 break;
@@ -2117,7 +2325,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
         {
             let after = &rest[len..];
-            if is_postfix_operator_boundary(after) {
+            let ident_continuation = after
+                .as_bytes()
+                .first()
+                .copied()
+                .is_some_and(|b| is_ident_char(Some(b)));
+            if !ident_continuation {
                 // Skip postfix ops that have a precedence level lower than PREFIX
                 // (declared `is looser(&prefix:<...>)`). These will be handled
                 // at the prefix level after the prefix operand is parsed.

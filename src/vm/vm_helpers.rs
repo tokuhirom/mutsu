@@ -126,10 +126,29 @@ impl VM {
         if let Some(qualified) = Self::main_qualified_name(name) {
             return self.interpreter.env().get(&qualified).cloned();
         }
+        // Placeholder block parameters are stored as "^name". Allow lexical
+        // access by the de-careted name inside the same block.
+        if !name.starts_with('^') {
+            let placeholder = format!("^{name}");
+            if let Some(val) = self.interpreter.env().get(&placeholder) {
+                return Some(val.clone());
+            }
+            if let Some(val) = self.interpreter.get_shared_var(&placeholder) {
+                return Some(val);
+            }
+        }
         None
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        if !name.starts_with('^') {
+            let placeholder = format!("^{name}");
+            if self.interpreter.env().contains_key(&placeholder) {
+                self.interpreter.set_shared_var(&placeholder, value.clone());
+                self.interpreter.env_mut().insert(placeholder, value);
+                return;
+            }
+        }
         self.interpreter.set_shared_var(name, value.clone());
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
             self.interpreter.env_mut().insert(alias, value.clone());
@@ -382,6 +401,10 @@ impl VM {
             Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
+            Value::FatRat(n, d) => match make_rat(n + d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => {
                 if let Some(next) = Self::superscript_succ(s) {
                     Value::str(next)
@@ -409,6 +432,10 @@ impl VM {
             Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
+            Value::FatRat(n, d) => match make_rat(n - d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => {
                 if let Some(prev) = Self::superscript_pred(s) {
                     Value::str(prev)
@@ -572,7 +599,17 @@ impl VM {
                 | "RatStr"
                 | "ComplexStr"
                 | "Allomorph"
-        )
+        ) || {
+            // Handle parameterized types like Buf[uint8], Array[Int], etc.
+            if let Some(open) = name.find('[')
+                && name.ends_with(']')
+                && open > 0
+            {
+                Self::is_builtin_type(&name[..open])
+            } else {
+                false
+            }
+        }
     }
 
     /// Check if a name is a type with a smiley suffix (:U, :D, :_).
@@ -930,13 +967,15 @@ impl VM {
                 _ => false,
             }
         }
-        let bypass_supply_extrema_fastpath =
-            (method_sym == "max" || method_sym == "min" || method_sym == "lines")
-                && args.len() <= 1
-                && (matches!(
-                    target,
-                    Value::Instance { class_name, .. } if class_name == "Supply"
-                ) || matches!(target, Value::Package(name) if name == "Supply"));
+        let bypass_supply_extrema_fastpath = (method_sym == "max"
+            || method_sym == "min"
+            || method_sym == "lines"
+            || method_sym == "elems")
+            && args.len() <= 1
+            && (matches!(
+                target,
+                Value::Instance { class_name, .. } if class_name == "Supply"
+            ) || matches!(target, Value::Package(name) if name == "Supply"));
         let bypass_supplier_supply_fastpath = method_sym == "Supply"
             && args.is_empty()
             && matches!(
@@ -955,6 +994,11 @@ impl VM {
                 || self.interpreter.type_matches_value("Numeric", target)
                 || matches!(target, Value::Instance { class_name, .. }
                     if self.interpreter.has_user_method(&class_name.resolve(), "Bridge")));
+        let method_name = method_sym.resolve();
+        let bypass_runtime_native_instance_fastpath = matches!(target, Value::Instance { class_name, .. }
+                if self
+                    .interpreter
+                    .is_native_method(&class_name.resolve(), &method_name));
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
@@ -968,6 +1012,7 @@ impl VM {
             || bypass_squish_fastpath
             || bypass_tail_fastpath
             || bypass_numeric_bridge_instance_fastpath
+            || bypass_runtime_native_instance_fastpath
             || bypass_proxy
         {
             return None;
@@ -1139,6 +1184,12 @@ impl VM {
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
+        // Set current_package to the function's defining package so that default
+        // value expressions can resolve package-scoped functions (e.g. &double).
+        let saved_package = self.interpreter.current_package().to_string();
+        if !fn_package.is_empty() && fn_package != "GLOBAL" {
+            self.interpreter.set_current_package(fn_package.to_string());
+        }
         let rw_bindings =
             match self
                 .interpreter
@@ -1146,6 +1197,7 @@ impl VM {
             {
                 Ok(bindings) => bindings,
                 Err(e) => {
+                    self.interpreter.set_current_package(saved_package);
                     if !fn_name.is_empty() {
                         self.interpreter.pop_routine();
                     }
@@ -1262,6 +1314,7 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
+        self.interpreter.set_current_package(saved_package);
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }
@@ -1619,7 +1672,7 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         // Build the base (self) value
-        let base = if let Some(inv) = invocant {
+        let mut base = if let Some(inv) = invocant {
             inv
         } else if attributes.is_empty() {
             Value::Package(crate::symbol::Symbol::intern(receiver_class_name))
@@ -1731,17 +1784,59 @@ impl VM {
                             captured_name.to_string(),
                             crate::runtime::Interpreter::captured_type_object(&base),
                         );
-                    } else if !self.interpreter.type_matches_value(constraint, &base) {
-                        self.interpreter.pop_method_class();
-                        self.stack.truncate(saved_stack_depth);
-                        let frame = self.pop_call_frame();
-                        *self.interpreter.env_mut() = frame.saved_env;
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                            param_name,
-                            constraint,
-                            crate::runtime::value_type_name(&base)
-                        )));
+                    } else {
+                        let coercion_target = if let Some(open) = constraint.find('(') {
+                            if constraint.ends_with(')') && open > 0 {
+                                Some(&constraint[..open])
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let expected = coercion_target.unwrap_or(constraint.as_str());
+                        if coercion_target.is_some() {
+                            let mut candidate = self
+                                .interpreter
+                                .try_coerce_value_for_constraint(constraint, base.clone())
+                                .unwrap_or_else(|_| base.clone());
+                            if !self.interpreter.type_matches_value(expected, &candidate)
+                                && let Ok(coerced) = self.interpreter.call_method_with_values(
+                                    base.clone(),
+                                    expected,
+                                    vec![],
+                                )
+                            {
+                                candidate = coerced;
+                            }
+                            if self.interpreter.type_matches_value(expected, &candidate) {
+                                base = candidate;
+                                self.interpreter
+                                    .env_mut()
+                                    .insert("self".to_string(), base.clone());
+                            }
+                        } else if !self.interpreter.type_matches_value(constraint, &base)
+                            && let Ok(coerced) = self
+                                .interpreter
+                                .try_coerce_value_for_constraint(constraint, base.clone())
+                        {
+                            base = coerced;
+                            self.interpreter
+                                .env_mut()
+                                .insert("self".to_string(), base.clone());
+                        }
+                        if !self.interpreter.type_matches_value(expected, &base) {
+                            self.interpreter.pop_method_class();
+                            self.stack.truncate(saved_stack_depth);
+                            let frame = self.pop_call_frame();
+                            *self.interpreter.env_mut() = frame.saved_env;
+                            return Err(RuntimeError::new(format!(
+                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                                param_name,
+                                constraint,
+                                crate::runtime::value_type_name(&base)
+                            )));
+                        }
                     }
                 }
                 self.interpreter

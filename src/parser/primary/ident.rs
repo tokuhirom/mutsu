@@ -51,6 +51,141 @@ fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     }
 }
 
+fn supply_method_call(body: Vec<Stmt>) -> Expr {
+    const EMITTER_NAME: &str = "__mutsu_supply_emitter";
+    let lowered_body = rewrite_supply_body(body, EMITTER_NAME);
+    Expr::MethodCall {
+        target: Box::new(Expr::BareWord("Supply".to_string())),
+        name: Symbol::intern("on-demand"),
+        args: vec![Expr::Lambda {
+            param: EMITTER_NAME.to_string(),
+            body: lowered_body,
+        }],
+        modifier: None,
+        quoted: false,
+    }
+}
+
+fn rewrite_supply_body(stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
+    stmts
+        .into_iter()
+        .map(|stmt| rewrite_supply_stmt(stmt, emitter_name))
+        .collect()
+}
+
+fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
+    match stmt {
+        Stmt::Expr(expr) => {
+            if let Expr::Call { name, args } = &expr
+                && name.resolve().as_str() == "emit"
+            {
+                return Stmt::Expr(Expr::MethodCall {
+                    target: Box::new(Expr::Var(emitter_name.to_string())),
+                    name: Symbol::intern("emit"),
+                    args: args.clone(),
+                    modifier: None,
+                    quoted: false,
+                });
+            }
+            Stmt::Expr(expr)
+        }
+        Stmt::ReactDone => Stmt::SyntheticBlock(vec![
+            Stmt::Expr(Expr::MethodCall {
+                target: Box::new(Expr::Var(emitter_name.to_string())),
+                name: Symbol::intern("done"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            }),
+            Stmt::Return(Expr::Literal(Value::Nil)),
+        ]),
+        Stmt::Block(stmts) => Stmt::Block(rewrite_supply_body(stmts, emitter_name)),
+        Stmt::SyntheticBlock(stmts) => {
+            Stmt::SyntheticBlock(rewrite_supply_body(stmts, emitter_name))
+        }
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            binding_var,
+        } => Stmt::If {
+            cond,
+            then_branch: rewrite_supply_body(then_branch, emitter_name),
+            else_branch: rewrite_supply_body(else_branch, emitter_name),
+            binding_var,
+        },
+        Stmt::While { cond, body, label } => Stmt::While {
+            cond,
+            body: rewrite_supply_body(body, emitter_name),
+            label,
+        },
+        Stmt::Loop {
+            init,
+            cond,
+            step,
+            body,
+            repeat,
+            label,
+        } => Stmt::Loop {
+            init: init.map(|boxed| Box::new(rewrite_supply_stmt(*boxed, emitter_name))),
+            cond,
+            step,
+            body: rewrite_supply_body(body, emitter_name),
+            repeat,
+            label,
+        },
+        Stmt::For {
+            iterable,
+            param,
+            param_def,
+            params,
+            body,
+            label,
+            mode,
+        } => Stmt::For {
+            iterable,
+            param,
+            param_def,
+            params,
+            body: rewrite_supply_body(body, emitter_name),
+            label,
+            mode,
+        },
+        Stmt::Given { topic, body } => Stmt::Given {
+            topic,
+            body: rewrite_supply_body(body, emitter_name),
+        },
+        Stmt::When { cond, body } => Stmt::When {
+            cond,
+            body: rewrite_supply_body(body, emitter_name),
+        },
+        Stmt::Default(body) => Stmt::Default(rewrite_supply_body(body, emitter_name)),
+        Stmt::Catch(body) => Stmt::Catch(rewrite_supply_body(body, emitter_name)),
+        Stmt::Control(body) => Stmt::Control(rewrite_supply_body(body, emitter_name)),
+        Stmt::React { body } => Stmt::React {
+            body: rewrite_supply_body(body, emitter_name),
+        },
+        Stmt::Whenever {
+            supply,
+            param,
+            body,
+        } => Stmt::Whenever {
+            supply,
+            param,
+            body: rewrite_supply_body(body, emitter_name),
+        },
+        Stmt::Subtest { name, body } => Stmt::Subtest {
+            name,
+            body: rewrite_supply_body(body, emitter_name),
+        },
+        Stmt::Label { name, stmt } => Stmt::Label {
+            name,
+            stmt: Box::new(rewrite_supply_stmt(*stmt, emitter_name)),
+        },
+        other => other,
+    }
+}
+
 /// Parse a user-declared circumfix operator: `open args close` → Call circumfix:<open close>(args)
 pub(super) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
     if let Some((name, open_len, close_delim)) =
@@ -510,6 +645,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "roll"
             | "sleep"
             | "dir"
+            | "open"
             | "elems"
             | "end"
     ) || is_expr_listop(name)
@@ -526,10 +662,13 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "flat"
             | "slip"
             | "produce"
+            | "reduce"
             | "run"
             | "shell"
+            | "indir"
             | "cross"
             | "await"
+            | "sleep"
             | "dir"
             | "first"
             | "make"
@@ -774,21 +913,6 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("listop argument"));
     }
 
-    // In argument context, .5 should parse as 0.5 (not topic method call)
-    if input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_digit() {
-        let dot_rest = &input[1..]; // skip '.'
-        let end = dot_rest
-            .find(|c: char| !c.is_ascii_digit() && c != '_')
-            .unwrap_or(dot_rest.len());
-        let frac_str = &dot_rest[..end];
-        let rest = &dot_rest[end..];
-        // Parse as Rat: 0.DIGITS
-        let frac_clean: String = frac_str.chars().filter(|c| *c != '_').collect();
-        let denom = 10_i64.pow(frac_clean.len() as u32);
-        let numer: i64 = frac_clean.parse().unwrap_or(0);
-        return Ok((rest, Expr::Literal(crate::value::Value::Rat(numer, denom))));
-    }
-
     // Parse a single term with prefix/postfix operators, but no infix operators.
     // This keeps listop precedence behavior (e.g. `shift @a + 1` parses as
     // `(shift @a) + 1`) while still allowing argument postfix chains like
@@ -1012,6 +1136,17 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
+                let (r_ws, _) = ws(r)?;
+                for kw in &["while", "until", "for", "given"] {
+                    if keyword(kw, r_ws).is_some() {
+                        return Err(PError::raw(
+                            format!(
+                                "X::Obsolete: Unsupported use of do...{kw}. In Raku please use: repeat...while or repeat...until."
+                            ),
+                            Some(r_ws.len()),
+                        ));
+                    }
+                }
                 return Ok((r, Expr::DoBlock { body, label: None }));
             }
             // do if/unless/given/for/while — wrap the control flow statement
@@ -1349,6 +1484,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             return parse_require_expr(input, rest);
         }
         "last" => {
+            if rest.trim_start().starts_with("=>") {
+                return Ok((rest, Expr::BareWord(name)));
+            }
             return Ok((
                 rest,
                 Expr::ControlFlow {
@@ -1358,6 +1496,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             ));
         }
         "next" => {
+            if rest.trim_start().starts_with("=>") {
+                return Ok((rest, Expr::BareWord(name)));
+            }
             return Ok((
                 rest,
                 Expr::ControlFlow {
@@ -1367,6 +1508,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             ));
         }
         "redo" => {
+            if rest.trim_start().starts_with("=>") {
+                return Ok((rest, Expr::BareWord(name)));
+            }
             return Ok((
                 rest,
                 Expr::ControlFlow {
@@ -1612,6 +1756,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         // Block without trailing comma — return as separate expressions
         // Fall through to BareWord
+    }
+
+    // `supply { ... }` expression: lower to `Supply.on-demand(-> $emitter { ... })`.
+    if name == "supply"
+        && r.starts_with('{')
+        && let Ok((r2, block_body)) = parse_block_body(r)
+    {
+        return Ok((r2, supply_method_call(block_body)));
     }
 
     // Check for listop: bareword followed by space and argument (but not statement modifier)

@@ -5,6 +5,7 @@ use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 fn flatten_with_depth(
@@ -81,6 +82,31 @@ fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
         }
         _ => Value::Bool(hay.contains(&needle.to_string_value())),
     }
+}
+
+fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+    let mut total = 0.0;
+    for weight in items.values() {
+        if weight.is_finite() && *weight > 0.0 {
+            total += *weight;
+        }
+    }
+    if total <= 0.0 {
+        return None;
+    }
+    let mut needle = crate::builtins::rng::builtin_rand() * total;
+    for (key, weight) in items {
+        if !weight.is_finite() || *weight <= 0.0 {
+            continue;
+        }
+        if needle <= *weight {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *weight;
+    }
+    items
+        .iter()
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
 // ── 1-arg method dispatch ────────────────────────────────────────────
@@ -235,6 +261,16 @@ pub(crate) fn native_method_1arg(
                             return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::Nil)));
                         }
                         Some(Ok(Value::Nil))
+                    }
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                            return Some(Ok(bytes.get(idx).cloned().unwrap_or(Value::Int(0))));
+                        }
+                        Some(Ok(Value::Int(0)))
                     }
                     _ => None,
                 }
@@ -682,6 +718,11 @@ pub(crate) fn native_method_1arg(
             }
         }
         "pick" => {
+            if matches!(target, Value::Mix(_)) {
+                return Some(Err(RuntimeError::new(
+                    "Cannot call .pick on a Mix (immutable)",
+                )));
+            }
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
                 Value::Whatever => {
@@ -737,6 +778,33 @@ pub(crate) fn native_method_1arg(
                 }
                 _ => return None,
             };
+            if let Value::Mix(items) = target {
+                if count.is_none() {
+                    let generated = 131_072usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
+                        if let Some(v) = sample_weighted_mix_key(items) {
+                            out.push(v);
+                        }
+                    }
+                    return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
+                        body: vec![],
+                        env: crate::env::Env::new(),
+                        cache: std::sync::Mutex::new(Some(out)),
+                    }))));
+                }
+                let count = count.unwrap_or(0);
+                if count == 0 {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let mut result = Vec::with_capacity(count);
+                for _ in 0..count {
+                    if let Some(v) = sample_weighted_mix_key(items) {
+                        result.push(v);
+                    }
+                }
+                return Some(Ok(Value::array(result)));
+            }
             let sample_from_range = |range: &Value| -> Option<Value> {
                 let random_i64 = |lo: i64, hi: i64| -> Value {
                     if hi <= lo {
@@ -1016,8 +1084,161 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
+        "subbuf" => {
+            if !is_buf_like(target) {
+                return None;
+            }
+            let items = buf_get_int_items(target)?;
+            let cn = buf_class_name(target);
+            // subbuf(Range)
+            if let Some((start, end)) = range_bounds(arg) {
+                let len = items.len() as i64;
+                if end <= start || start >= len {
+                    return Some(Ok(make_buf_from_int_items(&cn, &[])));
+                }
+                let s = start.max(0) as usize;
+                let e = (end as usize).min(items.len());
+                return Some(Ok(make_buf_from_int_items(&cn, &items[s..e])));
+            }
+            // subbuf(start) - from start to end
+            let start = resolve_buf_index(arg, items.len());
+            if start < 0 || start as usize > items.len() {
+                return Some(Err(out_of_range_error(start, 0, items.len() as i64)));
+            }
+            Some(Ok(make_buf_from_int_items(&cn, &items[start as usize..])))
+        }
         _ => None,
     }
+}
+
+fn is_buf_like(val: &Value) -> bool {
+    if let Value::Instance { class_name, .. } = val {
+        let cn = class_name.resolve();
+        cn == "Buf"
+            || cn == "Blob"
+            || cn == "utf8"
+            || cn == "utf16"
+            || cn.starts_with("Buf[")
+            || cn.starts_with("Blob[")
+            || cn.starts_with("buf")
+            || cn.starts_with("blob")
+    } else {
+        false
+    }
+}
+
+fn buf_class_name(val: &Value) -> String {
+    if let Value::Instance { class_name, .. } = val {
+        class_name.resolve().to_string()
+    } else {
+        "Buf".to_string()
+    }
+}
+
+fn buf_get_int_items(target: &Value) -> Option<Vec<Value>> {
+    if let Value::Instance { attributes, .. } = target
+        && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+    {
+        Some(items.to_vec())
+    } else {
+        None
+    }
+}
+
+fn make_buf_from_int_items(class_name: &str, items: &[Value]) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("bytes".to_string(), Value::array(items.to_vec()));
+    Value::make_instance(Symbol::intern(class_name), attrs)
+}
+
+fn eval_whatever_code(sub_data: &std::sync::Arc<crate::value::SubData>, arg: i64) -> i64 {
+    let param = sub_data
+        .params
+        .first()
+        .map(|s: &String| s.as_str())
+        .unwrap_or("_");
+    let mut sub_env = sub_data.env.clone();
+    sub_env.insert(param.to_string(), Value::Int(arg));
+    let mut interpreter = crate::runtime::Interpreter::new();
+    *interpreter.env_mut() = sub_env;
+    if let Ok(result) = interpreter.eval_block_value(&sub_data.body) {
+        match result {
+            Value::Int(n) => n,
+            Value::Num(f) => f as i64,
+            _ => 0,
+        }
+    } else {
+        0
+    }
+}
+
+fn resolve_buf_index(arg: &Value, len: usize) -> i64 {
+    match arg {
+        Value::Int(n) => *n,
+        Value::Num(f) => *f as i64,
+        Value::Rat(n, d) => {
+            if *d != 0 {
+                *n / *d
+            } else {
+                0
+            }
+        }
+        Value::Sub(data) => eval_whatever_code(data, len as i64),
+        Value::Whatever => len as i64,
+        _ => 0,
+    }
+}
+
+fn resolve_buf_len(arg: &Value, total_len: usize, start: usize) -> i64 {
+    match arg {
+        Value::Int(n) => *n,
+        Value::Num(f) => {
+            if f.is_infinite() && *f > 0.0 {
+                (total_len - start) as i64
+            } else {
+                *f as i64
+            }
+        }
+        Value::Rat(n, d) => {
+            if *d != 0 {
+                *n / *d
+            } else {
+                0
+            }
+        }
+        Value::Whatever => (total_len - start) as i64,
+        Value::Sub(data) => {
+            // WhateverCode receives total_len and returns an end index (inclusive).
+            // Length = max(0, end_index - start + 1)
+            let end_idx = eval_whatever_code(data, total_len as i64);
+            let len = end_idx - start as i64 + 1;
+            if len < 0 { 0 } else { len }
+        }
+        _ => 0,
+    }
+}
+
+fn range_bounds(arg: &Value) -> Option<(i64, i64)> {
+    match arg {
+        Value::Range(start, end) => Some((*start, *end + 1)),
+        Value::RangeExcl(start, end) => Some((*start, *end)),
+        _ => None,
+    }
+}
+
+fn out_of_range_error(got: i64, min: i64, max: i64) -> RuntimeError {
+    let mut attrs = std::collections::HashMap::new();
+    let msg = format!(
+        "Index out of range. Is: {}, should be in {}..{}",
+        got, min, max
+    );
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("got".to_string(), Value::Int(got));
+    attrs.insert("range".to_string(), Value::str(format!("{}..{}", min, max)));
+    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
 }
 
 /// Extract byte array from a Buf/Blob instance.
@@ -1027,12 +1248,7 @@ fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         attributes,
         ..
     } = target
-        && (class_name == "Buf"
-            || class_name == "Blob"
-            || class_name.resolve().starts_with("Buf[")
-            || class_name.resolve().starts_with("Blob[")
-            || class_name.resolve().starts_with("buf")
-            || class_name.resolve().starts_with("blob"))
+        && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         && let Some(Value::Array(items, ..)) = attributes.get("bytes")
     {
         return Some(
@@ -1267,6 +1483,50 @@ pub(crate) fn native_method_2arg(
                 read_f64_endian(&bytes[offset..offset + 8], endian_val)
             };
             Some(Ok(Value::Num(result)))
+        }
+        "subbuf" => {
+            if !is_buf_like(target) {
+                return None;
+            }
+            let items = buf_get_int_items(target)?;
+            let cn = buf_class_name(target);
+            let len = items.len();
+            let start = resolve_buf_index(arg1, len);
+            if start < 0 {
+                return Some(Err(out_of_range_error(start, 0, len as i64)));
+            }
+            if start as usize > len {
+                return Some(Err(out_of_range_error(start, 0, len as i64)));
+            }
+            // arg2 is the length
+            let sub_len = resolve_buf_len(arg2, len, start as usize);
+            if sub_len < 0 {
+                return Some(Err(out_of_range_error(sub_len, 0, len as i64)));
+            }
+            let s = start as usize;
+            let available = len - s;
+            let take = (sub_len as usize).min(available);
+            Some(Ok(make_buf_from_int_items(&cn, &items[s..s + take])))
+        }
+        "subbuf-rw" => {
+            if !is_buf_like(target) {
+                return None;
+            }
+            let items = buf_get_int_items(target)?;
+            let cn = buf_class_name(target);
+            let len = items.len();
+            let start = resolve_buf_index(arg1, len);
+            if start < 0 || start as usize > len {
+                return Some(Err(out_of_range_error(start, 0, len as i64)));
+            }
+            let sub_len = resolve_buf_len(arg2, len, start as usize);
+            if sub_len < 0 {
+                return Some(Err(out_of_range_error(sub_len, 0, len as i64)));
+            }
+            let s = start as usize;
+            let available = len - s;
+            let take = (sub_len as usize).min(available);
+            Some(Ok(make_buf_from_int_items(&cn, &items[s..s + take])))
         }
         _ => None,
     }

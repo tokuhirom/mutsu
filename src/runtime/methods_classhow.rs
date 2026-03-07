@@ -264,6 +264,51 @@ impl Interpreter {
                     .classhow_find_method(invocant, &method_name)
                     .unwrap_or(Value::Nil))
             }
+            "coerce" if args.len() >= 2 => {
+                let target_constraint = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => value_type_name(other).to_string(),
+                };
+                let original = args[1].clone();
+                let parse_coercion = |constraint: &str| -> Option<(String, Option<String>)> {
+                    if !constraint.ends_with(')') || constraint.contains('[') {
+                        return None;
+                    }
+                    let open = constraint.find('(')?;
+                    if open == 0 {
+                        return None;
+                    }
+                    let target = constraint[..open].to_string();
+                    let source = &constraint[open + 1..constraint.len() - 1];
+                    let source = if source.is_empty() {
+                        None
+                    } else {
+                        Some(source.to_string())
+                    };
+                    Some((target, source))
+                };
+                if let Some((_target, source)) = parse_coercion(&target_constraint)
+                    && let Some(src) = source.as_ref()
+                    && !self.type_matches_value(src, &original)
+                {
+                    return Err(super::types::coerce_impossible_error(
+                        &target_constraint,
+                        &original,
+                    ));
+                }
+                let coerced =
+                    self.try_coerce_value_for_constraint(&target_constraint, original.clone())?;
+                if let Some((target, _)) = parse_coercion(&target_constraint)
+                    && !self.type_matches_value(&target, &coerced)
+                {
+                    return Err(super::types::coerce_impossible_error(
+                        &target_constraint,
+                        &original,
+                    ));
+                }
+                Ok(coerced)
+            }
             "add_method" if args.len() >= 3 => {
                 let class_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
@@ -457,6 +502,30 @@ impl Interpreter {
                         let base = s.split_once('[').map(|(b, _)| b).unwrap_or(s.as_str());
                         Ok(Value::Package(Symbol::intern(base)))
                     }
+                }
+            }
+            "enum_value_list" if !args.is_empty() => {
+                let type_name = match &args[0] {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.to_string()),
+                    _ => None,
+                };
+                if let Some(type_name) = type_name
+                    && let Some(variants) = self.enum_types.get(&type_name)
+                {
+                    let values: Vec<Value> = variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, val))| Value::Enum {
+                            enum_type: Symbol::intern(&type_name),
+                            key: Symbol::intern(key),
+                            value: *val,
+                            index,
+                        })
+                        .collect();
+                    Ok(Value::array(values))
+                } else {
+                    Ok(Value::array(Vec::new()))
                 }
             }
             _ => Err(RuntimeError::new(format!(

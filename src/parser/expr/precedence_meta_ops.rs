@@ -760,13 +760,13 @@ pub(super) fn additive_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Multiplication/division: * / % div mod gcd lcm
 pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = power_expr(input)?;
+    let (mut rest, mut left) = prefix_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op, len)) = parse_multiplicative_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r).map_err(|err| {
+            let (r, right) = prefix_expr(r).map_err(|err| {
                 enrich_expected_error(
                     err,
                     "expected expression after multiplicative operator",
@@ -790,7 +790,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 &mut left,
                 PREC_ADDITIVE,
                 PREC_MULTIPLICATIVE,
-                power_expr,
+                prefix_expr,
             )? {
                 rest = new_rest;
                 continue;
@@ -800,7 +800,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r).map_err(|err| {
+            let (r, right) = prefix_expr(r).map_err(|err| {
                 enrich_expected_error(
                     err,
                     "expected expression after bracket multiplicative operator",
@@ -833,12 +833,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Exponentiation: **
 pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
-    let leading_sign = input
-        .trim_start()
-        .chars()
-        .next()
-        .filter(|c| *c == '-' || *c == '+');
-    let (mut rest, mut base) = prefix_expr(input)?;
+    let (mut rest, mut base) = super::postfix::postfix_expr(input)?;
     // Check for custom infixes at power level (tighter than multiplicative)
     loop {
         let (r, _) = ws(rest)?;
@@ -851,7 +846,7 @@ pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
                 &mut base,
                 PREC_MULTIPLICATIVE,
                 PREC_PREFIX - 1,
-                prefix_expr,
+                super::postfix::postfix_expr,
             )? {
                 rest = new_rest;
                 continue;
@@ -859,51 +854,13 @@ pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
         }
         if let Some(stripped) = r.strip_prefix("**") {
             let (r, _) = ws(stripped)?;
-            let (r, exp) = power_expr(r).map_err(|err| {
+            let (r, exp) = super::postfix::prefix_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected exponent expression after '**'", r.len())
-            })?; // right-associative
-            base = if let Some(sign) = leading_sign {
-                match (sign, base) {
-                    (
-                        '-',
-                        Expr::Unary {
-                            op: TokenKind::Minus,
-                            expr,
-                        },
-                    ) => Expr::Unary {
-                        op: TokenKind::Minus,
-                        expr: Box::new(Expr::Binary {
-                            left: expr,
-                            op: TokenKind::StarStar,
-                            right: Box::new(exp),
-                        }),
-                    },
-                    (
-                        '+',
-                        Expr::Unary {
-                            op: TokenKind::Plus,
-                            expr,
-                        },
-                    ) => Expr::Unary {
-                        op: TokenKind::Plus,
-                        expr: Box::new(Expr::Binary {
-                            left: expr,
-                            op: TokenKind::StarStar,
-                            right: Box::new(exp),
-                        }),
-                    },
-                    (_, other) => Expr::Binary {
-                        left: Box::new(other),
-                        op: TokenKind::StarStar,
-                        right: Box::new(exp),
-                    },
-                }
-            } else {
-                Expr::Binary {
-                    left: Box::new(base),
-                    op: TokenKind::StarStar,
-                    right: Box::new(exp),
-                }
+            })?; // right-associative, allow prefix on RHS
+            base = Expr::Binary {
+                left: Box::new(base),
+                op: TokenKind::StarStar,
+                right: Box::new(exp),
             };
             rest = r;
             continue;

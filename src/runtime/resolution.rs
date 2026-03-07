@@ -641,8 +641,17 @@ impl Interpreter {
                 self.env.insert("?LINE".to_string(), Value::Int(line));
             }
             self.push_caller_env();
+            let persist_closure_env = data.name == "" || !self.has_function(&data.name.resolve());
+            let closure_base_env = if persist_closure_env {
+                self.closure_env_overrides
+                    .get(&data.id)
+                    .cloned()
+                    .unwrap_or_else(|| data.env.clone())
+            } else {
+                data.env.clone()
+            };
             let mut new_env = saved_env.clone();
-            for (k, v) in &data.env {
+            for (k, v) in &closure_base_env {
                 if merge_all {
                     new_env.entry(k.clone()).or_insert(v.clone());
                     continue;
@@ -772,11 +781,24 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
+            if persist_closure_env {
+                let mut persisted_closure_env = closure_base_env.clone();
+                for key in closure_base_env.keys() {
+                    if let Some(value) = self.env.get(key).cloned() {
+                        persisted_closure_env.insert(key.clone(), value);
+                    }
+                }
+                self.closure_env_overrides
+                    .insert(data.id, persisted_closure_env);
+            }
             let mut merged = saved_env;
             self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    if k != "_" && k != "@_" && merged.contains_key(k) {
+                    if k != "_"
+                        && k != "@_"
+                        && (merged.contains_key(k) || k.starts_with("__mutsu_var_meta::"))
+                    {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
@@ -872,6 +894,25 @@ impl Interpreter {
         let (code, compiled_fns) = compiler.compile(body);
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
+        let trailing_sub_value = match body.last() {
+            Some(Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                is_rw,
+                ..
+            }) => Some(Value::make_sub(
+                Symbol::intern(&self.current_package),
+                *name,
+                params.clone(),
+                param_defs.clone(),
+                body.clone(),
+                *is_rw,
+                self.env.clone(),
+            )),
+            _ => None,
+        };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
         // Sub/proto declarations in block scope are lexical; restore registries on block exit.
         self.functions = saved_functions;
@@ -885,7 +926,15 @@ impl Interpreter {
         }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
-        result
+        result.map(|value| {
+            let missing_value = matches!(value, Value::Nil)
+                || matches!(&value, Value::Package(name) if name == "Any");
+            if missing_value {
+                trailing_sub_value.unwrap_or(Value::Nil)
+            } else {
+                value
+            }
+        })
     }
 
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block
@@ -937,7 +986,7 @@ impl Interpreter {
         }
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
-        result.map(|_last_value| value)
+        result.map(|last_value| last_value.unwrap_or(value))
     }
 
     pub(super) fn eval_map_over_items(
@@ -946,6 +995,30 @@ impl Interpreter {
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if let Some(Value::Sub(data)) = func {
+            let requires_full_binding = data.param_defs.iter().any(|pd| {
+                pd.named
+                    || pd.slurpy
+                    || pd.sigilless
+                    || pd.optional_marker
+                    || pd.default.is_some()
+                    || pd.type_constraint.is_some()
+                    || pd.where_constraint.is_some()
+                    || pd.sub_signature.is_some()
+                    || pd.outer_sub_signature.is_some()
+                    || pd.code_signature.is_some()
+                    || pd.shape_constraints.is_some()
+            });
+            if requires_full_binding {
+                let mut result = Vec::new();
+                for item in list_items {
+                    let value = self.call_sub_value(Value::Sub(data.clone()), vec![item], false)?;
+                    match value {
+                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                        v => result.push(v),
+                    }
+                }
+                return Ok(Value::array(result));
+            }
             let arity = if !data.params.is_empty() {
                 // Account for assumed positional args (from .assuming)
                 let effective = data

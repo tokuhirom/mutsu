@@ -404,7 +404,9 @@ impl Interpreter {
 
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        // TODO: Grammar.parse/subparse should return a failed Match, not a Failure.
+        // Mark as handled so that stringifying doesn't throw prematurely.
+        failure_attrs.insert("handled".to_string(), Value::Bool(true));
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 }

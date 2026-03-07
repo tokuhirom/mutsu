@@ -3,10 +3,33 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::value::{ArrayKind, JunctionKind, RuntimeError, Value};
+use num_bigint::BigInt;
+use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
+
+/// Check if a class name represents a Buf-like type (Buf, Buf[uint8], buf8, etc.)
+pub(crate) fn is_buf_like_class(cn: &str) -> bool {
+    matches!(
+        cn,
+        "Buf" | "buf8" | "buf16" | "buf32" | "buf64" | "utf8" | "utf16"
+    ) || cn.starts_with("Buf[")
+        || cn.starts_with("buf")
+}
+
+/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8, etc.)
+pub(crate) fn is_blob_like_class(cn: &str) -> bool {
+    matches!(cn, "Blob" | "blob8" | "blob16" | "blob32" | "blob64")
+        || cn.starts_with("Blob[")
+        || cn.starts_with("blob")
+}
+
+/// Check if a class name represents any Buf or Blob type
+pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
+    is_buf_like_class(cn) || is_blob_like_class(cn)
+}
 
 /// Create a Failure value for operations on empty arrays (pop, shift, etc.)
 pub(crate) fn make_empty_array_failure(op: &str) -> Value {
@@ -226,10 +249,23 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Slip(a), Value::Slip(b)) => {
+            // Empty is a singleton semantic value in Raku even when represented
+            // by distinct empty Slip allocations.
+            (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
+        }
         (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Sub(a), Value::Sub(b)) => {
+            if std::sync::Arc::ptr_eq(a, b) {
+                return true;
+            }
+            // Named subs with the same package and name are identical
+            // (e.g. &foo === &EXPORT::ALL::foo when both resolve to the same definition)
+            let a_name = a.name.resolve();
+            let b_name = b.name.resolve();
+            !a_name.is_empty() && a_name == b_name && a.package == b.package
+        }
         (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
         (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
             a_inner.eqv(b_inner) && a_mix == b_mix
@@ -331,6 +367,13 @@ pub(crate) fn version_cmp_parts(
 }
 
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
+    let mix_weight_value = |weight: f64| {
+        if weight.is_finite() && weight.fract() == 0.0 {
+            Value::Int(weight as i64)
+        } else {
+            Value::Num(weight)
+        }
+    };
     match value {
         Value::Hash(_) => value,
         Value::Array(items, ..) => {
@@ -387,6 +430,27 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         Value::ValuePair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k.to_string_value(), *v);
+            Value::hash(map)
+        }
+        Value::Set(items) => {
+            let mut map = HashMap::new();
+            for key in items.iter() {
+                map.insert(key.clone(), Value::Bool(true));
+            }
+            Value::hash(map)
+        }
+        Value::Bag(items) => {
+            let mut map = HashMap::new();
+            for (key, count) in items.iter() {
+                map.insert(key.clone(), Value::Int(*count));
+            }
+            Value::hash(map)
+        }
+        Value::Mix(items) => {
+            let mut map = HashMap::new();
+            for (key, weight) in items.iter() {
+                map.insert(key.clone(), mix_weight_value(*weight));
+            }
             Value::hash(map)
         }
         Value::Nil => Value::hash(HashMap::new()),
@@ -794,6 +858,18 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             excl_start,
             excl_end,
         } => {
+            let next_numeric = |v: &Value| -> Option<Value> {
+                match v {
+                    Value::Int(i) => Some(Value::Int(i + 1)),
+                    Value::BigInt(n) => Some(Value::bigint(n.as_ref() + 1)),
+                    Value::Num(f) => Some(Value::Num(*f + 1.0)),
+                    Value::Rat(n, d) => Some(crate::value::make_rat(n + d, *d)),
+                    Value::FatRat(n, d) => Some(Value::FatRat(n + d, *d)),
+                    Value::BigRat(n, d) => Some(Value::BigRat(n + d, d.clone())),
+                    other if other.is_numeric() => Some(Value::Num(other.to_f64() + 1.0)),
+                    _ => None,
+                }
+            };
             // String ranges: expand as character sequences
             if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref()) {
                 if a.chars().count() == 1 && b.chars().count() == 1 {
@@ -812,6 +888,60 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             .collect()
                     }
                 } else {
+                    let split_numeric_core = |s: &str| -> Option<(String, String, String)> {
+                        let mut start_byte = None;
+                        let mut end_byte = None;
+                        for (idx, ch) in s.char_indices() {
+                            if ch.is_ascii_digit() {
+                                if start_byte.is_none() {
+                                    start_byte = Some(idx);
+                                }
+                            } else if start_byte.is_some() && end_byte.is_none() {
+                                end_byte = Some(idx);
+                                break;
+                            }
+                        }
+                        let start = start_byte?;
+                        let end = end_byte.unwrap_or(s.len());
+                        if end <= start {
+                            return None;
+                        }
+                        Some((
+                            s[..start].to_string(),
+                            s[start..end].to_string(),
+                            s[end..].to_string(),
+                        ))
+                    };
+                    if let (Some((ap, an, asuf)), Some((bp, bn, bsuf))) =
+                        (split_numeric_core(a), split_numeric_core(b))
+                        && ap == bp
+                        && asuf == bsuf
+                        && let (Ok(mut n), Ok(e)) = (an.parse::<i128>(), bn.parse::<i128>())
+                    {
+                        if *excl_start {
+                            n += 1;
+                        }
+                        if n > e {
+                            return Vec::new();
+                        }
+                        let width = an.len().max(bn.len());
+                        let pad = an.starts_with('0') || bn.starts_with('0');
+                        let mut result = Vec::new();
+                        let limit = MAX_RANGE_EXPAND as usize;
+                        while n <= e && result.len() < limit {
+                            if *excl_end && n == e {
+                                break;
+                            }
+                            let digits = if pad {
+                                format!("{n:0width$}")
+                            } else {
+                                n.to_string()
+                            };
+                            result.push(Value::str(format!("{ap}{digits}{asuf}")));
+                            n += 1;
+                        }
+                        return result;
+                    }
                     // Multi-char string ranges: use string succession
                     let mut result = Vec::new();
                     let mut current = if *excl_start {
@@ -829,32 +959,80 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     }
                     result
                 }
+            } else if let (Value::Str(a), Value::HyperWhatever | Value::Whatever) =
+                (start.as_ref(), end.as_ref())
+            {
+                let mut result = Vec::new();
+                let mut current = if *excl_start {
+                    crate::runtime::Interpreter::string_succ(a)
+                } else {
+                    a.to_string()
+                };
+                let limit = MAX_RANGE_EXPAND as usize;
+                while result.len() < limit {
+                    result.push(Value::str(current.clone()));
+                    current = crate::runtime::Interpreter::string_succ(&current);
+                }
+                result
             } else {
-                // Numeric GenericRange: expand using integer steps
-                let s_f = start.to_f64();
-                let e_f = end.to_f64();
-                if s_f.is_infinite() || e_f.is_infinite() || s_f.is_nan() || e_f.is_nan() {
+                // Numeric GenericRange: expand using .succ semantics to preserve endpoint type.
+                let start_num = if start.is_numeric() {
+                    Some(start.as_ref().clone())
+                } else if let Value::Str(s) = start.as_ref() {
+                    let coerced = coerce_to_numeric(Value::str((**s).clone()));
+                    if coerced.is_numeric() {
+                        Some(coerced)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let end_num = if end.is_numeric() {
+                    Some(end.as_ref().clone())
+                } else if let Value::Str(s) = end.as_ref() {
+                    let coerced = coerce_to_numeric(Value::str((**s).clone()));
+                    if coerced.is_numeric() {
+                        Some(coerced)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let (start_num, end_num) = match (start_num, end_num) {
+                    (Some(s), Some(e)) => (s, e),
+                    _ => return vec![val.clone()],
+                };
+                if start_num.to_f64().is_infinite()
+                    || end_num.to_f64().is_infinite()
+                    || start_num.to_f64().is_nan()
+                    || end_num.to_f64().is_nan()
+                {
                     vec![val.clone()]
                 } else {
-                    let s_i = if *excl_start {
-                        s_f as i64 + 1
+                    let mut result = Vec::new();
+                    let mut current = if *excl_start {
+                        next_numeric(&start_num).unwrap_or(start_num)
                     } else {
-                        s_f as i64
+                        start_num
                     };
-                    let e_i = if *excl_end {
-                        e_f as i64 - 1
-                    } else {
-                        e_f as i64
-                    };
-                    let end_capped = e_i.min(s_i + MAX_RANGE_EXPAND);
-                    // Preserve type of start endpoint
-                    match start.as_ref() {
-                        Value::Num(_) => (s_i..=end_capped).map(|i| Value::Num(i as f64)).collect(),
-                        Value::Rat(_, d) => (s_i..=end_capped)
-                            .map(|i| crate::value::make_rat(i * d, *d))
-                            .collect(),
-                        _ => (s_i..=end_capped).map(Value::Int).collect(),
+                    let limit = MAX_RANGE_EXPAND as usize;
+                    while result.len() < limit {
+                        let cmp = compare_values(&current, &end_num);
+                        if cmp > 0 || (*excl_end && cmp == 0) {
+                            break;
+                        }
+                        result.push(current.clone());
+                        let Some(next) = next_numeric(&current) else {
+                            break;
+                        };
+                        if values_identical(&next, &current) {
+                            break;
+                        }
+                        current = next;
                     }
+                    result
                 }
             }
         }
@@ -881,19 +1059,167 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
 
 pub(crate) use super::sprintf::format_sprintf;
 
+fn parse_unicode_decimal_digits(input: &str) -> Option<(&str, String)> {
+    let mut end = 0;
+    let mut clean = String::new();
+    let mut saw_digit = false;
+    for c in input.chars() {
+        if c == '_' {
+            end += c.len_utf8();
+            continue;
+        }
+        let Some(dv) = crate::builtins::unicode::unicode_decimal_digit_value(c) else {
+            break;
+        };
+        saw_digit = true;
+        clean.push(char::from_digit(dv, 10).unwrap());
+        end += c.len_utf8();
+    }
+    if saw_digit {
+        Some((&input[end..], clean))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
+    if !(2..=36).contains(&base) {
+        return None;
+    }
+    let compact: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    if compact.is_empty() {
+        return None;
+    }
+
+    let (digits_body, exponent_scale) =
+        if let Some((digits, exp_part)) = compact.split_once("*10**") {
+            let exp_part = exp_part.trim();
+            if exp_part.is_empty() {
+                return None;
+            }
+            let (sign, after_sign) = if let Some(rest) = exp_part.strip_prefix('+') {
+                (1_i64, rest)
+            } else if let Some(rest) = exp_part.strip_prefix('-') {
+                (-1_i64, rest)
+            } else {
+                (1_i64, exp_part)
+            };
+            let (exp_rest, exp_clean) = parse_unicode_decimal_digits(after_sign)?;
+            if !exp_rest.is_empty() {
+                return None;
+            }
+            let exp_abs: i64 = exp_clean.parse().ok()?;
+            (digits.trim(), sign * exp_abs)
+        } else {
+            (compact.trim(), 0_i64)
+        };
+    if digits_body.is_empty() {
+        return None;
+    }
+
+    let mut int_clean = String::new();
+    let mut frac_clean = String::new();
+    let mut saw_dot = false;
+    let mut saw_digit = false;
+    for c in digits_body.chars() {
+        if c == '_' {
+            continue;
+        }
+        if c == '.' {
+            if saw_dot {
+                return None;
+            }
+            saw_dot = true;
+            continue;
+        }
+        let value =
+            crate::builtins::unicode::unicode_decimal_digit_value(c).or_else(|| match c {
+                'a'..='z' => Some(10 + (c as u32 - 'a' as u32)),
+                'A'..='Z' => Some(10 + (c as u32 - 'A' as u32)),
+                'ａ'..='ｚ' => Some(10 + (c as u32 - 'ａ' as u32)),
+                'Ａ'..='Ｚ' => Some(10 + (c as u32 - 'Ａ' as u32)),
+                _ => None,
+            })?;
+        if value >= base {
+            return None;
+        }
+        let digit = char::from_digit(value, 36)?;
+        saw_digit = true;
+        if saw_dot {
+            frac_clean.push(digit);
+        } else {
+            int_clean.push(digit);
+        }
+    }
+    if !saw_digit {
+        return None;
+    }
+
+    if !saw_dot && exponent_scale == 0 {
+        if let Ok(n) = i64::from_str_radix(&int_clean, base) {
+            return Some(Value::Int(n));
+        }
+        if let Some(n) = num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base) {
+            return Some(Value::from_bigint(n));
+        }
+        return None;
+    }
+
+    let base_big = num_bigint::BigInt::from(base);
+    let int_value = if int_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base)?
+    };
+    let frac_value = if frac_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(frac_clean.as_bytes(), base)?
+    };
+    let frac_scale = base_big.pow(frac_clean.len() as u32);
+    let mut numerator = int_value * &frac_scale + frac_value;
+    let mut denominator = frac_scale;
+    if exponent_scale != 0 {
+        let exp_abs = exponent_scale.unsigned_abs() as u32;
+        let scale10 = num_bigint::BigInt::from(10_u32).pow(exp_abs);
+        if exponent_scale > 0 {
+            numerator *= scale10;
+        } else {
+            denominator *= scale10;
+        }
+    }
+    Some(crate::value::make_big_rat(numerator, denominator))
+}
+
+pub(crate) fn parse_prefixed_generic_radix_literal(s: &str) -> Option<Value> {
+    let rest = s.strip_prefix(':')?;
+    let (rest, base_clean) = parse_unicode_decimal_digits(rest)?;
+    let base: u32 = base_clean.parse().ok()?;
+    let rest = rest.strip_prefix('<')?;
+    let close_pos = rest.find('>')?;
+    if !rest[close_pos + 1..].trim().is_empty() {
+        return None;
+    }
+    parse_radix_number_body(&rest[..close_pos], base)
+}
+
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => val,
         Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
         Value::Enum { value, .. } => Value::Int(value),
         Value::Str(ref s) => {
             let s = s.trim();
-            if let Ok(i) = s.parse::<i64>() {
+            if let Some(v) = parse_prefixed_generic_radix_literal(s) {
+                v
+            } else if let Ok(i) = s.parse::<i64>() {
                 Value::Int(i)
             } else if let Ok(f) = s.parse::<f64>() {
                 Value::Num(f)
@@ -913,6 +1239,11 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::Int(0)
             }
         }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => Value::Int(value_to_list(&val).len() as i64),
         Value::Nil => Value::Int(0),
         Value::Instance {
             ref class_name,
@@ -1311,6 +1642,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => left,
         _ => coerce_to_numeric(left),
     };
@@ -1320,6 +1652,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => right,
         _ => coerce_to_numeric(right),
     };
@@ -1341,6 +1674,68 @@ pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
         Value::FatRat(n, d) => Some((*n, *d)),
         _ => None,
     }
+}
+
+pub(crate) fn to_big_rat_parts(val: &Value) -> Option<(BigInt, BigInt)> {
+    match val {
+        Value::Int(i) => Some((BigInt::from(*i), BigInt::from(1))),
+        Value::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
+        Value::Rat(n, d) | Value::FatRat(n, d) => Some((BigInt::from(*n), BigInt::from(*d))),
+        Value::BigRat(n, d) => Some((n.clone(), d.clone())),
+        _ => None,
+    }
+}
+
+fn big_rat_parts_to_f64(num: &BigInt, den: &BigInt) -> f64 {
+    if den.is_zero() {
+        if num.is_zero() {
+            f64::NAN
+        } else if num.is_positive() {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        }
+    } else {
+        num.to_f64().unwrap_or(0.0) / den.to_f64().unwrap_or(1.0)
+    }
+}
+
+pub(crate) fn compare_big_rat_parts(
+    a: (BigInt, BigInt),
+    b: (BigInt, BigInt),
+) -> Option<std::cmp::Ordering> {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad.is_zero() || bd.is_zero() {
+        return big_rat_parts_to_f64(&an, &ad).partial_cmp(&big_rat_parts_to_f64(&bn, &bd));
+    }
+    Some((an * &bd).cmp(&(bn * &ad)))
+}
+
+pub(crate) fn big_rat_parts_equal(a: (BigInt, BigInt), b: (BigInt, BigInt)) -> bool {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad.is_zero() || bd.is_zero() {
+        if (ad.is_zero() && an.is_zero()) || (bd.is_zero() && bn.is_zero()) {
+            return false;
+        }
+        return big_rat_parts_to_f64(&an, &ad) == big_rat_parts_to_f64(&bn, &bd);
+    }
+    let ga = an.gcd(&ad);
+    let gb = bn.gcd(&bd);
+    let mut an = an / &ga;
+    let mut ad = ad / ga;
+    let mut bn = bn / &gb;
+    let mut bd = bd / gb;
+    if ad.is_negative() {
+        an = -an;
+        ad = -ad;
+    }
+    if bd.is_negative() {
+        bn = -bn;
+        bd = -bd;
+    }
+    an == bn && ad == bd
 }
 
 fn rat_parts_to_f64(num: i64, den: i64) -> f64 {
@@ -1467,16 +1862,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
 pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
     match val {
         Value::Complex(r, i) => Some((*r, *i)),
-        Value::Int(n) => Some((*n as f64, 0.0)),
-        Value::Num(f) => Some((*f, 0.0)),
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                Some((*n as f64 / *d as f64, 0.0))
-            } else {
-                None
-            }
-        }
-        _ => None,
+        _ => to_float_value(val).map(|v| (v, 0.0)),
     }
 }
 

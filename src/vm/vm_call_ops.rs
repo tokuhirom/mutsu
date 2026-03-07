@@ -27,15 +27,26 @@ impl VM {
         }
     }
 
-    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value) {
+    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value, preserve_empty_slip: bool) {
         match arg {
             Value::Slip(items) => {
+                if preserve_empty_slip && items.is_empty() {
+                    args.push(Value::Slip(items));
+                    return;
+                }
                 for item in items.iter() {
                     Self::append_slip_item(args, item);
                 }
             }
             other => args.push(other),
         }
+    }
+
+    fn preserve_empty_slip_arg(name: &str) -> bool {
+        matches!(
+            name,
+            "infix:<andthen>" | "infix:<notandthen>" | "andthen" | "notandthen"
+        )
     }
 
     fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
@@ -218,9 +229,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&name);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -381,9 +393,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
@@ -603,6 +616,14 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self
+                    .interpreter
+                    .call_method_with_values(target, method, args);
+            }
+        }
         // Pseudo-methods must always go through the interpreter which handles
         // them specially — never intercept via the compiled fast path.
         if matches!(
@@ -763,6 +784,17 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self.interpreter.call_method_mut_with_values(
+                    target_name,
+                    target,
+                    method,
+                    args,
+                );
+            }
+        }
         if matches!(
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
@@ -920,7 +952,7 @@ impl VM {
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let name_val = self
             .stack
@@ -953,6 +985,53 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_call_method_dynamic_mut_op(
+        &mut self,
+        code: &CompiledCode,
+        arity: u32,
+        target_name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
+        let target_name = Self::const_str(code, target_name_idx).to_string();
+        let arity = arity as usize;
+        if self.stack.len() < arity + 2 {
+            return Err(RuntimeError::new(
+                "VM stack underflow in CallMethodDynamicMut",
+            ));
+        }
+        let start = self.stack.len() - arity;
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        let mut args = Vec::new();
+        for arg in raw_args {
+            Self::append_flattened_call_arg(&mut args, arg, false);
+        }
+        let name_val = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let target = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let call_result = if matches!(
+            &name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target);
+            call_args.extend(args);
+            self.interpreter
+                .call_sub_value(name_val, call_args, false)?
+        } else {
+            let method = name_val.to_string_value();
+            self.interpreter
+                .call_method_mut_with_values(&target_name, target, &method, args)?
+        };
+        self.stack.push(call_result);
+        self.env_dirty = true;
+        Ok(())
+    }
+
     pub(super) fn exec_call_method_mut_op(
         &mut self,
         code: &CompiledCode,
@@ -974,9 +1053,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
@@ -1085,6 +1165,16 @@ impl VM {
             skip_native = true;
         }
         if !skip_native
+            && method == "keys"
+            && target_name.starts_with('%')
+            && self
+                .interpreter
+                .var_hash_key_constraint(&target_name)
+                .is_some()
+        {
+            skip_native = true;
+        }
+        if !skip_native
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
             && matches!(
                 method.as_str(),
@@ -1158,7 +1248,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {

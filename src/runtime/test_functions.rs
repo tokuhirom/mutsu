@@ -2,6 +2,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn cmp_eqv_bool(left: &Value, right: &Value) -> bool {
+        use crate::value::JunctionKind;
+        match (left, right) {
+            (
+                Value::Junction {
+                    kind: lkind,
+                    values: lvals,
+                },
+                _,
+            ) => match lkind {
+                JunctionKind::Any => lvals.iter().any(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::All => lvals.iter().all(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::One => {
+                    lvals
+                        .iter()
+                        .filter(|lv| Self::cmp_eqv_bool(lv, right))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => lvals.iter().all(|lv| !Self::cmp_eqv_bool(lv, right)),
+            },
+            (
+                _,
+                Value::Junction {
+                    kind: rkind,
+                    values: rvals,
+                },
+            ) => match rkind {
+                JunctionKind::Any => rvals.iter().any(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::All => rvals.iter().all(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::One => {
+                    rvals
+                        .iter()
+                        .filter(|rv| Self::cmp_eqv_bool(left, rv))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => rvals.iter().all(|rv| !Self::cmp_eqv_bool(left, rv)),
+            },
+            _ => left.eqv(right),
+        }
+    }
+
     fn unwrap_test_arg_value(value: &Value) -> Value {
         match value {
             Value::Capture { positional, named }
@@ -168,6 +211,9 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                 ) {
                     crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
+                } else if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    crate::vm::VM::extract_buf_bytes(left)
+                        == crate::vm::VM::extract_buf_bytes(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
@@ -368,10 +414,10 @@ impl Interpreter {
                 "<=" => super::to_float_value(&left) <= super::to_float_value(&right),
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
-                "===" => left == right,
-                "!===" => left != right,
-                "eqv" => left.eqv(&right),
-                "=:=" => left == right,
+                "===" => crate::runtime::utils::values_identical(&left, &right),
+                "!===" => !crate::runtime::utils::values_identical(&left, &right),
+                "eqv" => Self::cmp_eqv_bool(&left, &right),
+                "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal
                     let (lr, li) = match &left {
@@ -688,7 +734,16 @@ impl Interpreter {
         let ok = match &block {
             Value::Sub(data) => {
                 self.push_caller_env();
+                let saved_topic = self.env.get("$_").cloned();
                 let result = self.eval_block_value(&data.body).is_ok();
+                match saved_topic {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
                 self.pop_caller_env();
                 result
             }
@@ -705,7 +760,16 @@ impl Interpreter {
         let ok = match &block {
             Value::Sub(data) => {
                 self.push_caller_env();
+                let saved_topic = self.env.get("$_").cloned();
                 let result = self.eval_block_value(&data.body).is_err();
+                match saved_topic {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
                 self.pop_caller_env();
                 result
             }
@@ -830,6 +894,31 @@ impl Interpreter {
             nested.env.insert(k.clone(), v.clone());
         }
         let ok = nested.eval_eval_string(&code).is_ok();
+        for raw in nested.output.lines() {
+            let line = raw.trim_start();
+            let (assert_ok, rest) = if let Some(rest) = line.strip_prefix("ok ") {
+                (true, rest)
+            } else if let Some(rest) = line.strip_prefix("not ok ") {
+                (false, rest)
+            } else {
+                continue;
+            };
+            // Keep TODO failures internal to eval-lives-ok canaries.
+            let todo = line.contains("# TODO");
+            if !assert_ok && todo {
+                continue;
+            }
+            let desc = rest
+                .split_once(" - ")
+                .map(|(_, text)| text)
+                .unwrap_or("")
+                .split_once(" #")
+                .map(|(text, _)| text)
+                .unwrap_or_else(|| rest.split_once(' ').map(|(_, text)| text).unwrap_or(""))
+                .trim()
+                .to_string();
+            self.test_ok(assert_ok, &desc, todo)?;
+        }
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }
@@ -1018,6 +1107,7 @@ impl Interpreter {
                         }
                     });
                 let matched = match expected_val {
+                    Value::Whatever => true, // * matches anything
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),
@@ -1242,6 +1332,33 @@ impl Interpreter {
                 Vec::new()
             };
         let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
+        let mut has_unsupported_compiler_args = false;
+        let mut ci = 0usize;
+        while ci < compiler_args.len() {
+            let arg = &compiler_args[ci];
+            if arg == "--doc" {
+                ci += 1;
+                continue;
+            }
+            if arg == "-I" {
+                if ci + 1 >= compiler_args.len() {
+                    has_unsupported_compiler_args = true;
+                    break;
+                }
+                ci += 2;
+                continue;
+            }
+            if arg.starts_with("-I") {
+                if arg.len() == 2 {
+                    has_unsupported_compiler_args = true;
+                    break;
+                }
+                ci += 1;
+                continue;
+            }
+            has_unsupported_compiler_args = true;
+            break;
+        }
 
         // Determine if we need to spawn a real subprocess
         // (e.g., for --help, when program is empty with CLI args,
@@ -1249,8 +1366,7 @@ impl Interpreter {
         //  std::process::exit on die)
         let code_needs_subprocess =
             program.contains("Supply.interval") || program.contains("Supply.interval:");
-        let needs_subprocess = !compiler_args.is_empty()
-            && compiler_args.iter().any(|a| a.starts_with("--"))
+        let needs_subprocess = has_unsupported_compiler_args
             || (program.is_empty() && run_args.is_some())
             || code_needs_subprocess;
 
@@ -1292,6 +1408,7 @@ impl Interpreter {
             }
             nested.set_program_path("<is_run>");
             let result = nested.run(&program);
+            nested.flush_all_handles();
             Self::extract_run_output(&nested, result)
         };
         let mut ok = true;
@@ -1480,8 +1597,10 @@ impl Interpreter {
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
+                self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                let _ = self.supply_emit_timed_buffer.pop();
             }
         } else {
             // Non-scheduler supply: original logic
@@ -1495,19 +1614,40 @@ impl Interpreter {
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
+                    self.supply_emit_timed_buffer.push(Vec::new());
                     let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                    let _ = self.supply_emit_timed_buffer.pop();
                 } else {
-                    let values = attributes
-                        .get("values")
-                        .and_then(|v| {
-                            if let Value::Array(a, ..) = v {
-                                Some(a.to_vec())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
+                    let values = if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
+                        let (snap_values, _, _) =
+                            crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
+                        } else {
+                            attributes
+                                .get("values")
+                                .and_then(|v| {
+                                    if let Value::Array(a, ..) = v {
+                                        Some(a.to_vec())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default()
+                        }
+                    } else {
+                        attributes
+                            .get("values")
+                            .and_then(|v| {
+                                if let Value::Array(a, ..) = v {
+                                    Some(a.to_vec())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default()
+                    };
                     let do_cbs = attributes
                         .get("do_callbacks")
                         .and_then(|v| {
@@ -1533,8 +1673,99 @@ impl Interpreter {
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
+                self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
+                let emitted = if let Value::Instance { ref attributes, .. } = supply {
+                    if matches!(attributes.get("elems_filter"), Some(Value::Bool(true))) {
+                        let interval = attributes
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attributes
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        if interval <= 0.0 {
+                            (1..=emitted.len())
+                                .map(|idx| Value::Int(initial_count + idx as i64))
+                                .collect::<Vec<_>>()
+                        } else {
+                            let events = if timed_emitted.is_empty() {
+                                let now = std::time::Instant::now();
+                                emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                            } else {
+                                timed_emitted.clone()
+                            };
+                            let mut total = initial_count;
+                            let mut last_emit_at: Option<std::time::Instant> = None;
+                            let mut out = Vec::new();
+                            for (_, ts) in events {
+                                total += 1;
+                                let should_emit = if let Some(last) = last_emit_at {
+                                    ts.duration_since(last).as_secs_f64() >= interval
+                                } else {
+                                    true
+                                };
+                                if should_emit {
+                                    out.push(Value::Int(total));
+                                    last_emit_at = Some(ts);
+                                }
+                            }
+                            out
+                        }
+                    } else if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
+                        let as_fn = attributes.get("unique_as").cloned();
+                        let with_fn = attributes.get("unique_with").cloned();
+                        let expires_secs = attributes.get("unique_expires").map(Value::to_f64);
+                        let mut seen: Vec<(Value, std::time::Instant)> = Vec::new();
+                        let mut unique = Vec::new();
+                        let events = if timed_emitted.is_empty() {
+                            let now = std::time::Instant::now();
+                            emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                        } else {
+                            timed_emitted
+                        };
+                        for (value, ts) in events {
+                            if let Some(expire) = expires_secs {
+                                seen.retain(|(_, seen_ts)| {
+                                    ts.duration_since(*seen_ts).as_secs_f64() < expire
+                                });
+                            }
+                            let key = if let Some(ref f) = as_fn {
+                                self.call_sub_value(f.clone(), vec![value.clone()], true)?
+                            } else {
+                                value.clone()
+                            };
+                            let is_dup = seen.iter().any(|(seen_key, _)| {
+                                if let Some(ref f) = with_fn {
+                                    self.call_sub_value(
+                                        f.clone(),
+                                        vec![seen_key.clone(), key.clone()],
+                                        true,
+                                    )
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false)
+                                } else {
+                                    super::values_identical(seen_key, &key)
+                                }
+                            });
+                            if !is_dup {
+                                seen.push((key, ts));
+                                unique.push(value);
+                            }
+                        }
+                        unique
+                    } else {
+                        emitted
+                    }
+                } else {
+                    emitted
+                };
                 let split_emitted = if let Value::Instance {
                     ref class_name,
                     ref attributes,
@@ -1559,6 +1790,20 @@ impl Interpreter {
                 };
                 tap_values.extend(split_emitted);
             }
+        }
+
+        // Supply.reduce produces a derived Supply that carries reducer metadata
+        // for live sources. Apply the same reduction over collected tap values.
+        if let Value::Instance { ref attributes, .. } = supply
+            && let Some(reduce_callable) = attributes.get("reduce_callable").cloned()
+            && tap_values.len() > 1
+        {
+            let reduced = self.reduce_items(reduce_callable, tap_values)?;
+            tap_values = if matches!(reduced, Value::Nil) {
+                Vec::new()
+            } else {
+                vec![reduced]
+            };
         }
 
         // 4. isa-ok on Tap return
@@ -1590,7 +1835,57 @@ impl Interpreter {
             other => other.clone(),
         };
         let collected_val = Value::array(tap_values);
-        let ok = collected_val == expected_expanded;
+
+        let expected_for_compare = match (&collected_val, &expected_expanded) {
+            (Value::Array(collected_items, ..), Value::Array(expected_items, kind))
+                if collected_items.len() == 1
+                    && matches!(collected_items.first(), Some(Value::Bag(_)))
+                    && expected_items
+                        .iter()
+                        .all(|item| matches!(item, Value::Pair(_, _) | Value::ValuePair(_, _))) =>
+            {
+                let mut map = HashMap::new();
+                let to_count = |v: &Value| match v {
+                    Value::Int(i) => *i,
+                    Value::Num(n) => *n as i64,
+                    Value::Rat(n, d) if *d != 0 => n / d,
+                    Value::FatRat(n, d) if *d != 0 => n / d,
+                    _ => crate::runtime::to_int(v),
+                };
+                for item in expected_items.iter() {
+                    match item {
+                        Value::Pair(key, value) => {
+                            let count = to_count(value);
+                            if count == 1
+                                && let Some((raw_key, raw_weight)) = key.rsplit_once('\t')
+                                && let Ok(weight) = raw_weight.parse::<i64>()
+                            {
+                                map.insert(raw_key.to_string(), weight);
+                            } else {
+                                map.insert(key.clone(), count);
+                            }
+                        }
+                        Value::ValuePair(key, value) => {
+                            let key_text = key.to_string_value();
+                            let count = to_count(value);
+                            if count == 1
+                                && let Some((raw_key, raw_weight)) = key_text.rsplit_once('\t')
+                                && let Ok(weight) = raw_weight.parse::<i64>()
+                            {
+                                map.insert(raw_key.to_string(), weight);
+                            } else {
+                                map.insert(key_text, count);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Value::Array(Arc::new(vec![Value::bag(map)]), *kind)
+            }
+            _ => expected_expanded.clone(),
+        };
+
+        let ok = collected_val == expected_for_compare;
         self.test_ok(ok, &desc, false)?;
 
         self.finish_subtest(ctx, &desc, Ok(()))?;
@@ -1725,13 +2020,23 @@ impl Interpreter {
             Value::Str(s) => s.to_string(),
             _ => return Err(RuntimeError::new("get_out expects string code")),
         };
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        nested.set_program_path("<get_out>");
-        let result = nested.run(&program);
-        let (out, err, status) = Self::extract_run_output(&nested, result);
+        let input = Self::positional_value(args, 1)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let run_args: Vec<String> =
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let compiler_args: Vec<String> =
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "compiler-args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let (out, err, status) =
+            Self::run_test_code_subprocess(&program, &input, &run_args, &compiler_args);
         let mut hash = std::collections::HashMap::new();
         hash.insert("out".to_string(), Value::str(out));
         hash.insert("err".to_string(), Value::str(err));
@@ -1820,29 +2125,47 @@ impl Interpreter {
 
     fn test_fn_doesnt_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "doesn't-warn expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("doesn't-warn expects string code")),
-        };
         let desc = Self::positional_string(args, 1);
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
+        match program_val {
+            Value::Str(s) => {
+                let program = s.to_string();
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.set_program_path("<doesn't-warn>");
+                let _ = nested.run(&program);
+                let warn_message = nested.warn_output.clone();
+                let did_warn = !warn_message.is_empty();
+                if did_warn {
+                    let diag_msg = format!(
+                        "code must not warn but it produced a warning: {}",
+                        warn_message.trim_end()
+                    );
+                    self.emit_output(&format!("# {}\n", diag_msg));
+                }
+                self.test_ok(!did_warn, &desc, false)?;
+                Ok(Value::Bool(!did_warn))
+            }
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                let _ = self.call_sub_value(program_val.clone(), vec![], false);
+                let warn_message = std::mem::replace(&mut self.warn_output, saved_warn);
+                let did_warn = !warn_message.is_empty();
+                if did_warn {
+                    let diag_msg = format!(
+                        "code must not warn but it produced a warning: {}",
+                        warn_message.trim_end()
+                    );
+                    self.emit_output(&format!("# {}\n", diag_msg));
+                }
+                self.test_ok(!did_warn, &desc, false)?;
+                Ok(Value::Bool(!did_warn))
+            }
+            _ => Err(RuntimeError::new(
+                "doesn't-warn expects string code or callable",
+            )),
         }
-        nested.set_program_path("<doesn't-warn>");
-        let result = nested.run(&program);
-        let _ = result;
-        let warn_message = nested.warn_output.clone();
-        let did_warn = !warn_message.is_empty();
-        if did_warn {
-            let diag_msg = format!(
-                "code must not warn but it produced a warning: {}",
-                warn_message.trim_end()
-            );
-            self.emit_output(&format!("# {}\n", diag_msg));
-        }
-        self.test_ok(!did_warn, &desc, false)?;
-        Ok(Value::Bool(!did_warn))
     }
 
     fn test_fn_is_eqv(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1908,6 +2231,73 @@ impl Interpreter {
                 (out, err, status)
             }
             Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        }
+    }
+
+    fn run_test_code_subprocess(
+        program: &str,
+        input: &str,
+        run_args: &[String],
+        compiler_args: &[String],
+    ) -> (String, String, i64) {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_code_path = std::env::temp_dir().join(format!(
+            "mutsu-test-util-{}-{}.raku",
+            std::process::id(),
+            stamp
+        ));
+        if std::fs::write(&temp_code_path, program).is_err() {
+            return (
+                String::new(),
+                "Failed to create temporary source file".to_string(),
+                1,
+            );
+        }
+        let mut cmd = Command::new(&exe);
+        for arg in compiler_args {
+            cmd.arg(arg);
+        }
+        cmd.arg(temp_code_path.as_os_str());
+        for arg in run_args {
+            cmd.arg(arg);
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        if !input.is_empty() {
+            cmd.stdin(Stdio::piped());
+        }
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => return (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        };
+        if !input.is_empty()
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+        let output = child.wait_with_output();
+        let _ = std::fs::remove_file(&temp_code_path);
+        match output {
+            Ok(output) => {
+                let out = String::from_utf8_lossy(&output.stdout).to_string();
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                let status = output.status.code().unwrap_or(1) as i64;
+                (out, err, status)
+            }
+            Err(e) => (
+                String::new(),
+                format!("Failed to read subprocess output: {}", e),
+                1,
+            ),
         }
     }
 

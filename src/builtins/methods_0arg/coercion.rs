@@ -1,6 +1,6 @@
 use crate::builtins::primality::{is_prime_bigint, is_prime_i64};
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use std::collections::HashMap;
 
 /// Type coercion and specialized 0-arg methods: numerator, denominator, nude,
@@ -21,6 +21,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "isNaN" => match target {
             Value::Rat(0, 0) => Some(Ok(Value::Bool(true))),
+            Value::FatRat(0, 0) => Some(Ok(Value::Bool(true))),
             Value::Num(f) => Some(Ok(Value::Bool(f.is_nan()))),
             _ => Some(Ok(Value::Bool(false))),
         },
@@ -29,6 +30,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::FatRat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
             Value::Int(i) => Some(Ok(Value::array(vec![Value::Int(*i), Value::Int(1)]))),
             _ => Some(Ok(Value::array(vec![Value::Int(0), Value::Int(1)]))),
+        },
+        "norm" => match target {
+            Value::Rat(n, d) => Some(Ok(make_rat(*n, *d))),
+            Value::FatRat(n, d) => Some(Ok(match make_rat(*n, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            })),
+            Value::BigRat(n, d) => Some(Ok(match make_big_rat(n.clone(), d.clone()) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                Value::BigRat(nn, dd) => Value::BigRat(nn, dd),
+                other => other,
+            })),
+            Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
+            _ => Some(Ok(Value::FatRat(0, 1))),
         },
         "is-prime" => Some(value_is_prime(target)),
         "re" => match target {
@@ -102,6 +117,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ))),
             _ => Some(Ok(Value::Complex(0.0, 0.0))),
         },
+        "Pair" => match target {
+            Value::Pair(_, _) | Value::ValuePair(_, _) => Some(Ok(target.clone())),
+            Value::Instance { class_name, .. } if class_name == "Pair" => Some(Ok(target.clone())),
+            _ => None,
+        },
         "key" => match target {
             Value::Pair(k, _) => Some(Ok(Value::str(k.clone()))),
             Value::ValuePair(k, _) => Some(Ok(*k.clone())),
@@ -158,6 +178,34 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::slip(vec![target.clone()]))),
         },
         "List" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+            } =>
+            {
+                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Array(
+                        items.clone(),
+                        crate::value::ArrayKind::List,
+                    )))
+                } else {
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(Vec::new()),
+                        crate::value::ArrayKind::List,
+                    )))
+                }
+            }
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))
@@ -309,7 +357,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf" || class_name == "Blob" => {
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+            } =>
+            {
                 let bytes = match attributes.get("bytes") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
@@ -332,6 +391,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .collect();
                 Some(Ok(Value::array(pairs)))
             }
+            Value::Set(_) | Value::Bag(_) | Value::Mix(_) => Some(Ok(Value::array(
+                crate::runtime::utils::value_to_list(target),
+            ))),
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "Range" => match target {

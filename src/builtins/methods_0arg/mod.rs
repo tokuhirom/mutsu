@@ -44,6 +44,31 @@ pub(crate) mod temporal_dispatch;
 
 use std::collections::HashMap;
 
+fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+    let mut total = 0.0;
+    for weight in items.values() {
+        if weight.is_finite() && *weight > 0.0 {
+            total += *weight;
+        }
+    }
+    if total <= 0.0 {
+        return None;
+    }
+    let mut needle = builtin_rand() * total;
+    for (key, weight) in items {
+        if !weight.is_finite() || *weight <= 0.0 {
+            continue;
+        }
+        if needle <= *weight {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *weight;
+    }
+    items
+        .iter()
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
+}
+
 fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -503,8 +528,10 @@ pub(crate) fn native_method_0arg(
         };
     }
     // Capture methods
-    if let Value::Capture { positional, named } = target {
-        return dispatch_capture(positional, named, method);
+    if let Value::Capture { positional, named } = target
+        && let result @ Some(_) = dispatch_capture(positional, named, method)
+    {
+        return result;
     }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
@@ -785,7 +812,7 @@ fn raku_value(v: &Value) -> String {
                 }
             }
         }
-        Value::FatRat(n, d) => format!("<{}/{}>", n, d),
+        Value::FatRat(n, d) => format!("FatRat.new({}, {})", n, d),
         Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
         Value::Num(f) => {
             if f.is_nan() {
@@ -850,6 +877,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
         _ => {}
+    }
+
+    // Buf/Blob.Str throws X::Buf::AsStr
+    if (method == "Str" || method == "Stringy")
+        && let Value::Instance { class_name, .. } = target
+        && crate::vm::VM::is_buf_value(target)
+    {
+        let cn = class_name.resolve();
+        let mut err = RuntimeError::new(format!(
+            "Cannot use a {cn} as a Str. You can use .decode to convert to Str.",
+        ));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("payload".to_string(), target.clone());
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Buf::AsStr"),
+            attrs,
+        )));
+        return Some(Err(err));
     }
 
     // CX::Warn methods: message, resume
@@ -1070,6 +1116,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
     }
+    // Numeric type object .Range methods
+    if let Value::Package(name) = target
+        && method == "Range"
+        && matches!(
+            name.resolve().as_str(),
+            "Real" | "Num" | "Rational" | "Rat" | "FatRat" | "BigRat"
+        )
+    {
+        return Some(Ok(Value::GenericRange {
+            start: Arc::new(Value::Num(f64::NEG_INFINITY)),
+            end: Arc::new(Value::Num(f64::INFINITY)),
+            excl_start: false,
+            excl_end: false,
+        }));
+    }
     // Native int type .Range method
     if let Value::Package(name) = target
         && crate::runtime::native_types::is_native_int_type(&name.resolve())
@@ -1167,7 +1228,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }));
     }
     match method {
-        "self" => Some(Ok(target.clone())),
+        "self" => {
+            // For unhandled Failures, .self throws the exception
+            if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target
+                && class_name == "Failure"
+                && !attributes.get("handled").is_some_and(Value::truthy)
+                && let Some(ex) = attributes.get("exception")
+            {
+                let msg = ex.to_string_value();
+                let mut err = crate::value::RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex.clone()));
+                return Some(Err(err));
+            }
+            Some(Ok(target.clone()))
+        }
         "clone" => {
             match target {
                 Value::Package(_) | Value::Nil => Some(Ok(target.clone())),
@@ -1244,7 +1322,33 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Int(*f as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Int(numeric as i64)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                Value::FatRat(n, d) if *d != 0 => Value::Int(*n / *d),
+                Value::BigRat(n, d) if !d.is_zero() => {
+                    use num_traits::ToPrimitive;
+                    Value::Int((n / d).to_i64().unwrap_or(i64::MAX))
+                }
                 Value::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(s) {
                         v
@@ -1271,7 +1375,35 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Value::Num(n.to_f64().unwrap_or(f64::INFINITY))
                 }
                 Value::Num(f) => Value::Num(*f),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(numeric)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                Value::FatRat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                Value::BigRat(n, d) if !d.is_zero() => {
+                    use num_traits::ToPrimitive;
+                    let num = n.to_f64().unwrap_or(0.0);
+                    let den = d.to_f64().unwrap_or(1.0);
+                    Value::Num(num / den)
+                }
                 Value::Str(s) => {
                     let trimmed = s.trim();
                     // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
@@ -1297,6 +1429,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Num(*f),
                 Value::Rat(n, d) => Value::Rat(*n, *d),
+                Value::FatRat(n, d) => Value::FatRat(*n, *d),
+                Value::BigRat(n, d) => Value::BigRat(n.clone(), d.clone()),
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
                 Value::Complex(r, im) => {
                     if im.abs() <= 1e-15 {
@@ -1328,6 +1462,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Num(*f),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(numeric)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
                     if let Ok(i) = s.trim().parse::<i64>() {
@@ -1382,6 +1537,43 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "bytes" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+            } =>
+            {
+                let elems = if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    bytes.len() as i64
+                } else {
+                    0
+                };
+                let cn = class_name.resolve();
+                let bytes_per_elem: i64 = if cn.contains("16") {
+                    2
+                } else if cn.contains("32") {
+                    4
+                } else if cn.contains("64") {
+                    8
+                } else {
+                    1
+                };
+                Some(Ok(Value::Int(elems * bytes_per_elem)))
+            }
+            Value::Str(s) => Some(Ok(Value::Int(s.len() as i64))),
+            _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
+        },
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),
@@ -1455,7 +1647,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Buf" || class_name == "Blob" => {
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
@@ -1480,6 +1672,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     )));
                 }
                 _ => Value::Int(1),
+            };
+            Some(Ok(result))
+        }
+        "default" => {
+            let result = match target {
+                Value::Array(..) | Value::Hash(..) => Value::Package(Symbol::intern("Any")),
+                Value::Set(..) => Value::Bool(false),
+                Value::Bag(..) | Value::Mix(..) => Value::Int(0),
+                _ => return None,
             };
             Some(Ok(result))
         }
@@ -1665,7 +1866,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Buf" || class_name == "Blob" => {
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Some(Ok(Value::Int(bytes.len() as i64 - 1)))
                     } else {
@@ -1967,7 +2168,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if let Value::Instance { class_name, .. } = target
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
-                    || class_name == "IO::Path")
+                    || class_name == "IO::Path"
+                    || class_name == "IO::Socket::INET")
             {
                 return None;
             }
@@ -2074,6 +2276,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             }
             Value::Nil => Some(Ok(Value::str_from("(Any)"))),
+            Value::FatRat(n, d) => {
+                if method == "gist" {
+                    Some(Ok(Value::str(target.to_string_value())))
+                } else {
+                    Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
+                }
+            }
+            Value::BigRat(_, _) => {
+                if method == "gist" {
+                    Some(Ok(Value::str(target.to_string_value())))
+                } else {
+                    Some(Ok(Value::str(raku_value(target))))
+                }
+            }
             Value::Rat(n, d) => {
                 if *d == 0 {
                     if *n == 0 {
@@ -2149,6 +2365,48 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         "CallFrame.new(annotations => {{:file(\"{}\"), :line(\"{}\")}}, my => {{}})",
                         file, line
                     ))))
+                }
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if method == "raku" || method == "perl" {
+                        let elems: Vec<String> = bytes
+                            .iter()
+                            .map(|b| match b {
+                                Value::Int(i) => i.to_string(),
+                                _ => "0".to_string(),
+                            })
+                            .collect();
+                        Some(Ok(Value::str(format!(
+                            "{}.new({})",
+                            class_name,
+                            elems.join(",")
+                        ))))
+                    } else {
+                        // gist
+                        if bytes.is_empty() {
+                            Some(Ok(Value::str(format!("{}()", class_name))))
+                        } else {
+                            let hex: Vec<String> = bytes
+                                .iter()
+                                .map(|b| match b {
+                                    Value::Int(i) => format!("{:02X}", *i as u8),
+                                    _ => "00".to_string(),
+                                })
+                                .collect();
+                            Some(Ok(Value::str(format!(
+                                "{}:0x<{}>",
+                                class_name,
+                                hex.join(" ")
+                            ))))
+                        }
+                    }
+                } else {
+                    Some(Ok(Value::str(format!("{}()", class_name))))
                 }
             }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
@@ -2339,6 +2597,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "pick" => match target {
+            Value::Mix(_) => Some(Err(RuntimeError::new(
+                "Cannot call .pick on a Mix (immutable)",
+            ))),
             Value::Hash(items) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
@@ -2367,6 +2628,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "roll" => {
+            if let Value::Mix(items) = target {
+                return Some(Ok(sample_weighted_mix_key(items).unwrap_or(Value::Nil)));
+            }
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))
@@ -2391,6 +2655,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExclStart(a, b) => Some(Ok(if a < b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { start, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(start.as_ref().clone()))
+                } else {
+                    Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
@@ -2404,6 +2688,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*b) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclStart(a, b) => {
+                Some(Ok(if a < b { Value::Int(*b) } else { Value::Nil }))
+            }
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { end, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(end.as_ref().clone()))
+                } else {
+                    Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
@@ -2670,7 +2976,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let bytes: Vec<Value> = s.as_bytes().iter().map(|&b| Value::Int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(bytes));
-            Some(Ok(Value::make_instance(Symbol::intern("Buf"), attrs)))
+            Some(Ok(Value::make_instance(Symbol::intern("utf8"), attrs)))
         }
         "sink" => match target {
             Value::Instance {

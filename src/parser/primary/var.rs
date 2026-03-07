@@ -12,6 +12,7 @@ use super::super::helpers::{
 };
 use super::container::paren_expr;
 use super::current_line_number;
+use super::misc::parse_block_body;
 
 static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -376,17 +377,7 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
-        // @.attr is equivalent to self.attr in list context
-        return Ok((
-            rest,
-            Expr::MethodCall {
-                target: Box::new(Expr::BareWord("self".to_string())),
-                name: crate::symbol::Symbol::intern(&name),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-            },
-        ));
+        return Ok((rest, Expr::Var(format!(".{}", name))));
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
@@ -445,24 +436,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
-        // %.attr is equivalent to self.attr in hash context
-        // Wrap in a MethodCall to .hash to coerce to hash context
-        return Ok((
-            rest,
-            Expr::MethodCall {
-                target: Box::new(Expr::MethodCall {
-                    target: Box::new(Expr::BareWord("self".to_string())),
-                    name: crate::symbol::Symbol::intern(&name),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                }),
-                name: crate::symbol::Symbol::intern("Hash"),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-            },
-        ));
+        return Ok((rest, Expr::Var(format!(".{}", name))));
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
@@ -529,6 +503,11 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, expr));
+    }
+    // Callable block literal dereference: &{ ... }
+    if input.starts_with('{') {
+        let (rest, body) = parse_block_body(input)?;
+        return Ok((rest, Expr::AnonSub { body, is_rw: false }));
     }
     // Handle &[op] — short form for &infix:<op>
     if let Some(after_bracket) = input.strip_prefix('[')

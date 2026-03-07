@@ -460,4 +460,39 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let parsed = parse_program(src);
         assert!(parsed.is_ok(), "{parsed:?}");
     }
+
+    #[test]
+    fn parse_program_accepts_named_sub_literal_in_statement_modifier_for_argument() {
+        let src = r#"use Test; is ((sub r { "OH HAI" })() for 5), "OH HAI";"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_named_sub_literal_with_traits_in_expression_context() {
+        let src = r#"my &f = sub named is rw { 42 }; say f();"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_postfix_for_after_hash_index_default_assign() {
+        let src = r#"my @a = <a b c>; my %h; %h{.value} //= .key for @a.pairs;"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_rejects_explicit_do_block_with_postfix_for() {
+        let src = r#"my $i; do { $i++ } for 1..3;"#;
+        let err = parse_program(src).expect_err("expected do...for parse error");
+        assert!(err.message.contains("X::Obsolete"), "{err:?}");
+    }
+
+    #[test]
+    fn parse_program_accepts_leading_dot_decimal_with_postfix_and_method_in_listop_args() {
+        let src = r#"use Test; sub postfix:<R>($x) { $x.FatRat }; isa-ok .88888888888R.WHAT, FatRat, 'leading-dot decimal with postfix/method in args';"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
 }

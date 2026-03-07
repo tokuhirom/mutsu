@@ -33,9 +33,14 @@ impl Interpreter {
             let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::Bool(!arg.truthy())),
-                "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
+                "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
                 "-" | "−" => crate::builtins::arith_negate(arg.clone()),
-                "~" => Ok(Value::str(crate::runtime::utils::coerce_to_str(arg))),
+                "~" => {
+                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(arg) {
+                        return Err(err);
+                    }
+                    Ok(Value::str(crate::runtime::utils::coerce_to_str(arg)))
+                }
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
@@ -72,6 +77,37 @@ impl Interpreter {
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
+        }
+        // Calling a type with a type object argument constructs a coercion type
+        // object (e.g. Str(Any), Int(Str), Child(Parent)).
+        if args.len() == 1
+            && (self.has_type(name)
+                || crate::runtime::utils::is_known_type_constraint(name)
+                || self.subsets.contains_key(name)
+                || self.roles.contains_key(name))
+        {
+            let source = match &args[0] {
+                Value::Package(sym) => Some(sym.resolve()),
+                Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } => {
+                    let args_str = type_args
+                        .iter()
+                        .map(|arg| match arg {
+                            Value::Package(n) => n.resolve(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Some(format!("{}[{}]", base_name.resolve(), args_str))
+                }
+                Value::Nil => Some("Any".to_string()),
+                _ => None,
+            };
+            if let Some(source) = source {
+                return Ok(Value::Package(Symbol::intern(&format!("{name}({source})"))));
+            }
         }
         // Handle zip:with — zip with a custom combining function
         if name == "zip"
@@ -241,6 +277,12 @@ impl Interpreter {
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
             }
+            // Convert fail errors to Failure values (same as closure call path)
+            if let Err(e) = &result
+                && e.is_fail
+            {
+                return Ok(self.fail_error_to_failure_value(e));
+            }
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             return finalized.and_then(|v| {
                 let v = if def.is_raw {
@@ -272,9 +314,11 @@ impl Interpreter {
         let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
-            .filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+            .filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
             .or_else(|| {
-                callable_from_plain.filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+                callable_from_plain.filter(|v| {
+                    matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                })
             })
         {
             return self.eval_call_on_value(callable, args.to_vec());
@@ -372,6 +416,12 @@ impl Interpreter {
         let args: Vec<Value> = if args.len() == 1 && !is_set_op {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
+                Value::Hash(map) if matches!(op, "andthen" | "notandthen") => map
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::ValuePair(Box::new(Value::str(k.clone())), Box::new(v.clone()))
+                    })
+                    .collect(),
                 _ => args.to_vec(),
             }
         } else {
@@ -506,7 +556,8 @@ impl Interpreter {
                 let mut acc = args[0].clone();
                 for rhs in &args[1..] {
                     if !crate::runtime::types::value_is_defined(&acc) {
-                        return Ok(acc);
+                        // Return Empty (empty Slip) when LHS is not defined
+                        return Ok(Value::Slip(std::sync::Arc::new(vec![])));
                     }
                     acc = rhs.clone();
                 }
@@ -769,7 +820,17 @@ impl Interpreter {
     pub(super) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
         match left {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
-                self.eval_call_on_value(left.clone(), Vec::new())
+                let saved_topic = self.env.get("_").cloned();
+                let result = self.eval_call_on_value(left.clone(), Vec::new());
+                match saved_topic {
+                    Some(value) => {
+                        self.env.insert("_".to_string(), value);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                result
             }
             // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
             Value::Seq(items) => Ok(Value::array(items.as_ref().clone())),

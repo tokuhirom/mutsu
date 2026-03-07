@@ -117,6 +117,7 @@ pub(crate) enum Expr {
         delete: bool,
         complement: bool,
         squash: bool,
+        non_destructive: bool,
     },
     MethodCall {
         target: Box<Expr>,
@@ -149,6 +150,7 @@ pub(crate) enum Expr {
     Exists {
         target: Box<Expr>,
         negated: bool,
+        delete: bool,
         arg: Option<Box<Expr>>,
         adverb: ExistsAdverb,
     },

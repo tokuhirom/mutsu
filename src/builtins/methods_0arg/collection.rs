@@ -3,6 +3,40 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::sync::Arc;
 
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+fn f64_to_rat(f: f64) -> (i64, i64) {
+    if f.is_nan() {
+        return (0, 0);
+    }
+    if f.is_infinite() {
+        return if f > 0.0 { (1, 0) } else { (-1, 0) };
+    }
+    let negative = f < 0.0;
+    let f = f.abs();
+    let mut den: i64 = 1;
+    let mut num = f;
+    for _ in 0..18 {
+        if (num - num.round()).abs() < 1e-10 {
+            break;
+        }
+        num *= 10.0;
+        den *= 10;
+    }
+    let n = num.round() as i64;
+    let g = gcd_u64(n.unsigned_abs(), den.unsigned_abs());
+    let n = n / g as i64;
+    let d = den / g as i64;
+    if negative { (-n, d) } else { (n, d) }
+}
+
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
@@ -132,10 +166,33 @@ pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "hash" => {
-            let items = crate::runtime::utils::value_to_list(target);
-            Some(crate::runtime::utils::build_hash_from_items(items))
-        }
+        "hash" => match target {
+            Value::Set(s) => {
+                let mut map = std::collections::HashMap::new();
+                for k in s.iter() {
+                    map.insert(k.clone(), Value::Bool(true));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            Value::Bag(b) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in b.iter() {
+                    map.insert(k.clone(), Value::Int(*v));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            Value::Mix(m) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in m.iter() {
+                    map.insert(k.clone(), Value::Num(*v));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            _ => {
+                let items = crate::runtime::utils::value_to_list(target);
+                Some(crate::runtime::utils::build_hash_from_items(items))
+            }
+        },
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -401,7 +458,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "total" => match target {
             Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
-            Value::Mix(m) => Some(Ok(Value::Num(m.values().sum::<f64>()))),
+            Value::Mix(m) => {
+                let (n, d) = f64_to_rat(m.values().sum::<f64>());
+                Some(Ok(crate::value::make_rat(n, d)))
+            }
             _ => None,
         },
         "minmax" => match target {

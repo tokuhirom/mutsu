@@ -1008,8 +1008,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_upto_with_negative_literal() {
+        let (rest, expr) = expression("^-1").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Binary { left, op, right } => {
+                assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+                assert!(matches!(op, TokenKind::DotDotCaret));
+                assert!(matches!(
+                    *right,
+                    Expr::Unary {
+                        op: TokenKind::Minus,
+                        ..
+                    }
+                ));
+            }
+            _ => panic!("expected upto range expression"),
+        }
+    }
+
+    #[test]
     fn parse_topical_dot_angle_expression() {
         let (rest, expr) = expression(".<a>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
+    fn parse_topical_dot_brace_expression() {
+        let (rest, expr) = expression(".{'a'}").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Index { .. }));
     }
@@ -1347,6 +1374,33 @@ mod tests {
                 assert!(matches!(args[0], Expr::Lambda { ref param, .. } if param.as_str() == "x"));
             }
             _ => panic!("expected method call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_method_colon_args_adjacent_colonpairs() {
+        let src = "IO::Path.new: :volume<foo> :dirname<bar> :basename<ber> :SPEC(IO::Spec::Win32)";
+        let (rest, expr) = expression(src).unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall { name, args, .. } => {
+                assert_eq!(name, "new");
+                assert_eq!(args.len(), 4);
+            }
+            _ => panic!("expected method call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_indir_with_hyphenated_call_arg_and_block() {
+        let (rest, expr) = expression("indir make-temp-dir, { 42 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "indir");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("expected call expression"),
         }
     }
 
@@ -1789,6 +1843,56 @@ mod tests {
     }
 
     #[test]
+    fn parse_dot_ampersand_block_call() {
+        let (rest, expr) = expression("$m.&{ 3 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::DynamicMethodCall {
+                target,
+                name_expr,
+                args,
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert!(matches!(*name_expr, Expr::AnonSub { .. }));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected dynamic method call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_dot_ampersand_block_call() {
+        let (rest, expr) = expression("$m>>.&{ 3 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCallDynamic {
+                target,
+                name_expr,
+                args,
+                ..
+            } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert!(matches!(*name_expr, Expr::AnonSub { .. }));
+                assert!(args.is_empty());
+            }
+            _ => panic!("expected hyper dynamic method call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_method_with_unspace_after_operator() {
+        let (rest, expr) = expression("$m»\\\n.foo").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall { target, name, .. } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert_eq!(name, "foo");
+            }
+            _ => panic!("expected hyper method call"),
+        }
+    }
+
+    #[test]
     fn parse_array_slice_assignment_with_comma_rhs() {
         let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
         assert_eq!(rest, "");
@@ -1896,6 +2000,19 @@ mod tests {
             }
             _ => panic!("expected is-deeply call"),
         }
+    }
+
+    #[test]
+    fn parse_unary_plus_on_topic_method_call() {
+        let (rest, expr) = expression("+.lines").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Plus,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -10,28 +10,14 @@ fn complex_parts(v: &Value) -> (f64, f64) {
 }
 
 pub(super) fn value_to_f64(v: &Value) -> f64 {
-    match v {
-        Value::Int(n) => *n as f64,
-        Value::BigInt(n) => num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(0.0),
-        Value::Num(n) => *n,
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                *n as f64 / *d as f64
-            } else {
-                0.0
-            }
-        }
-        Value::BigRat(n, d) => {
-            if d != &num_bigint::BigInt::from(0) {
-                num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
-                    / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0)
-            } else {
-                0.0
-            }
-        }
-        Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-        _ => 0.0,
-    }
+    runtime::to_float_value(v).unwrap_or(0.0)
+}
+
+fn is_rationalish(v: &Value) -> bool {
+    matches!(
+        v,
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+    )
 }
 
 impl VM {
@@ -73,15 +59,21 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
-                || matches!(l, Value::Nil)
-                || matches!(l, Value::Rat(_, _));
-            if needs_float {
-                Ok(Value::Bool(
-                    runtime::to_float_value(&l) == runtime::to_float_value(&r),
-                ))
+            if let (Some(a), Some(b)) =
+                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
+                && (is_rationalish(&l) || is_rationalish(&r))
+            {
+                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
             } else {
-                Ok(Value::Bool(l == r))
+                let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
+                    || matches!(l, Value::Nil);
+                if needs_float {
+                    Ok(Value::Bool(
+                        runtime::to_float_value(&l) == runtime::to_float_value(&r),
+                    ))
+                } else {
+                    Ok(Value::Bool(l == r))
+                }
             }
         })?;
         self.stack.push(result);
@@ -93,7 +85,12 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
+            if let (Some(a), Some(b)) =
+                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
+                && (is_rationalish(&l) || is_rationalish(&r))
+            {
+                Ok(Value::Bool(!runtime::big_rat_parts_equal(a, b)))
+            } else if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                 Ok(Value::Bool(
                     runtime::to_float_value(&l) != runtime::to_float_value(&r),
                 ))
@@ -166,11 +163,17 @@ impl VM {
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);
         let approx_f64 = |a: f64, b: f64| -> bool {
+            let diff = (a - b).abs();
+            // Absolute tolerance: if the difference itself is below tolerance, consider equal.
+            // This handles comparisons with zero (e.g. 1e-16 ≅ 0 with tolerance 1e-15).
+            if diff < tolerance {
+                return true;
+            }
             let max_abs = a.abs().max(b.abs());
             if max_abs == 0.0 {
                 true
             } else {
-                (a - b).abs() / max_abs <= tolerance
+                diff / max_abs <= tolerance
             }
         };
         let result = approx_f64(lr, rr) && approx_f64(li, ri);
@@ -181,14 +184,21 @@ impl VM {
     pub(super) fn exec_container_eq_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(left == right));
+        self.stack
+            .push(Value::Bool(crate::runtime::values_identical(&left, &right)));
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -198,17 +208,35 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Equal,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
+    }
+
+    fn buf_cmp_bytes(l: &Value, r: &Value) -> std::cmp::Ordering {
+        let lb = Self::extract_buf_bytes(l);
+        let rb = Self::extract_buf_bytes(r);
+        lb.cmp(&rb)
     }
 
     pub(super) fn exec_str_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() < r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Less,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() < r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -218,7 +246,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() > r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Greater,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() > r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -228,7 +262,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() <= r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Greater,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() <= r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -238,7 +278,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() >= r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Less,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() >= r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -256,17 +302,29 @@ impl VM {
         };
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Rat(_, _), _)
-            | (_, Value::Rat(_, _))
-            | (Value::FatRat(_, _), _)
-            | (_, Value::FatRat(_, _)) => {
-                if let (Some((an, ad)), Some((bn, bd))) =
-                    (runtime::to_rat_parts(left), runtime::to_rat_parts(right))
-                {
-                    runtime::compare_rat_parts((an, ad), (bn, bd))
-                } else {
-                    left.to_string_value().cmp(&right.to_string_value())
-                }
+            (l, r)
+                if (is_rationalish(l) || is_rationalish(r))
+                    && matches!(
+                        l,
+                        Value::Int(_)
+                            | Value::BigInt(_)
+                            | Value::Rat(_, _)
+                            | Value::FatRat(_, _)
+                            | Value::BigRat(_, _)
+                    )
+                    && matches!(
+                        r,
+                        Value::Int(_)
+                            | Value::BigInt(_)
+                            | Value::Rat(_, _)
+                            | Value::FatRat(_, _)
+                            | Value::BigRat(_, _)
+                    ) =>
+            {
+                runtime::to_big_rat_parts(l)
+                    .zip(runtime::to_big_rat_parts(r))
+                    .and_then(|(a, b)| runtime::compare_big_rat_parts(a, b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             }
             (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
             (Value::Int(a), Value::Num(b)) => (*a as f64)
@@ -275,6 +333,29 @@ impl VM {
             (Value::Num(a), Value::Int(b)) => a
                 .partial_cmp(&(*b as f64))
                 .unwrap_or(std::cmp::Ordering::Equal),
+            (l, r)
+                if matches!(
+                    l,
+                    Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Rat(_, _)
+                        | Value::FatRat(_, _)
+                        | Value::BigRat(_, _)
+                ) && matches!(
+                    r,
+                    Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Rat(_, _)
+                        | Value::FatRat(_, _)
+                        | Value::BigRat(_, _)
+                ) =>
+            {
+                value_to_f64(l)
+                    .partial_cmp(&value_to_f64(r))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }
             // Complex cmp: compare real parts first, then imaginary parts
             // NaN sorts as Greater (More) in Raku
             (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
@@ -347,6 +428,11 @@ impl VM {
     pub(super) fn exec_cmp_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            let ord = Self::buf_cmp_bytes(&left, &right);
+            self.stack.push(runtime::make_order(ord));
+            return;
+        }
         let (left, right) = self
             .coerce_numeric_bridge_pair(left.clone(), right.clone())
             .unwrap_or((left, right));
