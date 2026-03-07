@@ -166,11 +166,17 @@ impl VM {
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);
         let approx_f64 = |a: f64, b: f64| -> bool {
+            let diff = (a - b).abs();
+            // Absolute tolerance: if the difference itself is below tolerance, consider equal.
+            // This handles comparisons with zero (e.g. 1e-16 ≅ 0 with tolerance 1e-15).
+            if diff < tolerance {
+                return true;
+            }
             let max_abs = a.abs().max(b.abs());
             if max_abs == 0.0 {
                 true
             } else {
-                (a - b).abs() / max_abs <= tolerance
+                diff / max_abs <= tolerance
             }
         };
         let result = approx_f64(lr, rr) && approx_f64(li, ri);

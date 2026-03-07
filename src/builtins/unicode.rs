@@ -124,8 +124,18 @@ pub(crate) fn unicode_rat_value(c: char) -> Option<(i64, i64)> {
         '⅞' => Some((7, 8)),
         '༳' => Some((-1, 2)),
         '↉' => Some((0, 1)),
-        _ => None,
+        _ => unicode_general_rat_value(c),
     }
+}
+
+/// General fallback: look up a character's rational value via the Unicode Nl/No table.
+/// Handles characters not explicitly listed above (e.g. cuneiform fractions).
+fn unicode_general_rat_value(c: char) -> Option<(i64, i64)> {
+    let (n, d) = super::unicode_numval_table::lookup_nl_no_value(c)?;
+    if d == 1 {
+        return None; // Integer values handled by unicode_numeric_int_value
+    }
+    Some((n, d))
 }
 
 /// Return the integer value for a Unicode numeric character (superscripts, subscripts, etc.).
@@ -160,8 +170,15 @@ pub(crate) fn unicode_numeric_int_value(c: char) -> Option<i64> {
         'Ⅷ' | 'ⅷ' => Some(8),
         'Ⅸ' | 'ⅸ' => Some(9),
         'Ⅹ' | 'ⅹ' => Some(10),
-        _ => None,
+        _ => unicode_general_int_value(c),
     }
+}
+
+/// General fallback: look up a character's integer value via the Unicode Nl/No table.
+/// Handles characters not explicitly listed above (e.g. cuneiform integers).
+fn unicode_general_int_value(c: char) -> Option<i64> {
+    let (n, d) = super::unicode_numval_table::lookup_nl_no_value(c)?;
+    if d == 1 { Some(n) } else { None }
 }
 
 /// Return the decimal digit value (0-9) for any Unicode Nd (decimal digit) character.
