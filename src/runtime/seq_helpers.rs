@@ -2356,6 +2356,66 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn seq_value_to_rat(v: &Value) -> Option<(i64, i64)> {
+        match v {
+            Value::Int(i) => Some((*i, 1)),
+            Value::Rat(n, d) if *d != 0 => Some((*n, *d)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn seq_geometric_ratio_rat(a: &Value, b: &Value, c: &Value) -> Option<(i64, i64)> {
+        fn normalize(mut n: i128, mut d: i128) -> Option<(i64, i64)> {
+            if d == 0 {
+                return None;
+            }
+            if d < 0 {
+                n = -n;
+                d = -d;
+            }
+            fn gcd_i128(mut x: i128, mut y: i128) -> i128 {
+                x = x.abs();
+                y = y.abs();
+                while y != 0 {
+                    let t = y;
+                    y = x % y;
+                    x = t;
+                }
+                x
+            }
+            let g = gcd_i128(n, d);
+            let nn = n / g;
+            let dd = d / g;
+            if nn < i64::MIN as i128
+                || nn > i64::MAX as i128
+                || dd < i64::MIN as i128
+                || dd > i64::MAX as i128
+            {
+                return None;
+            }
+            Some((nn as i64, dd as i64))
+        }
+
+        let (an, ad) = Self::seq_value_to_rat(a)?;
+        let (bn, bd) = Self::seq_value_to_rat(b)?;
+        let (cn, cd) = Self::seq_value_to_rat(c)?;
+        if an == 0 || bn == 0 {
+            return None;
+        }
+
+        // b^2 == a*c in rational space means a,b,c are geometric.
+        let left = (bn as i128) * (bn as i128) * (ad as i128) * (cd as i128);
+        let right = (an as i128) * (cn as i128) * (bd as i128) * (bd as i128);
+        if left != right {
+            return None;
+        }
+
+        // ratio = b / a.
+        let num = (bn as i128) * (ad as i128);
+        let den = (bd as i128) * (an as i128);
+        normalize(num, den)
+    }
+
     /// Check if a value matches a type name for sequence type endpoints.
     /// Handles the Num→Rat mapping since mutsu uses Num for decimal values.
     pub(super) fn seq_type_matches(val: &Value, type_name: &str) -> bool {
