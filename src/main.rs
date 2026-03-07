@@ -168,6 +168,7 @@ fn main() {
         Ok(_output) => {
             // Output is written directly to stdout during execution.
             // Subtest-indented output is also flushed here.
+            interpreter.flush_all_handles();
             let code = interpreter.exit_code();
             if code != 0 {
                 std::process::exit(code as i32);
@@ -175,6 +176,7 @@ fn main() {
         }
         Err(err) => {
             print_error("Runtime error", &err);
+            interpreter.flush_all_handles();
             let code = interpreter.exit_code();
             std::process::exit(if code != 0 { code as i32 } else { 1 });
         }

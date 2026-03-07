@@ -1310,6 +1310,7 @@ impl Interpreter {
             }
             nested.set_program_path("<is_run>");
             let result = nested.run(&program);
+            nested.flush_all_handles();
             Self::extract_run_output(&nested, result)
         };
         let mut ok = true;

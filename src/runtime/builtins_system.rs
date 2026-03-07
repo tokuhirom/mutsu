@@ -585,8 +585,8 @@ impl Interpreter {
                 0,
                 0,
                 Value::str(String::new()),
-                None,
-                None,
+                opts.capture_err.then(String::new),
+                opts.capture_out.then(String::new),
             ));
         }
 
@@ -669,7 +669,14 @@ impl Interpreter {
                     )),
                 }
             }
-            Err(_) => Ok(Self::make_proc_instance(-1, 0, 0, command_val, None, None)),
+            Err(err) => Ok(Self::make_proc_instance(
+                -1,
+                0,
+                0,
+                command_val,
+                opts.capture_err.then(|| err.to_string()),
+                opts.capture_out.then(String::new),
+            )),
         }
     }
 

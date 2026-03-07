@@ -1507,24 +1507,26 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
 
-    // Optional type constraint (with optional smiley :D, :U, :_)
-    let mut type_constraint: Option<String> = None;
-    let rest = if let Ok((r, tc)) = ident(rest) {
-        // Skip smiley after type name
-        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            &r[2..]
+    // Optional type constraint.
+    let (rest, type_constraint) = {
+        let saved = rest;
+        if let Some((r, tc)) = parse_type_constraint_expr(rest) {
+            let (r2, _) = ws(r)?;
+            if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+                // Strip smiley suffix for the type_constraint name used as default
+                let base = tc
+                    .strip_suffix(":D")
+                    .or_else(|| tc.strip_suffix(":U"))
+                    .or_else(|| tc.strip_suffix(":_"))
+                    .unwrap_or(&tc)
+                    .to_string();
+                (r2, Some(base))
+            } else {
+                (saved, None)
+            }
         } else {
-            r
-        };
-        let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
-            type_constraint = Some(tc.to_string());
-            r2
-        } else {
-            rest
+            (saved, None)
         }
-    } else {
-        rest
     };
 
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
@@ -1643,7 +1645,59 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     // Default value
-    let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
+    let (rest, mut default) = if let Some(stripped) = rest.strip_prefix(".=") {
+        let (rest, _) = ws(stripped)?;
+        let (rest, method_name) =
+            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let method_name = method_name.to_string();
+        let (rest, args) = if rest.starts_with('(') {
+            let (r, _) = parse_char(rest, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else if rest.starts_with(':') && !rest.starts_with("::") {
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
+        } else {
+            (rest, Vec::new())
+        };
+        let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
+        (
+            rest,
+            Some(Expr::MethodCall {
+                target: Box::new(Expr::BareWord(target_name)),
+                name: Symbol::intern(&method_name),
+                args,
+                modifier: None,
+                quoted: false,
+            }),
+        )
+    } else if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
@@ -1662,8 +1716,11 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Some(expr))
         }
-    } else if let Some(tc) = &type_constraint {
+    } else if let Some(tc) = &type_constraint
+        && is_required.is_none()
+    {
         // Typed attribute with no explicit default → use type object as default
+        // But not when `is required` — the attribute must be explicitly provided
         (rest, Some(Expr::BareWord(tc.clone())))
     } else {
         (rest, None)

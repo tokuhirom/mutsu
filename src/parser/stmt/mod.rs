@@ -1347,6 +1347,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_class_has_decl_dot_equals_initializer() {
+        let src = r#"class MyHandle {
+            has Buf[uint8] $.data .= new: "x".encode;
+        }"#;
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(matches!(
+                &body[0],
+                Stmt::HasDecl {
+                    default: Some(_),
+                    ..
+                }
+            ));
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_method_decl_with_match_var_param() {
         let (rest, stmts) = program("class Foo { method TOP($/) { 1 } }").unwrap();
         assert_eq!(rest, "");

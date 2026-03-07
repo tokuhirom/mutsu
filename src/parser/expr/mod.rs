@@ -1936,6 +1936,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_unary_plus_on_topic_method_call() {
+        let (rest, expr) = expression("+.lines").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Plus,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_x_with_bare_whatever_rhs_without_whatevercode_wrap() {
         let (rest, expr) = expression("'a' x *").unwrap();
         assert_eq!(rest, "");

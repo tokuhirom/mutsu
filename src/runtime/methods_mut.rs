@@ -459,6 +459,23 @@ impl Interpreter {
             }
             return Ok(value);
         }
+        // nl-out setter for IO::Handle
+        if method == "nl-out"
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && class_name == "IO::Handle"
+            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+        {
+            let id = *handle_id as usize;
+            let new_nl_out = value.to_string_value();
+            if let Some(state) = self.handles.get_mut(&id) {
+                state.nl_out = new_nl_out;
+            }
+            return Ok(value);
+        }
         if method == "value"
             && let Value::Instance {
                 class_name,

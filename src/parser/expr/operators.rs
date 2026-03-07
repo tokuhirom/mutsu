@@ -430,13 +430,13 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && (starts_hyper_prefix_marker(&input[1..])
-            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
+            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}'))
     {
         Some((PrefixUnaryOp::Positive, 1))
     } else if input.starts_with('~')
         && !input.starts_with("~~")
         && (starts_hyper_prefix_marker(&input[1..])
-            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
+            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.'))
     {
         Some((PrefixUnaryOp::Stringify, 1))
     } else {
