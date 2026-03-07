@@ -289,7 +289,6 @@ roast/S07-slip/slip.t
 roast/S09-multidim/indexing.t
 roast/S09-multidim/subs.t
 roast/S10-packages/joined-namespaces.t
-roast/S10-packages/precompilation.t
 roast/S10-packages/require-and-use.t
 roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
