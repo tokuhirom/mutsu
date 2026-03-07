@@ -516,6 +516,31 @@ impl Compiler {
                     && (args.len() == 2 || args.len() == 3)
                     && let Expr::Var(var_name) = &args[0]
                 {
+                    if args.len() == 2
+                        && let Expr::Lambda { param, body } = &args[1]
+                        && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
+                        && *op == TokenKind::Plus
+                    {
+                        let delta = match (left.as_ref(), right.as_ref()) {
+                            (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                            (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                            _ => None,
+                        };
+                        if let Some(delta) = delta {
+                            let call_name_idx = self
+                                .code
+                                .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                            self.code.emit(OpCode::LoadConst(name_idx));
+                            self.compile_expr(&delta);
+                            self.code.emit(OpCode::CallFunc {
+                                name_idx: call_name_idx,
+                                arity: 2,
+                                arg_sources_idx: None,
+                            });
+                            return;
+                        }
+                    }
                     let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::LoadConst(name_idx));

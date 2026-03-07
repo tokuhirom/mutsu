@@ -2370,11 +2370,30 @@ impl Interpreter {
         name: &str,
         value_key: &str,
     ) -> Value {
-        shared
+        let current = shared
             .get(value_key)
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::Nil);
+        if let Some(constraint) = self.var_type_constraint(name) {
+            let is_untyped_placeholder = matches!(current, Value::Nil)
+                || matches!(current, Value::Package(sym) if sym.resolve() == "Any");
+            if is_untyped_placeholder {
+                return Value::Package(Symbol::intern(&constraint));
+            }
+        }
+        current
+    }
+
+    fn cas_retry_matches(expected_seen: &Value, latest_seen: &Value) -> bool {
+        match (expected_seen, latest_seen) {
+            (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+            (Value::Array(a, ..), Value::Array(b, ..)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => expected_seen == latest_seen,
+        }
     }
 
     fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -2483,84 +2502,75 @@ impl Interpreter {
             // 3-arg form: cas($var, $expected, $new)
             let expected = &args[1];
             let new_val = args[2].clone();
+            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+            let mut did_swap = false;
             let current = {
-                let shared = self.shared_vars.read().unwrap();
-                self.atomic_current_value(&shared, &name, &value_key)
+                let mut shared = self.shared_vars.write().unwrap();
+                let current = self.atomic_current_value(&shared, &name, &value_key);
+                if current == *expected {
+                    shared.insert(value_key.clone(), coerced.clone());
+                    did_swap = true;
+                }
+                current
             };
-            // Keep the lexical/env view in sync with the shared atomic value.
-            self.env.insert(name.clone(), current.clone());
-            if current == *expected {
-                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
-                self.env.insert(name.clone(), coerced.clone());
-                self.shared_vars
-                    .write()
-                    .unwrap()
-                    .insert(value_key.clone(), coerced);
+            if did_swap {
+                self.env.insert(name.clone(), coerced);
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(value_key);
                     dirty.insert(name);
                 }
+            } else {
+                self.env.insert(name.clone(), current.clone());
             }
             Ok(current)
         } else {
             // 2-arg form: cas($var, &code)
             let code = args[1].clone();
-            let current = {
-                let shared = self.shared_vars.read().unwrap();
-                self.atomic_current_value(&shared, &name, &value_key)
-            };
-            self.env.insert(name.clone(), current.clone());
-            let new_val = if let Value::Sub(sub) = &code {
-                if sub.params.len() == 1
-                    && sub.body.len() == 1
-                    && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
-                    && *op == TokenKind::Plus
-                {
-                    let param = &sub.params[0];
-                    let delta_expr = match (left.as_ref(), right.as_ref()) {
-                        (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
-                        (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
-                        _ => None,
+            if let Value::Sub(sub) = &code
+                && sub.params.len() == 1
+                && sub.body.len() == 1
+                && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
+                && *op == TokenKind::Plus
+            {
+                let param = &sub.params[0];
+                let delta_expr = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                    (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                    _ => None,
+                };
+                if let Some(delta_expr) = delta_expr {
+                    let delta = match delta_expr {
+                        Expr::Var(var_name) => {
+                            self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                        }
+                        Expr::Literal(v) => v,
+                        other => self.eval_block_value(&[Stmt::Expr(other)])?,
                     };
-                    if let Some(delta_expr) = delta_expr {
-                        let delta = match delta_expr {
-                            Expr::Var(var_name) => {
-                                self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
-                            }
-                            Expr::Literal(v) => v,
-                            other => self.eval_block_value(&[Stmt::Expr(other)])?,
-                        };
-                        crate::builtins::arith_add(current.clone(), delta)?
-                    } else {
-                        let saved_topic = self.env.get("_").cloned();
-                        let saved_dollar_topic = self.env.get("$_").cloned();
-                        self.env.insert("_".to_string(), current.clone());
-                        self.env.insert("$_".to_string(), current.clone());
-                        let result = self.call_sub_value(code, vec![current], false)?;
-                        match saved_topic {
-                            Some(v) => {
-                                self.env.insert("_".to_string(), v);
-                            }
-                            None => {
-                                self.env.remove("_");
-                            }
-                        }
-                        match saved_dollar_topic {
-                            Some(v) => {
-                                self.env.insert("$_".to_string(), v);
-                            }
-                            None => {
-                                self.env.remove("$_");
-                            }
-                        }
-                        result
-                    }
-                } else {
+                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), delta]);
+                }
+            }
+            loop {
+                let current = {
+                    let shared = self.shared_vars.read().unwrap();
+                    self.atomic_current_value(&shared, &name, &value_key)
+                };
+                self.env.insert(name.clone(), current.clone());
+                let new_val = {
                     let saved_topic = self.env.get("_").cloned();
                     let saved_dollar_topic = self.env.get("$_").cloned();
                     self.env.insert("_".to_string(), current.clone());
                     self.env.insert("$_".to_string(), current.clone());
-                    let result = self.call_sub_value(code, vec![current], false)?;
+                    let call_args = if let Value::Sub(sub) = &code {
+                        if sub.params.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![current.clone()]
+                        }
+                    } else {
+                        vec![current.clone()]
+                    };
+                    let merge_all = !matches!(&code, Value::Sub(sub) if !sub.params.is_empty());
+                    let result = self.call_sub_value(code.clone(), call_args, merge_all)?;
                     match saved_topic {
                         Some(v) => {
                             self.env.insert("_".to_string(), v);
@@ -2578,42 +2588,29 @@ impl Interpreter {
                         }
                     }
                     result
-                }
-            } else {
-                let saved_topic = self.env.get("_").cloned();
-                let saved_dollar_topic = self.env.get("$_").cloned();
-                self.env.insert("_".to_string(), current.clone());
-                self.env.insert("$_".to_string(), current.clone());
-                let result = self.call_sub_value(code, vec![current], false)?;
-                match saved_topic {
-                    Some(v) => {
-                        self.env.insert("_".to_string(), v);
-                    }
-                    None => {
-                        self.env.remove("_");
-                    }
-                }
-                match saved_dollar_topic {
-                    Some(v) => {
-                        self.env.insert("$_".to_string(), v);
-                    }
-                    None => {
-                        self.env.remove("$_");
+                };
+                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+
+                let mut updated = false;
+                {
+                    let mut shared = self.shared_vars.write().unwrap();
+                    let seen = self.atomic_current_value(&shared, &name, &value_key);
+                    if Self::cas_retry_matches(&current, &seen) {
+                        shared.insert(value_key.clone(), coerced.clone());
+                        updated = true;
+                    } else {
+                        self.env.insert(name.clone(), seen);
                     }
                 }
-                result
-            };
-            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
-            self.env.insert(name.clone(), coerced.clone());
-            self.shared_vars
-                .write()
-                .unwrap()
-                .insert(value_key.clone(), coerced.clone());
-            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                dirty.insert(value_key);
-                dirty.insert(name);
+                if updated {
+                    self.env.insert(name.clone(), coerced.clone());
+                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(value_key.clone());
+                        dirty.insert(name.clone());
+                    }
+                    return Ok(coerced);
+                }
             }
-            Ok(coerced)
         }
     }
 
