@@ -214,6 +214,10 @@ impl Compiler {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::BoolBitNeg);
                 }
+                TokenKind::StrBitNeg => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::StrBitNeg);
+                }
                 TokenKind::Pipe => {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::MakeSlip);
@@ -512,6 +516,31 @@ impl Compiler {
                     && (args.len() == 2 || args.len() == 3)
                     && let Expr::Var(var_name) = &args[0]
                 {
+                    if args.len() == 2
+                        && let Expr::Lambda { param, body } = &args[1]
+                        && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
+                        && *op == TokenKind::Plus
+                    {
+                        let delta = match (left.as_ref(), right.as_ref()) {
+                            (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                            (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                            _ => None,
+                        };
+                        if let Some(delta) = delta {
+                            let call_name_idx = self
+                                .code
+                                .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                            self.code.emit(OpCode::LoadConst(name_idx));
+                            self.compile_expr(&delta);
+                            self.code.emit(OpCode::CallFunc {
+                                name_idx: call_name_idx,
+                                arity: 2,
+                                arg_sources_idx: None,
+                            });
+                            return;
+                        }
+                    }
                     let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::LoadConst(name_idx));
@@ -932,13 +961,28 @@ impl Compiler {
                 name_expr,
                 args,
             } => {
+                // If target is a variable, emit CallMethodDynamicMut for writeback
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(n) => Some(n.clone()),
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::HashVar(n) => Some(format!("%{}", n)),
+                    _ => None,
+                };
                 self.compile_expr(target);
                 self.compile_expr(name_expr);
                 let arity = args.len() as u32;
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                self.code.emit(OpCode::CallMethodDynamic { arity });
+                if let Some(var_name) = target_var_name {
+                    let target_name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::CallMethodDynamicMut {
+                        arity,
+                        target_name_idx,
+                    });
+                } else {
+                    self.code.emit(OpCode::CallMethodDynamic { arity });
+                }
             }
             // Hyper method call: target».method(args)
             Expr::HyperMethodCall {
@@ -1028,7 +1072,22 @@ impl Compiler {
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
                 for part in parts {
-                    self.compile_expr(part);
+                    match part {
+                        // Sigiled collection interpolation in strings should
+                        // flatten values rather than force scalar Str coercion.
+                        Expr::ArrayVar(name) => self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("join"),
+                            args: vec![
+                                Expr::Literal(Value::str(" ".to_string())),
+                                Expr::ArrayVar(name.clone()),
+                            ],
+                        }),
+                        Expr::HashVar(name) => self.compile_expr(&Expr::Unary {
+                            op: crate::token_kind::TokenKind::Tilde,
+                            expr: Box::new(Expr::HashVar(name.clone())),
+                        }),
+                        _ => self.compile_expr(part),
+                    }
                 }
                 self.code.emit(OpCode::StringConcat(n));
             }
@@ -1733,6 +1792,14 @@ impl Compiler {
                 Stmt::EnumDecl { name, .. } if name.resolve().is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);
+                }
+                Stmt::Whenever { supply, .. } => {
+                    self.compile_stmt(stmt);
+                    if let Expr::Var(name) = supply {
+                        self.compile_expr(&Expr::Var(name.clone()));
+                    } else {
+                        self.code.emit(OpCode::LoadNil);
+                    }
                 }
                 _ => {
                     self.compile_stmt(stmt);

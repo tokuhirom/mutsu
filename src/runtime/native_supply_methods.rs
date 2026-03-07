@@ -434,6 +434,18 @@ impl Interpreter {
                         let _ = self.call_sub_value(done_fn, vec![], true);
                     }
                 }
+                if let Some(quit_fn) = quit_cb {
+                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                        let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
+                        if let Some(reason) = quit_reason {
+                            let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                        } else {
+                            register_supplier_quit_callback(*supplier_id as u64, quit_fn);
+                        }
+                    } else if let Some(reason) = attributes.get("quit_reason").cloned() {
+                        let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                    }
+                }
                 Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()))
             }
             "do" => {
@@ -643,6 +655,9 @@ impl Interpreter {
                 // Push to supply_emit_buffer if active
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
                     buf.push(value.clone());
+                }
+                if let Some(buf) = self.supply_emit_timed_buffer.last_mut() {
+                    buf.push((value.clone(), std::time::Instant::now()));
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_emit(supplier_id, value.clone());
@@ -962,6 +977,18 @@ impl Interpreter {
                         }
                     } else {
                         let _ = self.call_sub_value(done_fn, vec![], true);
+                    }
+                }
+                if let Some(quit_fn) = quit_cb {
+                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
+                        if let Some(reason) = quit_reason {
+                            let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                        } else {
+                            register_supplier_quit_callback(*supplier_id as u64, quit_fn);
+                        }
+                    } else if let Some(reason) = attrs.get("quit_reason").cloned() {
+                        let _ = self.call_sub_value(quit_fn, vec![reason], true);
                     }
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());

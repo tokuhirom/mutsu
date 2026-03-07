@@ -679,7 +679,32 @@ impl VM {
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(raw_val)
+            let mut assigned = runtime::coerce_to_array(raw_val);
+            if let Some(current) = self.get_env_with_main_alias(&name) {
+                let class_name = match current {
+                    Value::Instance { class_name, .. } => Some(class_name),
+                    Value::Package(class_name) => Some(class_name),
+                    _ => None,
+                };
+                if let Some(class_name) = class_name {
+                    let class = class_name.resolve();
+                    if class == "Blob" || class.starts_with("blob") {
+                        return Err(RuntimeError::new("X::Assignment::RO"));
+                    }
+                    if class == "Buf" || class.starts_with("buf") {
+                        let items = runtime::value_to_list(&assigned)
+                            .into_iter()
+                            .map(|v| Value::Int(runtime::to_int(&v)))
+                            .collect::<Vec<_>>();
+                        assigned = self.interpreter.call_method_with_values(
+                            Value::Package(class_name),
+                            "new",
+                            items,
+                        )?;
+                    }
+                }
+            }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };

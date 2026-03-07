@@ -168,6 +168,9 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                 ) {
                     crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
+                } else if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    crate::vm::VM::extract_buf_bytes(left)
+                        == crate::vm::VM::extract_buf_bytes(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
@@ -368,8 +371,8 @@ impl Interpreter {
                 "<=" => super::to_float_value(&left) <= super::to_float_value(&right),
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
-                "===" => left == right,
-                "!===" => left != right,
+                "===" => crate::runtime::utils::values_identical(&left, &right),
+                "!===" => !crate::runtime::utils::values_identical(&left, &right),
                 "eqv" => left.eqv(&right),
                 "=:=" => left == right,
                 "=~=" | "\u{2245}" => {
@@ -1036,6 +1039,7 @@ impl Interpreter {
                         }
                     });
                 let matched = match expected_val {
+                    Value::Whatever => true, // * matches anything
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),
@@ -1336,6 +1340,7 @@ impl Interpreter {
             }
             nested.set_program_path("<is_run>");
             let result = nested.run(&program);
+            nested.flush_all_handles();
             Self::extract_run_output(&nested, result)
         };
         let mut ok = true;
@@ -1524,8 +1529,10 @@ impl Interpreter {
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
+                self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                let _ = self.supply_emit_timed_buffer.pop();
             }
         } else {
             // Non-scheduler supply: original logic
@@ -1539,8 +1546,10 @@ impl Interpreter {
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
+                    self.supply_emit_timed_buffer.push(Vec::new());
                     let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                    let _ = self.supply_emit_timed_buffer.pop();
                 } else {
                     let values = attributes
                         .get("values")
@@ -1577,8 +1586,59 @@ impl Interpreter {
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
+                self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
+                let emitted = if let Value::Instance { ref attributes, .. } = supply {
+                    if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
+                        let as_fn = attributes.get("unique_as").cloned();
+                        let with_fn = attributes.get("unique_with").cloned();
+                        let expires_secs = attributes.get("unique_expires").map(Value::to_f64);
+                        let mut seen: Vec<(Value, std::time::Instant)> = Vec::new();
+                        let mut unique = Vec::new();
+                        let events = if timed_emitted.is_empty() {
+                            let now = std::time::Instant::now();
+                            emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                        } else {
+                            timed_emitted
+                        };
+                        for (value, ts) in events {
+                            if let Some(expire) = expires_secs {
+                                seen.retain(|(_, seen_ts)| {
+                                    ts.duration_since(*seen_ts).as_secs_f64() < expire
+                                });
+                            }
+                            let key = if let Some(ref f) = as_fn {
+                                self.call_sub_value(f.clone(), vec![value.clone()], true)?
+                            } else {
+                                value.clone()
+                            };
+                            let is_dup = seen.iter().any(|(seen_key, _)| {
+                                if let Some(ref f) = with_fn {
+                                    self.call_sub_value(
+                                        f.clone(),
+                                        vec![seen_key.clone(), key.clone()],
+                                        true,
+                                    )
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false)
+                                } else {
+                                    super::values_identical(seen_key, &key)
+                                }
+                            });
+                            if !is_dup {
+                                seen.push((key, ts));
+                                unique.push(value);
+                            }
+                        }
+                        unique
+                    } else {
+                        emitted
+                    }
+                } else {
+                    emitted
+                };
                 let split_emitted = if let Value::Instance {
                     ref class_name,
                     ref attributes,

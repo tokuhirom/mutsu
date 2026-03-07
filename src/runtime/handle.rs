@@ -57,7 +57,7 @@ impl Interpreter {
             attributes,
             ..
         } = value
-            && class_name == "IO::Handle"
+            && (class_name == "IO::Handle" || class_name == "IO::Socket::INET")
             && let Some(Value::Int(id)) = attributes.get("handle")
             && *id >= 0
         {
@@ -94,7 +94,7 @@ impl Interpreter {
         }
         let mut payload = String::from(content);
         if newline {
-            payload.push('\n');
+            payload.push_str(&state.nl_out.clone());
         }
         match state.target {
             IoHandleTarget::Stdout => {
@@ -390,10 +390,20 @@ impl Interpreter {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub(super) fn parse_io_flags_values(
         &self,
         args: &[Value],
-    ) -> (bool, bool, bool, bool, bool, Vec<Vec<u8>>, Option<usize>) {
+    ) -> (
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        Vec<Vec<u8>>,
+        Option<usize>,
+        Option<String>,
+    ) {
         let mut read = false;
         let mut write = false;
         let mut append = false;
@@ -401,6 +411,7 @@ impl Interpreter {
         let mut chomp = true;
         let mut nl_in: Option<Vec<Vec<u8>>> = None;
         let mut out_buffer: Option<usize> = None;
+        let mut nl_out: Option<String> = None;
         for arg in args {
             if let Value::Pair(name, value) = arg {
                 let truthy = value.truthy();
@@ -415,6 +426,7 @@ impl Interpreter {
                     "bin" => bin = truthy,
                     "chomp" => chomp = truthy,
                     "nl-in" => nl_in = Some(Self::parse_nl_in_value(value)),
+                    "nl-out" => nl_out = Some(value.to_string_value()),
                     "out-buffer" => out_buffer = Self::parse_out_buffer_size(value),
                     _ => {}
                 }
@@ -433,6 +445,7 @@ impl Interpreter {
                 nl_in.unwrap_or_else(|| self.default_line_separators()),
             ),
             out_buffer,
+            nl_out,
         )
     }
 
@@ -447,6 +460,7 @@ impl Interpreter {
         line_chomp: bool,
         line_separators: Vec<Vec<u8>>,
         out_buffer_capacity: Option<usize>,
+        nl_out: Option<String>,
     ) -> Result<Value, RuntimeError> {
         let mut options = fs::OpenOptions::new();
         options.read(read);
@@ -486,6 +500,7 @@ impl Interpreter {
             out_buffer_capacity,
             out_buffer_pending: Vec::new(),
             bin,
+            nl_out: nl_out.unwrap_or_else(|| "\n".to_string()),
         };
         self.handles.insert(id, state);
         Ok(self.make_handle_instance_with_bin(id, bin))

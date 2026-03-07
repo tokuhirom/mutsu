@@ -795,7 +795,10 @@ impl Interpreter {
             self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    if k != "_" && k != "@_" && merged.contains_key(k) {
+                    if k != "_"
+                        && k != "@_"
+                        && (merged.contains_key(k) || k.starts_with("__mutsu_var_meta::"))
+                    {
                         merged.insert(k.clone(), v.clone());
                     }
                 }

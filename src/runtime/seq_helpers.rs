@@ -1933,6 +1933,34 @@ impl Interpreter {
                     false
                 }
             }
+            // Buf/Blob ~~ Buf/Blob: compare byte contents
+            (
+                Value::Instance {
+                    class_name: cn_a, ..
+                },
+                Value::Instance {
+                    class_name: cn_b, ..
+                },
+            ) if {
+                let a = cn_a.resolve();
+                let b = cn_b.resolve();
+                let is_buf = |cn: &str| {
+                    cn == "Buf"
+                        || cn == "Blob"
+                        || cn == "utf8"
+                        || cn == "utf16"
+                        || cn.starts_with("Buf[")
+                        || cn.starts_with("Blob[")
+                        || cn.starts_with("buf")
+                        || cn.starts_with("blob")
+                };
+                is_buf(&a) && is_buf(&b)
+            } =>
+            {
+                let lb = crate::vm::VM::extract_buf_bytes(left);
+                let rb = crate::vm::VM::extract_buf_bytes(right);
+                lb == rb
+            }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
             // When RHS is a Bool, result is that Bool

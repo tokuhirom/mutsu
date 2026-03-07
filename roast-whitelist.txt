@@ -148,6 +148,7 @@ roast/S03-smartmatch/array-array.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
 roast/S03-smartmatch/capture-signature.t
+roast/S03-smartmatch/hash-hash.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
@@ -473,6 +474,7 @@ roast/S17-supply/schedule-on.t
 roast/S17-supply/skip.t
 roast/S17-supply/split.t
 roast/S17-supply/tail.t
+roast/S17-supply/unique.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S19-command-line/help.t
@@ -534,6 +536,7 @@ roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-hash/slice.t
+roast/S32-io/IO-Socket-Async.t
 roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t

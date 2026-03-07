@@ -348,6 +348,22 @@ impl VM {
                     *ip += 1;
                     return Ok(());
                 }
+                let atomic_name = name.strip_prefix('$').unwrap_or(name);
+                let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+                let is_atomic_int = self.interpreter.var_type_constraint(name).as_deref()
+                    == Some("atomicint")
+                    || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                        == Some("atomicint")
+                    || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+                if is_atomic_int {
+                    let fetched = self.interpreter.call_function(
+                        "__mutsu_atomic_fetch_var",
+                        vec![Value::str(atomic_name.to_string())],
+                    )?;
+                    self.stack.push(fetched);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
                     if name.starts_with('^') {
                         Value::Bool(true)
@@ -544,6 +560,10 @@ impl VM {
             }
             OpCode::BoolBitNeg => {
                 self.exec_bool_bit_neg_op();
+                *ip += 1;
+            }
+            OpCode::StrBitNeg => {
+                self.exec_str_bit_neg_op();
                 *ip += 1;
             }
             OpCode::MakeSlip => {
@@ -1080,6 +1100,13 @@ impl VM {
                 self.exec_call_method_dynamic_op(code, *arity)?;
                 *ip += 1;
             }
+            OpCode::CallMethodDynamicMut {
+                arity,
+                target_name_idx,
+            } => {
+                self.exec_call_method_dynamic_mut_op(code, *arity, *target_name_idx)?;
+                *ip += 1;
+            }
             OpCode::CallMethodMut {
                 name_idx,
                 arity,
@@ -1175,7 +1202,7 @@ impl VM {
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {
-                self.exec_string_concat_op(*n);
+                self.exec_string_concat_op(*n)?;
                 *ip += 1;
             }
 

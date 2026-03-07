@@ -1037,6 +1037,32 @@ impl Interpreter {
         {
             return true;
         }
+        // Buf/Blob type hierarchy:
+        // Blob is the immutable base; Buf extends Blob (mutable)
+        // utf8 is a subtype of Blob
+        // buf8/buf16/buf32/buf64 are subtypes of Buf (and transitively Blob)
+        // blob8/blob16/blob32/blob64 are subtypes of Blob
+        if constraint == "Blob"
+            && matches!(
+                value_type,
+                "Buf"
+                    | "utf8"
+                    | "utf16"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+            )
+        {
+            return true;
+        }
+        if constraint == "Buf" && matches!(value_type, "buf8" | "buf16" | "buf32" | "buf64") {
+            return true;
+        }
         false
     }
 
@@ -1046,6 +1072,12 @@ impl Interpreter {
             || self.roles.contains_key(name)
             || self.enum_types.contains_key(name)
             || self.subsets.contains_key(name)
+            || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
+                self.classes.contains_key(&base)
+                    || self.roles.contains_key(&base)
+                    || self.enum_types.contains_key(&base)
+                    || self.subsets.contains_key(&base)
+            })
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
@@ -1152,7 +1184,7 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
         if let Some(role) = role {
-            for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+            for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                 role.attributes.iter().enumerate()
             {
                 let value = if let Some(arg) = role_args.get(idx) {
@@ -1252,8 +1284,7 @@ impl Interpreter {
                     }
                     return false;
                 }
-                "Buf" | "Blob" | "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16"
-                | "blob32" | "blob64" => {
+                "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
                     if let Value::Instance { class_name, .. } = value {
                         let cn = class_name.resolve();
                         if cn == "Buf"
@@ -1280,6 +1311,33 @@ impl Interpreter {
                                 false
                             }
                         });
+                    }
+                    return false;
+                }
+                "Buf" | "Blob" => {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = value
+                    {
+                        let class = class_name.resolve();
+                        let class_ok = if base == "Buf" {
+                            class == "Buf" || class.starts_with("Buf[") || class.starts_with("buf")
+                        } else {
+                            class == "Blob"
+                                || class == "Buf"
+                                || class.starts_with("Blob[")
+                                || class.starts_with("blob")
+                                || class.starts_with("Buf[")
+                                || class.starts_with("buf")
+                        };
+                        if !class_ok {
+                            return false;
+                        }
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            return items.iter().all(|v| self.type_matches_value(inner, v));
+                        }
                     }
                     return false;
                 }
@@ -1444,6 +1502,19 @@ impl Interpreter {
             if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
             }
+            // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
+            let cn = class_name.resolve();
+            if (constraint == "Buf" || constraint == "Blob")
+                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+            {
+                // Buf constraint accepts any Buf-like, Blob constraint accepts any Blob-like
+                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(&cn) {
+                    return true;
+                }
+                if constraint == "Blob" {
+                    return true; // All Buf/Blob types are Blob (Buf inherits Blob)
+                }
+            }
             // Check parent classes of the instance
             if let Some(class_def) = self.classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {
@@ -1548,7 +1619,8 @@ impl Interpreter {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
                         let mut named = std::collections::HashMap::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if let Value::Pair(key, val) = arg {
                                 named.insert(key, *val);
@@ -1561,7 +1633,8 @@ impl Interpreter {
                         // For single-star slurpy (*@), flatten list arguments but preserve
                         // itemized Arrays ($[...] / .item) as single positional values.
                         let mut items = Vec::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &arg
@@ -1575,8 +1648,9 @@ impl Interpreter {
                         Some(Value::real_array(items))
                     }
                 } else if is_subsig_capture {
+                    let remaining = args.get(i..).unwrap_or(&[]);
                     Some(sub_signature_target_from_remaining_args(
-                        &args[i..]
+                        &remaining
                             .iter()
                             .cloned()
                             .map(unwrap_varref_value)
@@ -1675,6 +1749,12 @@ impl Interpreter {
                         // Coercion source-type validation is deferred until bind time.
                         return false;
                     }
+                }
+                if pd.name.starts_with('&')
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !self.type_matches_value("Callable", arg)
+                {
+                    return false;
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {

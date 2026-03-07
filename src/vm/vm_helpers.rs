@@ -981,6 +981,11 @@ impl VM {
                 || self.interpreter.type_matches_value("Numeric", target)
                 || matches!(target, Value::Instance { class_name, .. }
                     if self.interpreter.has_user_method(&class_name.resolve(), "Bridge")));
+        let method_name = method_sym.resolve();
+        let bypass_runtime_native_instance_fastpath = matches!(target, Value::Instance { class_name, .. }
+                if self
+                    .interpreter
+                    .is_native_method(&class_name.resolve(), &method_name));
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
@@ -993,6 +998,7 @@ impl VM {
             || bypass_pickroll_type_fastpath
             || bypass_squish_fastpath
             || bypass_numeric_bridge_instance_fastpath
+            || bypass_runtime_native_instance_fastpath
             || bypass_proxy
         {
             return None;
