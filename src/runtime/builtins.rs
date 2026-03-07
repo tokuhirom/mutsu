@@ -2569,8 +2569,7 @@ impl Interpreter {
                     } else {
                         vec![current.clone()]
                     };
-                    let merge_all = !matches!(&code, Value::Sub(sub) if !sub.params.is_empty());
-                    let result = self.call_sub_value(code.clone(), call_args, merge_all)?;
+                    let result = self.call_sub_value(code.clone(), call_args, true)?;
                     match saved_topic {
                         Some(v) => {
                             self.env.insert("_".to_string(), v);
