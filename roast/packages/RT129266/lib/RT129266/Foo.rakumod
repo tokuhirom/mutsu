@@ -1,3 +1,3 @@
-constant $bar is export = "«VALUE»";
+constant $bar is export = "«NEW»";
 
 # vim: expandtab shiftwidth=4

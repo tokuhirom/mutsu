@@ -1540,7 +1540,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond_expr) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
 
-    // Check for optional pointy block: -> $param { ... }
+    // Check for optional pointy block: -> $param { ... } or -> \param { ... }
     let (rest, param_name) = if let Some(r) = rest.strip_prefix("->") {
         let (r, _) = ws(r)?;
         // Parse parameter like $proc
@@ -1550,6 +1550,15 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 .unwrap_or(r_after_sigil.len());
             let name = &r_after_sigil[..end];
             let r = &r_after_sigil[end..];
+            let (r, _) = ws(r)?;
+            (r, Some(name.to_string()))
+        } else if let Some(r_after_backslash) = r.strip_prefix('\\') {
+            // Sigilless parameter like \c
+            let end = r_after_backslash
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(r_after_backslash.len());
+            let name = &r_after_backslash[..end];
+            let r = &r_after_backslash[end..];
             let (r, _) = ws(r)?;
             (r, Some(name.to_string()))
         } else {
