@@ -75,6 +75,13 @@ fn normalize_subst_replacement(template: &str) -> String {
 }
 
 impl VM {
+    fn canonical_infix_lookup_name(name: &str) -> std::borrow::Cow<'_, str> {
+        if name == "(+)" {
+            return std::borrow::Cow::Borrowed("+");
+        }
+        std::borrow::Cow::Borrowed(name)
+    }
+
     fn should_retry_with_canonical_infix_name(name: &str) -> bool {
         matches!(
             name,
@@ -539,7 +546,8 @@ impl VM {
             if modifier.as_deref() == Some("R") && call_args.len() == 2 {
                 call_args.swap(0, 1);
             }
-            let infix_name = format!("infix:<{}>", name);
+            let lookup_name = Self::canonical_infix_lookup_name(&name);
+            let infix_name = format!("infix:<{}>", lookup_name.as_ref());
             let assoc = self
                 .interpreter
                 .infix_associativity(&infix_name)
@@ -553,7 +561,11 @@ impl VM {
                         if let Some(v) = self.try_user_infix(&infix_name, &left, &right)? {
                             v
                         } else {
-                            self.call_infix_fallback(&name, Some(&infix_name), vec![left, right])?
+                            self.call_infix_fallback(
+                                lookup_name.as_ref(),
+                                Some(&infix_name),
+                                vec![left, right],
+                            )?
                         };
                     if !pair_result.truthy() {
                         all_true = false;
@@ -566,10 +578,10 @@ impl VM {
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
                 } else {
-                    self.call_infix_fallback(&name, Some(&infix_name), call_args)?
+                    self.call_infix_fallback(lookup_name.as_ref(), Some(&infix_name), call_args)?
                 }
             } else {
-                self.call_infix_fallback(&name, Some(&infix_name), call_args)?
+                self.call_infix_fallback(lookup_name.as_ref(), Some(&infix_name), call_args)?
             }
         };
         self.stack.push(result);
