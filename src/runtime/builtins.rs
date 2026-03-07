@@ -580,6 +580,11 @@ impl Interpreter {
                 self.take_value(value.clone())?;
                 Ok(value)
             }
+            "return" => {
+                let mut err = RuntimeError::new("return");
+                err.return_value = Some(args.first().cloned().unwrap_or(Value::Nil));
+                Err(err)
+            }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
@@ -590,6 +595,44 @@ impl Interpreter {
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
             "first" => self.builtin_first(&args),
+            "tail" => {
+                if args.len() < 2 {
+                    return Err(RuntimeError::new("Too few positionals passed to 'tail'"));
+                }
+                let tail_spec = args[0].clone();
+                let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+                let mut values = Vec::new();
+                for (offset, value) in args[1..].iter().enumerate() {
+                    let source_name = arg_sources
+                        .get(offset + 1)
+                        .and_then(|entry| entry.as_ref())
+                        .map(String::as_str);
+                    if source_name.is_some_and(|name| {
+                        !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                    }) {
+                        values.push(value.clone());
+                        continue;
+                    }
+                    match value {
+                        Value::Array(items, ..) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        Value::Seq(items) | Value::Slip(items) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. } => {
+                            values.extend(crate::runtime::value_to_list(value));
+                        }
+                        other => values.push(other.clone()),
+                    }
+                }
+                let list = Value::array(values);
+                self.call_method_with_values(list, "tail", vec![tail_spec])
+            }
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
             "index" => {

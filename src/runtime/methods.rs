@@ -949,6 +949,11 @@ impl Interpreter {
                 }
             }
         };
+        if method == "tail"
+            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+        {
+            return self.dispatch_tail(target, &args);
+        }
         if let Some(result) = native_result {
             return result;
         }

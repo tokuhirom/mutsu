@@ -431,14 +431,53 @@ impl Interpreter {
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator
                     if let Some(iterator) = args.first() {
+                        if matches!(iterator, Value::Instance { .. })
+                            && self.type_matches_value("PredictiveIterator", iterator)
+                        {
+                            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                            if let Value::Seq(items) = &seq {
+                                let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                                self.env.insert(
+                                    format!("__mutsu_predictive_seq_iter::{seq_id}"),
+                                    iterator.clone(),
+                                );
+                            }
+                            return Ok(seq);
+                        }
+                        if let Value::Instance { attributes, .. } = iterator
+                            && let Some(Value::Array(items, ..)) =
+                                attributes.get("items").or_else(|| attributes.get("stuff"))
+                        {
+                            return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
+                        }
                         let mut items = Vec::new();
+                        let iter_slot = "$mutsu_seq_new_iterator";
+                        let saved_iter = self.env.get(iter_slot).cloned();
+                        self.env.insert(iter_slot.to_string(), iterator.clone());
+                        let mut iterations = 0usize;
                         loop {
+                            iterations += 1;
+                            let current_iter =
+                                self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
                             let val =
-                                self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd") {
+                                self.call_method_with_values(current_iter, "pull-one", vec![])?;
+                            if iterations > 10_000 {
+                                return Err(RuntimeError::new(format!(
+                                    "Seq.new iterator did not terminate (last value: {})",
+                                    val.to_string_value()
+                                )));
+                            }
+                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                                || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                            {
                                 break;
                             }
                             items.push(val);
+                        }
+                        if let Some(prev) = saved_iter {
+                            self.env.insert(iter_slot.to_string(), prev);
+                        } else {
+                            self.env.remove(iter_slot);
                         }
                         return Ok(Value::Seq(std::sync::Arc::new(items)));
                     }
