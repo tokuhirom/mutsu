@@ -1088,6 +1088,18 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
+
+        // Supply.first returns a new Supply containing the matched value
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Supply"
+        {
+            return self.dispatch_supply_first(attributes, func, has_end);
+        }
+
         let items = crate::runtime::utils::value_to_list(&target);
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
             return Ok(super::builtins_collection::format_first_result(
@@ -1095,6 +1107,56 @@ impl Interpreter {
             ));
         }
         Ok(Value::Nil)
+    }
+
+    fn dispatch_supply_first(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        func: Option<Value>,
+        has_end: bool,
+    ) -> Result<Value, RuntimeError> {
+        let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                let mut a = HashMap::new();
+                a.insert("emitted".to_string(), Value::array(Vec::new()));
+                a.insert("done".to_string(), Value::Bool(false));
+                a
+            });
+            self.supply_emit_buffer.push(Vec::new());
+            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+            self.supply_emit_buffer.pop().unwrap_or_default()
+        } else {
+            attributes
+                .get("values")
+                .and_then(|v| {
+                    if let Value::Array(items, ..) = v {
+                        Some(items.to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+        };
+
+        let result_values = if let Some((_, value)) =
+            self.find_first_match_over_items(func, &source_values, has_end)?
+        {
+            vec![value]
+        } else {
+            Vec::new()
+        };
+
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::array(result_values));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert(
+            "live".to_string(),
+            attributes
+                .get("live")
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
+        );
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.

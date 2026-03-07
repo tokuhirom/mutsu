@@ -528,8 +528,10 @@ pub(crate) fn native_method_0arg(
         };
     }
     // Capture methods
-    if let Value::Capture { positional, named } = target {
-        return dispatch_capture(positional, named, method);
+    if let Value::Capture { positional, named } = target
+        && let result @ Some(_) = dispatch_capture(positional, named, method)
+    {
+        return result;
     }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {

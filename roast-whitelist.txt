@@ -443,6 +443,7 @@ roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t
+roast/S17-lowlevel/cas-loop-int.t
 roast/S17-lowlevel/thread-start-join-stress.t
 roast/S17-procasync/basic.t
 roast/S17-procasync/kill.t
@@ -462,9 +463,11 @@ roast/S17-supply/Promise.t
 roast/S17-supply/Seq.t
 roast/S17-supply/act.t
 roast/S17-supply/collate.t
+roast/S17-supply/construction-recursion.t
 roast/S17-supply/decode.t
 roast/S17-supply/delayed.t
 roast/S17-supply/do.t
+roast/S17-supply/first.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t
@@ -555,6 +558,8 @@ roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-io/out-buffering.t
 roast/S32-io/signals.t
+roast/S32-io/socket-accept-and-working-threads.t
+roast/S32-io/socket-host-port-split.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t

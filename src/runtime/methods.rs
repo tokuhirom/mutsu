@@ -3031,6 +3031,13 @@ impl Interpreter {
             "first" if !args.is_empty() => {
                 return self.dispatch_first(target, &args);
             }
+            "first" if args.is_empty() => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_first(target, &args);
+                }
+            }
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);
             }
