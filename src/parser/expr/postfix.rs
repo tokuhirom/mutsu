@@ -1580,12 +1580,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r_after;
                 continue;
             }
+            // Try :delete:exists combination first
             if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv) {
-                rest = r_after_delete;
                 let indexed_expr = Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(index),
+                    target: Box::new(expr.clone()),
+                    index: Box::new(index.clone()),
                 };
+                if let Some((r_after, mut exists_expr)) =
+                    try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
+                {
+                    if let Expr::Exists { delete, .. } = &mut exists_expr {
+                        *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
+                    }
+                    expr = exists_expr;
+                    rest = r_after;
+                    continue;
+                }
+                rest = r_after_delete;
                 match delete_adv {
                     DeleteAdverb::NoDelete => {
                         expr = indexed_expr;
