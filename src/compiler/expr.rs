@@ -619,8 +619,9 @@ impl Compiler {
                         }
                         _ => {
                             // sink expr — evaluate, discard, push Nil
+                            // SinkPop throws unhandled Failures
                             self.compile_expr(&args[0]);
-                            self.code.emit(OpCode::Pop);
+                            self.code.emit(OpCode::SinkPop);
                             self.code.emit(OpCode::LoadNil);
                         }
                     }

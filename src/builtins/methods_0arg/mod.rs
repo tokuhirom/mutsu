@@ -1211,7 +1211,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }));
     }
     match method {
-        "self" => Some(Ok(target.clone())),
+        "self" => {
+            // For unhandled Failures, .self throws the exception
+            if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target
+                && class_name == "Failure"
+                && !attributes.get("handled").is_some_and(Value::truthy)
+                && let Some(ex) = attributes.get("exception")
+            {
+                let msg = ex.to_string_value();
+                let mut err = crate::value::RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex.clone()));
+                return Some(Err(err));
+            }
+            Some(Ok(target.clone()))
+        }
         "clone" => {
             match target {
                 Value::Package(_) | Value::Nil => Some(Ok(target.clone())),

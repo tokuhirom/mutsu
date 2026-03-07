@@ -175,6 +175,8 @@ pub(crate) enum OpCode {
     // -- Stack manipulation --
     Dup,
     Pop,
+    /// Pop with sink context — throws unhandled Failures when fatal_mode is active
+    SinkPop,
 
     // -- Range creation --
     MakeRange,
