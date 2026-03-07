@@ -913,7 +913,6 @@ impl Interpreter {
                 cn == "Buf"
                     || cn == "Blob"
                     || cn == "utf8"
-                    || cn == "utf16"
                     || cn.starts_with("buf")
                     || cn.starts_with("blob")
                     || cn.starts_with("Buf[")
