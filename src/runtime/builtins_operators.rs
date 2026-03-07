@@ -35,7 +35,12 @@ impl Interpreter {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
                 "-" | "−" => crate::builtins::arith_negate(arg.clone()),
-                "~" => Ok(Value::str(crate::runtime::utils::coerce_to_str(arg))),
+                "~" => {
+                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(arg) {
+                        return Err(err);
+                    }
+                    Ok(Value::str(crate::runtime::utils::coerce_to_str(arg)))
+                }
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
@@ -72,6 +77,37 @@ impl Interpreter {
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
+        }
+        // Calling a type with a type object argument constructs a coercion type
+        // object (e.g. Str(Any), Int(Str), Child(Parent)).
+        if args.len() == 1
+            && (self.has_type(name)
+                || crate::runtime::utils::is_known_type_constraint(name)
+                || self.subsets.contains_key(name)
+                || self.roles.contains_key(name))
+        {
+            let source = match &args[0] {
+                Value::Package(sym) => Some(sym.resolve()),
+                Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } => {
+                    let args_str = type_args
+                        .iter()
+                        .map(|arg| match arg {
+                            Value::Package(n) => n.resolve(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Some(format!("{}[{}]", base_name.resolve(), args_str))
+                }
+                Value::Nil => Some("Any".to_string()),
+                _ => None,
+            };
+            if let Some(source) = source {
+                return Ok(Value::Package(Symbol::intern(&format!("{name}({source})"))));
+            }
         }
         // Handle zip:with — zip with a custom combining function
         if name == "zip"
@@ -240,6 +276,12 @@ impl Interpreter {
             self.restore_readonly_vars(saved_readonly);
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
+            }
+            // Convert fail errors to Failure values (same as closure call path)
+            if let Err(e) = &result
+                && e.is_fail
+            {
+                return Ok(self.fail_error_to_failure_value(e));
             }
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             return finalized.and_then(|v| {

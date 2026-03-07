@@ -483,10 +483,7 @@ impl VM {
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name)
-                || self.interpreter.is_role(name)
-                || Self::is_builtin_type(name)
-            {
+            } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
                 Value::Package(Symbol::intern(name))
             } else if name.contains("::")
                 && !name.starts_with('$')
@@ -516,12 +513,22 @@ impl VM {
                 self.env_dirty = true;
                 result
             }
-        } else if self.interpreter.has_class(name)
-            || self.interpreter.is_role(name)
+        } else if self.interpreter.has_type(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(Symbol::intern(name))
+        } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            let result = self
+                .interpreter
+                .call_sub_value(callable, Vec::new(), false)?;
+            self.env_dirty = true;
+            result
         } else if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(name)
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(name)
@@ -1057,11 +1064,7 @@ impl VM {
                 Value::Sub(ref data),
             ) => {
                 // Get element count from the instance
-                let len = if class_name == "Buf"
-                    || class_name == "Blob"
-                    || class_name.resolve().starts_with("Buf[")
-                    || class_name.resolve().starts_with("Blob[")
-                {
+                let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         bytes.len() as i64
                     } else {
@@ -1673,7 +1676,18 @@ impl VM {
             let idx = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
-            if let Value::Hash(map) = &target {
+            if let Some(map) = match &target {
+                Value::Hash(map) => Some(map.clone()),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => match attributes.get("symbols") {
+                    Some(Value::Hash(map)) => Some(map.clone()),
+                    _ => None,
+                },
+                _ => None,
+            } {
                 if adverb_bits == 5 {
                     return Err(crate::value::RuntimeError::new(
                         "Unsupported combination of :exists and :v adverbs".to_string(),

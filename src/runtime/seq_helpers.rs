@@ -826,6 +826,84 @@ impl Interpreter {
         result
     }
 
+    /// Parse :x(...) style repeat bounds.
+    /// Returns (min_required, max_to_return). `max_to_return = None` means unbounded.
+    pub(super) fn parse_match_repeat_bounds(value: &Value) -> Option<(usize, Option<usize>)> {
+        fn parse_non_negative_int(v: &Value) -> Option<i64> {
+            match v {
+                Value::Int(i) => Some((*i).max(0)),
+                Value::Num(n) if n.is_finite() && n.fract() == 0.0 => Some((*n as i64).max(0)),
+                Value::Str(s) => s.trim().parse::<i64>().ok().map(|i| i.max(0)),
+                Value::Whatever => Some(i64::MAX),
+                _ => None,
+            }
+        }
+
+        fn adjust_range_bounds(
+            start: i64,
+            end: i64,
+            excl_start: bool,
+            excl_end: bool,
+        ) -> Option<(usize, Option<usize>)> {
+            let mut min = start;
+            let mut max = end;
+            if excl_start {
+                min = min.saturating_add(1);
+            }
+            if excl_end && max != i64::MAX {
+                max = max.saturating_sub(1);
+            }
+            min = min.max(0);
+            if max != i64::MAX {
+                max = max.max(0);
+                if max < min {
+                    return None;
+                }
+                Some((min as usize, Some(max as usize)))
+            } else {
+                Some((min as usize, None))
+            }
+        }
+
+        match value {
+            Value::Range(start, end) => adjust_range_bounds(*start, *end, false, false),
+            Value::RangeExcl(start, end) => adjust_range_bounds(*start, *end, false, true),
+            Value::RangeExclStart(start, end) => adjust_range_bounds(*start, *end, true, false),
+            Value::RangeExclBoth(start, end) => adjust_range_bounds(*start, *end, true, true),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let min = parse_non_negative_int(start.as_ref())?;
+                let max = parse_non_negative_int(end.as_ref())?;
+                adjust_range_bounds(min, max, *excl_start, *excl_end)
+            }
+            _ => {
+                let n = parse_non_negative_int(value)?;
+                if n == i64::MAX {
+                    Some((0, None))
+                } else {
+                    Some((n as usize, Some(n as usize)))
+                }
+            }
+        }
+    }
+
+    /// Apply :x bounds to already-ordered matches.
+    pub(super) fn select_matches_by_repeat_bounds(
+        matches: Vec<RegexCaptures>,
+        min_required: usize,
+        max_to_return: Option<usize>,
+    ) -> Option<Vec<RegexCaptures>> {
+        if matches.len() < min_required {
+            return None;
+        }
+        let take_n = max_to_return.unwrap_or(matches.len()).min(matches.len());
+        Some(matches.into_iter().take(take_n).collect())
+    }
+
     /// Apply multiple regex captures (for :g, :ov, :ex) — set $/ to list of Match objects.
     fn apply_multi_regex_captures(&mut self, selected: &[RegexCaptures]) {
         let slash_list = selected
@@ -1287,6 +1365,43 @@ impl Interpreter {
                 }
                 self.env.insert("/".to_string(), Value::Nil);
                 false
+            }
+            // :x(N) without :g/:ex/:ov — require at least N non-overlapping matches,
+            // return first N in $/.
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    global: false,
+                    exhaustive: false,
+                    overlap: false,
+                    repeat: Some(needed),
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                let non_overlapping = self.select_non_overlapping_matches(all);
+                let Some(selected) =
+                    Self::select_matches_by_repeat_bounds(non_overlapping, *needed, Some(*needed))
+                else {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                };
+                self.apply_multi_regex_captures(&selected);
+                true
             }
             // :g (global) — find all non-overlapping matches
             (
@@ -1932,6 +2047,34 @@ impl Interpreter {
                 } else {
                     false
                 }
+            }
+            // Buf/Blob ~~ Buf/Blob: compare byte contents
+            (
+                Value::Instance {
+                    class_name: cn_a, ..
+                },
+                Value::Instance {
+                    class_name: cn_b, ..
+                },
+            ) if {
+                let a = cn_a.resolve();
+                let b = cn_b.resolve();
+                let is_buf = |cn: &str| {
+                    cn == "Buf"
+                        || cn == "Blob"
+                        || cn == "utf8"
+                        || cn == "utf16"
+                        || cn.starts_with("Buf[")
+                        || cn.starts_with("Blob[")
+                        || cn.starts_with("buf")
+                        || cn.starts_with("blob")
+                };
+                is_buf(&a) && is_buf(&b)
+            } =>
+            {
+                let lb = crate::vm::VM::extract_buf_bytes(left);
+                let rb = crate::vm::VM::extract_buf_bytes(right);
+                lb == rb
             }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,

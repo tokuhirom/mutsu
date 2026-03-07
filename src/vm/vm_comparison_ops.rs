@@ -163,11 +163,17 @@ impl VM {
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);
         let approx_f64 = |a: f64, b: f64| -> bool {
+            let diff = (a - b).abs();
+            // Absolute tolerance: if the difference itself is below tolerance, consider equal.
+            // This handles comparisons with zero (e.g. 1e-16 ≅ 0 with tolerance 1e-15).
+            if diff < tolerance {
+                return true;
+            }
             let max_abs = a.abs().max(b.abs());
             if max_abs == 0.0 {
                 true
             } else {
-                (a - b).abs() / max_abs <= tolerance
+                diff / max_abs <= tolerance
             }
         };
         let result = approx_f64(lr, rr) && approx_f64(li, ri);
@@ -185,7 +191,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -195,17 +207,35 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Equal,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
+    }
+
+    fn buf_cmp_bytes(l: &Value, r: &Value) -> std::cmp::Ordering {
+        let lb = Self::extract_buf_bytes(l);
+        let rb = Self::extract_buf_bytes(r);
+        lb.cmp(&rb)
     }
 
     pub(super) fn exec_str_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() < r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Less,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() < r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -215,7 +245,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() > r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Greater,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() > r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -225,7 +261,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() <= r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Greater,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() <= r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -235,7 +277,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() >= r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Less,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() >= r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -362,6 +410,11 @@ impl VM {
     pub(super) fn exec_cmp_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            let ord = Self::buf_cmp_bytes(&left, &right);
+            self.stack.push(runtime::make_order(ord));
+            return;
+        }
         let (left, right) = self
             .coerce_numeric_bridge_pair(left.clone(), right.clone())
             .unwrap_or((left, right));

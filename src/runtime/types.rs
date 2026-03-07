@@ -62,6 +62,22 @@ fn is_coercion_constraint(constraint: &str) -> bool {
     bytes.last() == Some(&b')') && bytes.contains(&b'(') && !bytes.contains(&b'[')
 }
 
+pub(crate) fn coerce_impossible_error(target: &str, got: &Value) -> RuntimeError {
+    let msg = format!(
+        "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
+        super::value_type_name(got),
+        target
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("from".to_string(), got.clone());
+    attrs.insert("to".to_string(), Value::str(target.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Coerce::Impossible"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Coerce a value to the target type.
 fn coerce_value(target: &str, value: Value) -> Value {
     let base_target = if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_")
@@ -87,6 +103,8 @@ fn coerce_value(target: &str, value: Value) -> Value {
             _ => value,
         },
         "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
+        "Array" | "List" => crate::runtime::utils::coerce_to_array(value),
+        "Hash" => crate::runtime::utils::coerce_to_hash(value),
         "Rat" => {
             match &value {
                 Value::Rat(_, _) => value,
@@ -172,6 +190,7 @@ fn named_values_from_unpack_target(value: &Value) -> std::collections::HashMap<S
         Value::Hash(map) => (**map).clone(),
         Value::Pair(key, val) => {
             let mut out = std::collections::HashMap::new();
+            out.insert(key.clone(), *val.clone());
             out.insert("key".to_string(), Value::str(key.clone()));
             out.insert("value".to_string(), *val.clone());
             out
@@ -187,7 +206,15 @@ fn extract_named_from_unpack_target(
     name: &str,
 ) -> Option<Value> {
     let named = named_values_from_unpack_target(value);
+    let lookup_name = name
+        .strip_prefix('$')
+        .or_else(|| name.strip_prefix('@'))
+        .or_else(|| name.strip_prefix('%'))
+        .unwrap_or(name);
     if let Some(v) = named.get(name) {
+        return Some(v.clone());
+    }
+    if let Some(v) = named.get(lookup_name) {
         return Some(v.clone());
     }
     interpreter
@@ -348,6 +375,17 @@ fn bind_sub_signature_from_value(
             }
             continue;
         };
+        if let Value::Pair(key, inner) = &candidate {
+            let bind_name = sub_pd
+                .name
+                .strip_prefix('$')
+                .or_else(|| sub_pd.name.strip_prefix('@'))
+                .or_else(|| sub_pd.name.strip_prefix('%'))
+                .unwrap_or(sub_pd.name.as_str());
+            if sub_pd.named || bind_name == key {
+                candidate = *inner.clone();
+            }
+        }
         if let Some(constraint) = &sub_pd.type_constraint {
             if let Some((_target, source)) = parse_coercion_type(constraint) {
                 if let Some(src) = source
@@ -382,7 +420,8 @@ fn bind_sub_signature_from_value(
     }
     // If there are unconsumed positional elements and no slurpy param, error
     let has_slurpy = sub_params.iter().any(|p| p.slurpy);
-    if !has_slurpy && nested_positional_idx < positional.len() {
+    let has_positional_params = sub_params.iter().any(|p| !p.named && !p.slurpy);
+    if has_positional_params && !has_slurpy && nested_positional_idx < positional.len() {
         return Err(RuntimeError::new(
             "Too many positional arguments in sub-signature binding".to_string(),
         ));
@@ -1037,6 +1076,32 @@ impl Interpreter {
         {
             return true;
         }
+        // Buf/Blob type hierarchy:
+        // Blob is the immutable base; Buf extends Blob (mutable)
+        // utf8 is a subtype of Blob
+        // buf8/buf16/buf32/buf64 are subtypes of Buf (and transitively Blob)
+        // blob8/blob16/blob32/blob64 are subtypes of Blob
+        if constraint == "Blob"
+            && matches!(
+                value_type,
+                "Buf"
+                    | "utf8"
+                    | "utf16"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+            )
+        {
+            return true;
+        }
+        if constraint == "Buf" && matches!(value_type, "buf8" | "buf16" | "buf32" | "buf64") {
+            return true;
+        }
         false
     }
 
@@ -1046,6 +1111,12 @@ impl Interpreter {
             || self.roles.contains_key(name)
             || self.enum_types.contains_key(name)
             || self.subsets.contains_key(name)
+            || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
+                self.classes.contains_key(&base)
+                    || self.roles.contains_key(&base)
+                    || self.enum_types.contains_key(&base)
+                    || self.subsets.contains_key(&base)
+            })
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
@@ -1152,7 +1223,7 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
         if let Some(role) = role {
-            for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+            for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                 role.attributes.iter().enumerate()
             {
                 let value = if let Some(arg) = role_args.get(idx) {
@@ -1191,6 +1262,12 @@ impl Interpreter {
         if constraint == "Variable" && varref_from_value(value).is_some() {
             return true;
         }
+        if let Value::Enum { enum_type, .. } = value {
+            let enum_name = enum_type.resolve();
+            if constraint == enum_name || Self::type_matches(constraint, &enum_name) {
+                return true;
+            }
+        }
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
             let package_base = package_name.split('[').next().unwrap_or(package_name);
             let (package_base, _) = strip_type_smiley(package_base);
@@ -1224,6 +1301,13 @@ impl Interpreter {
             };
         }
         if let Value::Package(package_name) = value
+            && let Some((pkg_target, pkg_source)) = parse_coercion_type(&package_name.resolve())
+            && (Self::type_matches(constraint, pkg_target)
+                || pkg_source.is_some_and(|src| Self::type_matches(constraint, src)))
+        {
+            return true;
+        }
+        if let Value::Package(package_name) = value
             && let Some((target, source)) = parse_coercion_type(constraint)
         {
             let pkg_resolved = package_name.resolve();
@@ -1252,8 +1336,7 @@ impl Interpreter {
                     }
                     return false;
                 }
-                "Buf" | "Blob" | "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16"
-                | "blob32" | "blob64" => {
+                "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
                     if let Value::Instance { class_name, .. } = value {
                         let cn = class_name.resolve();
                         if cn == "Buf"
@@ -1280,6 +1363,33 @@ impl Interpreter {
                                 false
                             }
                         });
+                    }
+                    return false;
+                }
+                "Buf" | "Blob" => {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = value
+                    {
+                        let class = class_name.resolve();
+                        let class_ok = if base == "Buf" {
+                            class == "Buf" || class.starts_with("Buf[") || class.starts_with("buf")
+                        } else {
+                            class == "Blob"
+                                || class == "Buf"
+                                || class.starts_with("Blob[")
+                                || class.starts_with("blob")
+                                || class.starts_with("Buf[")
+                                || class.starts_with("buf")
+                        };
+                        if !class_ok {
+                            return false;
+                        }
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            return items.iter().all(|v| self.type_matches_value(inner, v));
+                        }
                     }
                     return false;
                 }
@@ -1444,6 +1554,19 @@ impl Interpreter {
             if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
             }
+            // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
+            let cn = class_name.resolve();
+            if (constraint == "Buf" || constraint == "Blob")
+                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+            {
+                // Buf constraint accepts any Buf-like, Blob constraint accepts any Blob-like
+                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(&cn) {
+                    return true;
+                }
+                if constraint == "Blob" {
+                    return true; // All Buf/Blob types are Blob (Buf inherits Blob)
+                }
+            }
             // Check parent classes of the instance
             if let Some(class_def) = self.classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {
@@ -1548,7 +1671,8 @@ impl Interpreter {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
                         let mut named = std::collections::HashMap::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if let Value::Pair(key, val) = arg {
                                 named.insert(key, *val);
@@ -1561,7 +1685,8 @@ impl Interpreter {
                         // For single-star slurpy (*@), flatten list arguments but preserve
                         // itemized Arrays ($[...] / .item) as single positional values.
                         let mut items = Vec::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &arg
@@ -1575,8 +1700,9 @@ impl Interpreter {
                         Some(Value::real_array(items))
                     }
                 } else if is_subsig_capture {
+                    let remaining = args.get(i..).unwrap_or(&[]);
                     Some(sub_signature_target_from_remaining_args(
-                        &args[i..]
+                        &remaining
                             .iter()
                             .cloned()
                             .map(unwrap_varref_value)
@@ -1675,6 +1801,12 @@ impl Interpreter {
                         // Coercion source-type validation is deferred until bind time.
                         return false;
                     }
+                }
+                if pd.name.starts_with('&')
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !self.type_matches_value("Callable", arg)
+                {
+                    return false;
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {
@@ -2274,7 +2406,7 @@ impl Interpreter {
                                 captured_name.to_string(),
                                 Self::captured_type_object(&value),
                             );
-                        } else if let Some((_target, source)) = parse_coercion_type(constraint) {
+                        } else if let Some((target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
@@ -2295,7 +2427,11 @@ impl Interpreter {
                                 err.exception = Some(Box::new(exception));
                                 return Err(err);
                             }
+                            let original = value.clone();
                             value = self.try_coerce_value_for_constraint(constraint, value)?;
+                            if !self.type_matches_value(target, &value) {
+                                return Err(coerce_impossible_error(constraint, &original));
+                            }
                         } else if pd.name.starts_with('@') {
                             let ok = match &value {
                                 Value::Array(items, ..) => {
@@ -2603,24 +2739,56 @@ impl Interpreter {
                 vec![],
                 Some(value.clone()),
             )?;
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|c| c == "Str")
+            && let Some(inner) = attributes.get("value").cloned()
+            && !matches!(inner, Value::Nil)
+            && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)
+            && self.type_matches_value(base_target, &coerced)
+        {
             return Ok(coerced);
         }
-        let result = coerce_value(target, value.clone());
-        if std::mem::discriminant(&result) == std::mem::discriminant(&value) {
-            if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
-                return Ok(coerced);
-            }
-            if self.classes.contains_key(base_target)
-                && let Ok(coerced) = self.call_method_with_values(
-                    Value::Package(Symbol::intern(base_target)),
-                    "COERCE",
-                    vec![value],
-                )
-            {
-                return Ok(coerced);
-            }
+        if let Some(variants) = self.enum_types.get(base_target).cloned()
+            && let Some(enum_value) =
+                self.coerce_to_enum_variant(base_target, &variants, value.clone())
+        {
+            return Ok(enum_value);
         }
-        Ok(result)
+        let result = coerce_value(target, value.clone());
+        if self.type_matches_value(base_target, &result) {
+            return Ok(result);
+        }
+        if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
+        if self.classes.contains_key(base_target)
+            && let Ok(coerced) = self.call_method_with_values(
+                Value::Package(Symbol::intern(base_target)),
+                "COERCE",
+                vec![value.clone()],
+            )
+        {
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
+        Err(coerce_impossible_error(target, &value))
     }
 
     pub(crate) fn coerce_value_for_constraint(&mut self, constraint: &str, value: Value) -> Value {

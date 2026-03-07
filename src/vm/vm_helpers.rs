@@ -989,6 +989,11 @@ impl VM {
                 || self.interpreter.type_matches_value("Numeric", target)
                 || matches!(target, Value::Instance { class_name, .. }
                     if self.interpreter.has_user_method(&class_name.resolve(), "Bridge")));
+        let method_name = method_sym.resolve();
+        let bypass_runtime_native_instance_fastpath = matches!(target, Value::Instance { class_name, .. }
+                if self
+                    .interpreter
+                    .is_native_method(&class_name.resolve(), &method_name));
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
@@ -1001,6 +1006,7 @@ impl VM {
             || bypass_pickroll_type_fastpath
             || bypass_squish_fastpath
             || bypass_numeric_bridge_instance_fastpath
+            || bypass_runtime_native_instance_fastpath
             || bypass_proxy
         {
             return None;
@@ -1658,7 +1664,7 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         // Build the base (self) value
-        let base = if let Some(inv) = invocant {
+        let mut base = if let Some(inv) = invocant {
             inv
         } else if attributes.is_empty() {
             Value::Package(crate::symbol::Symbol::intern(receiver_class_name))
@@ -1770,17 +1776,59 @@ impl VM {
                             captured_name.to_string(),
                             crate::runtime::Interpreter::captured_type_object(&base),
                         );
-                    } else if !self.interpreter.type_matches_value(constraint, &base) {
-                        self.interpreter.pop_method_class();
-                        self.stack.truncate(saved_stack_depth);
-                        let frame = self.pop_call_frame();
-                        *self.interpreter.env_mut() = frame.saved_env;
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                            param_name,
-                            constraint,
-                            crate::runtime::value_type_name(&base)
-                        )));
+                    } else {
+                        let coercion_target = if let Some(open) = constraint.find('(') {
+                            if constraint.ends_with(')') && open > 0 {
+                                Some(&constraint[..open])
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let expected = coercion_target.unwrap_or(constraint.as_str());
+                        if coercion_target.is_some() {
+                            let mut candidate = self
+                                .interpreter
+                                .try_coerce_value_for_constraint(constraint, base.clone())
+                                .unwrap_or_else(|_| base.clone());
+                            if !self.interpreter.type_matches_value(expected, &candidate)
+                                && let Ok(coerced) = self.interpreter.call_method_with_values(
+                                    base.clone(),
+                                    expected,
+                                    vec![],
+                                )
+                            {
+                                candidate = coerced;
+                            }
+                            if self.interpreter.type_matches_value(expected, &candidate) {
+                                base = candidate;
+                                self.interpreter
+                                    .env_mut()
+                                    .insert("self".to_string(), base.clone());
+                            }
+                        } else if !self.interpreter.type_matches_value(constraint, &base)
+                            && let Ok(coerced) = self
+                                .interpreter
+                                .try_coerce_value_for_constraint(constraint, base.clone())
+                        {
+                            base = coerced;
+                            self.interpreter
+                                .env_mut()
+                                .insert("self".to_string(), base.clone());
+                        }
+                        if !self.interpreter.type_matches_value(expected, &base) {
+                            self.interpreter.pop_method_class();
+                            self.stack.truncate(saved_stack_depth);
+                            let frame = self.pop_call_frame();
+                            *self.interpreter.env_mut() = frame.saved_env;
+                            return Err(RuntimeError::new(format!(
+                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                                param_name,
+                                constraint,
+                                crate::runtime::value_type_name(&base)
+                            )));
+                        }
                     }
                 }
                 self.interpreter

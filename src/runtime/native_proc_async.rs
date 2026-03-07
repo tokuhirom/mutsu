@@ -382,7 +382,18 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Buf" => {
+                    } if {
+                        let cn = class_name.resolve();
+                        cn == "Buf"
+                            || cn == "Blob"
+                            || cn == "utf8"
+                            || cn == "utf16"
+                            || cn.starts_with("buf")
+                            || cn.starts_with("blob")
+                            || cn.starts_with("Buf[")
+                            || cn.starts_with("Blob[")
+                    } =>
+                    {
                         if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                             items
                                 .iter()

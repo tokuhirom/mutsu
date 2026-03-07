@@ -593,6 +593,107 @@ impl Interpreter {
         }
     }
 
+    fn is_buf_value(val: &Value) -> bool {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } else {
+            false
+        }
+    }
+
+    fn extract_buf_bytes(val: &Value) -> Vec<u8> {
+        if let Value::Instance { attributes, .. } = val
+            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        {
+            items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(n) => *n as u8,
+                    _ => 0,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn buf_class_name(val: &Value) -> Option<String> {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            if cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+            {
+                return Some(cn.to_string());
+            }
+        }
+        None
+    }
+
+    fn str_bitwise_op(
+        left: &Value,
+        right: &Value,
+        op: fn(u8, u8) -> u8,
+        pad_to_max: bool,
+    ) -> Result<Value, RuntimeError> {
+        let left_is_buf = Self::is_buf_value(left);
+        let right_is_buf = Self::is_buf_value(right);
+        let any_buf = left_is_buf || right_is_buf;
+        let lb = if left_is_buf {
+            Self::extract_buf_bytes(left)
+        } else {
+            crate::runtime::utils::coerce_to_str(left)
+                .as_bytes()
+                .to_vec()
+        };
+        let rb = if right_is_buf {
+            Self::extract_buf_bytes(right)
+        } else {
+            crate::runtime::utils::coerce_to_str(right)
+                .as_bytes()
+                .to_vec()
+        };
+        let len = if pad_to_max {
+            lb.len().max(rb.len())
+        } else {
+            lb.len().min(rb.len())
+        };
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            let a = lb.get(i).copied().unwrap_or(0);
+            let b = rb.get(i).copied().unwrap_or(0);
+            out.push(op(a, b));
+        }
+        if any_buf {
+            let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            let result_type = match (Self::buf_class_name(left), Self::buf_class_name(right)) {
+                (Some(l), Some(r)) if l == r => l,
+                _ => "Buf".to_string(),
+            };
+            Ok(Value::make_instance(
+                crate::symbol::Symbol::intern(&result_type),
+                attrs,
+            ))
+        } else {
+            Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
+        }
+    }
+
     fn shift_left_i64(a: i64, b: i64) -> Value {
         if b < 0 {
             let shift = b.unsigned_abs();
@@ -812,11 +913,28 @@ impl Interpreter {
                 }
             }
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => Ok(Value::str(format!(
-                "{}{}",
-                crate::runtime::utils::coerce_to_str(left),
-                crate::runtime::utils::coerce_to_str(right)
-            ))),
+            "~" => {
+                // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
+                if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    let result_class = if let Value::Instance { class_name, .. } = left {
+                        *class_name
+                    } else {
+                        crate::symbol::Symbol::intern("Buf")
+                    };
+                    let mut bytes = crate::vm::VM::extract_buf_bytes(left);
+                    bytes.extend(crate::vm::VM::extract_buf_bytes(right));
+                    let byte_vals: Vec<Value> =
+                        bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
+                    return Ok(Value::make_instance(result_class, attrs));
+                }
+                Ok(Value::str(format!(
+                    "{}{}",
+                    crate::runtime::utils::coerce_to_str(left),
+                    crate::runtime::utils::coerce_to_str(right)
+                )))
+            }
             "&&" | "and" => {
                 if !left.truthy() {
                     Ok(left.clone())
@@ -1070,40 +1188,9 @@ impl Interpreter {
                     values: std::sync::Arc::new(vals),
                 })
             }
-            "~|" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let max_len = ls.len().max(rs.len());
-                let mut out = Vec::with_capacity(max_len);
-                for i in 0..max_len {
-                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
-                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
-                    out.push(lb | rb);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "~^" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let max_len = ls.len().max(rs.len());
-                let mut out = Vec::with_capacity(max_len);
-                for i in 0..max_len {
-                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
-                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
-                    out.push(lb ^ rb);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "~&" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let min_len = ls.len().min(rs.len());
-                let mut out = Vec::with_capacity(min_len);
-                for i in 0..min_len {
-                    out.push(ls.as_bytes()[i] & rs.as_bytes()[i]);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
+            "~|" => Self::str_bitwise_op(left, right, |a, b| a | b, true),
+            "~^" => Self::str_bitwise_op(left, right, |a, b| a ^ b, true),
+            "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, true),
             "+<" => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Self::shift_left_i64(*a, *b)),
                 _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),

@@ -34,6 +34,7 @@ fn print_help(program: &str) {
     println!("Options:");
     println!("  -e CODE        Evaluate CODE");
     println!("  -I PATH        Add PATH to the module search path");
+    println!("  -M MODULE      use MODULE before executing program (repeatable)");
     println!("  --dump-ast     Dump the AST instead of executing");
     println!("  --doc          Render Pod documentation from the source");
     println!("  --repl         Start the interactive REPL");
@@ -53,6 +54,7 @@ fn main() {
     let mut repl_flag = false;
     let mut no_precomp = false;
     let mut lib_paths: Vec<String> = Vec::new();
+    let mut preload_modules: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
     let mut iter = args[1..].iter();
     while let Some(arg) = iter.next() {
@@ -79,6 +81,19 @@ fn main() {
             }
         } else if let Some(path_suffix) = arg.strip_prefix("-I") {
             lib_paths.push(path_suffix.to_string());
+        } else if arg == "-M" {
+            if let Some(module) = iter.next() {
+                preload_modules.push(module.clone());
+            } else {
+                eprintln!("Usage: {} -M <module>", args[0]);
+                std::process::exit(1);
+            }
+        } else if let Some(module) = arg.strip_prefix("-M") {
+            if module.is_empty() {
+                eprintln!("Usage: {} -M <module>", args[0]);
+                std::process::exit(1);
+            }
+            preload_modules.push(module.to_string());
         } else {
             filtered_args.push(arg.clone());
         }
@@ -163,11 +178,18 @@ fn main() {
     for path in lib_paths {
         interpreter.add_lib_path(path);
     }
+    for module in preload_modules {
+        if let Err(err) = interpreter.use_module(&module) {
+            print_error("Runtime error", &err);
+            std::process::exit(1);
+        }
+    }
     interpreter.set_program_path(&program_name);
     match interpreter.run(&input) {
         Ok(_output) => {
             // Output is written directly to stdout during execution.
             // Subtest-indented output is also flushed here.
+            interpreter.flush_all_handles();
             let code = interpreter.exit_code();
             if code != 0 {
                 std::process::exit(code as i32);
@@ -175,6 +197,7 @@ fn main() {
         }
         Err(err) => {
             print_error("Runtime error", &err);
+            interpreter.flush_all_handles();
             let code = interpreter.exit_code();
             std::process::exit(if code != 0 { code as i32 } else { 1 });
         }

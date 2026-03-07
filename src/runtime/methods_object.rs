@@ -139,7 +139,7 @@ impl Interpreter {
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     self.env.insert(param_name.clone(), type_arg.clone());
                 }
-                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -638,6 +638,7 @@ impl Interpreter {
                         self.make_io_path_instance(&canonical_prefix),
                     );
                     attrs.insert("short-id".to_string(), Value::str_from("file"));
+                    attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(false));
                     let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);
@@ -795,7 +796,8 @@ impl Interpreter {
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
-                    let byte_vals: Vec<Value> = args
+                    let cn = class_name.resolve();
+                    let raw_vals: Vec<Value> = args
                         .iter()
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
@@ -823,15 +825,28 @@ impl Interpreter {
                                     Vec::new()
                                 }
                             }
-                            _ => vec![],
+                            other => vec![Value::Int(to_int(other))],
                         })
                         .collect();
-                    let is_blob = class_name.resolve().starts_with("Blob")
-                        || class_name.resolve().starts_with("blob");
-                    let type_name = if is_blob { "Blob" } else { "Buf" }.to_string();
+                    // Mask values to unsigned range based on element size
+                    let byte_vals: Vec<Value> = raw_vals
+                        .into_iter()
+                        .map(|v| {
+                            let i = to_int(&v);
+                            if cn.contains("64") {
+                                Value::Int(i as u64 as i64)
+                            } else if cn.contains("32") {
+                                Value::Int(i as u32 as i64)
+                            } else if cn.contains("16") {
+                                Value::Int(i as u16 as i64)
+                            } else {
+                                Value::Int(i as u8 as i64)
+                            }
+                        })
+                        .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern(&type_name), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Rat" => {
                     let a = match args.first() {
@@ -1134,7 +1149,7 @@ impl Interpreter {
 
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
-                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -1210,7 +1225,7 @@ impl Interpreter {
                         _ => None,
                     })
                     .collect();
-                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                     &class_attrs_info
                 {
                     if let Some(reason) = is_required {
@@ -1229,7 +1244,7 @@ impl Interpreter {
                 // Build a sigil map for later coercion
                 let sigil_map: HashMap<String, char> = class_attrs_info
                     .iter()
-                    .map(|(name, _, _, _, _, sigil)| (name.clone(), *sigil))
+                    .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
                     .collect();
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
@@ -1257,6 +1272,7 @@ impl Interpreter {
                         }
                     }
                 }
+                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 let int_ctor_val =
                     if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
                         return Err(RuntimeError::new("Cannot convert type object to Int"));
@@ -1294,7 +1310,7 @@ impl Interpreter {
                         self.env.insert(name.clone(), value.clone());
                     }
                 }
-                for (attr_name, _is_public, default, _is_rw, _is_required, sigil) in
+                for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
                     class_attrs_info.clone()
                 {
                     if attrs.contains_key(&attr_name) {
@@ -1313,10 +1329,15 @@ impl Interpreter {
                         let val = result?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else {
-                        Value::Nil
+                        match sigil {
+                            '@' => Value::real_array(Vec::new()),
+                            '%' => Value::hash(HashMap::new()),
+                            _ => Value::Nil,
+                        }
                     };
                     attrs.insert(attr_name, val);
                 }
+                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 // Restore env after default evaluation
                 self.env = saved_default_env.clone();
                 let class_def = self.classes.get(class_key);
@@ -1337,7 +1358,7 @@ impl Interpreter {
                     )?;
                     attrs = updated;
                     // After BUILD runs, check required attributes that BUILD didn't set
-                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
                     {
                         if let Some(reason) = is_required {
@@ -1352,6 +1373,7 @@ impl Interpreter {
                             }
                         }
                     }
+                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 }
                 if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let tweak_args = if has_direct_tweak {
@@ -1367,6 +1389,7 @@ impl Interpreter {
                         Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
+                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
@@ -1464,6 +1487,44 @@ impl Interpreter {
         }
     }
 
+    fn check_attribute_where_constraint(&mut self, pred: &Expr, value: &Value) -> bool {
+        let pred_val = match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        match self.call_sub_value(pred_val, vec![value.clone()], false) {
+            Ok(result) => result.truthy(),
+            Err(_) => false,
+        }
+    }
+
+    fn enforce_attribute_where_constraints(
+        &mut self,
+        class_attrs_info: &[ClassAttributeDef],
+        attrs: &HashMap<String, Value>,
+    ) -> Result<(), RuntimeError> {
+        for (attr_name, _is_public, _default, _is_rw, _is_required, _sigil, where_constraint) in
+            class_attrs_info
+        {
+            let Some(pred) = where_constraint else {
+                continue;
+            };
+            let Some(value) = attrs.get(attr_name) else {
+                continue;
+            };
+            if matches!(value, Value::Nil) {
+                continue;
+            }
+            if !self.check_attribute_where_constraint(pred, value) {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to $!{}; where constraint failed",
+                    attr_name
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Construct a Proxy subclass instance: extracts FETCH/STORE from args,
     /// initializes subclass attributes (with defaults), and returns a Proxy
     /// with shared mutable subclass attrs.
@@ -1490,7 +1551,8 @@ impl Interpreter {
 
         // Initialize subclass attributes with defaults
         let class_attrs_info = self.collect_class_attributes(class_name);
-        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil) in &class_attrs_info
+        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil, _) in
+            &class_attrs_info
         {
             if !extra_attrs.contains_key(attr_name) {
                 let default_val = if let Some(expr) = default_expr {
@@ -1506,6 +1568,7 @@ impl Interpreter {
                 extra_attrs.insert(attr_name.clone(), default_val);
             }
         }
+        self.enforce_attribute_where_constraints(&class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
         Ok(Value::Proxy {

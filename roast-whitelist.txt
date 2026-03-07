@@ -148,6 +148,7 @@ roast/S03-smartmatch/array-array.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
 roast/S03-smartmatch/capture-signature.t
+roast/S03-smartmatch/hash-hash.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
@@ -229,6 +230,7 @@ roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
 roast/S05-modifier/repetition-exhaustive.t
+roast/S05-modifier/repetition.t
 roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t
 roast/S05-substitution/67222.t
@@ -315,6 +317,7 @@ roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
 roast/S12-coercion/coercion-return.t
+roast/S12-coercion/coercion-types.t
 roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
 roast/S12-construction/named-params-in-BUILD.t
@@ -535,6 +538,7 @@ roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-hash/slice.t
+roast/S32-io/IO-Socket-Async.t
 roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t

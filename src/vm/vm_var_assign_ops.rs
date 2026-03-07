@@ -128,6 +128,111 @@ impl VM {
         }
     }
 
+    fn coerce_typed_container_assignment(
+        &mut self,
+        var_name: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let coercion_target = |constraint: &str| -> Option<String> {
+            if let Some(open) = constraint.find('(')
+                && constraint.ends_with(')')
+            {
+                let target = &constraint[..open];
+                if !target.is_empty() {
+                    return Some(target.to_string());
+                }
+            }
+            None
+        };
+        if var_name.starts_with('@')
+            && let Some(constraint) = self.interpreter.var_type_constraint(var_name)
+            && let Value::Array(items, kind) = value
+        {
+            let mut coerced_items = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                if matches!(item, Value::Nil) {
+                    coerced_items.push(item.clone());
+                    continue;
+                }
+                let target_type =
+                    coercion_target(&constraint).unwrap_or_else(|| constraint.clone());
+                let coerced = if self.interpreter.type_matches_value(&target_type, item) {
+                    item.clone()
+                } else {
+                    self.interpreter
+                        .try_coerce_value_for_constraint(&constraint, item.clone())?
+                };
+                if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        var_name,
+                        &constraint,
+                        item,
+                    )));
+                }
+                coerced_items.push(coerced);
+            }
+            return Ok(Value::Array(Arc::new(coerced_items), kind));
+        }
+
+        if var_name.starts_with('%')
+            && let Value::Hash(map) = value
+        {
+            let value_constraint = self.interpreter.var_type_constraint(var_name);
+            let key_constraint = self.interpreter.var_hash_key_constraint(var_name);
+            let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
+            for (key, val) in map.iter() {
+                let coerced_key = if let Some(constraint) = &key_constraint {
+                    let key_value = Value::str(key.clone());
+                    let target_type =
+                        coercion_target(constraint).unwrap_or_else(|| constraint.clone());
+                    let coerced = if self
+                        .interpreter
+                        .type_matches_value(&target_type, &key_value)
+                    {
+                        key_value.clone()
+                    } else {
+                        self.interpreter
+                            .try_coerce_value_for_constraint(constraint, key_value.clone())?
+                    };
+                    if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                        return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                            var_name, constraint, &key_value,
+                        )));
+                    }
+                    coerced.to_string_value()
+                } else {
+                    key.clone()
+                };
+                let coerced_val = if let Some(constraint) = &value_constraint {
+                    if matches!(val, Value::Nil) {
+                        val.clone()
+                    } else {
+                        let target_type =
+                            coercion_target(constraint).unwrap_or_else(|| constraint.clone());
+                        let coerced = if self.interpreter.type_matches_value(&target_type, val) {
+                            val.clone()
+                        } else {
+                            self.interpreter
+                                .try_coerce_value_for_constraint(constraint, val.clone())?
+                        };
+                        if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                            return Err(RuntimeError::new(
+                                runtime::utils::type_check_element_error(var_name, constraint, val),
+                            ));
+                        }
+                        coerced
+                    }
+                } else {
+                    val.clone()
+                };
+                coerced_map.insert(coerced_key, coerced_val);
+            }
+            return Ok(Value::hash(coerced_map));
+        }
+
+        Ok(value)
+    }
+
     fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
         match idx {
             Value::Range(a, b) => {
@@ -186,15 +291,28 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_string_concat_op(&mut self, n: u32) {
+    pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
+            // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
+            // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
+            if let Value::Instance { attributes, .. } = &v
+                && Self::is_buf_value(&v)
+                && attributes.contains_key("bytes")
+            {
+                let str_result = self
+                    .interpreter
+                    .call_method_with_values(v, "Str", Vec::new())?;
+                result.push_str(&str_result.to_string_value());
+                continue;
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
+        Ok(())
     }
 
     pub(super) fn exec_post_increment_op(
@@ -810,7 +928,12 @@ impl VM {
                     } else {
                         format!("${key}")
                     };
-                    let fq = format!("{}::{}", package.trim_end_matches("::"), key_name);
+                    let pkg = package.trim_end_matches("::");
+                    let fq = if pkg.is_empty() || pkg == "GLOBAL" {
+                        key_name
+                    } else {
+                        format!("{pkg}::{key_name}")
+                    };
                     self.interpreter.env_mut().insert(fq, val.clone());
                 }
                 self.stack.push(val);
@@ -837,6 +960,21 @@ impl VM {
                 self.stack.push(val);
                 return Ok(());
             }
+        }
+        let atomic_name = name.strip_prefix('$').unwrap_or(&name);
+        let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+        let is_atomic_int = self.interpreter.var_type_constraint(&name).as_deref()
+            == Some("atomicint")
+            || self.interpreter.var_type_constraint(atomic_name).as_deref() == Some("atomicint")
+            || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+        if is_atomic_int {
+            let fetched = self.interpreter.call_function(
+                "__mutsu_atomic_fetch_var",
+                vec![Value::str(atomic_name.to_string())],
+            )?;
+            self.locals[idx] = fetched.clone();
+            self.stack.push(fetched);
+            return Ok(());
         }
         let val = self.locals[idx].clone();
         // Fast path: non-Nil values are always valid — skip env lookup
@@ -926,13 +1064,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
-            match val {
+            let mut assigned = match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(val)
         };
@@ -941,6 +1102,9 @@ impl VM {
             && let Some(def) = self.interpreter.var_default(name)
         {
             val = def.clone();
+        }
+        if name.starts_with('@') || name.starts_with('%') {
+            val = self.coerce_typed_container_assignment(name, val)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
@@ -1146,13 +1310,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
-            match raw_val {
+            let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };
@@ -1160,6 +1347,9 @@ impl VM {
             && let Some(def) = self.interpreter.var_default(name)
         {
             val = def.clone();
+        }
+        if name.starts_with('@') || name.starts_with('%') {
+            val = self.coerce_typed_container_assignment(name, val)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
@@ -1261,6 +1451,9 @@ impl VM {
             entries.insert(key, val);
         }
         for (key, val) in self.interpreter.env() {
+            if self.interpreter.should_hide_from_my_global_stash(key) {
+                continue;
+            }
             let display_key = Self::add_sigil_prefix(key);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }

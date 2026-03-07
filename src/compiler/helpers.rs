@@ -42,6 +42,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::BitShiftRight => "+>".to_string(),
         TokenKind::IntBitNeg => "+^".to_string(),
         TokenKind::BoolBitNeg => "?^".to_string(),
+        TokenKind::StrBitNeg => "~^".to_string(),
         TokenKind::PercentPercent => "%%".to_string(),
         TokenKind::BangPercentPercent => "!%%".to_string(),
         TokenKind::SlashSlash => "//".to_string(),
@@ -1839,6 +1840,17 @@ impl Compiler {
                     Stmt::Given { .. } => {
                         // given block pushes succeed value onto stack
                         self.compile_stmt(stmt);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    Stmt::Whenever { supply, .. } => {
+                        // `do whenever ...` should produce the created Tap in expression context.
+                        self.compile_stmt(stmt);
+                        if let Expr::Var(name) = supply {
+                            self.compile_expr(&Expr::Var(name.clone()));
+                        } else {
+                            self.code.emit(OpCode::LoadNil);
+                        }
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }

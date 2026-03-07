@@ -5,6 +5,13 @@ impl Interpreter {
         let Some(value) = args.first().cloned() else {
             return Ok(Value::Nil);
         };
+        if let Some(source) = match &value {
+            Value::Package(sym) => Some(sym.resolve()),
+            Value::Nil => Some("Any".to_string()),
+            _ => None,
+        } {
+            return Ok(Value::Package(Symbol::intern(&format!("{name}({source})"))));
+        }
         let coerced = match name {
             "Int" => match value {
                 Value::Int(i) => Value::Int(i),

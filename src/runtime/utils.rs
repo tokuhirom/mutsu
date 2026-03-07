@@ -10,6 +10,27 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Check if a class name represents a Buf-like type (Buf, Buf[uint8], buf8, etc.)
+pub(crate) fn is_buf_like_class(cn: &str) -> bool {
+    matches!(
+        cn,
+        "Buf" | "buf8" | "buf16" | "buf32" | "buf64" | "utf8" | "utf16"
+    ) || cn.starts_with("Buf[")
+        || cn.starts_with("buf")
+}
+
+/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8, etc.)
+pub(crate) fn is_blob_like_class(cn: &str) -> bool {
+    matches!(cn, "Blob" | "blob8" | "blob16" | "blob32" | "blob64")
+        || cn.starts_with("Blob[")
+        || cn.starts_with("blob")
+}
+
+/// Check if a class name represents any Buf or Blob type
+pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
+    is_buf_like_class(cn) || is_blob_like_class(cn)
+}
+
 /// Create a Failure value for operations on empty arrays (pop, shift, etc.)
 pub(crate) fn make_empty_array_failure(op: &str) -> Value {
     let mut ex_attrs = HashMap::new();

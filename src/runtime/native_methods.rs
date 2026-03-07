@@ -34,6 +34,54 @@ fn cancellation_map() -> &'static CancellationMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct AsyncSocketConnState {
+    pub(crate) peer_id: Option<u64>,
+    pub(crate) encoding: String,
+    pub(crate) closed: bool,
+    pub(crate) peer_closed: bool,
+    pub(crate) supply_ids: Vec<u64>,
+    pub(crate) pending_bytes: Vec<u8>,
+    pub(crate) deferred_accept_callback: Option<Value>,
+    pub(crate) deferred_accept_socket: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AsyncSocketSupplyState {
+    pub(crate) is_bin: bool,
+    pub(crate) encoding: String,
+    pub(crate) text_buffer: String,
+    pub(crate) byte_buffer: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AsyncSocketListenerState {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) callback: Value,
+    pub(crate) closed: bool,
+    pub(crate) encoding: String,
+}
+
+type AsyncSocketConnMap = std::sync::Mutex<HashMap<u64, AsyncSocketConnState>>;
+type AsyncSocketSupplyMap = std::sync::Mutex<HashMap<u64, AsyncSocketSupplyState>>;
+type AsyncSocketListenerMap = std::sync::Mutex<HashMap<u64, AsyncSocketListenerState>>;
+
+fn async_socket_conn_map() -> &'static AsyncSocketConnMap {
+    static MAP: OnceLock<AsyncSocketConnMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn async_socket_supply_map() -> &'static AsyncSocketSupplyMap {
+    static MAP: OnceLock<AsyncSocketSupplyMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn async_socket_listener_map() -> &'static AsyncSocketListenerMap {
+    static MAP: OnceLock<AsyncSocketListenerMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 /// Supply channel registry: supply_id -> Receiver for streaming data from
 /// Proc::Async stdout/stderr reader threads.
 type SupplyChannelMap = std::sync::Mutex<HashMap<u64, mpsc::Receiver<SupplyEvent>>>;
@@ -361,6 +409,7 @@ struct SupplierTapSubscription {
 struct SupplierSubscriptions {
     taps: Vec<SupplierTapSubscription>,
     done_callbacks: Vec<Value>,
+    quit_callbacks: Vec<Value>,
 }
 
 type SupplierSubscriptionsMap = std::sync::Mutex<HashMap<u64, SupplierSubscriptions>>;
@@ -393,6 +442,138 @@ fn lock_state_map() -> &'static LockStateMap {
 pub(super) fn next_supply_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn next_async_socket_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn next_async_listener_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn allocate_async_listen_port() -> u16 {
+    static COUNTER: AtomicU64 = AtomicU64::new(43000);
+    loop {
+        let candidate = COUNTER.fetch_add(1, Ordering::Relaxed) as u16;
+        let occupied = async_socket_listener_map()
+            .lock()
+            .ok()
+            .is_some_and(|map| map.values().any(|l| !l.closed && l.port == candidate));
+        if !occupied && candidate != 0 {
+            return candidate;
+        }
+    }
+}
+
+pub(super) fn register_async_listener(listener_id: u64, state: AsyncSocketListenerState) {
+    if let Ok(mut map) = async_socket_listener_map().lock() {
+        map.insert(listener_id, state);
+    }
+}
+
+pub(super) fn close_async_listener(listener_id: u64) {
+    if let Ok(mut map) = async_socket_listener_map().lock()
+        && let Some(listener) = map.get_mut(&listener_id)
+    {
+        listener.closed = true;
+    }
+}
+
+pub(super) fn lookup_async_listener(
+    host: &str,
+    port: u16,
+) -> Option<(u64, AsyncSocketListenerState)> {
+    if let Ok(map) = async_socket_listener_map().lock() {
+        for (id, listener) in map.iter() {
+            if listener.closed || listener.port != port {
+                continue;
+            }
+            if listener.host == host
+                || listener.host == "0.0.0.0"
+                || listener.host == "::"
+                || (host == "localhost" && listener.host == "127.0.0.1")
+            {
+                return Some((*id, listener.clone()));
+            }
+        }
+    }
+    None
+}
+
+pub(super) fn async_port_in_use(host: &str, port: u16) -> bool {
+    if let Ok(map) = async_socket_listener_map().lock() {
+        return map.values().any(|listener| {
+            !listener.closed
+                && listener.port == port
+                && (listener.host == host || listener.host == "0.0.0.0" || host == "0.0.0.0")
+        });
+    }
+    false
+}
+
+pub(super) fn register_async_connection(conn_id: u64, state: AsyncSocketConnState) {
+    if let Ok(mut map) = async_socket_conn_map().lock() {
+        map.insert(conn_id, state);
+    }
+}
+
+pub(super) fn get_async_connection(conn_id: u64) -> Option<AsyncSocketConnState> {
+    async_socket_conn_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&conn_id).cloned())
+}
+
+pub(super) fn update_async_connection<F>(conn_id: u64, f: F)
+where
+    F: FnOnce(&mut AsyncSocketConnState),
+{
+    if let Ok(mut map) = async_socket_conn_map().lock()
+        && let Some(state) = map.get_mut(&conn_id)
+    {
+        f(state);
+    }
+}
+
+fn take_deferred_accept_callback(conn_id: u64) -> Option<(Value, Value)> {
+    if let Ok(mut map) = async_socket_conn_map().lock()
+        && let Some(state) = map.get_mut(&conn_id)
+        && let (Some(callback), Some(socket)) = (
+            state.deferred_accept_callback.take(),
+            state.deferred_accept_socket.take(),
+        )
+    {
+        Some((callback, socket))
+    } else {
+        None
+    }
+}
+
+pub(super) fn register_async_supply(supply_id: u64, state: AsyncSocketSupplyState) {
+    if let Ok(mut map) = async_socket_supply_map().lock() {
+        map.insert(supply_id, state);
+    }
+}
+
+pub(super) fn get_async_supply(supply_id: u64) -> Option<AsyncSocketSupplyState> {
+    async_socket_supply_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&supply_id).cloned())
+}
+
+pub(super) fn update_async_supply<F>(supply_id: u64, f: F)
+where
+    F: FnOnce(&mut AsyncSocketSupplyState),
+{
+    if let Ok(mut map) = async_socket_supply_map().lock()
+        && let Some(state) = map.get_mut(&supply_id)
+    {
+        f(state);
+    }
 }
 
 pub(super) fn next_supplier_id() -> u64 {
@@ -753,6 +934,27 @@ pub(super) fn register_supplier_done_callback(supplier_id: u64, done_cb: Value) 
     }
 }
 
+pub(super) fn take_supplier_quit_callbacks(supplier_id: u64) -> Vec<Value> {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        if let Some(subs) = map.get_mut(&supplier_id) {
+            std::mem::take(&mut subs.quit_callbacks)
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    }
+}
+
+pub(super) fn register_supplier_quit_callback(supplier_id: u64, quit_cb: Value) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .quit_callbacks
+            .push(quit_cb);
+    }
+}
+
 impl Interpreter {
     pub(super) fn resolve_supply_delay_seconds(
         &self,
@@ -908,7 +1110,17 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf" || class_name == "Blob" || class_name == "utf8" => {
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+            } =>
+            {
                 if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                     return items
                         .iter()
@@ -991,6 +1203,10 @@ impl Interpreter {
             "IO::Path" => self.native_io_path(attributes, method, args),
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
+            "IO::Socket::Async" => self.native_socket_async(attributes, method, args),
+            "IO::Socket::Async::Listener" => {
+                self.native_socket_async_listener(attributes, method, args)
+            }
             "IO::Pipe" => self.native_io_pipe(attributes, method),
             "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
@@ -999,13 +1215,14 @@ impl Interpreter {
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Compiler" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),
+            "Promise::Vow" => self.native_promise_vow(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),
             "Thread" => self.native_thread(attributes, method),
             "Proc::Async" => self.native_proc_async(attributes, method, args),
             "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" => self.native_supplier(attributes, method, args),
-            "Tap" => self.native_tap(method),
+            "Tap" => self.native_tap(attributes, method),
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
                 self.native_scheduler(attributes, method, args)
             }
@@ -1054,9 +1271,26 @@ impl Interpreter {
         Ok(Some(count.max(0) as usize))
     }
 
-    fn native_tap(&self, method: &str) -> Result<Value, RuntimeError> {
+    fn native_tap(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
         match method {
-            "cancel" => Ok(Value::Nil),
+            "cancel" | "close" => {
+                if let Some(Value::Int(listener_id)) = attributes.get("listener-id") {
+                    close_async_listener(*listener_id as u64);
+                }
+                Ok(Value::Nil)
+            }
+            "socket-port" => Ok(attributes
+                .get("socket-port")
+                .cloned()
+                .unwrap_or(Value::Promise(SharedPromise::new()))),
+            "socket-host" => Ok(attributes
+                .get("socket-host")
+                .cloned()
+                .unwrap_or(Value::Promise(SharedPromise::new()))),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Tap",
                 method
@@ -1463,7 +1697,7 @@ impl Interpreter {
                     .unwrap_or(Value::str_from("Planned"));
                 if matches!(status, Value::Str(ref s) if s.as_str() == "Kept") {
                     let value = attributes.get("result").cloned().unwrap_or(Value::Nil);
-                    let result = self.call_sub_value(block, vec![value], false)?;
+                    let result = self.call_sub_value(block, vec![value], true)?;
                     Ok(self.make_promise_instance("Kept", result))
                 } else {
                     Ok(self.make_promise_instance("Planned", Value::Nil))
@@ -1471,6 +1705,67 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Promise",
+                method
+            ))),
+        }
+    }
+
+    fn native_promise_vow(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let promise = attributes
+            .get("promise")
+            .ok_or_else(|| RuntimeError::new("Promise::Vow missing promise"))?;
+        let Value::Promise(shared) = promise else {
+            return Err(RuntimeError::new("Promise::Vow promise is not a Promise"));
+        };
+        match method {
+            "keep" => {
+                let value = args.into_iter().next().unwrap_or(Value::Bool(true));
+                if let Err(_status) = shared.try_keep(value) {
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(
+                            "Access denied to keep/break this Promise; already vowed".to_string(),
+                        ),
+                    );
+                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
+                    let mut err = RuntimeError::new(
+                        "Access denied to keep/break this Promise; already vowed".to_string(),
+                    );
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+                Ok(Value::Nil)
+            }
+            "break" => {
+                let reason = args
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| Value::str_from("Died"));
+                if let Err(_status) = shared.try_break(reason) {
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(
+                            "Access denied to keep/break this Promise; already vowed".to_string(),
+                        ),
+                    );
+                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
+                    let mut err = RuntimeError::new(
+                        "Access denied to keep/break this Promise; already vowed".to_string(),
+                    );
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+                Ok(Value::Nil)
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Promise::Vow",
                 method
             ))),
         }
@@ -1591,6 +1886,8 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or(Value::array(Vec::new())),
             "pid" => attributes.get("pid").cloned().unwrap_or(Value::Nil),
+            "err" => attributes.get("err").cloned().unwrap_or(Value::Nil),
+            "out" => attributes.get("out").cloned().unwrap_or(Value::Nil),
             "Numeric" | "Int" => attributes
                 .get("exitcode")
                 .cloned()
@@ -1944,6 +2241,7 @@ impl Interpreter {
                     out_buffer_capacity: None,
                     out_buffer_pending: Vec::new(),
                     bin: false,
+                    nl_out: "\n".to_string(),
                 };
                 self.handles.insert(new_id, state);
                 let mut attrs = HashMap::new();
@@ -2073,12 +2371,483 @@ impl Interpreter {
         }
     }
 
+    fn async_socket_status_result(status: &str, result: Value, cause: Value) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("status".to_string(), Value::str_from(status));
+        attrs.insert("result".to_string(), result);
+        attrs.insert("cause".to_string(), cause);
+        Value::make_instance(Symbol::intern("IO::Socket::Async::StatusResult"), attrs)
+    }
+
+    fn async_socket_kept(result: Value) -> Value {
+        Self::async_socket_status_result("Kept", result, Value::Nil)
+    }
+
+    fn async_socket_broken(cause: Value) -> Value {
+        Self::async_socket_status_result("Broken", Value::Nil, cause)
+    }
+
+    fn async_supplier_emit_value(
+        &mut self,
+        supplier_id: u64,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        supplier_emit(supplier_id, value.clone());
+        let actions = supplier_emit_callbacks(supplier_id, &value);
+        for action in actions {
+            match action {
+                SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
+                    Self::sleep_for_supply_delay(delay_seconds);
+                    let _ = self.call_sub_value(tap, vec![emitted], true);
+                }
+                SupplierEmitAction::UniqueCheck {
+                    callback,
+                    value: val,
+                    delay_seconds,
+                    ..
+                } => {
+                    Self::sleep_for_supply_delay(delay_seconds);
+                    let _ = self.call_sub_value(callback, vec![val], true);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn async_supplier_done_value(&mut self, supplier_id: u64) {
+        supplier_done(supplier_id);
+        for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+            let _ = self.call_sub_value(tap, vec![emitted], true);
+        }
+        for done_cb in take_supplier_done_callbacks(supplier_id) {
+            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+        }
+    }
+
+    fn async_supplier_quit_value(&mut self, supplier_id: u64, reason: Value) {
+        supplier_quit(supplier_id, reason.clone());
+        for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+            let _ = self.call_sub_value(tap, vec![emitted], true);
+        }
+        for quit_cb in take_supplier_quit_callbacks(supplier_id) {
+            let _ = self.call_sub_value(quit_cb, vec![reason.clone()], true);
+        }
+        for done_cb in take_supplier_done_callbacks(supplier_id) {
+            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+        }
+    }
+
+    fn native_socket_async_listener(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "tap" | "act" => {
+                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let quit_cb = Self::named_value(&args, "quit");
+                let host = attributes
+                    .get("host")
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "0.0.0.0".to_string());
+                let requested_port = attributes
+                    .get("port")
+                    .and_then(|v| match v {
+                        Value::Int(i) => Some(*i as u16),
+                        Value::Num(n) if n.is_finite() => Some(*n as u16),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let enc = attributes
+                    .get("enc")
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "utf-8".to_string());
+                let port = if requested_port == 0 {
+                    allocate_async_listen_port()
+                } else {
+                    requested_port
+                };
+
+                let host_ok = host == "0.0.0.0"
+                    || host == "::"
+                    || host == "127.0.0.1"
+                    || host == "::1"
+                    || host == "localhost"
+                    || host.parse::<std::net::IpAddr>().is_ok();
+                if !host_ok {
+                    if let Some(q) = quit_cb.clone() {
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!("Failed to resolve '{}'", host)),
+                        );
+                        let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
+                        let _ = self.call_sub_value(q, vec![ex], true);
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                }
+
+                if async_port_in_use(&host, port) {
+                    if let Some(q) = quit_cb.clone() {
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str_from("Address already in use"),
+                        );
+                        let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
+                        let _ = self.call_sub_value(q, vec![ex], true);
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                }
+
+                let listener_id = next_async_listener_id();
+                register_async_listener(
+                    listener_id,
+                    AsyncSocketListenerState {
+                        host: host.clone(),
+                        port,
+                        callback,
+                        closed: false,
+                        encoding: enc,
+                    },
+                );
+
+                let socket_port = SharedPromise::new();
+                socket_port.keep(Value::Int(port as i64), String::new(), String::new());
+                let socket_host = SharedPromise::new();
+                socket_host.keep(Value::str(host), String::new(), String::new());
+
+                let mut tap_attrs = HashMap::new();
+                tap_attrs.insert("listener-id".to_string(), Value::Int(listener_id as i64));
+                tap_attrs.insert(
+                    "socket-port".to_string(),
+                    Value::Promise(socket_port.clone()),
+                );
+                tap_attrs.insert("socket-host".to_string(), Value::Promise(socket_host));
+                Ok(Value::make_instance(Symbol::intern("Tap"), tap_attrs))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No method '{}' on IO::Socket::Async::Listener",
+                method
+            ))),
+        }
+    }
+
+    fn native_socket_async(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let conn_id = attributes.get("conn-id").and_then(|v| match v {
+            Value::Int(i) => Some(*i as u64),
+            _ => None,
+        });
+
+        match method {
+            "socket-port" => Ok(attributes
+                .get("socket-port")
+                .cloned()
+                .unwrap_or(Value::Int(0))),
+            "peer-port" => Ok(attributes
+                .get("peer-port")
+                .cloned()
+                .unwrap_or(Value::Int(0))),
+            "socket-host" => Ok(attributes
+                .get("socket-host")
+                .cloned()
+                .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
+            "peer-host" => Ok(attributes
+                .get("peer-host")
+                .cloned()
+                .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
+            "close" => {
+                if let Some(id) = conn_id
+                    && let Some(state) = get_async_connection(id)
+                {
+                    update_async_connection(id, |conn| {
+                        conn.closed = true;
+                    });
+                    for sid in &state.supply_ids {
+                        self.async_supplier_done_value(*sid);
+                    }
+                    if let Some(peer_id) = state.peer_id
+                        && let Some(peer) = get_async_connection(peer_id)
+                    {
+                        update_async_connection(peer_id, |conn| {
+                            conn.peer_closed = true;
+                        });
+                        if let Some((callback, socket)) = take_deferred_accept_callback(peer_id) {
+                            let _ = self.call_sub_value(callback, vec![socket], true);
+                        }
+                        for sid in &peer.supply_ids {
+                            if let Some(supply) = get_async_supply(*sid)
+                                && !supply.is_bin
+                                && !supply.text_buffer.is_empty()
+                            {
+                                let _ = self.async_supplier_emit_value(
+                                    *sid,
+                                    Value::str(supply.text_buffer.clone()),
+                                );
+                                update_async_supply(*sid, |st| st.text_buffer.clear());
+                            }
+                            self.async_supplier_done_value(*sid);
+                        }
+                    }
+                }
+                Ok(Value::Nil)
+            }
+            "Supply" => {
+                let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
+                let is_bin = Self::named_bool(&args, "bin");
+                let supply_enc = Self::named_value(&args, "enc")
+                    .map(|v| v.to_string_value())
+                    .or_else(|| attributes.get("enc").map(Value::to_string_value))
+                    .unwrap_or_else(|| "utf-8".to_string());
+                let supply_id = next_supply_id();
+                register_async_supply(
+                    supply_id,
+                    AsyncSocketSupplyState {
+                        is_bin,
+                        encoding: supply_enc,
+                        text_buffer: String::new(),
+                        byte_buffer: Vec::new(),
+                    },
+                );
+                update_async_connection(id, |conn| conn.supply_ids.push(supply_id));
+
+                let mut initial_values: Vec<Value> = Vec::new();
+                let mut is_supplier_done = false;
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("live".to_string(), Value::Bool(true));
+                attrs.insert("supplier_id".to_string(), Value::Int(supply_id as i64));
+                if let Some(conn_state) = get_async_connection(id) {
+                    is_supplier_done = conn_state.closed || conn_state.peer_closed;
+                    if !conn_state.pending_bytes.is_empty() {
+                        if is_bin {
+                            let mut battrs = HashMap::new();
+                            battrs.insert(
+                                "bytes".to_string(),
+                                Value::array(
+                                    conn_state
+                                        .pending_bytes
+                                        .iter()
+                                        .map(|b| Value::Int(*b as i64))
+                                        .collect(),
+                                ),
+                            );
+                            initial_values
+                                .push(Value::make_instance(Symbol::intern("Buf"), battrs));
+                        } else if let Some(supply) = get_async_supply(supply_id) {
+                            let decoded = if supply.encoding.eq_ignore_ascii_case("utf-8") {
+                                String::from_utf8_lossy(&conn_state.pending_bytes).to_string()
+                            } else if supply.encoding.eq_ignore_ascii_case("latin-1")
+                                || supply.encoding.eq_ignore_ascii_case("iso-8859-1")
+                            {
+                                conn_state
+                                    .pending_bytes
+                                    .iter()
+                                    .map(|b| char::from_u32(*b as u32).unwrap_or('\u{FFFD}'))
+                                    .collect()
+                            } else {
+                                self.decode_with_encoding(
+                                    &conn_state.pending_bytes,
+                                    &supply.encoding,
+                                )
+                                .unwrap_or_default()
+                            };
+                            if !decoded.is_empty() {
+                                let mut start = 0usize;
+                                for (idx, ch) in decoded.char_indices() {
+                                    if ch == '\n' {
+                                        initial_values
+                                            .push(Value::str(decoded[start..=idx].to_string()));
+                                        start = idx + ch.len_utf8();
+                                    }
+                                }
+                                let tail = decoded[start..].to_string();
+                                update_async_supply(supply_id, |st| st.text_buffer = tail);
+                            }
+                        }
+                        update_async_connection(id, |conn| conn.pending_bytes.clear());
+                    }
+                }
+                if is_supplier_done
+                    && !is_bin
+                    && let Some(supply) = get_async_supply(supply_id)
+                    && !supply.text_buffer.is_empty()
+                {
+                    initial_values.push(Value::str(supply.text_buffer.clone()));
+                    update_async_supply(supply_id, |st| st.text_buffer.clear());
+                }
+                attrs.insert("values".to_string(), Value::array(initial_values));
+                if is_supplier_done {
+                    supplier_done(supply_id);
+                    attrs.insert("supplier_done".to_string(), Value::Bool(true));
+                    attrs.insert("live".to_string(), Value::Bool(false));
+                }
+                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+            }
+            "write" | "print" => {
+                let promise = SharedPromise::new();
+                let result = (|| -> Result<Value, RuntimeError> {
+                    let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
+                    let state = get_async_connection(id)
+                        .ok_or_else(|| RuntimeError::new("Unknown async socket connection"))?;
+                    if state.closed {
+                        return Ok(Self::async_socket_broken(Value::str_from(
+                            "Socket is closed",
+                        )));
+                    }
+                    let peer_id = state
+                        .peer_id
+                        .ok_or_else(|| RuntimeError::new("Peer missing"))?;
+                    let peer = get_async_connection(peer_id)
+                        .ok_or_else(|| RuntimeError::new("Unknown peer connection"))?;
+
+                    let bytes = if method == "write" {
+                        args.last()
+                            .and_then(Self::extract_bytes)
+                            .unwrap_or_else(|| {
+                                args.last()
+                                    .map(Value::to_string_value)
+                                    .unwrap_or_default()
+                                    .into_bytes()
+                            })
+                    } else {
+                        let text = args
+                            .last()
+                            .map(|v| self.render_str_value(v))
+                            .unwrap_or_default();
+                        self.encode_with_encoding(&text, &state.encoding)?
+                    };
+                    if bytes.is_empty() {
+                        return Ok(Self::async_socket_kept(Value::Bool(true)));
+                    }
+                    if peer.closed {
+                        return Ok(Self::async_socket_broken(Value::str_from(
+                            "Socket is closed",
+                        )));
+                    }
+
+                    if peer.supply_ids.is_empty() {
+                        update_async_connection(peer_id, |conn| {
+                            conn.pending_bytes.extend_from_slice(&bytes);
+                        });
+                        return Ok(Self::async_socket_kept(Value::Bool(true)));
+                    }
+
+                    for sid in &peer.supply_ids {
+                        if let Some(supply) = get_async_supply(*sid) {
+                            if supply.is_bin {
+                                let mut battrs = HashMap::new();
+                                battrs.insert(
+                                    "bytes".to_string(),
+                                    Value::array(
+                                        bytes.iter().map(|b| Value::Int(*b as i64)).collect(),
+                                    ),
+                                );
+                                let buf = Value::make_instance(Symbol::intern("Buf"), battrs);
+                                let _ = self.async_supplier_emit_value(*sid, buf);
+                            } else {
+                                let mut pending = supply.byte_buffer.clone();
+                                pending.extend_from_slice(&bytes);
+                                let (decoded, remainder) = if supply
+                                    .encoding
+                                    .eq_ignore_ascii_case("utf-8")
+                                {
+                                    match std::str::from_utf8(&pending) {
+                                        Ok(s) => (s.to_string(), Vec::new()),
+                                        Err(e) => {
+                                            if e.error_len().is_none() {
+                                                let valid = &pending[..e.valid_up_to()];
+                                                let valid_decoded = std::str::from_utf8(valid)
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                (valid_decoded, pending[e.valid_up_to()..].to_vec())
+                                            } else {
+                                                self.async_supplier_quit_value(
+                                                    *sid,
+                                                    Value::str_from(
+                                                        "Malformed UTF-8 on socket Supply",
+                                                    ),
+                                                );
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                } else if supply.encoding.eq_ignore_ascii_case("latin-1")
+                                    || supply.encoding.eq_ignore_ascii_case("iso-8859-1")
+                                {
+                                    (
+                                        pending
+                                            .iter()
+                                            .map(|b| {
+                                                char::from_u32(*b as u32).unwrap_or('\u{FFFD}')
+                                            })
+                                            .collect(),
+                                        Vec::new(),
+                                    )
+                                } else {
+                                    match self.decode_with_encoding(&pending, &supply.encoding) {
+                                        Ok(s) => (s, Vec::new()),
+                                        Err(e) => {
+                                            self.async_supplier_quit_value(
+                                                *sid,
+                                                Value::str(e.message),
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                };
+                                let mut merged = supply.text_buffer.clone();
+                                merged.push_str(&decoded);
+                                let mut start = 0usize;
+                                for (idx, ch) in merged.char_indices() {
+                                    if ch == '\n' {
+                                        let chunk = merged[start..=idx].to_string();
+                                        let _ =
+                                            self.async_supplier_emit_value(*sid, Value::str(chunk));
+                                        start = idx + ch.len_utf8();
+                                    }
+                                }
+                                let tail = merged[start..].to_string();
+                                update_async_supply(*sid, |st| {
+                                    st.text_buffer = tail;
+                                    st.byte_buffer = remainder;
+                                });
+                            }
+                        }
+                    }
+                    Ok(Self::async_socket_kept(Value::Bool(true)))
+                })();
+
+                match result {
+                    Ok(v) => promise.keep(v, String::new(), String::new()),
+                    Err(e) => promise.keep(
+                        Self::async_socket_broken(Value::str(e.message)),
+                        String::new(),
+                        String::new(),
+                    ),
+                }
+                Ok(Value::Promise(promise))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No method '{}' on IO::Socket::Async",
+                method
+            ))),
+        }
+    }
+
     /// Create a Buf instance from raw bytes
     fn make_buf(bytes: Vec<u8>) -> Value {
         let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));
-        Value::make_instance(crate::symbol::Symbol::intern("Buf"), attrs)
+        Value::make_instance(crate::symbol::Symbol::intern("Buf[uint8]"), attrs)
     }
 
     /// Extract bytes from a Buf/Blob instance or array
@@ -2088,10 +2857,17 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf"
-                || class_name == "Blob"
-                || class_name.resolve().starts_with("Buf[")
-                || class_name.resolve().starts_with("Blob[") =>
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+            } =>
             {
                 if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                     Some(

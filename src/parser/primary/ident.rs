@@ -1485,6 +1485,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             return parse_require_expr(input, rest);
         }
         "last" => {
+            if rest.trim_start().starts_with("=>") {
+                return Ok((rest, Expr::BareWord(name)));
+            }
             return Ok((
                 rest,
                 Expr::ControlFlow {
@@ -1494,6 +1497,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             ));
         }
         "next" => {
+            if rest.trim_start().starts_with("=>") {
+                return Ok((rest, Expr::BareWord(name)));
+            }
             return Ok((
                 rest,
                 Expr::ControlFlow {
@@ -1503,6 +1509,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             ));
         }
         "redo" => {
+            if rest.trim_start().starts_with("=>") {
+                return Ok((rest, Expr::BareWord(name)));
+            }
             return Ok((
                 rest,
                 Expr::ControlFlow {
