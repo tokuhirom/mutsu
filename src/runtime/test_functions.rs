@@ -1838,29 +1838,47 @@ impl Interpreter {
 
     fn test_fn_doesnt_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "doesn't-warn expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("doesn't-warn expects string code")),
-        };
         let desc = Self::positional_string(args, 1);
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
+        match program_val {
+            Value::Str(s) => {
+                let program = s.to_string();
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.set_program_path("<doesn't-warn>");
+                let _ = nested.run(&program);
+                let warn_message = nested.warn_output.clone();
+                let did_warn = !warn_message.is_empty();
+                if did_warn {
+                    let diag_msg = format!(
+                        "code must not warn but it produced a warning: {}",
+                        warn_message.trim_end()
+                    );
+                    self.emit_output(&format!("# {}\n", diag_msg));
+                }
+                self.test_ok(!did_warn, &desc, false)?;
+                Ok(Value::Bool(!did_warn))
+            }
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                let saved_warn = std::mem::take(&mut self.warn_output);
+                let _ = self.call_sub_value(program_val.clone(), vec![], false);
+                let warn_message = std::mem::replace(&mut self.warn_output, saved_warn);
+                let did_warn = !warn_message.is_empty();
+                if did_warn {
+                    let diag_msg = format!(
+                        "code must not warn but it produced a warning: {}",
+                        warn_message.trim_end()
+                    );
+                    self.emit_output(&format!("# {}\n", diag_msg));
+                }
+                self.test_ok(!did_warn, &desc, false)?;
+                Ok(Value::Bool(!did_warn))
+            }
+            _ => Err(RuntimeError::new(
+                "doesn't-warn expects string code or callable",
+            )),
         }
-        nested.set_program_path("<doesn't-warn>");
-        let result = nested.run(&program);
-        let _ = result;
-        let warn_message = nested.warn_output.clone();
-        let did_warn = !warn_message.is_empty();
-        if did_warn {
-            let diag_msg = format!(
-                "code must not warn but it produced a warning: {}",
-                warn_message.trim_end()
-            );
-            self.emit_output(&format!("# {}\n", diag_msg));
-        }
-        self.test_ok(!did_warn, &desc, false)?;
-        Ok(Value::Bool(!did_warn))
     }
 
     fn test_fn_is_eqv(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
