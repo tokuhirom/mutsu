@@ -376,6 +376,9 @@ fn interpolate_heredoc_content(content: &str) -> Expr {
 }
 
 fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
+    // Raku allows optional whitespace before the delimiter in q:to/Q:to
+    // forms, e.g. q:to /END/;
+    let input = input.trim_start_matches(' ');
     let open = input
         .chars()
         .next()
