@@ -956,6 +956,23 @@ impl Interpreter {
                 let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
                 Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()))
             }
+            "readchars" => {
+                let count = if let Some(arg) = args.first() {
+                    match Self::parse_out_buffer_size(arg) {
+                        Some(n) => Some(n),
+                        None => {
+                            return Err(RuntimeError::new(
+                                "readchars count must be a non-negative integer",
+                            ));
+                        }
+                    }
+                } else {
+                    None
+                };
+                Ok(Value::str(
+                    self.read_chars_from_handle_value(&target_val, count)?,
+                ))
+            }
             "lines" => {
                 let mut lines = Vec::new();
                 while let Some(line) = self.read_line_from_handle_value(&target_val)? {

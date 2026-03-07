@@ -250,11 +250,40 @@ impl Compiler {
                     // Raku's list repeat reevaluates call-like lhs expressions on each
                     // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
                     if Self::xx_lhs_needs_reeval(left) {
+                        let reevaluated_lhs = if let Expr::MethodCall {
+                            target,
+                            name,
+                            args,
+                            modifier,
+                            quoted,
+                        } = left.as_ref()
+                        {
+                            if matches!(target.as_ref(), Expr::Var(v) if v == "_") {
+                                let temp_name = format!(
+                                    "__mutsu_xx_target_{}",
+                                    STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                                );
+                                self.compile_expr(target);
+                                self.code.emit(OpCode::Dup);
+                                self.emit_set_named_var(&temp_name);
+                                Expr::MethodCall {
+                                    target: Box::new(Expr::Var(temp_name)),
+                                    name: *name,
+                                    args: args.clone(),
+                                    modifier: *modifier,
+                                    quoted: *quoted,
+                                }
+                            } else {
+                                (**left).clone()
+                            }
+                        } else {
+                            (**left).clone()
+                        };
                         let thunk = Expr::AnonSubParams {
                             params: Vec::new(),
                             param_defs: Vec::new(),
                             return_type: None,
-                            body: vec![Stmt::Expr((**left).clone())],
+                            body: vec![Stmt::Expr(reevaluated_lhs)],
                             is_rw: false,
                         };
                         self.compile_expr(&thunk);
@@ -2169,6 +2198,7 @@ impl Compiler {
                     || name == "pick"
                     || name == "roll"
                     || name == "take"
+                    || name == "readchars"
                     || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(
