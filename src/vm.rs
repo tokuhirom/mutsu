@@ -1310,6 +1310,7 @@ impl VM {
                 label,
                 arity,
                 collect,
+                restore_topic,
                 threaded,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
@@ -1319,6 +1320,7 @@ impl VM {
                     label: label.clone(),
                     arity: *arity,
                     collect: *collect,
+                    restore_topic: *restore_topic,
                     threaded: *threaded,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;

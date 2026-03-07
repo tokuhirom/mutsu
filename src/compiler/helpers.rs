@@ -1189,6 +1189,7 @@ impl Compiler {
             label: label.clone(),
             arity,
             collect: true,
+            restore_topic: true,
             threaded: false,
         });
         self.compile_collected_loop_body(&loop_body);

@@ -393,6 +393,7 @@ impl Compiler {
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
+                let restore_topic = param.is_none() && params.is_empty() && body.len() == 1;
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -429,6 +430,7 @@ impl Compiler {
                     label: label.clone(),
                     arity,
                     collect: false,
+                    restore_topic,
                     threaded: *mode != crate::ast::ForMode::Normal,
                 });
                 self.compile_body_with_implicit_try(&loop_body);

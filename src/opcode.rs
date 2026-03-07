@@ -376,6 +376,8 @@ pub(crate) enum OpCode {
         label: Option<String>,
         arity: u32,
         collect: bool,
+        /// Restore outer `$_` after loop execution (used by postfix/do-for semantics).
+        restore_topic: bool,
         /// When true, run the loop body in a spawned thread (race for / hyper for).
         threaded: bool,
     },
