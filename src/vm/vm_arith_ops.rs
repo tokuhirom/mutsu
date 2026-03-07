@@ -1,4 +1,5 @@
 use super::*;
+use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 impl VM {
@@ -646,12 +647,31 @@ impl VM {
             Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
         }
 
+        fn shift_left_bigint(a: num_bigint::BigInt, b: i64) -> Value {
+            if b < 0 {
+                Value::from_bigint(a >> (b.unsigned_abs() as usize))
+            } else {
+                Value::from_bigint(a << (b as usize))
+            }
+        }
+
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => shift_left_i64(a, b),
-            _ => Value::Int(0),
+            (l, r) => {
+                let a = l.to_bigint();
+                let b_big = r.to_bigint();
+                let b = b_big.to_i64().unwrap_or_else(|| {
+                    if b_big.sign() == num_bigint::Sign::Minus {
+                        i64::MIN
+                    } else {
+                        i64::MAX
+                    }
+                });
+                shift_left_bigint(a, b)
+            }
         };
         self.stack.push(result);
     }
@@ -679,12 +699,31 @@ impl VM {
             }
         }
 
+        fn shift_right_bigint(a: num_bigint::BigInt, b: i64) -> Value {
+            if b < 0 {
+                Value::from_bigint(a << (b.unsigned_abs() as usize))
+            } else {
+                Value::from_bigint(a >> (b as usize))
+            }
+        }
+
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => shift_right_i64(a, b),
-            _ => Value::Int(0),
+            (l, r) => {
+                let a = l.to_bigint();
+                let b_big = r.to_bigint();
+                let b = b_big.to_i64().unwrap_or_else(|| {
+                    if b_big.sign() == num_bigint::Sign::Minus {
+                        i64::MIN
+                    } else {
+                        i64::MAX
+                    }
+                });
+                shift_right_bigint(a, b)
+            }
         };
         self.stack.push(result);
     }
