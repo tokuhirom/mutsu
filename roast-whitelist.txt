@@ -556,6 +556,7 @@ roast/S32-io/signals.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
+roast/S32-list/create.t
 roast/S32-list/cross.t
 roast/S32-list/end.t
 roast/S32-list/first-end-k.t

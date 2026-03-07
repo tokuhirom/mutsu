@@ -509,6 +509,13 @@ impl VM {
         // Handle `is Buf/Blob/buf8/...` trait for array variables:
         // converts the array variable into a native typed buffer.
         if name.starts_with('@') {
+            if trait_name == "List" {
+                if has_arg {
+                    self.stack.pop(); // discard unsupported trait argument
+                }
+                self.interpreter.mark_readonly(name);
+                return Ok(());
+            }
             let is_buf_trait = matches!(
                 trait_name.as_str(),
                 "Buf"
