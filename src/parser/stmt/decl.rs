@@ -390,17 +390,24 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
-    // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1 :tag2`)
+    // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1, :tag2`)
     let mut rest = rest;
-    while rest.starts_with(':') && !rest.starts_with("::") {
-        let r = &rest[1..];
-        // :!name
-        let r = r.strip_prefix('!').unwrap_or(r);
-        if let Ok((r, _name)) = ident(r) {
-            // :name(expr)
-            let r = skip_balanced_parens(r);
-            let (r, _) = ws(r)?;
-            rest = r;
+    loop {
+        if rest.starts_with(':') && !rest.starts_with("::") {
+            let r = &rest[1..];
+            // :!name
+            let r = r.strip_prefix('!').unwrap_or(r);
+            if let Ok((r, _name)) = ident(r) {
+                // :name(expr)
+                let r = skip_balanced_parens(r);
+                let (r, _) = ws(r)?;
+                // Skip optional comma between tags
+                let r = r.strip_prefix(',').unwrap_or(r);
+                let (r, _) = ws(r)?;
+                rest = r;
+            } else {
+                break;
+            }
         } else {
             break;
         }

@@ -169,6 +169,125 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
+            if cn_resolved.starts_with("IO::Path::") && !self.classes.contains_key(&cn_resolved) {
+                self.classes.insert(
+                    cn_resolved.clone(),
+                    ClassDef {
+                        parents: vec!["IO::Path".to_string()],
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        native_methods: std::collections::HashSet::new(),
+                        mro: Vec::new(),
+                        attribute_types: HashMap::new(),
+                        wildcard_handles: Vec::new(),
+                    },
+                );
+            }
+            let class_key = if self.classes.contains_key(&cn_resolved) {
+                cn_resolved.as_str()
+            } else {
+                base_class_name
+            };
+            let is_io_path_like = base_class_name == "IO::Path"
+                || self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "IO::Path");
+            if is_io_path_like && !self.has_user_method(class_key, "new") {
+                let mut positional_path: Option<String> = None;
+                let mut basename_part: Option<String> = None;
+                let mut dirname_part: Option<String> = None;
+                let mut volume_part: Option<String> = None;
+                let mut cwd_attr: Option<String> = None;
+                let mut spec_attr: Option<Value> = None;
+                for arg in &args {
+                    match arg {
+                        Value::Pair(key, value) if key == "CWD" => {
+                            cwd_attr = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "SPEC" => {
+                            spec_attr = Some((**value).clone());
+                        }
+                        Value::Pair(key, value) if key == "basename" => {
+                            basename_part = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "dirname" => {
+                            dirname_part = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "volume" => {
+                            volume_part = Some(value.to_string_value());
+                        }
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if positional_path.is_none()
+                            && self
+                                .class_mro(&class_name.resolve())
+                                .iter()
+                                .any(|n| n == "IO::Path") =>
+                        {
+                            positional_path = Some(
+                                attributes
+                                    .get("path")
+                                    .map(|v| v.to_string_value())
+                                    .unwrap_or_default(),
+                            );
+                            if cwd_attr.is_none() {
+                                cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
+                            }
+                        }
+                        Value::Pair(_, _) => {}
+                        _ if positional_path.is_none() => {
+                            positional_path = Some(arg.to_string_value());
+                        }
+                        _ => {}
+                    }
+                }
+                let path = if let Some(positional) = positional_path {
+                    positional
+                } else if let Some(basename) = basename_part {
+                    let mut built = match dirname_part {
+                        Some(dirname) if !dirname.is_empty() => {
+                            if dirname.ends_with('/') || dirname.ends_with('\\') {
+                                format!("{dirname}{basename}")
+                            } else {
+                                format!("{dirname}/{basename}")
+                            }
+                        }
+                        _ => basename,
+                    };
+                    if let Some(volume) = volume_part
+                        && !volume.is_empty()
+                    {
+                        built = format!("{volume}:{built}");
+                    }
+                    built
+                } else {
+                    String::new()
+                };
+                if path.contains('\0') {
+                    return Err(RuntimeError::new(
+                        "X::IO::Null: Found null byte in pathname",
+                    ));
+                }
+                let mut attrs = HashMap::new();
+                attrs.insert("path".to_string(), Value::str(path));
+                if let Some(cwd) = cwd_attr {
+                    attrs.insert("cwd".to_string(), Value::str(cwd));
+                }
+                if cn_resolved.starts_with("IO::Path::") {
+                    let spec_name =
+                        format!("IO::Spec::{}", cn_resolved.trim_start_matches("IO::Path::"));
+                    attrs.insert(
+                        "SPEC".to_string(),
+                        Value::Package(Symbol::intern(&spec_name)),
+                    );
+                } else if let Some(spec) = spec_attr {
+                    attrs.insert("SPEC".to_string(), spec);
+                }
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             match base_class_name {
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
@@ -693,89 +812,6 @@ impl Interpreter {
                         attrs.insert("w".to_string(), Value::Bool(true));
                     }
                     return Ok(Value::make_instance(*class_name, attrs));
-                }
-                "IO::Path" => {
-                    let mut positional_path: Option<String> = None;
-                    let mut basename_part: Option<String> = None;
-                    let mut dirname_part: Option<String> = None;
-                    let mut volume_part: Option<String> = None;
-                    let mut cwd_attr: Option<String> = None;
-                    let mut spec_attr: Option<Value> = None;
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "CWD" => {
-                                cwd_attr = Some(value.to_string_value());
-                            }
-                            Value::Pair(key, value) if key == "SPEC" => {
-                                spec_attr = Some((**value).clone());
-                            }
-                            Value::Pair(key, value) if key == "basename" => {
-                                basename_part = Some(value.to_string_value());
-                            }
-                            Value::Pair(key, value) if key == "dirname" => {
-                                dirname_part = Some(value.to_string_value());
-                            }
-                            Value::Pair(key, value) if key == "volume" => {
-                                volume_part = Some(value.to_string_value());
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if positional_path.is_none() && class_name == "IO::Path" => {
-                                positional_path = Some(
-                                    attributes
-                                        .get("path")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default(),
-                                );
-                                if cwd_attr.is_none() {
-                                    cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
-                                }
-                            }
-                            Value::Pair(_, _) => {}
-                            _ if positional_path.is_none() => {
-                                positional_path = Some(arg.to_string_value());
-                            }
-                            _ => {}
-                        }
-                    }
-                    let path = if let Some(positional) = positional_path {
-                        positional
-                    } else if let Some(basename) = basename_part {
-                        let mut built = match dirname_part {
-                            Some(dirname) if !dirname.is_empty() => {
-                                if dirname.ends_with('/') || dirname.ends_with('\\') {
-                                    format!("{dirname}{basename}")
-                                } else {
-                                    format!("{dirname}/{basename}")
-                                }
-                            }
-                            _ => basename,
-                        };
-                        if let Some(volume) = volume_part
-                            && !volume.is_empty()
-                        {
-                            built = format!("{volume}:{built}");
-                        }
-                        built
-                    } else {
-                        String::new()
-                    };
-                    if path.contains('\0') {
-                        return Err(RuntimeError::new(
-                            "X::IO::Null: Found null byte in pathname",
-                        ));
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert("path".to_string(), Value::str(path));
-                    if let Some(cwd) = cwd_attr {
-                        attrs.insert("cwd".to_string(), Value::str(cwd));
-                    }
-                    if let Some(spec) = spec_attr {
-                        attrs.insert("SPEC".to_string(), spec);
-                    }
-                    return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }
                 "utf8" | "utf16" => {
                     let elems: Vec<Value> = args

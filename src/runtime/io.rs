@@ -124,11 +124,38 @@ impl Interpreter {
     }
 
     fn normalize_pod_text(parts: &[String]) -> String {
-        parts
-            .iter()
-            .flat_map(|part| part.split_whitespace())
-            .collect::<Vec<_>>()
-            .join(" ")
+        // Join all parts, then collapse runs of breaking whitespace into single spaces.
+        // Non-breaking whitespace (U+00A0, U+202F, U+2060, U+FEFF) is preserved as-is.
+        let joined = parts.join(" ");
+        let mut result = String::new();
+        let mut in_breaking_ws = false;
+        for ch in joined.chars() {
+            if Self::is_breaking_whitespace(ch) {
+                if !in_breaking_ws && !result.is_empty() {
+                    result.push(' ');
+                }
+                in_breaking_ws = true;
+            } else {
+                in_breaking_ws = false;
+                result.push(ch);
+            }
+        }
+        // Trim trailing space
+        if result.ends_with(' ') {
+            result.pop();
+        }
+        result
+    }
+
+    /// Returns true for whitespace characters that should be normalized (collapsed)
+    /// in Pod text. Non-breaking spaces (U+00A0, U+202F, U+2060, U+FEFF) are NOT
+    /// considered breaking and are preserved as-is.
+    fn is_breaking_whitespace(ch: char) -> bool {
+        matches!(
+            ch,
+            ' ' | '\t' | '\n' | '\r' | '\x0B' | '\x0C' | '\u{1680}' | '\u{180E}' | '\u{2000}'
+                ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{205F}' | '\u{3000}'
+        )
     }
 
     fn collect_pod_para(lines: &[&str], mut idx: usize) -> (Value, usize) {

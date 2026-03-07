@@ -512,6 +512,7 @@ roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
 roast/S26-documentation/10-doc-cli.t
+roast/S26-documentation/12-non-breaking-space.t
 roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/module-comment.t
 roast/S26-documentation/multiline-trailing.t
@@ -557,6 +558,7 @@ roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
+roast/S32-io/io-path-subclasses.t
 roast/S32-io/note.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
