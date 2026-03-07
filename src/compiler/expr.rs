@@ -1109,6 +1109,10 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                 }
+                // Preserve lvalue container identity for expression-context consumers
+                // (e.g. collected postfix `for` results).
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::TagContainerRef(name_idx));
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {

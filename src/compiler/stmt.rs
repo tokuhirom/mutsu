@@ -393,6 +393,7 @@ impl Compiler {
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
+                let restore_topic = param.is_none() && params.is_empty() && body.len() == 1;
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -418,6 +419,10 @@ impl Compiler {
                 };
                 let normalized_iterable = Self::normalize_for_iterable(iterable);
                 self.compile_expr(&normalized_iterable);
+                if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+                    let source_idx = self.code.add_constant(Value::str(source_name));
+                    self.code.emit(OpCode::TagContainerRef(source_idx));
+                }
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local: None,
@@ -425,6 +430,7 @@ impl Compiler {
                     label: label.clone(),
                     arity,
                     collect: false,
+                    restore_topic,
                     threaded: *mode != crate::ast::ForMode::Normal,
                 });
                 self.compile_body_with_implicit_try(&loop_body);

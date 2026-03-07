@@ -135,23 +135,13 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             },
         )));
     }
-    // Check for do { } with loop modifiers (X::Obsolete in Raku)
-    // Note: DoStmt is a generic wrapper for inline modifiers in parens (e.g. `(expr with cond)`),
-    // not the `do` keyword. Only DoBlock should trigger this error.
-    let is_do_block = matches!(&stmt, Stmt::Expr(Expr::DoBlock { .. }));
-    if is_do_block {
-        for kw in &["while", "until", "for", "given"] {
-            if keyword(kw, rest).is_some() {
-                return Err(PError::raw(
-                    format!(
-                        "X::Obsolete: Unsupported use of do...{kw}. In Raku please use: repeat...while or repeat...until."
-                    ),
-                    Some(rest.len()),
-                ));
-            }
-        }
-    }
     if let Some(r) = keyword("for", rest) {
+        if matches!(stmt, Stmt::For { .. }) {
+            return Err(PError::raw(
+                "double statement-modifying for is not allowed".to_string(),
+                Some(rest.len()),
+            ));
+        }
         let (r, _) = ws1(r)?;
         let (r, first) = expression_no_sequence(r).map_err(|err| PError {
             messages: merge_expected_messages(
@@ -195,6 +185,17 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         if r.starts_with("->") || r.starts_with('{') {
             return Ok(None);
         }
+        let loop_stmt = match stmt {
+            Stmt::Expr(expr @ Expr::AnonSubParams { .. })
+            | Stmt::Expr(expr @ Expr::Lambda { .. }) => {
+                let target = Expr::CallOn {
+                    target: Box::new(expr),
+                    args: vec![Expr::Var("_".to_string())],
+                };
+                Stmt::Expr(target)
+            }
+            other => other,
+        };
         return Ok(Some((
             r,
             Stmt::For {
@@ -202,7 +203,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 param: None,
                 param_def: Box::new(None),
                 params: Vec::new(),
-                body: vec![stmt],
+                body: vec![loop_stmt],
                 label: None,
                 mode: crate::ast::ForMode::Normal,
             },

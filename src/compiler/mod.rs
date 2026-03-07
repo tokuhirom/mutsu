@@ -232,8 +232,12 @@ impl Compiler {
     fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
         match iterable {
             Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayLiteral(items) if items.len() == 1 => match &items[0] {
                 Expr::Var(name) => Some(name.clone()),
+                Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                Expr::HashVar(name) => Some(format!("%{}", name)),
                 _ => None,
             },
             _ => None,
