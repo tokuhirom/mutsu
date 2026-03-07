@@ -93,7 +93,11 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
             Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
             Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
+            Value::Rat(n, d) => make_rat(n + d, *d),
+            Value::FatRat(n, d) => match make_rat(n + d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => Value::str(Self::string_succ(s)),
             _ => Value::Int(1),
         }
@@ -107,7 +111,11 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
             Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
             Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
+            Value::Rat(n, d) => make_rat(n - d, *d),
+            Value::FatRat(n, d) => match make_rat(n - d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => match Self::string_pred(s) {
                 Ok(prev) => Value::str(prev),
                 Err(_) => Value::Str(s.clone()),

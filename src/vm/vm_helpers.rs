@@ -399,6 +399,10 @@ impl VM {
             Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
             Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
+            Value::FatRat(n, d) => match make_rat(n + d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => {
                 if let Some(next) = Self::superscript_succ(s) {
                     Value::str(next)
@@ -426,6 +430,10 @@ impl VM {
             Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
             Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
+            Value::FatRat(n, d) => match make_rat(n - d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => {
                 if let Some(prev) = Self::superscript_pred(s) {
                     Value::str(prev)

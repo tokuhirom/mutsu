@@ -10,28 +10,14 @@ fn complex_parts(v: &Value) -> (f64, f64) {
 }
 
 pub(super) fn value_to_f64(v: &Value) -> f64 {
-    match v {
-        Value::Int(n) => *n as f64,
-        Value::BigInt(n) => num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(0.0),
-        Value::Num(n) => *n,
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                *n as f64 / *d as f64
-            } else {
-                0.0
-            }
-        }
-        Value::BigRat(n, d) => {
-            if d != &num_bigint::BigInt::from(0) {
-                num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
-                    / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0)
-            } else {
-                0.0
-            }
-        }
-        Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-        _ => 0.0,
-    }
+    runtime::to_float_value(v).unwrap_or(0.0)
+}
+
+fn is_rationalish(v: &Value) -> bool {
+    matches!(
+        v,
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+    )
 }
 
 impl VM {
@@ -73,15 +59,21 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
-                || matches!(l, Value::Nil)
-                || matches!(l, Value::Rat(_, _));
-            if needs_float {
-                Ok(Value::Bool(
-                    runtime::to_float_value(&l) == runtime::to_float_value(&r),
-                ))
+            if let (Some(a), Some(b)) =
+                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
+                && (is_rationalish(&l) || is_rationalish(&r))
+            {
+                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
             } else {
-                Ok(Value::Bool(l == r))
+                let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
+                    || matches!(l, Value::Nil);
+                if needs_float {
+                    Ok(Value::Bool(
+                        runtime::to_float_value(&l) == runtime::to_float_value(&r),
+                    ))
+                } else {
+                    Ok(Value::Bool(l == r))
+                }
             }
         })?;
         self.stack.push(result);
@@ -93,7 +85,12 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
+            if let (Some(a), Some(b)) =
+                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
+                && (is_rationalish(&l) || is_rationalish(&r))
+            {
+                Ok(Value::Bool(!runtime::big_rat_parts_equal(a, b)))
+            } else if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                 Ok(Value::Bool(
                     runtime::to_float_value(&l) != runtime::to_float_value(&r),
                 ))
@@ -304,17 +301,29 @@ impl VM {
         };
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Rat(_, _), _)
-            | (_, Value::Rat(_, _))
-            | (Value::FatRat(_, _), _)
-            | (_, Value::FatRat(_, _)) => {
-                if let (Some((an, ad)), Some((bn, bd))) =
-                    (runtime::to_rat_parts(left), runtime::to_rat_parts(right))
-                {
-                    runtime::compare_rat_parts((an, ad), (bn, bd))
-                } else {
-                    left.to_string_value().cmp(&right.to_string_value())
-                }
+            (l, r)
+                if (is_rationalish(l) || is_rationalish(r))
+                    && matches!(
+                        l,
+                        Value::Int(_)
+                            | Value::BigInt(_)
+                            | Value::Rat(_, _)
+                            | Value::FatRat(_, _)
+                            | Value::BigRat(_, _)
+                    )
+                    && matches!(
+                        r,
+                        Value::Int(_)
+                            | Value::BigInt(_)
+                            | Value::Rat(_, _)
+                            | Value::FatRat(_, _)
+                            | Value::BigRat(_, _)
+                    ) =>
+            {
+                runtime::to_big_rat_parts(l)
+                    .zip(runtime::to_big_rat_parts(r))
+                    .and_then(|(a, b)| runtime::compare_big_rat_parts(a, b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             }
             (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
             (Value::Int(a), Value::Num(b)) => (*a as f64)
@@ -323,6 +332,29 @@ impl VM {
             (Value::Num(a), Value::Int(b)) => a
                 .partial_cmp(&(*b as f64))
                 .unwrap_or(std::cmp::Ordering::Equal),
+            (l, r)
+                if matches!(
+                    l,
+                    Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Rat(_, _)
+                        | Value::FatRat(_, _)
+                        | Value::BigRat(_, _)
+                ) && matches!(
+                    r,
+                    Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Rat(_, _)
+                        | Value::FatRat(_, _)
+                        | Value::BigRat(_, _)
+                ) =>
+            {
+                value_to_f64(l)
+                    .partial_cmp(&value_to_f64(r))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }
             // Complex cmp: compare real parts first, then imaginary parts
             // NaN sorts as Greater (More) in Raku
             (Value::Complex(ar, ai), Value::Complex(br, bi)) => {

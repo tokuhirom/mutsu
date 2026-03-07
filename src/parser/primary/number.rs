@@ -192,6 +192,33 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse a rational literal in `numerator/denominator` form with no whitespace.
+/// Examples: `1/4`, `10/3`, `0/0`.
+pub(super) fn rational(input: &str) -> PResult<'_, Expr> {
+    let (rest, numer_clean) =
+        scan_decimal_digits(input).ok_or_else(|| PError::expected("digits"))?;
+    let Some(rest) = rest.strip_prefix('/') else {
+        return Err(PError::expected("rational literal"));
+    };
+    let Some((rest, denom_clean)) = scan_decimal_digits(rest) else {
+        return Err(PError::expected("rational literal"));
+    };
+
+    let value = match (numer_clean.parse::<i64>(), denom_clean.parse::<i64>()) {
+        (Ok(n), Ok(d)) => crate::value::make_rat(n, d),
+        _ => {
+            let n = numer_clean
+                .parse::<num_bigint::BigInt>()
+                .map_err(|_| PError::expected("rational literal"))?;
+            let d = denom_clean
+                .parse::<num_bigint::BigInt>()
+                .map_err(|_| PError::expected("rational literal"))?;
+            crate::value::make_big_rat(n, d)
+        }
+    };
+    Ok((rest, Expr::Literal(value)))
+}
+
 /// Parse a decimal number literal.
 /// In Raku, decimal literals without exponent are Rat, with exponent are Num.
 pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {

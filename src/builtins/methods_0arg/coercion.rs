@@ -1,6 +1,6 @@
 use crate::builtins::primality::{is_prime_bigint, is_prime_i64};
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use std::collections::HashMap;
 
 /// Type coercion and specialized 0-arg methods: numerator, denominator, nude,
@@ -21,6 +21,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "isNaN" => match target {
             Value::Rat(0, 0) => Some(Ok(Value::Bool(true))),
+            Value::FatRat(0, 0) => Some(Ok(Value::Bool(true))),
             Value::Num(f) => Some(Ok(Value::Bool(f.is_nan()))),
             _ => Some(Ok(Value::Bool(false))),
         },
@@ -29,6 +30,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::FatRat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
             Value::Int(i) => Some(Ok(Value::array(vec![Value::Int(*i), Value::Int(1)]))),
             _ => Some(Ok(Value::array(vec![Value::Int(0), Value::Int(1)]))),
+        },
+        "norm" => match target {
+            Value::Rat(n, d) => Some(Ok(make_rat(*n, *d))),
+            Value::FatRat(n, d) => Some(Ok(match make_rat(*n, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            })),
+            Value::BigRat(n, d) => Some(Ok(match make_big_rat(n.clone(), d.clone()) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                Value::BigRat(nn, dd) => Value::BigRat(nn, dd),
+                other => other,
+            })),
+            Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
+            _ => Some(Ok(Value::FatRat(0, 1))),
         },
         "is-prime" => Some(value_is_prime(target)),
         "re" => match target {
