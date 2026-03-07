@@ -2111,7 +2111,18 @@ impl Interpreter {
                 return self.dispatch_to_bag(target);
             }
             "Mix" | "MixHash" if args.is_empty() => {
-                return self.dispatch_to_mix(target);
+                let result = self.dispatch_to_mix(target)?;
+                if method == "MixHash" {
+                    self.register_container_type_metadata(
+                        &result,
+                        ContainerTypeInfo {
+                            value_type: "Real".to_string(),
+                            key_type: None,
+                            declared_type: Some("MixHash".to_string()),
+                        },
+                    );
+                }
+                return Ok(result);
             }
             "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
                 // Role-ish quant hash family conversion on type objects.

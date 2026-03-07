@@ -493,6 +493,8 @@ pub struct Interpreter {
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values keyed by Arc pointer identity.
     array_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for Mix values keyed by Arc pointer identity.
+    mix_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Hash values keyed by Arc pointer identity.
     hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for instance values keyed by stable instance id.
@@ -1617,6 +1619,7 @@ impl Interpreter {
             container_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
             array_type_metadata: HashMap::new(),
+            mix_type_metadata: HashMap::new(),
             hash_type_metadata: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
@@ -2301,6 +2304,10 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.insert(id, info);
             }
+            Value::Mix(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.mix_type_metadata.insert(id, info);
+            }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.hash_type_metadata.insert(id, info);
@@ -2318,6 +2325,10 @@ impl Interpreter {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.get(&id).cloned()
+            }
+            Value::Mix(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.mix_type_metadata.get(&id).cloned()
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
@@ -2714,6 +2725,7 @@ impl Interpreter {
             container_defaults: self.container_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             array_type_metadata: self.array_type_metadata.clone(),
+            mix_type_metadata: self.mix_type_metadata.clone(),
             hash_type_metadata: self.hash_type_metadata.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),

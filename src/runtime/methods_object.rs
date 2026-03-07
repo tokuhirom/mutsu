@@ -859,7 +859,18 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Ok(Value::mix(weights));
+                    let result = Value::mix(weights);
+                    if class_name.resolve() == "MixHash" {
+                        self.register_container_type_metadata(
+                            &result,
+                            ContainerTypeInfo {
+                                value_type: "Real".to_string(),
+                                key_type: None,
+                                declared_type: Some("MixHash".to_string()),
+                            },
+                        );
+                    }
+                    return Ok(result);
                 }
                 "Complex" => {
                     let re = match args.first() {

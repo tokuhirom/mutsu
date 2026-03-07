@@ -839,6 +839,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 ));
             }
             let is_builtin = is_supported_variable_trait(&trait_name);
+            if is_hash && (trait_name == "Mix" || trait_name == "MixHash") {
+                type_constraint = Some(trait_name.clone());
+            }
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
             }

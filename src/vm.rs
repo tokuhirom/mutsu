@@ -1216,11 +1216,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {
-                self.exec_post_increment_index_op(code, *name_idx);
+                self.exec_post_increment_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PostDecrementIndex(name_idx) => {
-                self.exec_post_decrement_index_op(code, *name_idx);
+                self.exec_post_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
@@ -1256,11 +1256,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PreIncrementIndex(name_idx) => {
-                self.exec_pre_increment_index_op(code, *name_idx);
+                self.exec_pre_increment_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PreDecrementIndex(name_idx) => {
-                self.exec_pre_decrement_index_op(code, *name_idx);
+                self.exec_pre_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
 

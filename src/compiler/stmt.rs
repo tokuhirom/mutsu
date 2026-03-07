@@ -207,6 +207,10 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
+                if let Some(tc) = type_constraint {
+                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                }
                 self.compile_expr(expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -234,10 +238,6 @@ impl Compiler {
                         let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::SetGlobal(idx));
                     }
-                }
-                if let Some(tc) = type_constraint {
-                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
                 if *is_export {
                     let tags_idx = if export_tags.is_empty() {

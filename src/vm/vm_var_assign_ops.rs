@@ -3,6 +3,51 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    pub(super) fn quant_hash_trait_from_constraint(constraint: &str) -> Option<&'static str> {
+        let base = constraint
+            .split_once('[')
+            .map(|(head, _)| head)
+            .unwrap_or(constraint);
+        match base {
+            "Mix" => Some("Mix"),
+            "MixHash" => Some("MixHash"),
+            _ => None,
+        }
+    }
+
+    fn coerce_hash_var_value(&mut self, name: &str, value: Value) -> Result<Value, RuntimeError> {
+        if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
+            && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
+        {
+            return self
+                .interpreter
+                .call_method_with_values(value, trait_name, vec![]);
+        }
+        Ok(runtime::coerce_to_hash(value))
+    }
+
+    fn mix_assignment_weight(value: &Value) -> f64 {
+        match value {
+            Value::Int(i) => *i as f64,
+            Value::Num(n) => *n,
+            Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+            Value::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            other => {
+                if other.truthy() {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
     const LAZY_ASSIGN_PRESERVE_MARKER: &str = "__mutsu_preserve_lazy_on_array_assign";
     const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
 
@@ -213,20 +258,36 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_post_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, true, false);
+    pub(super) fn exec_post_increment_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, true, false)
     }
 
-    pub(super) fn exec_post_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, false, false);
+    pub(super) fn exec_post_decrement_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, false, false)
     }
 
-    pub(super) fn exec_pre_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, true, true);
+    pub(super) fn exec_pre_increment_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, true, true)
     }
 
-    pub(super) fn exec_pre_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, false, true);
+    pub(super) fn exec_pre_decrement_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, false, true)
     }
 
     fn exec_inc_dec_index_op(
@@ -235,8 +296,15 @@ impl VM {
         name_idx: u32,
         increment: bool,
         return_new: bool,
-    ) {
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
         let current = if let Some(container) = self.interpreter.env().get(&name) {
@@ -248,6 +316,9 @@ impl VM {
                     } else {
                         Value::Nil
                     }
+                }
+                Value::Mix(_) if !target_is_mixhash => {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
                 }
                 _ => Value::Nil,
             }
@@ -286,6 +357,7 @@ impl VM {
         } else {
             self.stack.push(effective);
         }
+        Ok(())
     }
 
     pub(super) fn exec_index_assign_expr_named_op(
@@ -294,6 +366,13 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
@@ -534,6 +613,13 @@ impl VM {
                             if bind_mode {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
+                        }
+                        Value::Mix(ref mut mix) => {
+                            if !target_is_mixhash {
+                                return Err(RuntimeError::new("X::Assignment::RO"));
+                            }
+                            let weight = Self::mix_assignment_weight(&val);
+                            Arc::make_mut(mix).insert(key.clone(), weight);
                         }
                         _ => {
                             let mut hash = std::collections::HashMap::new();
@@ -777,8 +863,18 @@ impl VM {
 
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
+        let quant_trait = self
+            .interpreter
+            .var_type_constraint_fast(name)
+            .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()));
+        if name.starts_with('%')
+            && quant_trait == Some("Mix")
+            && !matches!(self.locals[idx], Value::Nil)
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         let mut val = if name.starts_with('%') {
-            runtime::coerce_to_hash(val)
+            self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
             match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
@@ -889,6 +985,13 @@ impl VM {
         if (name.starts_with('@') || name.starts_with('%'))
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {
+            let declared_type = Self::quant_hash_trait_from_constraint(&value_type)
+                .map(std::string::ToString::to_string);
+            let value_type = if declared_type.is_some() {
+                "Real".to_string()
+            } else {
+                value_type
+            };
             let info = crate::runtime::ContainerTypeInfo {
                 value_type,
                 key_type: if name.starts_with('%') {
@@ -896,7 +999,7 @@ impl VM {
                 } else {
                     None
                 },
-                declared_type: None,
+                declared_type,
             };
             self.interpreter
                 .register_container_type_metadata(&val, info);
@@ -995,8 +1098,18 @@ impl VM {
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         self.interpreter.check_readonly_for_modify(name)?;
+        let quant_trait = self
+            .interpreter
+            .var_type_constraint_fast(name)
+            .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()));
+        if name.starts_with('%')
+            && quant_trait == Some("Mix")
+            && !matches!(self.locals[idx], Value::Nil)
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         let mut val = if name.starts_with('%') {
-            runtime::coerce_to_hash(raw_val)
+            self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
             match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
@@ -1078,6 +1191,13 @@ impl VM {
         if (name.starts_with('@') || name.starts_with('%'))
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {
+            let declared_type = Self::quant_hash_trait_from_constraint(&value_type)
+                .map(std::string::ToString::to_string);
+            let value_type = if declared_type.is_some() {
+                "Real".to_string()
+            } else {
+                value_type
+            };
             let info = crate::runtime::ContainerTypeInfo {
                 value_type,
                 key_type: if name.starts_with('%') {
@@ -1085,7 +1205,7 @@ impl VM {
                 } else {
                     None
                 },
-                declared_type: None,
+                declared_type,
             };
             self.interpreter
                 .register_container_type_metadata(&val, info);
