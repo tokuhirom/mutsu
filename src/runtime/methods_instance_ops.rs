@@ -209,7 +209,26 @@ impl Interpreter {
                         // Load the module, using precompilation cache when available
                         let (stmts, precompiled) =
                             self.parse_module_source(&short_name_str, &source_path)?;
-                        self.run_block(&stmts)?;
+                        let compile_time_only = !stmts.is_empty()
+                            && stmts
+                                .iter()
+                                .all(|stmt| matches!(stmt, crate::ast::Stmt::Use { .. }));
+                        let non_version_use_count = if compile_time_only {
+                            stmts
+                                .iter()
+                                .filter_map(|stmt| match stmt {
+                                    crate::ast::Stmt::Use { module, .. } => Some(module.as_str()),
+                                    _ => None,
+                                })
+                                .filter(|module| *module != "v6")
+                                .count()
+                        } else {
+                            0
+                        };
+                        let skip_runtime = compile_time_only && non_version_use_count > 1;
+                        if !skip_runtime {
+                            self.run_block(&stmts)?;
+                        }
                         self.loaded_modules.insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
@@ -221,6 +240,25 @@ impl Interpreter {
                     }
                     _ => {}
                 }
+            }
+            if class_name == "CompUnit" {
+                match method {
+                    // Rakudo exposes a handle object that can answer .globalish-package.
+                    // For mutsu, the current process-global stash models this behavior.
+                    "handle" => {
+                        return Ok(Value::make_instance(
+                            Symbol::intern("CompUnit::Handle"),
+                            HashMap::new(),
+                        ));
+                    }
+                    "globalish-package" => {
+                        return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                    }
+                    _ => {}
+                }
+            }
+            if class_name == "CompUnit::Handle" && method == "globalish-package" {
+                return Ok(Value::Package(Symbol::intern("GLOBAL")));
             }
             if method == "can" {
                 let method_name = args
@@ -676,6 +714,21 @@ impl Interpreter {
                     Some(target.clone()),
                 )?;
                 return Ok(result);
+            }
+        }
+
+        if let Value::Package(type_name) = &target {
+            match (type_name.resolve().as_str(), method) {
+                ("CompUnit", "handle") => {
+                    return Ok(Value::make_instance(
+                        Symbol::intern("CompUnit::Handle"),
+                        HashMap::new(),
+                    ));
+                }
+                ("CompUnit", "globalish-package") | ("CompUnit::Handle", "globalish-package") => {
+                    return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                }
+                _ => {}
             }
         }
 
