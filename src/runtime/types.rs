@@ -1072,6 +1072,12 @@ impl Interpreter {
             || self.roles.contains_key(name)
             || self.enum_types.contains_key(name)
             || self.subsets.contains_key(name)
+            || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
+                self.classes.contains_key(&base)
+                    || self.roles.contains_key(&base)
+                    || self.enum_types.contains_key(&base)
+                    || self.subsets.contains_key(&base)
+            })
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
@@ -1306,6 +1312,33 @@ impl Interpreter {
                                 false
                             }
                         });
+                    }
+                    return false;
+                }
+                "Buf" | "Blob" => {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = value
+                    {
+                        let class = class_name.resolve();
+                        let class_ok = if base == "Buf" {
+                            class == "Buf" || class.starts_with("Buf[") || class.starts_with("buf")
+                        } else {
+                            class == "Blob"
+                                || class == "Buf"
+                                || class.starts_with("Blob[")
+                                || class.starts_with("blob")
+                                || class.starts_with("Buf[")
+                                || class.starts_with("buf")
+                        };
+                        if !class_ok {
+                            return false;
+                        }
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            return items.iter().all(|v| self.type_matches_value(inner, v));
+                        }
                     }
                     return false;
                 }
@@ -1587,7 +1620,8 @@ impl Interpreter {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
                         let mut named = std::collections::HashMap::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if let Value::Pair(key, val) = arg {
                                 named.insert(key, *val);
@@ -1600,7 +1634,8 @@ impl Interpreter {
                         // For single-star slurpy (*@), flatten list arguments but preserve
                         // itemized Arrays ($[...] / .item) as single positional values.
                         let mut items = Vec::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &arg
@@ -1614,8 +1649,9 @@ impl Interpreter {
                         Some(Value::real_array(items))
                     }
                 } else if is_subsig_capture {
+                    let remaining = args.get(i..).unwrap_or(&[]);
                     Some(sub_signature_target_from_remaining_args(
-                        &args[i..]
+                        &remaining
                             .iter()
                             .cloned()
                             .map(unwrap_varref_value)
@@ -1714,6 +1750,12 @@ impl Interpreter {
                         // Coercion source-type validation is deferred until bind time.
                         return false;
                     }
+                }
+                if pd.name.starts_with('&')
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !self.type_matches_value("Callable", arg)
+                {
+                    return false;
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {

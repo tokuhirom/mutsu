@@ -803,8 +803,17 @@ impl VM {
         self.env_dirty = true;
 
         *ip = end;
-        run_result?;
-        event_result
+        if let Err(err) = run_result
+            && !err.is_react_done
+        {
+            return Err(err);
+        }
+        if let Err(err) = event_result
+            && !err.is_react_done
+        {
+            return Err(err);
+        }
+        Ok(())
     }
 
     pub(super) fn exec_whenever_scope_op(

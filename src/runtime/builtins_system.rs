@@ -1071,6 +1071,7 @@ impl Interpreter {
                     {
                         self.replay_proc_taps(attributes);
                     }
+                    let result = Self::unwrap_async_status_result(result)?;
                     results.push(result);
                     // Sync shared variables after each thread completes
                     self.sync_shared_vars_to_env();
@@ -1096,6 +1097,7 @@ impl Interpreter {
                                     let msg = result.to_string_value();
                                     return Err(RuntimeError::new(msg));
                                 }
+                                let result = Self::unwrap_async_status_result(result)?;
                                 results.push(result);
                             }
                             Value::Instance {
@@ -1122,6 +1124,38 @@ impl Interpreter {
         } else {
             Ok(Value::array(results))
         }
+    }
+
+    fn unwrap_async_status_result(value: Value) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && class_name == "IO::Socket::Async::StatusResult"
+        {
+            let status = attributes
+                .get("status")
+                .map(Value::to_string_value)
+                .unwrap_or_else(|| "Broken".to_string());
+            if status == "Kept" {
+                return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
+            }
+            let cause = attributes.get("cause").cloned().unwrap_or(Value::Nil);
+            let message = cause.to_string_value();
+            let mut err = RuntimeError::new(message.clone());
+            if matches!(cause, Value::Instance { .. }) {
+                err.exception = Some(Box::new(cause));
+            } else {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("payload".to_string(), Value::str(message.clone()));
+                attrs.insert("message".to_string(), Value::str(message));
+                let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+                err.exception = Some(Box::new(ex));
+            }
+            return Err(err);
+        }
+        Ok(value)
     }
     /// `signal(SIGINT, ...)` — returns a Supply that emits Signal enum values
     /// when the process receives the specified OS signals.

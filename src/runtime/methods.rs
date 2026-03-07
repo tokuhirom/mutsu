@@ -6,6 +6,55 @@ use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    fn supply_list_values(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        wait_until_done: bool,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut items = match attributes.get("values") {
+            Some(Value::Array(values, ..)) => values.to_vec(),
+            _ => Vec::new(),
+        };
+
+        if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id")
+            && *supplier_id > 0
+        {
+            let supplier_id = *supplier_id as u64;
+            let live = matches!(attributes.get("live"), Some(Value::Bool(true)));
+            let deadline = if wait_until_done && live {
+                Some(std::time::Instant::now() + std::time::Duration::from_secs(5))
+            } else {
+                None
+            };
+            let mut seen_emitted = 0usize;
+            loop {
+                let (emitted, done, quit_reason) =
+                    crate::runtime::native_methods::supplier_snapshot(supplier_id);
+                if emitted.len() > seen_emitted {
+                    items.extend_from_slice(&emitted[seen_emitted..]);
+                    seen_emitted = emitted.len();
+                }
+                if let Some(reason) = quit_reason {
+                    let message = reason.to_string_value();
+                    let mut err = RuntimeError::new(message);
+                    err.exception = Some(Box::new(reason));
+                    return Err(err);
+                }
+                if done || deadline.is_none() {
+                    break;
+                }
+                if let Some(limit) = deadline
+                    && std::time::Instant::now() >= limit
+                {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+
+        Ok(items)
+    }
+
     fn should_autothread_method(method: &str) -> bool {
         !matches!(
             method,
@@ -829,8 +878,12 @@ impl Interpreter {
             || method == "squish"
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
+            || (matches!(method, "list" | "Array" | "Seq")
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || matches!(&target, Value::Instance { class_name, .. }
+                if self.is_native_method(&class_name.resolve(), method))
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
@@ -1334,6 +1387,54 @@ impl Interpreter {
                     let decoded = self.decode_with_encoding(&bytes, &encoding)?;
                     let normalized = self.translate_newlines_for_decode(&decoded);
                     return Ok(Value::str(normalized));
+                }
+            }
+            "subbuf" => {
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = &target
+                    && (class_name == "Buf" || class_name == "Blob")
+                {
+                    let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        items.to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    let len = bytes.len();
+                    let start_raw = args
+                        .first()
+                        .map(|v| match v {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => *n as i64,
+                            other => other.to_f64() as i64,
+                        })
+                        .unwrap_or(0);
+                    let start = if start_raw < 0 {
+                        len.saturating_sub(start_raw.unsigned_abs() as usize)
+                    } else {
+                        (start_raw as usize).min(len)
+                    };
+                    let end = if let Some(length_raw) = args.get(1).map(|v| match v {
+                        Value::Int(i) => *i,
+                        Value::Num(n) => *n as i64,
+                        other => other.to_f64() as i64,
+                    }) {
+                        if length_raw <= 0 {
+                            start
+                        } else {
+                            start.saturating_add(length_raw as usize).min(len)
+                        }
+                    } else {
+                        len
+                    };
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "bytes".to_string(),
+                        Value::array(bytes[start..end].to_vec()),
+                    );
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
             }
             "polymod" => {
@@ -2145,8 +2246,8 @@ impl Interpreter {
                             self.supply_emit_buffer.push(Vec::new());
                             let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                             self.supply_emit_buffer.pop().unwrap_or_default()
-                        } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
-                            v.to_vec()
+                        } else if attributes.get("values").is_some() {
+                            self.supply_list_values(&attributes, true)?
                         } else {
                             Vec::new()
                         };
@@ -2188,6 +2289,18 @@ impl Interpreter {
                     }
                     other => Value::Seq(std::sync::Arc::new(vec![other])),
                 });
+            }
+            "list" | "Array" if args.is_empty() => {
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = &target
+                    && class_name == "Supply"
+                {
+                    let values = self.supply_list_values(attributes, true)?;
+                    return Ok(Value::array(values));
+                }
             }
             "List" if args.is_empty() => {
                 if let Value::Instance {
@@ -2596,6 +2709,18 @@ impl Interpreter {
                     && class_name == "IO::Socket::INET"
                 {
                     return self.dispatch_socket_connect(&args);
+                }
+                if let Value::Package(ref class_name) = target
+                    && class_name == "IO::Socket::Async"
+                {
+                    return self.dispatch_socket_async_connect(&args);
+                }
+            }
+            "listen" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "IO::Socket::Async"
+                {
+                    return self.dispatch_socket_async_listen(&args);
                 }
             }
             "new" => {

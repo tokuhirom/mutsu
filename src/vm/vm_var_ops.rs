@@ -470,10 +470,7 @@ impl VM {
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name)
-                || self.interpreter.is_role(name)
-                || Self::is_builtin_type(name)
-            {
+            } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
                 Value::Package(Symbol::intern(name))
             } else if name.contains("::")
                 && !name.starts_with('$')
@@ -503,8 +500,7 @@ impl VM {
                 self.env_dirty = true;
                 result
             }
-        } else if self.interpreter.has_class(name)
-            || self.interpreter.is_role(name)
+        } else if self.interpreter.has_type(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
