@@ -511,6 +511,7 @@ roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
 roast/S26-documentation/10-doc-cli.t
+roast/S26-documentation/12-non-breaking-space.t
 roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/module-comment.t
 roast/S26-documentation/multiline-trailing.t
