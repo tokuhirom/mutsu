@@ -2113,6 +2113,15 @@ impl Interpreter {
             "comb" if args.len() == 1 => {
                 let text = target.to_string_value();
                 match &args[0] {
+                    Value::Int(n) if *n > 0 => {
+                        let chunk_size = *n as usize;
+                        let chars: Vec<char> = text.chars().collect();
+                        let result: Vec<Value> = chars
+                            .chunks(chunk_size)
+                            .map(|chunk| Value::str(chunk.iter().collect()))
+                            .collect();
+                        return Ok(Value::array(result));
+                    }
                     Value::Str(needle) => {
                         if needle.is_empty() {
                             let chars = text

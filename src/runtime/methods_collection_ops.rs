@@ -1292,6 +1292,7 @@ impl Interpreter {
             out_buffer_capacity: None,
             out_buffer_pending: Vec::new(),
             bin: false,
+            nl_out: "\n".to_string(),
         };
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();
@@ -1608,6 +1609,7 @@ impl Interpreter {
                 out_buffer_capacity: None,
                 out_buffer_pending: Vec::new(),
                 bin: false,
+                nl_out: "\n".to_string(),
             };
             self.handles.insert(id, state);
             let mut attrs = HashMap::new();

@@ -256,6 +256,7 @@ struct IoHandleState {
     out_buffer_pending: Vec<u8>,
     #[allow(dead_code)]
     bin: bool,
+    nl_out: String,
 }
 
 #[derive(Clone)]
@@ -879,7 +880,8 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "exitcode", "signal", "command", "pid", "Numeric", "Int", "Bool", "Str", "gist",
+                    "exitcode", "signal", "command", "pid", "err", "out", "Numeric", "Int", "Bool",
+                    "Str", "gist",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -1079,6 +1081,11 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
+                    "path",
+                    "IO",
+                    "Str",
+                    "gist",
+                    "DESTROY",
                     "close",
                     "get",
                     "getc",
@@ -1098,6 +1105,10 @@ impl Interpreter {
                     "slurp",
                     "out-buffer",
                     "Supply",
+                    "open",
+                    "nl-out",
+                    "nl-in",
+                    "print-nl",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -2857,6 +2868,7 @@ impl Interpreter {
                 out_buffer_capacity: handle.out_buffer_capacity,
                 out_buffer_pending: handle.out_buffer_pending.clone(),
                 bin: handle.bin,
+                nl_out: handle.nl_out.clone(),
             };
             cloned_handles.insert(*id, cloned);
         }
@@ -3366,5 +3378,23 @@ mod tests {
             .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
             .unwrap();
         assert_eq!(output, "3\n");
+    }
+}
+
+impl Interpreter {
+    /// Flush all open file handle buffers. Call before process exit.
+    pub fn flush_all_handles(&mut self) {
+        for state in self.handles.values_mut() {
+            if state.closed {
+                continue;
+            }
+            if !state.out_buffer_pending.is_empty()
+                && let Some(file) = state.file.as_mut()
+            {
+                let _ = file.write_all(&state.out_buffer_pending);
+                let _ = file.flush();
+                state.out_buffer_pending.clear();
+            }
+        }
     }
 }

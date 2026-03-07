@@ -1886,6 +1886,8 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or(Value::array(Vec::new())),
             "pid" => attributes.get("pid").cloned().unwrap_or(Value::Nil),
+            "err" => attributes.get("err").cloned().unwrap_or(Value::Nil),
+            "out" => attributes.get("out").cloned().unwrap_or(Value::Nil),
             "Numeric" | "Int" => attributes
                 .get("exitcode")
                 .cloned()
@@ -2239,6 +2241,7 @@ impl Interpreter {
                     out_buffer_capacity: None,
                     out_buffer_pending: Vec::new(),
                     bin: false,
+                    nl_out: "\n".to_string(),
                 };
                 self.handles.insert(new_id, state);
                 let mut attrs = HashMap::new();

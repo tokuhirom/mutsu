@@ -607,8 +607,8 @@ impl Interpreter {
                 0,
                 0,
                 Value::str(String::new()),
-                None,
-                None,
+                opts.capture_err.then(String::new),
+                opts.capture_out.then(String::new),
             ));
         }
 
@@ -693,7 +693,7 @@ impl Interpreter {
                     )),
                 }
             }
-            Err(_) => {
+            Err(err) => {
                 // Fallback for cases where $*EXECUTABLE is passed as an IO::Path-ish value
                 // that stringifies ambiguously. Retry with current_exe.
                 if first_arg_io_path || program == "$*EXECUTABLE" || program.ends_with("mutsu") {
@@ -772,7 +772,14 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok(Self::make_proc_instance(-1, 0, 0, command_val, None, None))
+                Ok(Self::make_proc_instance(
+                    -1,
+                    0,
+                    0,
+                    command_val,
+                    opts.capture_err.then(|| err.to_string()),
+                    opts.capture_out.then(String::new),
+                ))
             }
         }
     }
