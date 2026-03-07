@@ -480,6 +480,7 @@ roast/S17-supply/tail.t
 roast/S17-supply/unique.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
+roast/S19-command-line/dash-e.t
 roast/S19-command-line/help.t
 roast/S19-command-line/repl.t
 roast/S22-package-format/local.t
