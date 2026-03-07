@@ -1284,8 +1284,7 @@ impl Interpreter {
                     }
                     return false;
                 }
-                "Buf" | "Blob" | "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16"
-                | "blob32" | "blob64" => {
+                "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
                     if let Value::Instance { class_name, .. } = value {
                         let cn = class_name.resolve();
                         if cn == "Buf"

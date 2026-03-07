@@ -2706,33 +2706,14 @@ impl Interpreter {
                         .ok_or_else(|| RuntimeError::new("Unknown peer connection"))?;
 
                     let bytes = if method == "write" {
-                        match args.last().unwrap_or(&Value::Nil) {
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "Buf" || class_name == "Blob" => {
-                                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                                    items
-                                        .iter()
-                                        .filter_map(|v| match v {
-                                            Value::Int(i) => Some(*i as u8),
-                                            _ => None,
-                                        })
-                                        .collect()
-                                } else {
-                                    Vec::new()
-                                }
-                            }
-                            Value::Array(items, ..) => items
-                                .iter()
-                                .filter_map(|v| match v {
-                                    Value::Int(i) => Some(*i as u8),
-                                    _ => None,
-                                })
-                                .collect(),
-                            other => other.to_string_value().into_bytes(),
-                        }
+                        args.last()
+                            .and_then(Self::extract_bytes)
+                            .unwrap_or_else(|| {
+                                args.last()
+                                    .map(Value::to_string_value)
+                                    .unwrap_or_default()
+                                    .into_bytes()
+                            })
                     } else {
                         let text = args
                             .last()
@@ -2856,6 +2837,8 @@ impl Interpreter {
                 method
             ))),
         }
+    }
+
     /// Create a Buf instance from raw bytes
     fn make_buf(bytes: Vec<u8>) -> Value {
         let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();

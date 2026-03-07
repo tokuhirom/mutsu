@@ -1453,6 +1453,8 @@ impl Interpreter {
 
         promise.keep(result, String::new(), String::new());
         Ok(Value::Promise(promise))
+    }
+
     /// Thread.start({ block }) — spawn a real OS thread
     pub(super) fn dispatch_thread_start(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let block = args.first().cloned().unwrap_or(Value::Nil);

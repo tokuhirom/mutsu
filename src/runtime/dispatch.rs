@@ -58,6 +58,13 @@ impl Interpreter {
         });
     }
 
+    fn has_other_typed_candidates_with_prefix(&self, prefix: &str, typed_key: &str) -> bool {
+        self.functions
+            .keys()
+            .map(|key| key.resolve())
+            .any(|key| key.starts_with(prefix) && key != typed_key)
+    }
+
     pub(super) fn resolve_function_with_alias(
         &mut self,
         name: &str,
@@ -134,7 +141,10 @@ impl Interpreter {
             let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
             if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
                 // Skip fast-path if candidate has where constraints — need full matching
-                if def.param_defs.iter().all(|p| p.where_constraint.is_none()) {
+                let prefix = format!("{}/{arity}:", name);
+                if def.param_defs.iter().all(|p| p.where_constraint.is_none())
+                    && !self.has_other_typed_candidates_with_prefix(&prefix, &typed_key)
+                {
                     return Some(def.clone());
                 }
             }
@@ -198,13 +208,20 @@ impl Interpreter {
         );
         if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
             // Skip fast-path if candidate has where constraints — need full matching
-            if def.param_defs.iter().all(|p| p.where_constraint.is_none()) {
+            let prefix = format!("{}::{}/{}:", self.current_package, name, arity);
+            if def.param_defs.iter().all(|p| p.where_constraint.is_none())
+                && !self.has_other_typed_candidates_with_prefix(&prefix, &typed_key)
+            {
                 return Some(def.clone());
             }
         }
         let typed_global = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
         if let Some(def) = self.functions.get(&Symbol::intern(&typed_global))
             && def.param_defs.iter().all(|p| p.where_constraint.is_none())
+            && !self.has_other_typed_candidates_with_prefix(
+                &format!("GLOBAL::{}/{}:", name, arity),
+                &typed_global,
+            )
         {
             return Some(def.clone());
         }
