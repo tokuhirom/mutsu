@@ -3,6 +3,80 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
+        if let Value::Capture { positional, named } = value
+            && positional.is_empty()
+            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+        {
+            let source_index = match named.get("__mutsu_varref_index") {
+                Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+                _ => None,
+            };
+            return Some((name.to_string(), source_index));
+        }
+        None
+    }
+
+    fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
+        let mut named = std::collections::HashMap::new();
+        named.insert("__mutsu_varref_name".to_string(), Value::str(name));
+        named.insert("__mutsu_varref_value".to_string(), value);
+        if let Some(i) = source_index {
+            named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
+        }
+        Value::Capture {
+            positional: Vec::new(),
+            named,
+        }
+    }
+
+    fn assign_varref_target(
+        &mut self,
+        source_name: &str,
+        source_index: Option<usize>,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        if let Some(i) = source_index {
+            let Some(container) = self.interpreter.env_mut().get_mut(source_name) else {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            };
+            let Value::Array(items, ..) = container else {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            };
+            let arr = Arc::make_mut(items);
+            if i >= arr.len() {
+                arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+            }
+            arr[i] = value;
+            return Ok(());
+        }
+        self.interpreter
+            .env_mut()
+            .insert(source_name.to_string(), value);
+        Ok(())
+    }
+
+    fn resolve_whatever_index_for_target(&mut self, idx: Value, target: Option<&Value>) -> Value {
+        if let Value::Sub(data) = idx {
+            let len = match target {
+                Some(Value::Array(items, ..)) => items.len() as i64,
+                _ => 0,
+            };
+            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+            let mut sub_env = data.env.clone();
+            sub_env.insert(param.to_string(), Value::Int(len));
+            let saved_env = std::mem::take(self.interpreter.env_mut());
+            *self.interpreter.env_mut() = sub_env;
+            let result = self
+                .interpreter
+                .eval_block_value(&data.body)
+                .unwrap_or(Value::Nil);
+            *self.interpreter.env_mut() = saved_env;
+            return result;
+        }
+        idx
+    }
+
     pub(super) fn quant_hash_trait_from_constraint(constraint: &str) -> Option<&'static str> {
         let base = constraint
             .split_once('[')
@@ -514,6 +588,8 @@ impl VM {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let index_target = self.interpreter.env().get(&var_name).cloned();
+        let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let (val, bind_mode, bind_sources) = match raw_val {
             Value::Pair(name, payload) if name == "__mutsu_bind_index_value" => match *payload {
@@ -666,6 +742,7 @@ impl VM {
                 };
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
+                let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -738,11 +815,23 @@ impl VM {
                                     if i >= arr.len() {
                                         arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
                                     }
-                                    arr[i] = if is_self_array_ref {
-                                        Self::self_array_ref_marker()
+                                    if let Some((source_name, source_index)) =
+                                        Self::varref_target(&arr[i])
+                                    {
+                                        pending_varref_update =
+                                            Some((source_name.clone(), source_index, val.clone()));
+                                        arr[i] = Self::make_varref_value(
+                                            source_name,
+                                            val.clone(),
+                                            source_index,
+                                        );
                                     } else {
-                                        val.clone()
-                                    };
+                                        arr[i] = if is_self_array_ref {
+                                            Self::self_array_ref_marker()
+                                        } else {
+                                            val.clone()
+                                        };
+                                    }
                                 }
                             } else {
                                 return Err(RuntimeError::new("Index out of bounds"));
@@ -807,6 +896,9 @@ impl VM {
                 }
                 if let Some((source_name, source_value)) = pending_source_update {
                     self.interpreter.env_mut().insert(source_name, source_value);
+                }
+                if let Some((source_name, source_index, source_value)) = pending_varref_update {
+                    self.assign_varref_target(&source_name, source_index, source_value)?;
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
