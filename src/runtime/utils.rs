@@ -8,6 +8,27 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Check if a class name represents a Buf-like type (Buf, Buf[uint8], buf8, etc.)
+pub(crate) fn is_buf_like_class(cn: &str) -> bool {
+    matches!(
+        cn,
+        "Buf" | "buf8" | "buf16" | "buf32" | "buf64" | "utf8" | "utf16"
+    ) || cn.starts_with("Buf[")
+        || cn.starts_with("buf")
+}
+
+/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8, etc.)
+pub(crate) fn is_blob_like_class(cn: &str) -> bool {
+    matches!(cn, "Blob" | "blob8" | "blob16" | "blob32" | "blob64")
+        || cn.starts_with("Blob[")
+        || cn.starts_with("blob")
+}
+
+/// Check if a class name represents any Buf or Blob type
+pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
+    is_buf_like_class(cn) || is_blob_like_class(cn)
+}
+
 /// Create a Failure value for operations on empty arrays (pop, shift, etc.)
 pub(crate) fn make_empty_array_failure(op: &str) -> Value {
     let mut ex_attrs = HashMap::new();
@@ -331,6 +352,13 @@ pub(crate) fn version_cmp_parts(
 }
 
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
+    let mix_weight_value = |weight: f64| {
+        if weight.is_finite() && weight.fract() == 0.0 {
+            Value::Int(weight as i64)
+        } else {
+            Value::Num(weight)
+        }
+    };
     match value {
         Value::Hash(_) => value,
         Value::Array(items, ..) => {
@@ -387,6 +415,27 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         Value::ValuePair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k.to_string_value(), *v);
+            Value::hash(map)
+        }
+        Value::Set(items) => {
+            let mut map = HashMap::new();
+            for key in items.iter() {
+                map.insert(key.clone(), Value::Bool(true));
+            }
+            Value::hash(map)
+        }
+        Value::Bag(items) => {
+            let mut map = HashMap::new();
+            for (key, count) in items.iter() {
+                map.insert(key.clone(), Value::Int(*count));
+            }
+            Value::hash(map)
+        }
+        Value::Mix(items) => {
+            let mut map = HashMap::new();
+            for (key, weight) in items.iter() {
+                map.insert(key.clone(), mix_weight_value(*weight));
+            }
             Value::hash(map)
         }
         Value::Nil => Value::hash(HashMap::new()),
@@ -995,6 +1044,150 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
 
 pub(crate) use super::sprintf::format_sprintf;
 
+fn parse_unicode_decimal_digits(input: &str) -> Option<(&str, String)> {
+    let mut end = 0;
+    let mut clean = String::new();
+    let mut saw_digit = false;
+    for c in input.chars() {
+        if c == '_' {
+            end += c.len_utf8();
+            continue;
+        }
+        let Some(dv) = crate::builtins::unicode::unicode_decimal_digit_value(c) else {
+            break;
+        };
+        saw_digit = true;
+        clean.push(char::from_digit(dv, 10).unwrap());
+        end += c.len_utf8();
+    }
+    if saw_digit {
+        Some((&input[end..], clean))
+    } else {
+        None
+    }
+}
+
+pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
+    if !(2..=36).contains(&base) {
+        return None;
+    }
+    let compact: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    if compact.is_empty() {
+        return None;
+    }
+
+    let (digits_body, exponent_scale) =
+        if let Some((digits, exp_part)) = compact.split_once("*10**") {
+            let exp_part = exp_part.trim();
+            if exp_part.is_empty() {
+                return None;
+            }
+            let (sign, after_sign) = if let Some(rest) = exp_part.strip_prefix('+') {
+                (1_i64, rest)
+            } else if let Some(rest) = exp_part.strip_prefix('-') {
+                (-1_i64, rest)
+            } else {
+                (1_i64, exp_part)
+            };
+            let (exp_rest, exp_clean) = parse_unicode_decimal_digits(after_sign)?;
+            if !exp_rest.is_empty() {
+                return None;
+            }
+            let exp_abs: i64 = exp_clean.parse().ok()?;
+            (digits.trim(), sign * exp_abs)
+        } else {
+            (compact.trim(), 0_i64)
+        };
+    if digits_body.is_empty() {
+        return None;
+    }
+
+    let mut int_clean = String::new();
+    let mut frac_clean = String::new();
+    let mut saw_dot = false;
+    let mut saw_digit = false;
+    for c in digits_body.chars() {
+        if c == '_' {
+            continue;
+        }
+        if c == '.' {
+            if saw_dot {
+                return None;
+            }
+            saw_dot = true;
+            continue;
+        }
+        let value =
+            crate::builtins::unicode::unicode_decimal_digit_value(c).or_else(|| match c {
+                'a'..='z' => Some(10 + (c as u32 - 'a' as u32)),
+                'A'..='Z' => Some(10 + (c as u32 - 'A' as u32)),
+                'ａ'..='ｚ' => Some(10 + (c as u32 - 'ａ' as u32)),
+                'Ａ'..='Ｚ' => Some(10 + (c as u32 - 'Ａ' as u32)),
+                _ => None,
+            })?;
+        if value >= base {
+            return None;
+        }
+        let digit = char::from_digit(value, 36)?;
+        saw_digit = true;
+        if saw_dot {
+            frac_clean.push(digit);
+        } else {
+            int_clean.push(digit);
+        }
+    }
+    if !saw_digit {
+        return None;
+    }
+
+    if !saw_dot && exponent_scale == 0 {
+        if let Ok(n) = i64::from_str_radix(&int_clean, base) {
+            return Some(Value::Int(n));
+        }
+        if let Some(n) = num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base) {
+            return Some(Value::from_bigint(n));
+        }
+        return None;
+    }
+
+    let base_big = num_bigint::BigInt::from(base);
+    let int_value = if int_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base)?
+    };
+    let frac_value = if frac_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(frac_clean.as_bytes(), base)?
+    };
+    let frac_scale = base_big.pow(frac_clean.len() as u32);
+    let mut numerator = int_value * &frac_scale + frac_value;
+    let mut denominator = frac_scale;
+    if exponent_scale != 0 {
+        let exp_abs = exponent_scale.unsigned_abs() as u32;
+        let scale10 = num_bigint::BigInt::from(10_u32).pow(exp_abs);
+        if exponent_scale > 0 {
+            numerator *= scale10;
+        } else {
+            denominator *= scale10;
+        }
+    }
+    Some(crate::value::make_big_rat(numerator, denominator))
+}
+
+pub(crate) fn parse_prefixed_generic_radix_literal(s: &str) -> Option<Value> {
+    let rest = s.strip_prefix(':')?;
+    let (rest, base_clean) = parse_unicode_decimal_digits(rest)?;
+    let base: u32 = base_clean.parse().ok()?;
+    let rest = rest.strip_prefix('<')?;
+    let close_pos = rest.find('>')?;
+    if !rest[close_pos + 1..].trim().is_empty() {
+        return None;
+    }
+    parse_radix_number_body(&rest[..close_pos], base)
+}
+
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
@@ -1007,7 +1200,9 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         Value::Enum { value, .. } => Value::Int(value),
         Value::Str(ref s) => {
             let s = s.trim();
-            if let Ok(i) = s.parse::<i64>() {
+            if let Some(v) = parse_prefixed_generic_radix_literal(s) {
+                v
+            } else if let Ok(i) = s.parse::<i64>() {
                 Value::Int(i)
             } else if let Ok(f) = s.parse::<f64>() {
                 Value::Num(f)

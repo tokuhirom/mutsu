@@ -74,6 +74,140 @@ fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
     })
 }
 
+fn expr_uses_attr_twigil(expr: &Expr) -> bool {
+    match expr {
+        Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) => {
+            name.starts_with('.') || name.starts_with('!')
+        }
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            expr_uses_attr_twigil(target) || args.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            expr_uses_attr_twigil(target)
+                || expr_uses_attr_twigil(name_expr)
+                || args.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::Call { args, .. }
+        | Expr::ArrayLiteral(args)
+        | Expr::BracketArray(args)
+        | Expr::CaptureLiteral(args)
+        | Expr::StringInterpolation(args) => args.iter().any(expr_uses_attr_twigil),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } | Expr::Reduction { expr, .. } => {
+            expr_uses_attr_twigil(expr)
+        }
+        Expr::Binary { left, right, .. }
+        | Expr::MetaOp { left, right, .. }
+        | Expr::HyperOp { left, right, .. } => {
+            expr_uses_attr_twigil(left) || expr_uses_attr_twigil(right)
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_uses_attr_twigil(cond)
+                || expr_uses_attr_twigil(then_expr)
+                || expr_uses_attr_twigil(else_expr)
+        }
+        Expr::Index { target, index } => {
+            expr_uses_attr_twigil(target) || expr_uses_attr_twigil(index)
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+        } => {
+            expr_uses_attr_twigil(target)
+                || expr_uses_attr_twigil(index)
+                || expr_uses_attr_twigil(value)
+        }
+        Expr::AssignExpr { expr, .. } => expr_uses_attr_twigil(expr),
+        Expr::DoBlock { body, .. }
+        | Expr::Block(body)
+        | Expr::Gather(body)
+        | Expr::AnonSub { body, .. }
+        | Expr::AnonSubParams { body, .. }
+        | Expr::Lambda { body, .. } => body.iter().any(stmt_uses_attr_twigil),
+        Expr::Try { body, catch } => {
+            body.iter().any(stmt_uses_attr_twigil)
+                || catch
+                    .as_ref()
+                    .is_some_and(|body| body.iter().any(stmt_uses_attr_twigil))
+        }
+        Expr::DoStmt(stmt) => stmt_uses_attr_twigil(stmt),
+        Expr::CallOn { target, args } => {
+            expr_uses_attr_twigil(target) || args.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            expr_uses_attr_twigil(left) || right.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::Exists { target, arg, .. } => {
+            expr_uses_attr_twigil(target)
+                || arg
+                    .as_ref()
+                    .is_some_and(|arg_expr| expr_uses_attr_twigil(arg_expr))
+        }
+        Expr::ZenSlice(inner) => expr_uses_attr_twigil(inner),
+        _ => false,
+    }
+}
+
+fn stmt_uses_attr_twigil(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(expr)
+        | Stmt::Return(expr)
+        | Stmt::Take(expr)
+        | Stmt::Die(expr)
+        | Stmt::Fail(expr) => expr_uses_attr_twigil(expr),
+        Stmt::VarDecl {
+            expr,
+            where_constraint,
+            ..
+        } => {
+            expr_uses_attr_twigil(expr)
+                || where_constraint
+                    .as_ref()
+                    .is_some_and(|wc| expr_uses_attr_twigil(wc))
+        }
+        Stmt::Assign { expr, .. } => expr_uses_attr_twigil(expr),
+        Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Package { body, .. }
+        | Stmt::Catch(body)
+        | Stmt::Control(body) => body.iter().any(stmt_uses_attr_twigil),
+        Stmt::SubDecl { body, .. }
+        | Stmt::MethodDecl { body, .. }
+        | Stmt::TokenDecl { body, .. }
+        | Stmt::RuleDecl { body, .. } => body.iter().any(stmt_uses_attr_twigil),
+        Stmt::Label { stmt, .. } => stmt_uses_attr_twigil(stmt),
+        _ => false,
+    }
+}
+
+fn no_self_error() -> PError {
+    let msg = "X::Syntax::NoSelf".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::NoSelf"), attrs);
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
+fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
+    for stmt in body {
+        if let Stmt::SubDecl { body: sub_body, .. } = stmt
+            && sub_body.iter().any(stmt_uses_attr_twigil)
+        {
+            return Err(no_self_error());
+        }
+    }
+    Ok(())
+}
+
 fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
     if !input.starts_with('{') {
         return Err(PError::expected("raw braced body"));
@@ -353,6 +487,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         r = r2;
     }
     let (rest, body) = block(r)?;
+    reject_no_self_in_subs(&body)?;
     let class_decl = Stmt::ClassDecl {
         name: Symbol::intern(&user_name),
         name_expr: None,
@@ -448,6 +583,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     }
 
     let (rest, body) = block(r)?;
+    reject_no_self_in_subs(&body)?;
     // Extract repr from `is repr(...)` or from declarator traits
     let repr = is_repr.or_else(|| {
         traits.iter().find_map(|(k, v)| {

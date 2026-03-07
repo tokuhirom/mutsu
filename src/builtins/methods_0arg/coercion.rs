@@ -163,6 +163,34 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::slip(vec![target.clone()]))),
         },
         "List" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+            } =>
+            {
+                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Array(
+                        items.clone(),
+                        crate::value::ArrayKind::List,
+                    )))
+                } else {
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(Vec::new()),
+                        crate::value::ArrayKind::List,
+                    )))
+                }
+            }
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))
@@ -278,7 +306,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf" || class_name == "Blob" => {
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+            } =>
+            {
                 let bytes = match attributes.get("bytes") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
@@ -301,6 +340,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .collect();
                 Some(Ok(Value::array(pairs)))
             }
+            Value::Set(_) | Value::Bag(_) | Value::Mix(_) => Some(Ok(Value::array(
+                crate::runtime::utils::value_to_list(target),
+            ))),
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "Range" => match target {

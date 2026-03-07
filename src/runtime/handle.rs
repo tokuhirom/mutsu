@@ -57,7 +57,7 @@ impl Interpreter {
             attributes,
             ..
         } = value
-            && class_name == "IO::Handle"
+            && (class_name == "IO::Handle" || class_name == "IO::Socket::INET")
             && let Some(Value::Int(id)) = attributes.get("handle")
             && *id >= 0
         {

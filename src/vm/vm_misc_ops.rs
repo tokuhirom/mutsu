@@ -485,6 +485,7 @@ impl VM {
             if !trimmed.is_empty()
                 && trimmed.parse::<i64>().is_err()
                 && trimmed.parse::<f64>().is_err()
+                && crate::runtime::utils::parse_prefixed_generic_radix_literal(trimmed).is_none()
             {
                 let mut ex_attrs = std::collections::HashMap::new();
                 ex_attrs.insert(
@@ -650,6 +651,18 @@ impl VM {
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.interpreter.check_readonly_for_modify(&name)?;
+        if name.starts_with('%')
+            && self
+                .interpreter
+                .var_type_constraint_fast(&name)
+                .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()))
+                == Some("Mix")
+            && self
+                .get_env_with_main_alias(&name)
+                .is_some_and(|current| !matches!(current, Value::Nil))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
             let has_variable_slot = self.interpreter.env().contains_key(&name);
@@ -666,7 +679,32 @@ impl VM {
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(raw_val)
+            let mut assigned = runtime::coerce_to_array(raw_val);
+            if let Some(current) = self.get_env_with_main_alias(&name) {
+                let class_name = match current {
+                    Value::Instance { class_name, .. } => Some(class_name),
+                    Value::Package(class_name) => Some(class_name),
+                    _ => None,
+                };
+                if let Some(class_name) = class_name {
+                    let class = class_name.resolve();
+                    if class == "Blob" || class.starts_with("blob") {
+                        return Err(RuntimeError::new("X::Assignment::RO"));
+                    }
+                    if class == "Buf" || class.starts_with("buf") {
+                        let items = runtime::value_to_list(&assigned)
+                            .into_iter()
+                            .map(|v| Value::Int(runtime::to_int(&v)))
+                            .collect::<Vec<_>>();
+                        assigned = self.interpreter.call_method_with_values(
+                            Value::Package(class_name),
+                            "new",
+                            items,
+                        )?;
+                    }
+                }
+            }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };

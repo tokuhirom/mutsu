@@ -168,6 +168,9 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                 ) {
                     crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
+                } else if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    crate::vm::VM::extract_buf_bytes(left)
+                        == crate::vm::VM::extract_buf_bytes(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
@@ -368,8 +371,8 @@ impl Interpreter {
                 "<=" => super::to_float_value(&left) <= super::to_float_value(&right),
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
-                "===" => left == right,
-                "!===" => left != right,
+                "===" => crate::runtime::utils::values_identical(&left, &right),
+                "!===" => !crate::runtime::utils::values_identical(&left, &right),
                 "eqv" => left.eqv(&right),
                 "=:=" => left == right,
                 "=~=" | "\u{2245}" => {
@@ -1036,6 +1039,7 @@ impl Interpreter {
                         }
                     });
                 let matched = match expected_val {
+                    Value::Whatever => true, // * matches anything
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),
@@ -1260,6 +1264,33 @@ impl Interpreter {
                 Vec::new()
             };
         let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
+        let mut has_unsupported_compiler_args = false;
+        let mut ci = 0usize;
+        while ci < compiler_args.len() {
+            let arg = &compiler_args[ci];
+            if arg == "--doc" {
+                ci += 1;
+                continue;
+            }
+            if arg == "-I" {
+                if ci + 1 >= compiler_args.len() {
+                    has_unsupported_compiler_args = true;
+                    break;
+                }
+                ci += 2;
+                continue;
+            }
+            if arg.starts_with("-I") {
+                if arg.len() == 2 {
+                    has_unsupported_compiler_args = true;
+                    break;
+                }
+                ci += 1;
+                continue;
+            }
+            has_unsupported_compiler_args = true;
+            break;
+        }
 
         // Determine if we need to spawn a real subprocess
         // (e.g., for --help, when program is empty with CLI args,
@@ -1267,8 +1298,7 @@ impl Interpreter {
         //  std::process::exit on die)
         let code_needs_subprocess =
             program.contains("Supply.interval") || program.contains("Supply.interval:");
-        let needs_subprocess = !compiler_args.is_empty()
-            && compiler_args.iter().any(|a| a.starts_with("--"))
+        let needs_subprocess = has_unsupported_compiler_args
             || (program.is_empty() && run_args.is_some())
             || code_needs_subprocess;
 
@@ -1499,8 +1529,10 @@ impl Interpreter {
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
+                self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                let _ = self.supply_emit_timed_buffer.pop();
             }
         } else {
             // Non-scheduler supply: original logic
@@ -1514,8 +1546,10 @@ impl Interpreter {
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
+                    self.supply_emit_timed_buffer.push(Vec::new());
                     let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+                    let _ = self.supply_emit_timed_buffer.pop();
                 } else {
                     let values = attributes
                         .get("values")
@@ -1552,8 +1586,59 @@ impl Interpreter {
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
+                self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
+                let emitted = if let Value::Instance { ref attributes, .. } = supply {
+                    if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
+                        let as_fn = attributes.get("unique_as").cloned();
+                        let with_fn = attributes.get("unique_with").cloned();
+                        let expires_secs = attributes.get("unique_expires").map(Value::to_f64);
+                        let mut seen: Vec<(Value, std::time::Instant)> = Vec::new();
+                        let mut unique = Vec::new();
+                        let events = if timed_emitted.is_empty() {
+                            let now = std::time::Instant::now();
+                            emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                        } else {
+                            timed_emitted
+                        };
+                        for (value, ts) in events {
+                            if let Some(expire) = expires_secs {
+                                seen.retain(|(_, seen_ts)| {
+                                    ts.duration_since(*seen_ts).as_secs_f64() < expire
+                                });
+                            }
+                            let key = if let Some(ref f) = as_fn {
+                                self.call_sub_value(f.clone(), vec![value.clone()], true)?
+                            } else {
+                                value.clone()
+                            };
+                            let is_dup = seen.iter().any(|(seen_key, _)| {
+                                if let Some(ref f) = with_fn {
+                                    self.call_sub_value(
+                                        f.clone(),
+                                        vec![seen_key.clone(), key.clone()],
+                                        true,
+                                    )
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false)
+                                } else {
+                                    super::values_identical(seen_key, &key)
+                                }
+                            });
+                            if !is_dup {
+                                seen.push((key, ts));
+                                unique.push(value);
+                            }
+                        }
+                        unique
+                    } else {
+                        emitted
+                    }
+                } else {
+                    emitted
+                };
                 let split_emitted = if let Value::Instance {
                     ref class_name,
                     ref attributes,
@@ -1744,13 +1829,23 @@ impl Interpreter {
             Value::Str(s) => s.to_string(),
             _ => return Err(RuntimeError::new("get_out expects string code")),
         };
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        nested.set_program_path("<get_out>");
-        let result = nested.run(&program);
-        let (out, err, status) = Self::extract_run_output(&nested, result);
+        let input = Self::positional_value(args, 1)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let run_args: Vec<String> =
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let compiler_args: Vec<String> =
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "compiler-args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let (out, err, status) =
+            Self::run_test_code_subprocess(&program, &input, &run_args, &compiler_args);
         let mut hash = std::collections::HashMap::new();
         hash.insert("out".to_string(), Value::str(out));
         hash.insert("err".to_string(), Value::str(err));
@@ -1945,6 +2040,73 @@ impl Interpreter {
                 (out, err, status)
             }
             Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        }
+    }
+
+    fn run_test_code_subprocess(
+        program: &str,
+        input: &str,
+        run_args: &[String],
+        compiler_args: &[String],
+    ) -> (String, String, i64) {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_code_path = std::env::temp_dir().join(format!(
+            "mutsu-test-util-{}-{}.raku",
+            std::process::id(),
+            stamp
+        ));
+        if std::fs::write(&temp_code_path, program).is_err() {
+            return (
+                String::new(),
+                "Failed to create temporary source file".to_string(),
+                1,
+            );
+        }
+        let mut cmd = Command::new(&exe);
+        for arg in compiler_args {
+            cmd.arg(arg);
+        }
+        cmd.arg(temp_code_path.as_os_str());
+        for arg in run_args {
+            cmd.arg(arg);
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        if !input.is_empty() {
+            cmd.stdin(Stdio::piped());
+        }
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => return (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        };
+        if !input.is_empty()
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+        let output = child.wait_with_output();
+        let _ = std::fs::remove_file(&temp_code_path);
+        match output {
+            Ok(output) => {
+                let out = String::from_utf8_lossy(&output.stdout).to_string();
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                let status = output.status.code().unwrap_or(1) as i64;
+                (out, err, status)
+            }
+            Err(e) => (
+                String::new(),
+                format!("Failed to read subprocess output: {}", e),
+                1,
+            ),
         }
     }
 

@@ -20,6 +20,19 @@ HISTORY_GRAPH=HISTORY-pass.svg
 TIMEOUT=10  # seconds per test file
 OUTDIR=tmp
 
+per_file_timeout() {
+  local test_file="$1"
+  case "$test_file" in
+    roast/S17-supply/unique.t)
+      # This test intentionally uses multiple sleep 1 calls and needs >10s.
+      echo 40
+      ;;
+    *)
+      echo "$TIMEOUT"
+      ;;
+  esac
+}
+
 mkdir -p "$OUTDIR"
 
 # Build first
@@ -62,10 +75,11 @@ PASSED_SUBTESTS=0
 echo "Running $TOTAL roast test files (timeout=${TIMEOUT}s each)..."
 
 for f in "${TEST_FILES[@]}"; do
+  FILE_TIMEOUT=$(per_file_timeout "$f")
   # Run with timeout, capture stdout and stderr separately
   EXIT_CODE=0
   STDERR_FILE=$(mktemp)
-  OUTPUT=$(timeout "$TIMEOUT" "$MUTSU" "$f" 2>"$STDERR_FILE" | tr -d '\0') || EXIT_CODE=$?
+  OUTPUT=$(timeout "$FILE_TIMEOUT" "$MUTSU" "$f" 2>"$STDERR_FILE" | tr -d '\0') || EXIT_CODE=$?
   STDERR_CONTENT=$(<"$STDERR_FILE")
   rm -f "$STDERR_FILE"
 

@@ -42,6 +42,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::BitShiftRight => "+>".to_string(),
         TokenKind::IntBitNeg => "+^".to_string(),
         TokenKind::BoolBitNeg => "?^".to_string(),
+        TokenKind::StrBitNeg => "~^".to_string(),
         TokenKind::PercentPercent => "%%".to_string(),
         TokenKind::BangPercentPercent => "!%%".to_string(),
         TokenKind::SlashSlash => "//".to_string(),

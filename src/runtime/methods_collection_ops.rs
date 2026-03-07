@@ -10,6 +10,33 @@ static THREAD_HANDLES: std::sync::LazyLock<Mutex<HashMap<u64, std::thread::JoinH
 static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Interpreter {
+    fn split_host_port_literal(input: &str) -> (String, Option<u16>) {
+        let s = input.trim();
+        if s.is_empty() {
+            return (String::new(), None);
+        }
+        if let Some(stripped) = s.strip_prefix('[')
+            && let Some(end_rel) = stripped.find(']')
+        {
+            let end = end_rel + 1;
+            let host = &s[..=end];
+            let rest = &s[end + 1..];
+            if let Some(port_str) = rest.strip_prefix(':')
+                && let Ok(port) = port_str.parse::<u16>()
+            {
+                return (host.to_string(), Some(port));
+            }
+            return (s.to_string(), None);
+        }
+        if let Some((host, port_str)) = s.rsplit_once(':')
+            && !host.contains(':')
+            && let Ok(port) = port_str.parse::<u16>()
+        {
+            return (host.to_string(), Some(port));
+        }
+        (s.to_string(), None)
+    }
+
     pub(super) fn dispatch_rotate(
         &self,
         target: Value,
@@ -1377,6 +1404,21 @@ impl Interpreter {
                     "Failed to create socket: unsupported family {}",
                     f
                 )));
+            }
+        }
+
+        if !host.is_empty() && port == 0 {
+            let (parsed_host, parsed_port) = Self::split_host_port_literal(&host);
+            if let Some(p) = parsed_port {
+                host = parsed_host;
+                port = p;
+            }
+        }
+        if !localhost.is_empty() && localport == 0 {
+            let (parsed_host, parsed_port) = Self::split_host_port_literal(&localhost);
+            if let Some(p) = parsed_port {
+                localhost = parsed_host;
+                localport = p;
             }
         }
 

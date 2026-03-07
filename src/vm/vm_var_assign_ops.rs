@@ -3,6 +3,61 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    pub(super) fn quant_hash_trait_from_constraint(constraint: &str) -> Option<&'static str> {
+        let base = constraint
+            .split_once('[')
+            .map(|(head, _)| head)
+            .unwrap_or(constraint);
+        match base {
+            "Mix" => Some("Mix"),
+            "MixHash" => Some("MixHash"),
+            _ => None,
+        }
+    }
+
+    fn coerce_hash_var_value(&mut self, name: &str, value: Value) -> Result<Value, RuntimeError> {
+        if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
+            && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
+        {
+            return self
+                .interpreter
+                .call_method_with_values(value, trait_name, vec![]);
+        }
+        if self.interpreter.check_readonly_for_modify(name).is_err()
+            && matches!(value, Value::Set(_) | Value::Bag(_) | Value::Mix(_))
+        {
+            return Ok(value);
+        }
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && constraint.starts_with("SetHash")
+        {
+            return Ok(runtime::utils::coerce_value_to_quanthash(&value));
+        }
+        Ok(runtime::coerce_to_hash(value))
+    }
+
+    fn mix_assignment_weight(value: &Value) -> f64 {
+        match value {
+            Value::Int(i) => *i as f64,
+            Value::Num(n) => *n,
+            Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+            Value::Bool(flag) => {
+                if *flag {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            _ => {
+                if value.truthy() {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
     const LAZY_ASSIGN_PRESERVE_MARKER: &str = "__mutsu_preserve_lazy_on_array_assign";
     const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
 
@@ -131,15 +186,28 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_string_concat_op(&mut self, n: u32) {
+    pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
+            // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
+            // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
+            if let Value::Instance { attributes, .. } = &v
+                && Self::is_buf_value(&v)
+                && attributes.contains_key("bytes")
+            {
+                let str_result = self
+                    .interpreter
+                    .call_method_with_values(v, "Str", Vec::new())?;
+                result.push_str(&str_result.to_string_value());
+                continue;
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
+        Ok(())
     }
 
     pub(super) fn exec_post_increment_op(
@@ -215,20 +283,36 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_post_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, true, false);
+    pub(super) fn exec_post_increment_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, true, false)
     }
 
-    pub(super) fn exec_post_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, false, false);
+    pub(super) fn exec_post_decrement_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, false, false)
     }
 
-    pub(super) fn exec_pre_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, true, true);
+    pub(super) fn exec_pre_increment_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, true, true)
     }
 
-    pub(super) fn exec_pre_decrement_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        self.exec_inc_dec_index_op(code, name_idx, false, true);
+    pub(super) fn exec_pre_decrement_index_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_inc_dec_index_op(code, name_idx, false, true)
     }
 
     fn exec_inc_dec_index_op(
@@ -237,8 +321,15 @@ impl VM {
         name_idx: u32,
         increment: bool,
         return_new: bool,
-    ) {
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
         let current = if let Some(container) = self.interpreter.env().get(&name) {
@@ -250,6 +341,9 @@ impl VM {
                     } else {
                         Value::Nil
                     }
+                }
+                Value::Mix(_) if !target_is_mixhash => {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
                 }
                 _ => Value::Nil,
             }
@@ -280,6 +374,14 @@ impl VM {
                         a[i] = new_val.clone();
                     }
                 }
+                Value::Mix(ref mut mix) => {
+                    let m = Arc::make_mut(mix);
+                    if new_val.truthy() {
+                        m.insert(key, Self::mix_assignment_weight(&new_val));
+                    } else {
+                        m.remove(&key);
+                    }
+                }
                 _ => {}
             }
         }
@@ -288,6 +390,7 @@ impl VM {
         } else {
             self.stack.push(effective);
         }
+        Ok(())
     }
 
     pub(super) fn exec_index_assign_expr_named_op(
@@ -296,6 +399,13 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
@@ -566,26 +676,11 @@ impl VM {
                             }
                         }
                         Value::Mix(ref mut mix) => {
+                            if !target_is_mixhash {
+                                return Err(RuntimeError::new("X::Assignment::RO"));
+                            }
                             let m = Arc::make_mut(mix);
-                            let weight = match &val {
-                                Value::Int(i) => *i as f64,
-                                Value::Num(n) => *n,
-                                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                Value::Bool(flag) => {
-                                    if *flag {
-                                        1.0
-                                    } else {
-                                        0.0
-                                    }
-                                }
-                                _ => {
-                                    if val.truthy() {
-                                        1.0
-                                    } else {
-                                        0.0
-                                    }
-                                }
-                            };
+                            let weight = Self::mix_assignment_weight(&val);
                             if weight == 0.0 {
                                 m.remove(&key);
                             } else {
@@ -728,7 +823,12 @@ impl VM {
                     } else {
                         format!("${key}")
                     };
-                    let fq = format!("{}::{}", package.trim_end_matches("::"), key_name);
+                    let pkg = package.trim_end_matches("::");
+                    let fq = if pkg.is_empty() || pkg == "GLOBAL" {
+                        key_name
+                    } else {
+                        format!("{pkg}::{key_name}")
+                    };
                     self.interpreter.env_mut().insert(fq, val.clone());
                 }
                 self.stack.push(val);
@@ -755,6 +855,21 @@ impl VM {
                 self.stack.push(val);
                 return Ok(());
             }
+        }
+        let atomic_name = name.strip_prefix('$').unwrap_or(&name);
+        let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+        let is_atomic_int = self.interpreter.var_type_constraint(&name).as_deref()
+            == Some("atomicint")
+            || self.interpreter.var_type_constraint(atomic_name).as_deref() == Some("atomicint")
+            || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+        if is_atomic_int {
+            let fetched = self.interpreter.call_function(
+                "__mutsu_atomic_fetch_var",
+                vec![Value::str(atomic_name.to_string())],
+            )?;
+            self.locals[idx] = fetched.clone();
+            self.stack.push(fetched);
+            return Ok(());
         }
         let val = self.locals[idx].clone();
         // Fast path: non-Nil values are always valid — skip env lookup
@@ -842,24 +957,38 @@ impl VM {
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         let mut val = if name.starts_with('%') {
-            let constraint = self.interpreter.var_type_constraint(name);
-            if let Some(constraint) = constraint {
-                if constraint.starts_with("SetHash") {
-                    runtime::utils::coerce_value_to_quanthash(&val)
-                } else {
-                    runtime::coerce_to_hash(val)
-                }
-            } else {
-                runtime::coerce_to_hash(val)
-            }
+            self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
-            match val {
+            let mut assigned = match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(val)
         };
@@ -1071,15 +1200,38 @@ impl VM {
         let name = &code.locals[idx];
         self.interpreter.check_readonly_for_modify(name)?;
         let mut val = if name.starts_with('%') {
-            runtime::coerce_to_hash(raw_val)
+            self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
-            match raw_val {
+            let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };
@@ -1188,6 +1340,9 @@ impl VM {
             entries.insert(key, val);
         }
         for (key, val) in self.interpreter.env() {
+            if self.interpreter.should_hide_from_my_global_stash(key) {
+                continue;
+            }
             let display_key = Self::add_sigil_prefix(key);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }

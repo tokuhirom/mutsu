@@ -1125,44 +1125,174 @@ impl Interpreter {
                 .to_string()
         }
 
-        for line in input.lines() {
+        fn append_doc_text(existing: Option<String>, text: &str) -> Option<String> {
+            if text.is_empty() {
+                return existing;
+            }
+            Some(match existing {
+                Some(mut prev) => {
+                    prev.push(' ');
+                    prev.push_str(text);
+                    prev
+                }
+                None => text.to_string(),
+            })
+        }
+
+        fn matching_bracket(c: char) -> Option<char> {
+            match c {
+                '(' => Some(')'),
+                '[' => Some(']'),
+                '{' => Some('}'),
+                '<' => Some('>'),
+                '\u{00AB}' => Some('\u{00BB}'), // « »
+                '\u{2018}' => Some('\u{2019}'), // ‘ ’
+                '\u{201C}' => Some('\u{201D}'), // “ ”
+                '\u{300C}' => Some('\u{300D}'), // 「 」
+                '\u{300E}' => Some('\u{300F}'), // 『 』
+                '\u{FF08}' => Some('\u{FF09}'), // （ ）
+                '\u{300A}' => Some('\u{300B}'), // 《 》
+                '\u{3008}' => Some('\u{3009}'), // 〈 〉
+                '\u{169B}' => Some('\u{169C}'), // ᚛ ᚜
+                '\u{2045}' => Some('\u{2046}'), // ⁅ ⁆
+                '\u{207D}' => Some('\u{207E}'), // ⁽ ⁾
+                '\u{2768}' => Some('\u{2769}'), // ❨ ❩
+                '\u{276E}' => Some('\u{276F}'), // ❮ ❯
+                '\u{2770}' => Some('\u{2771}'), // ❰ ❱
+                '\u{2772}' => Some('\u{2773}'), // ❲ ❳
+                '\u{27E6}' => Some('\u{27E7}'), // ⟦ ⟧
+                '\u{2985}' => Some('\u{2986}'), // ⦅ ⦆
+                '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
+                '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
+                _ => None,
+            }
+        }
+
+        fn parse_doc_comment(
+            lines: &[&str],
+            start: usize,
+            prefix: &str,
+        ) -> Option<(String, usize, bool)> {
+            let trimmed = lines.get(start)?.trim_start();
+            let rest = trimmed.strip_prefix(prefix)?;
+            let rest = rest.trim_start();
+            if rest.is_empty() {
+                return Some((String::new(), start + 1, false));
+            }
+
+            let mut chars = rest.chars();
+            let open = chars.next()?;
+            let Some(close) = matching_bracket(open) else {
+                return Some((rest.trim().to_string(), start + 1, false));
+            };
+
+            let mut count = 1usize;
+            let mut scan = chars.as_str();
+            while scan.starts_with(open) {
+                count += 1;
+                scan = &scan[open.len_utf8()..];
+            }
+
+            let open_seq: String = std::iter::repeat_n(open, count).collect();
+            let close_seq: String = std::iter::repeat_n(close, count).collect();
+            let mut depth = 1i32;
+            let mut idx = start;
+            let mut current = scan;
+            let mut payload = String::new();
+
+            loop {
+                if count == 1 {
+                    while !current.is_empty() {
+                        let ch = current.chars().next().unwrap();
+                        if ch == open {
+                            depth += 1;
+                            payload.push(ch);
+                            current = &current[ch.len_utf8()..];
+                            continue;
+                        }
+                        if ch == close {
+                            depth -= 1;
+                            if depth == 0 {
+                                let normalized =
+                                    payload.split_whitespace().collect::<Vec<_>>().join(" ");
+                                return Some((normalized, idx + 1, true));
+                            }
+                            payload.push(ch);
+                            current = &current[ch.len_utf8()..];
+                            continue;
+                        }
+                        payload.push(ch);
+                        current = &current[ch.len_utf8()..];
+                    }
+                } else {
+                    while !current.is_empty() {
+                        if current.starts_with(&close_seq[..]) {
+                            depth -= 1;
+                            if depth == 0 {
+                                let normalized =
+                                    payload.split_whitespace().collect::<Vec<_>>().join(" ");
+                                return Some((normalized, idx + 1, true));
+                            }
+                            payload.push_str(&close_seq);
+                            current = &current[close_seq.len()..];
+                            continue;
+                        }
+                        if current.starts_with(&open_seq[..]) {
+                            depth += 1;
+                            payload.push_str(&open_seq);
+                            current = &current[open_seq.len()..];
+                            continue;
+                        }
+                        let ch = current.chars().next().unwrap();
+                        payload.push(ch);
+                        current = &current[ch.len_utf8()..];
+                    }
+                }
+
+                idx += 1;
+                if idx >= lines.len() {
+                    let normalized = payload.split_whitespace().collect::<Vec<_>>().join(" ");
+                    return Some((normalized, idx, true));
+                }
+                payload.push('\n');
+                current = lines[idx];
+            }
+        }
+
+        let lines: Vec<&str> = input.lines().collect();
+        let mut idx = 0usize;
+        while idx < lines.len() {
+            let line = lines[idx];
             let trimmed = line.trim_start();
 
             // Leading doc comment (#|)
-            if let Some(rest) = trimmed.strip_prefix("#|") {
-                let text = rest.trim();
-                pending_before = Some(match pending_before.take() {
-                    Some(mut prev) => {
-                        prev.push(' ');
-                        prev.push_str(text);
-                        prev
-                    }
-                    None => text.to_string(),
-                });
+            if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#|") {
+                pending_before = append_doc_text(pending_before.take(), &text);
                 last_declarant = None;
+                idx = next_idx;
                 continue;
             }
 
             // Trailing doc comment (#=)
-            if let Some(rest) = trimmed.strip_prefix("#=") {
-                let after = rest.trim();
-                if !after.is_empty()
+            if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#=") {
+                if !text.is_empty()
                     && let Some(ref name) = last_declarant
                 {
                     let entry = self.doc_comments.entry(name.clone()).or_default();
                     if entry.is_empty() {
-                        entry.push_str(after);
+                        entry.push_str(&text);
                     } else if trailing_started {
                         // Consecutive #= lines: join with space
                         entry.push(' ');
-                        entry.push_str(after);
+                        entry.push_str(&text);
                     } else {
                         // First #= after leading #|: join with newline
                         entry.push('\n');
-                        entry.push_str(after);
+                        entry.push_str(&text);
                     }
                     trailing_started = true;
                 }
+                idx = next_idx;
                 continue;
             }
 
@@ -1172,6 +1302,7 @@ impl Interpreter {
 
             // Skip empty lines and plain comments
             if trimmed.is_empty() || trimmed.starts_with('#') {
+                idx += 1;
                 continue;
             }
 
@@ -1184,6 +1315,7 @@ impl Interpreter {
                     }
                     last_declarant = Some(name);
                 }
+                idx += 1;
                 continue;
             }
 
@@ -1201,6 +1333,7 @@ impl Interpreter {
                     last_declarant = Some(name.clone());
                     current_class = Some(name);
                 }
+                idx += 1;
                 continue;
             }
 
@@ -1222,6 +1355,7 @@ impl Interpreter {
                     }
                     last_declarant = Some(full_name);
                 }
+                idx += 1;
                 continue;
             }
 
@@ -1231,6 +1365,7 @@ impl Interpreter {
             }
 
             pending_before = None;
+            idx += 1;
         }
     }
 }

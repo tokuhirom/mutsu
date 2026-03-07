@@ -678,7 +678,11 @@ impl Interpreter {
         (decls, remaining)
     }
 
-    fn regex_match_with_captures_core(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
+    pub(super) fn regex_match_with_captures_core(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
         let chars: Vec<char> = text.chars().collect();
@@ -932,6 +936,10 @@ impl Interpreter {
         let pkg = self.current_package.clone();
         let chars: Vec<char> = text.chars().collect();
         if pos > chars.len() {
+            return None;
+        }
+        // If pattern has ^ anchor, it can only match at position 0
+        if parsed.anchor_start && pos != 0 {
             return None;
         }
         self.regex_match_end_from_caps_in_pkg(&parsed, &chars, pos, &pkg)

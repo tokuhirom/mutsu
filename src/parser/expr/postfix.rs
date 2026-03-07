@@ -399,6 +399,57 @@ fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
     Some((rest, name))
 }
 
+/// Parse the operator name from a prefix-as-postfix construct like `<->`, `«~»`, `<<~>>`, `["~"]`.
+/// Input starts after the `:` in `.:<->`.
+fn parse_prefix_as_postfix(input: &str) -> Option<(&str, String)> {
+    // <<op>> (must be checked before <op>)
+    if let Some(rest) = input.strip_prefix("<<") {
+        // Handle both <<op>> and <<'op'>>
+        let end = rest.find(">>")?;
+        let mut op = &rest[..end];
+        // Strip quotes if present: <<'op'>>
+        if let Some(inner) = op.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+            op = inner;
+        }
+        if op.is_empty() {
+            return None;
+        }
+        return Some((&rest[end + 2..], op.to_string()));
+    }
+    // <op>
+    if let Some(rest) = input.strip_prefix('<') {
+        let end = rest.find('>')?;
+        let op = &rest[..end];
+        if op.is_empty() {
+            return None;
+        }
+        return Some((&rest[end + 1..], op.to_string()));
+    }
+    // «op» (U+00AB / U+00BB)
+    if let Some(rest) = input.strip_prefix('\u{00AB}') {
+        let end = rest.find('\u{00BB}')?;
+        let op = &rest[..end];
+        if op.is_empty() {
+            return None;
+        }
+        return Some((&rest[end + '\u{00BB}'.len_utf8()..], op.to_string()));
+    }
+    // ["op"]
+    if let Some(rest) = input.strip_prefix('[')
+        && let Some(rest) = rest.strip_prefix('"')
+    {
+        let end = rest.find('"')?;
+        let op = &rest[..end];
+        let rest = &rest[end + 1..];
+        let rest = rest.strip_prefix(']')?;
+        if op.is_empty() {
+            return None;
+        }
+        return Some((rest, op.to_string()));
+    }
+    None
+}
+
 fn is_postfix_operator_char(c: char) -> bool {
     if c.is_whitespace() || c.is_alphanumeric() || c == '_' {
         return false;
@@ -736,7 +787,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    postfix_expr(input)
+    super::precedence_meta_ops::power_expr(input)
 }
 
 /// Like `postfix_expr` but does NOT allow whitespace-separated dotty method
@@ -754,7 +805,7 @@ pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResu
 }
 
 /// Postfix: method calls (.method), indexing ([]), ++, --
-fn postfix_expr(input: &str) -> PResult<'_, Expr> {
+pub(super) fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     postfix_expr_inner(input, true)
 }
 
@@ -980,6 +1031,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
                         if !r4.starts_with(',') {
                             break;
                         }
@@ -1003,6 +1062,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     args: Vec::new(),
                 };
                 rest = r;
+                continue;
+            }
+            // Prefix-as-postfix: .:<op> / .:«op» / .:<<op>> / .:["op"]
+            // Applies prefix operator as postfix: 42.:<-> == -42
+            if let Some(r_colon) = r.strip_prefix(':')
+                && let Some((r_after, op_name)) = parse_prefix_as_postfix(r_colon)
+            {
+                expr = Expr::Call {
+                    name: Symbol::intern(&format!("prefix:<{op_name}>")),
+                    args: vec![expr],
+                };
+                rest = r_after;
                 continue;
             }
             // Parse method name
@@ -1067,6 +1138,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
+                        if r4.starts_with(':')
+                            && !r4.starts_with("::")
+                            && let Ok((r5, next)) = colonpair_expr(r4)
+                        {
+                            args.push(next);
+                            r_inner = r5;
+                            continue;
+                        }
                         if !r4.starts_with(',') {
                             break;
                         }

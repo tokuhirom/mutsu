@@ -603,6 +603,14 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self
+                    .interpreter
+                    .call_method_with_values(target, method, args);
+            }
+        }
         // Pseudo-methods must always go through the interpreter which handles
         // them specially — never intercept via the compiled fast path.
         if matches!(
@@ -763,6 +771,17 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self.interpreter.call_method_mut_with_values(
+                    target_name,
+                    target,
+                    method,
+                    args,
+                );
+            }
+        }
         if matches!(
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
@@ -949,6 +968,53 @@ impl VM {
             }
         };
         self.stack.push(call_result?);
+        self.env_dirty = true;
+        Ok(())
+    }
+
+    pub(super) fn exec_call_method_dynamic_mut_op(
+        &mut self,
+        code: &CompiledCode,
+        arity: u32,
+        target_name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
+        let target_name = Self::const_str(code, target_name_idx).to_string();
+        let arity = arity as usize;
+        if self.stack.len() < arity + 2 {
+            return Err(RuntimeError::new(
+                "VM stack underflow in CallMethodDynamicMut",
+            ));
+        }
+        let start = self.stack.len() - arity;
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        let mut args = Vec::new();
+        for arg in raw_args {
+            Self::append_flattened_call_arg(&mut args, arg);
+        }
+        let name_val = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let target = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let call_result = if matches!(
+            &name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target);
+            call_args.extend(args);
+            self.interpreter
+                .call_sub_value(name_val, call_args, false)?
+        } else {
+            let method = name_val.to_string_value();
+            self.interpreter
+                .call_method_mut_with_values(&target_name, target, &method, args)?
+        };
+        self.stack.push(call_result);
         self.env_dirty = true;
         Ok(())
     }

@@ -1,5 +1,5 @@
 use Test;
-plan 7;
+plan 9;
 
 is 0xFF +& 0x0F, 15, 'bitwise AND';
 is 0x0F +| 0xF0, 255, 'bitwise OR';
@@ -8,3 +8,5 @@ is 1 +< 8, 256, 'left shift';
 is 256 +> 4, 16, 'right shift';
 is 0b1010 +& 0b1100, 0b1000, 'binary AND';
 is 0b1010 +| 0b0101, 0b1111, 'binary OR';
+isnt 15**500 +> 500, 0, 'right shift keeps BigInt magnitude';
+is -15**75 +> 500, -1, 'right shift keeps sign on negative BigInt';

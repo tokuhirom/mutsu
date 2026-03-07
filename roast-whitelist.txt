@@ -114,6 +114,7 @@ roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/notandthen.t
 roast/S03-operators/numeric-shift.t
+roast/S03-operators/overflow.t
 roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
@@ -473,6 +474,7 @@ roast/S17-supply/schedule-on.t
 roast/S17-supply/skip.t
 roast/S17-supply/split.t
 roast/S17-supply/tail.t
+roast/S17-supply/unique.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S19-command-line/help.t

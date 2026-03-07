@@ -908,7 +908,17 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf" || class_name == "Blob" || class_name == "utf8" => {
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+            } =>
+            {
                 if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                     return items
                         .iter()
@@ -2081,7 +2091,7 @@ impl Interpreter {
         let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));
-        Value::make_instance(crate::symbol::Symbol::intern("Buf"), attrs)
+        Value::make_instance(crate::symbol::Symbol::intern("Buf[uint8]"), attrs)
     }
 
     /// Extract bytes from a Buf/Blob instance or array
@@ -2091,10 +2101,17 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf"
-                || class_name == "Blob"
-                || class_name.resolve().starts_with("Buf[")
-                || class_name.resolve().starts_with("Blob[") =>
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+            } =>
             {
                 if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                     Some(
