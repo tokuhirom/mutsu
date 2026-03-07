@@ -45,6 +45,8 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Promise"
             | "Supply"
             | "Channel"
+            | "Thread"
+            | "ProtocolFamily"
             | "Instant"
             | "Duration"
             | "Version"
@@ -77,6 +79,17 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Blob"
             | "utf8"
     ) || crate::runtime::native_types::is_native_int_type(name)
+        || is_parameterized_core_type(name)
+}
+
+fn is_parameterized_core_type(name: &str) -> bool {
+    if let Some(base) = name.split('[').next()
+        && name.contains('[')
+        && name.ends_with(']')
+    {
+        return is_core_raku_type(base);
+    }
+    false
 }
 
 impl VM {
@@ -275,18 +288,49 @@ impl VM {
         }
     }
 
+    fn scalarize_range_endpoint(value: Value) -> Value {
+        match value {
+            Value::Scalar(inner) => Self::scalarize_range_endpoint(inner.as_ref().clone()),
+            Value::Instance { class_name, .. } if class_name == "Match" => {
+                runtime::coerce_to_numeric(Value::str(value.to_string_value()))
+            }
+            Value::Array(..)
+            | Value::Seq(..)
+            | Value::Slip(..)
+            | Value::LazyList(..)
+            | Value::Hash(..)
+            | Value::Set(..)
+            | Value::Bag(..)
+            | Value::Mix(..) => runtime::coerce_to_numeric(value),
+            other => other,
+        }
+    }
+
     pub(super) fn exec_make_range_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
             (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
                 Value::Range(*a, i64::MAX)
             }
             (Value::Int(a), Value::Whatever) => Value::Range(*a, i64::MAX),
+            (Value::Int(a), Value::HyperWhatever) => Value::Range(*a, i64::MAX),
             (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
                 Value::Range(i64::MIN, *b)
             }
+            (Value::Str(a), Value::Whatever) => Value::GenericRange {
+                start: Arc::new(Value::Str(a.clone())),
+                end: Arc::new(Value::HyperWhatever),
+                excl_start: false,
+                excl_end: false,
+            },
+            (Value::Str(a), Value::HyperWhatever) => Value::GenericRange {
+                start: Arc::new(Value::Str(a.clone())),
+                end: Arc::new(Value::HyperWhatever),
+                excl_start: false,
+                excl_end: false,
+            },
             (Value::Str(a), Value::Str(b)) => Value::GenericRange {
                 start: Arc::new(Value::Str(a.clone())),
                 end: Arc::new(Value::Str(b.clone())),
@@ -318,14 +362,36 @@ impl VM {
                 excl_start: false,
                 excl_end: false,
             },
-            _ => Value::Nil,
+            // Using a Range as an endpoint is illegal (e.g. `0 .. ^10`).
+            (
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. },
+                _,
+            )
+            | (
+                _,
+                Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. },
+            ) => Value::Nil,
+            _ => Value::GenericRange {
+                start: Arc::new(left),
+                end: Arc::new(right),
+                excl_start: false,
+                excl_end: false,
+            },
         };
         self.stack.push(result);
     }
 
     pub(super) fn exec_make_range_excl_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExcl(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
@@ -345,8 +411,8 @@ impl VM {
     }
 
     pub(super) fn exec_make_range_excl_start_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
@@ -366,8 +432,8 @@ impl VM {
     }
 
     pub(super) fn exec_make_range_excl_both_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
@@ -463,12 +529,27 @@ impl VM {
     }
 
     pub(super) fn exec_upto_range_op(&mut self) {
-        let val = self.stack.pop().unwrap();
-        let n = match val {
-            Value::Int(i) => i,
-            _ => 0,
+        let val = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        let numeric = if val.is_numeric() {
+            val
+        } else {
+            runtime::coerce_to_numeric(val)
         };
-        self.stack.push(Value::RangeExcl(0, n));
+        let result = match numeric {
+            Value::Int(i) => Value::RangeExcl(0, i),
+            Value::Num(_)
+            | Value::Rat(_, _)
+            | Value::FatRat(_, _)
+            | Value::BigRat(_, _)
+            | Value::BigInt(_) => Value::GenericRange {
+                start: Arc::new(Value::Int(0)),
+                end: Arc::new(numeric),
+                excl_start: false,
+                excl_end: true,
+            },
+            _ => Value::RangeExcl(0, 0),
+        };
+        self.stack.push(result);
     }
 
     pub(super) fn exec_pre_increment_op(&mut self, code: &CompiledCode, name_idx: u32) {
@@ -661,6 +742,8 @@ impl VM {
         }
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
+            && !source_var.starts_with('@')
+            && !source_var.starts_with('%')
         {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());

@@ -892,49 +892,96 @@ impl VM {
             }
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
-                let (start, _end, _excl_start, _excl_end) = range_params(range);
-                if i < 0 {
-                    Value::Nil
+                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                    if i < 0 {
+                        Value::Nil
+                    } else {
+                        Value::Int(start + i)
+                    }
                 } else {
-                    Value::Int(start + i)
+                    let items = crate::runtime::utils::value_to_list(range);
+                    if i < 0 {
+                        Value::Nil
+                    } else {
+                        items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    }
                 }
             }
             (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
-                let (start, end, _excl_start, excl_end) = range_params(range);
-                let actual_end = if excl_end { end - 1 } else { end };
-                let mut result = Vec::new();
-                for i in a..b {
-                    let val = start + i;
-                    if val > actual_end {
-                        break;
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
+                    let mut result = Vec::new();
+                    for i in a..b {
+                        let val = start + i;
+                        if val > actual_end {
+                            break;
+                        }
+                        result.push(Value::Int(val));
                     }
-                    result.push(Value::Int(val));
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let start = a.max(0) as usize;
+                    let end_excl = b.max(0) as usize;
+                    if start >= items.len() {
+                        Value::array(Vec::new())
+                    } else {
+                        let end_excl = end_excl.min(items.len());
+                        if start >= end_excl {
+                            Value::array(Vec::new())
+                        } else {
+                            Value::array(items[start..end_excl].to_vec())
+                        }
+                    }
                 }
-                Value::array(result)
             }
             (ref range, Value::Range(a, b)) if range.is_range() => {
-                let (start, end, _excl_start, excl_end) = range_params(range);
-                let actual_end = if excl_end { end - 1 } else { end };
-                let mut result = Vec::new();
-                for i in a..=b {
-                    let val = start + i;
-                    if val > actual_end {
-                        break;
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
+                    let mut result = Vec::new();
+                    for i in a..=b {
+                        let val = start + i;
+                        if val > actual_end {
+                            break;
+                        }
+                        result.push(Value::Int(val));
                     }
-                    result.push(Value::Int(val));
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let start = a.max(0) as usize;
+                    let end = b.max(-1) as usize;
+                    if start >= items.len() {
+                        Value::array(Vec::new())
+                    } else {
+                        let end = end.min(items.len().saturating_sub(1));
+                        Value::array(items[start..=end].to_vec())
+                    }
                 }
-                Value::array(result)
             }
             (ref range, Value::Array(indices, ..)) if range.is_range() => {
-                let (start, _end, _excl_start, _excl_end) = range_params(range);
-                let result: Vec<Value> = indices
-                    .iter()
-                    .map(|idx| match idx {
-                        Value::Int(i) => Value::Int(start + i),
-                        _ => Value::Nil,
-                    })
-                    .collect();
-                Value::array(result)
+                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|idx| match idx {
+                            Value::Int(i) => Value::Int(start + i),
+                            _ => Value::Nil,
+                        })
+                        .collect();
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|idx| match idx {
+                            Value::Int(i) if *i >= 0 => {
+                                items.get(*i as usize).cloned().unwrap_or(Value::Nil)
+                            }
+                            _ => Value::Nil,
+                        })
+                        .collect();
+                    Value::array(result)
+                }
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (Value::Array(ref items, ..), Value::Sub(ref data)) => {
@@ -955,6 +1002,52 @@ impl VM {
                             Value::Nil
                         } else {
                             items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        }
+                    }
+                    _ => Value::Nil,
+                }
+            }
+            // WhateverCode index on Instance (e.g. Buf): $buf[*-1]
+            (
+                Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                },
+                Value::Sub(ref data),
+            ) => {
+                // Get element count from the instance
+                let len = if class_name == "Buf"
+                    || class_name == "Blob"
+                    || class_name.resolve().starts_with("Buf[")
+                    || class_name.resolve().starts_with("Blob[")
+                {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        bytes.len() as i64
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                match idx {
+                    Value::Int(i) => {
+                        if i < 0 {
+                            Value::Nil
+                        } else if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                            bytes.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        } else {
+                            Value::Nil
                         }
                     }
                     _ => Value::Nil,
@@ -1123,6 +1216,12 @@ impl VM {
                     .insert("*HOME".to_string(), Value::Nil);
             }
         }
+        // Save type metadata before delete (Arc::make_mut may change pointer)
+        let saved_meta = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             if matches!(container, Value::Mix(_)) && !target_is_mixhash {
                 return Err(RuntimeError::new("X::Immutable"));
@@ -1131,6 +1230,18 @@ impl VM {
         } else {
             Self::delete_from_missing_container(idx)
         };
+        // Re-register type metadata if it was lost due to Arc::make_mut
+        if let Some(info) = saved_meta
+            && let Some(container) = self.interpreter.env().get(&var_name)
+            && self
+                .interpreter
+                .container_type_metadata(container)
+                .is_none()
+        {
+            let container = container.clone();
+            self.interpreter
+                .register_container_type_metadata(&container, info);
+        }
         self.stack.push(result);
         Ok(())
     }
@@ -1760,7 +1871,35 @@ impl VM {
                     }
                     _ => {
                         let exists = map.contains_key(&idx.to_string_value());
-                        let result = Value::Bool(exists ^ effective_negated);
+                        let result_bool = exists ^ effective_negated;
+                        let key = idx.clone();
+                        let result = match adverb_bits {
+                            0 | 5 => Value::Bool(result_bool),
+                            // :kv — filter by actual existence, not negated result
+                            1 => {
+                                if exists {
+                                    Value::array(vec![key, Value::Bool(result_bool)])
+                                } else {
+                                    Value::array(Vec::new())
+                                }
+                            }
+                            2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                            // :p — filter by actual existence, not negated result
+                            3 => {
+                                if exists {
+                                    Value::ValuePair(
+                                        Box::new(key),
+                                        Box::new(Value::Bool(result_bool)),
+                                    )
+                                } else {
+                                    Value::array(Vec::new())
+                                }
+                            }
+                            4 => {
+                                Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool)))
+                            }
+                            _ => Value::Bool(result_bool),
+                        };
                         self.stack.push(result);
                         return Ok(());
                     }
@@ -1849,6 +1988,12 @@ impl VM {
                     let exists = match (&target, &idx) {
                         (Value::Hash(map), Value::Str(key)) => map.contains_key(key.as_str()),
                         (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        (Value::Set(set), Value::Str(key)) => set.contains(key.as_str()),
+                        (Value::Set(set), other) => set.contains(&other.to_string_value()),
+                        (Value::Bag(bag), Value::Str(key)) => bag.contains_key(key.as_str()),
+                        (Value::Bag(bag), other) => bag.contains_key(&other.to_string_value()),
+                        (Value::Mix(mix), Value::Str(key)) => mix.contains_key(key.as_str()),
+                        (Value::Mix(mix), other) => mix.contains_key(&other.to_string_value()),
                         (
                             Value::Instance {
                                 class_name,
@@ -1996,6 +2141,18 @@ impl VM {
     fn delete_from_container(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
         Ok(match container {
             Value::Hash(hash) => match idx {
+                Value::Whatever => {
+                    let h = Arc::make_mut(hash);
+                    let removed: Vec<Value> = h.values().cloned().collect();
+                    h.clear();
+                    Value::array(removed)
+                }
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    let h = Arc::make_mut(hash);
+                    let removed: Vec<Value> = h.values().cloned().collect();
+                    h.clear();
+                    Value::array(removed)
+                }
                 Value::Array(keys, ..) => {
                     let h = Arc::make_mut(hash);
                     let removed = keys
@@ -2078,23 +2235,29 @@ impl VM {
 }
 
 /// Extract (start, end, excl_start, excl_end) from a Range value.
-fn range_params(v: &Value) -> (i64, i64, bool, bool) {
+fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
     match v {
-        Value::Range(a, b) => (*a, *b, false, false),
-        Value::RangeExcl(a, b) => (*a, *b, false, true),
-        Value::RangeExclStart(a, b) => (*a + 1, *b, true, false),
-        Value::RangeExclBoth(a, b) => (*a + 1, *b, true, true),
+        Value::Range(a, b) => Some((*a, *b, false, false)),
+        Value::RangeExcl(a, b) => Some((*a, *b, false, true)),
+        Value::RangeExclStart(a, b) => Some((*a + 1, *b, true, false)),
+        Value::RangeExclBoth(a, b) => Some((*a + 1, *b, true, true)),
         Value::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
+            if !start.is_numeric() || !end.is_numeric() {
+                return None;
+            }
             let s = start.to_f64() as i64;
             let e = end.to_f64() as i64;
+            if start.to_f64().is_nan() || end.to_f64().is_nan() {
+                return None;
+            }
             let s = if *excl_start { s + 1 } else { s };
-            (s, e, *excl_start, *excl_end)
+            Some((s, e, *excl_start, *excl_end))
         }
-        _ => (0, 0, false, false),
+        _ => None,
     }
 }

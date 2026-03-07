@@ -632,6 +632,7 @@ impl Interpreter {
             encoding: "utf-8".to_string(),
             file: None,
             socket: None,
+            listener: None,
             closed: false,
             out_buffer_capacity: None,
             out_buffer_pending: Vec::new(),

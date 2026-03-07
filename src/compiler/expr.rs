@@ -325,7 +325,7 @@ impl Compiler {
                         return;
                     }
                     TokenKind::AndThen => {
-                        // a andthen b: result is b if a.defined, else a
+                        // a andthen b: result is b if a.defined, else Empty
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::CallDefined);
@@ -334,8 +334,11 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
                         let jump_end = self.code.emit(OpCode::Jump(0));
-                        // Undefined path: keep original
+                        // Undefined path: replace with Empty
                         self.code.patch_jump(jump_undef);
+                        self.code.emit(OpCode::Pop);
+                        let empty_idx = self.code.add_constant(Value::slip(vec![]));
+                        self.code.emit(OpCode::LoadConst(empty_idx));
                         self.code.patch_jump(jump_end);
                         return;
                     }
@@ -887,6 +890,27 @@ impl Compiler {
                     }
                     return;
                 }
+                if name == "DELETE-KEY"
+                    && args.is_empty()
+                    && modifier.is_none()
+                    && let Expr::Call {
+                        name: sub_name,
+                        args: sub_args,
+                    } = target.as_ref()
+                    && *sub_name == Symbol::intern("__mutsu_subscript_adverb")
+                {
+                    let mut call_args = sub_args.clone();
+                    call_args.push(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str_from("delete"))),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(Expr::Literal(Value::Bool(true))),
+                    });
+                    self.compile_expr(&Expr::Call {
+                        name: *sub_name,
+                        args: call_args,
+                    });
+                    return;
+                }
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
@@ -1085,6 +1109,10 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                 }
+                // Preserve lvalue container identity for expression-context consumers
+                // (e.g. collected postfix `for` results).
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::TagContainerRef(name_idx));
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {
@@ -1131,6 +1159,7 @@ impl Compiler {
             Expr::Exists {
                 target,
                 negated,
+                delete,
                 arg,
                 adverb,
             } => {
@@ -1240,6 +1269,30 @@ impl Compiler {
                     self.compile_expr(a);
                 }
                 self.code.emit(OpCode::ExistsIndexAdv(flags));
+
+                if *delete
+                    && let Expr::Index {
+                        target: delete_target,
+                        index: delete_index,
+                    } = target.as_ref()
+                {
+                    if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        if Self::index_assign_target_requires_eval(delete_target) {
+                            // Preserve side effects for targets like DoStmt(VarDecl).
+                            self.compile_expr(delete_target);
+                            self.code.emit(OpCode::Pop);
+                        }
+                        self.compile_expr(delete_index);
+                        let name_idx = self.code.add_constant(Value::str(var_name));
+                        self.code.emit(OpCode::DeleteIndexNamed(name_idx));
+                    } else {
+                        self.compile_expr(delete_target);
+                        self.compile_expr(delete_index);
+                        self.code.emit(OpCode::DeleteIndexExpr);
+                    }
+                    // Keep the :exists result on the stack.
+                    self.code.emit(OpCode::Pop);
+                }
             }
             Expr::ZenSlice(inner) => {
                 // Outside of :exists, zen slice is identity
@@ -1534,6 +1587,15 @@ impl Compiler {
                 }
                 Stmt::Given { topic, body } => {
                     self.compile_expr(topic);
+                    if let Some(source_name) = match topic {
+                        Expr::Var(name) => Some(name.clone()),
+                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                        Expr::HashVar(name) => Some(format!("%{}", name)),
+                        _ => None,
+                    } {
+                        let name_idx = self.code.add_constant(Value::str(source_name));
+                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                    }
                     let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
                     self.compile_block_inline(body);
                     self.code.patch_body_end(given_idx);

@@ -14,10 +14,23 @@ use crate::value::Value;
 
 use super::{ident, parse_statement_modifier, var_name};
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompoundAssignOp {
+    Comma,
     DefinedOr,
     LogicalOr,
     LogicalAnd,
@@ -30,7 +43,6 @@ pub(crate) enum CompoundAssignOp {
     Power,
     Repeat,
     ListRepeat,
-    Comma,
     BitOr,
     BitAnd,
     BitXor,
@@ -50,6 +62,7 @@ pub(crate) enum CompoundAssignOp {
 impl CompoundAssignOp {
     pub(super) fn symbol(self) -> &'static str {
         match self {
+            CompoundAssignOp::Comma => ",=",
             CompoundAssignOp::DefinedOr => "//=",
             CompoundAssignOp::LogicalOr => "||=",
             CompoundAssignOp::LogicalAnd => "&&=",
@@ -62,7 +75,6 @@ impl CompoundAssignOp {
             CompoundAssignOp::Power => "**=",
             CompoundAssignOp::Repeat => "x=",
             CompoundAssignOp::ListRepeat => "xx=",
-            CompoundAssignOp::Comma => ",=",
             CompoundAssignOp::BitOr => "+|=",
             CompoundAssignOp::BitAnd => "+&=",
             CompoundAssignOp::BitXor => "+^=",
@@ -82,6 +94,7 @@ impl CompoundAssignOp {
 
     pub(crate) fn token_kind(self) -> TokenKind {
         match self {
+            CompoundAssignOp::Comma => TokenKind::Comma,
             CompoundAssignOp::DefinedOr => TokenKind::SlashSlash,
             CompoundAssignOp::LogicalOr => TokenKind::OrOr,
             CompoundAssignOp::LogicalAnd => TokenKind::AndAnd,
@@ -94,7 +107,6 @@ impl CompoundAssignOp {
             CompoundAssignOp::Power => TokenKind::StarStar,
             CompoundAssignOp::Repeat => TokenKind::Ident("x".to_string()),
             CompoundAssignOp::ListRepeat => TokenKind::Ident("xx".to_string()),
-            CompoundAssignOp::Comma => TokenKind::Comma,
             CompoundAssignOp::BitOr => TokenKind::BitOr,
             CompoundAssignOp::BitAnd => TokenKind::BitAnd,
             CompoundAssignOp::BitXor => TokenKind::BitXor,
@@ -138,6 +150,16 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
             then_expr: Box::new(lhs),
             else_expr: Box::new(rhs),
         }
+    } else if matches!(op, CompoundAssignOp::Andthen) {
+        // andthen=: assign RHS only when LHS is defined, else keep LHS
+        Expr::Ternary {
+            cond: Box::new(Expr::Call {
+                name: Symbol::intern("defined"),
+                args: vec![lhs.clone()],
+            }),
+            then_expr: Box::new(rhs),
+            else_expr: Box::new(lhs),
+        }
     } else {
         Expr::Binary {
             left: Box::new(autoviv_compound_lhs(lhs, op)),
@@ -148,6 +170,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
 }
 
 pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
+    CompoundAssignOp::Comma,
     CompoundAssignOp::DefinedOr,
     CompoundAssignOp::LogicalOr,
     CompoundAssignOp::LogicalAnd,
@@ -160,7 +183,6 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Mod,
     CompoundAssignOp::ListRepeat, // xx= before x= to match longest first
     CompoundAssignOp::Repeat,
-    CompoundAssignOp::Comma,
     CompoundAssignOp::BitOr,
     CompoundAssignOp::BitAnd,
     CompoundAssignOp::BitXor,
@@ -910,7 +932,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let (r, _) = ws(r)?;
-        // Parse optional args in parens
+        // Parse optional args in parens or colon-form
         let (rest, args) = if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
@@ -936,6 +958,34 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 let (r, _) = parse_char(r, ')')?;
                 (r, args)
             }
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (r, vec![])
         };
@@ -1420,17 +1470,26 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             // Colon-arg syntax: .=method: arg, arg2
             let r = &r[1..];
             let (r, _) = ws(r)?;
-            let (r, first_arg) = expression(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
             let mut args = vec![first_arg];
             let mut r_inner = r;
             loop {
                 let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
                 if !r2.starts_with(',') {
                     break;
                 }
                 let r2 = &r2[1..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next) = expression(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
                 args.push(next);
                 r_inner = r2;
             }

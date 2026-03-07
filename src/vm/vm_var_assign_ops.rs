@@ -28,6 +28,11 @@ impl VM {
         {
             return Ok(value);
         }
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && constraint.starts_with("SetHash")
+        {
+            return Ok(runtime::utils::coerce_value_to_quanthash(&value));
+        }
         Ok(runtime::coerce_to_hash(value))
     }
 
@@ -36,15 +41,15 @@ impl VM {
             Value::Int(i) => *i as f64,
             Value::Num(n) => *n,
             Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-            Value::Bool(b) => {
-                if *b {
+            Value::Bool(flag) => {
+                if *flag {
                     1.0
                 } else {
                     0.0
                 }
             }
-            other => {
-                if other.truthy() {
+            _ => {
+                if value.truthy() {
                     1.0
                 } else {
                     0.0
@@ -233,6 +238,8 @@ impl VM {
         // Write back to source variable when incrementing $_ bound to a container
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
+            && !source_var.starts_with('@')
+            && !source_var.starts_with('%')
         {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, new_val.clone());
@@ -352,6 +359,14 @@ impl VM {
                             a.push(Value::Nil);
                         }
                         a[i] = new_val.clone();
+                    }
+                }
+                Value::Mix(ref mut mix) => {
+                    let m = Arc::make_mut(mix);
+                    if new_val.truthy() {
+                        m.insert(key, Self::mix_assignment_weight(&new_val));
+                    } else {
+                        m.remove(&key);
                     }
                 }
                 _ => {}
@@ -619,12 +634,45 @@ impl VM {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
                         }
+                        Value::Set(ref mut set) => {
+                            let s = Arc::make_mut(set);
+                            if val.truthy() {
+                                s.insert(key.clone());
+                            } else {
+                                s.remove(&key);
+                            }
+                        }
+                        Value::Bag(ref mut bag) => {
+                            let b = Arc::make_mut(bag);
+                            let count = match &val {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => *n as i64,
+                                Value::Bool(flag) => i64::from(*flag),
+                                _ => {
+                                    if val.truthy() {
+                                        1
+                                    } else {
+                                        0
+                                    }
+                                }
+                            };
+                            if count == 0 {
+                                b.remove(&key);
+                            } else {
+                                b.insert(key.clone(), count);
+                            }
+                        }
                         Value::Mix(ref mut mix) => {
                             if !target_is_mixhash {
                                 return Err(RuntimeError::new("X::Assignment::RO"));
                             }
+                            let m = Arc::make_mut(mix);
                             let weight = Self::mix_assignment_weight(&val);
-                            Arc::make_mut(mix).insert(key.clone(), weight);
+                            if weight == 0.0 {
+                                m.remove(&key);
+                            } else {
+                                m.insert(key.clone(), weight);
+                            }
                         }
                         _ => {
                             let mut hash = std::collections::HashMap::new();
@@ -668,6 +716,13 @@ impl VM {
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {
             self.update_local_if_exists(code, &var_name, &updated);
+            if var_name == "_"
+                && let Some(ref source_var) = self.topic_source_var
+            {
+                let source_name = source_var.clone();
+                self.set_env_with_main_alias(&source_name, updated.clone());
+                self.update_local_if_exists(code, &source_name, &updated);
+            }
             // Re-register container default for `is default(...)` after mutation,
             // since Arc::make_mut may have changed the pointer identity.
             if let Some(def) = self.interpreter.var_default(&var_name).cloned() {
@@ -868,16 +923,6 @@ impl VM {
 
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
-        let quant_trait = self
-            .interpreter
-            .var_type_constraint_fast(name)
-            .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()));
-        if name.starts_with('%')
-            && quant_trait == Some("Mix")
-            && !matches!(self.locals[idx], Value::Nil)
-        {
-            return Err(RuntimeError::new("X::Assignment::RO"));
-        }
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
@@ -982,6 +1027,8 @@ impl VM {
         }
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
+            && !source_var.starts_with('@')
+            && !source_var.starts_with('%')
         {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());
@@ -990,13 +1037,6 @@ impl VM {
         if (name.starts_with('@') || name.starts_with('%'))
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {
-            let declared_type = Self::quant_hash_trait_from_constraint(&value_type)
-                .map(std::string::ToString::to_string);
-            let value_type = if declared_type.is_some() {
-                "Real".to_string()
-            } else {
-                value_type
-            };
             let info = crate::runtime::ContainerTypeInfo {
                 value_type,
                 key_type: if name.starts_with('%') {
@@ -1004,7 +1044,7 @@ impl VM {
                 } else {
                     None
                 },
-                declared_type,
+                declared_type: None,
             };
             self.interpreter
                 .register_container_type_metadata(&val, info);
@@ -1103,16 +1143,6 @@ impl VM {
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         self.interpreter.check_readonly_for_modify(name)?;
-        let quant_trait = self
-            .interpreter
-            .var_type_constraint_fast(name)
-            .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()));
-        if name.starts_with('%')
-            && quant_trait == Some("Mix")
-            && !matches!(self.locals[idx], Value::Nil)
-        {
-            return Err(RuntimeError::new("X::Assignment::RO"));
-        }
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
@@ -1196,13 +1226,6 @@ impl VM {
         if (name.starts_with('@') || name.starts_with('%'))
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {
-            let declared_type = Self::quant_hash_trait_from_constraint(&value_type)
-                .map(std::string::ToString::to_string);
-            let value_type = if declared_type.is_some() {
-                "Real".to_string()
-            } else {
-                value_type
-            };
             let info = crate::runtime::ContainerTypeInfo {
                 value_type,
                 key_type: if name.starts_with('%') {
@@ -1210,7 +1233,7 @@ impl VM {
                 } else {
                     None
                 },
-                declared_type,
+                declared_type: None,
             };
             self.interpreter
                 .register_container_type_metadata(&val, info);

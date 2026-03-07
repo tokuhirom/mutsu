@@ -156,6 +156,7 @@ roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-phasers/end.t
 roast/S04-phasers/first.t
+roast/S04-statement-modifiers/for.t
 roast/S04-statement-modifiers/given.t
 roast/S04-statement-modifiers/if.t
 roast/S04-statement-modifiers/unless.t
@@ -167,6 +168,7 @@ roast/S04-statement-parsing/hash.t
 roast/S04-statements/do.t
 roast/S04-statements/for-scope.t
 roast/S04-statements/for_with_only_one_item.t
+roast/S04-statements/given.t
 roast/S04-statements/goto.t
 roast/S04-statements/label.t
 roast/S04-statements/last.t
@@ -257,6 +259,7 @@ roast/S06-routine-modifiers/native-lvalue-subroutines.t
 roast/S06-signature/arity.t
 roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/closure-parameters.t
+roast/S06-signature/defaults.t
 roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
@@ -352,6 +355,7 @@ roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
+roast/S15-nfg/from-file.t
 roast/S15-nfg/grapheme-break.t
 roast/S15-nfg/many-combiners.t
 roast/S15-nfg/many-threads.t
@@ -425,11 +429,13 @@ roast/S16-io/put.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
+roast/S16-io/watch.t
 roast/S16-unfiled/getpeername.t
 roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t
+roast/S17-lowlevel/thread-start-join-stress.t
 roast/S17-procasync/basic.t
 roast/S17-procasync/kill.t
 roast/S17-procasync/many-processes-no-close-stdin.t
@@ -517,6 +523,7 @@ roast/S32-container/stringify.t
 roast/S32-container/zip.t
 roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
+roast/S32-hash/delete-adverb.t
 roast/S32-hash/delete.t
 roast/S32-hash/exists-adverb.t
 roast/S32-hash/exists.t
@@ -526,6 +533,7 @@ roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-hash/slice.t
+roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t

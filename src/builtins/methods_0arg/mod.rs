@@ -1382,6 +1382,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
+        "bytes" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf"
+                || class_name == "Blob"
+                || class_name.resolve().starts_with("Buf[")
+                || class_name.resolve().starts_with("Blob[") =>
+            {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    Some(Ok(Value::Int(bytes.len() as i64)))
+                } else {
+                    Some(Ok(Value::Int(0)))
+                }
+            }
+            Value::Str(s) => Some(Ok(Value::Int(s.len() as i64))),
+            _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
+        },
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),
@@ -1976,7 +1995,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if let Value::Instance { class_name, .. } = target
                 && (class_name == "Supply"
                     || class_name == "IO::Handle"
-                    || class_name == "IO::Path")
+                    || class_name == "IO::Path"
+                    || class_name == "IO::Socket::INET")
             {
                 return None;
             }
@@ -2400,6 +2420,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b { Value::Int(*a) } else { Value::Nil })),
+            Value::RangeExclStart(a, b) => Some(Ok(if a < b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*a + 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { start, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(start.as_ref().clone()))
+                } else {
+                    Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
@@ -2413,6 +2453,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*b) } else { Value::Nil })),
+            Value::RangeExcl(a, b) => Some(Ok(if a < b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::RangeExclStart(a, b) => {
+                Some(Ok(if a < b { Value::Int(*b) } else { Value::Nil }))
+            }
+            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
+                Value::Int(*b - 1)
+            } else {
+                Value::Nil
+            })),
+            Value::GenericRange { end, .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    Some(Ok(end.as_ref().clone()))
+                } else {
+                    Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),

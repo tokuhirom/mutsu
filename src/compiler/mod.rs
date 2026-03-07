@@ -232,8 +232,12 @@ impl Compiler {
     fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
         match iterable {
             Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayLiteral(items) if items.len() == 1 => match &items[0] {
                 Expr::Var(name) => Some(name.clone()),
+                Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                Expr::HashVar(name) => Some(format!("%{}", name)),
                 _ => None,
             },
             _ => None,
@@ -320,6 +324,23 @@ impl Compiler {
                             self.code.emit(OpCode::GetLocal(slot));
                             self.code.emit(OpCode::SetTopic);
                             continue;
+                        }
+                        Stmt::Call { name, args } => {
+                            let positional: Option<Vec<Expr>> = args
+                                .iter()
+                                .map(|arg| match arg {
+                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            if let Some(positional_args) = positional {
+                                self.compile_expr(&Expr::Call {
+                                    name: *name,
+                                    args: positional_args,
+                                });
+                                self.code.emit(OpCode::SetTopic);
+                                continue;
+                            }
                         }
                         _ => {}
                     }

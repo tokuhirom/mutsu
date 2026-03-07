@@ -1335,6 +1335,13 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
 
 /// Parse `return` statement.
 pub(super) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
+    // If "return" is a declared term symbol (e.g. sigilless variable \return),
+    // don't parse it as the return keyword.
+    if keyword("return", input).is_some()
+        && match_user_declared_term_symbol(input).is_some_and(|(name, _, _)| name == "return")
+    {
+        return Err(PError::expected("return statement"));
+    }
     let rest = keyword("return", input).ok_or_else(|| PError::expected("return statement"))?;
     let (rest, _) = ws(rest)?;
     if is_stmt_modifier_keyword(rest) {
@@ -1605,8 +1612,12 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, Stmt::Proceed));
     }
     if name == "succeed" {
-        let (rest, _) = opt_char(rest, ';');
-        return Ok((rest, Stmt::Succeed));
+        // `succeed EXPR` should call the builtin function with payload;
+        // only bare `succeed` maps to the control-flow statement form.
+        if rest.is_empty() || rest.starts_with(';') || is_stmt_modifier_keyword(rest) {
+            let (rest, _) = opt_char(rest, ';');
+            return Ok((rest, Stmt::Succeed));
+        }
     }
     if name == "done" {
         // Support statement modifiers like `done if $v >= 2`

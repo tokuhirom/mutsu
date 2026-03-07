@@ -18,6 +18,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::Caret => "^".to_string(),
         TokenKind::Ampersand => "&".to_string(),
         TokenKind::Pipe => "|".to_string(),
+        TokenKind::Comma => ",".to_string(),
         TokenKind::EqEq => "==".to_string(),
         TokenKind::BangEq => "!=".to_string(),
         TokenKind::Lt => "<".to_string(),
@@ -573,6 +574,22 @@ impl Compiler {
                                 sub_compiler.emit_nil_value();
                             }
                             continue;
+                        }
+                        Stmt::Call { name, args } => {
+                            let positional: Option<Vec<Expr>> = args
+                                .iter()
+                                .map(|arg| match arg {
+                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            if let Some(positional_args) = positional {
+                                sub_compiler.compile_expr(&Expr::Call {
+                                    name: *name,
+                                    args: positional_args,
+                                });
+                                continue;
+                            }
                         }
                         _ => {}
                     }
@@ -1161,6 +1178,10 @@ impl Compiler {
         };
         let normalized_iterable = Self::normalize_for_iterable(iterable);
         self.compile_expr(&normalized_iterable);
+        if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+            let source_idx = self.code.add_constant(Value::str(source_name));
+            self.code.emit(OpCode::TagContainerRef(source_idx));
+        }
         let loop_idx = self.code.emit(OpCode::ForLoop {
             param_idx,
             param_local: None,
@@ -1168,6 +1189,7 @@ impl Compiler {
             label: label.clone(),
             arity,
             collect: true,
+            restore_topic: true,
             threaded: false,
         });
         self.compile_collected_loop_body(&loop_body);
@@ -1819,6 +1841,29 @@ impl Compiler {
                         self.compile_stmt(stmt);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
+                    }
+                    Stmt::SubDecl { name, .. } => {
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::CodeVar(name.resolve()));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    Stmt::Call { name, args } => {
+                        let positional: Option<Vec<Expr>> = args
+                            .iter()
+                            .map(|arg| match arg {
+                                crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        if let Some(positional_args) = positional {
+                            self.compile_expr(&Expr::Call {
+                                name: *name,
+                                args: positional_args,
+                            });
+                            self.pop_dynamic_scope_lexical(saved);
+                            return;
+                        }
                     }
                     _ => {}
                 }

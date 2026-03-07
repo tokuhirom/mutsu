@@ -47,6 +47,33 @@ fn samemark_per_word(target: &str, source: &str) -> String {
     result
 }
 
+fn normalize_subst_replacement(template: &str) -> String {
+    let mut out = String::new();
+    let mut chars = template.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        let Some(next) = chars.peek().copied() else {
+            out.push('\\');
+            continue;
+        };
+        match next {
+            '\\' => {
+                out.push('\\');
+                chars.next();
+            }
+            '&' => {
+                out.push('&');
+                chars.next();
+            }
+            _ => out.push('\\'),
+        }
+    }
+    out
+}
+
 impl VM {
     fn should_retry_with_canonical_infix_name(name: &str) -> bool {
         matches!(
@@ -65,7 +92,7 @@ impl VM {
         x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = Self::const_str(code, replacement_idx).to_string();
+        let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -113,7 +140,7 @@ impl VM {
         x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = Self::const_str(code, replacement_idx).to_string();
+        let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self

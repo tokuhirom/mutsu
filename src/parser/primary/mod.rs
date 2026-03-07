@@ -334,6 +334,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_topic_brace_lookup() {
+        let (rest, expr) = primary(".{'path'}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Index { target, index } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "_"));
+                assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s.as_str() == "path"));
+            }
+            _ => panic!("expected topical brace lookup"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_bracket_expr() {
         let (rest, expr) = primary("$[1,2]").unwrap();
         assert_eq!(rest, "");
@@ -411,6 +424,14 @@ mod tests {
         let src = "Q:to/END/\nhello\n    END\n";
         let (rest, expr) = primary(src).unwrap();
         assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
+    }
+
+    #[test]
+    fn parse_q_to_heredoc_with_space_before_delimiter() {
+        let src = "q:to /END/;\nhello\nEND\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, ";\n");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
     }
 

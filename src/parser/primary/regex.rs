@@ -23,6 +23,18 @@ use super::super::expr::expression;
 use super::super::helpers::{consume_unspace, skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::assign::try_parse_assign_expr;
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 #[derive(Default)]
 struct MatchAdverbs {
     global: bool,
@@ -989,6 +1001,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
     if let Some(after_m) = input.strip_prefix('m')
+        && !after_m.starts_with("=>")
         && !crate::parser::stmt::simple::is_user_declared_sub("m")
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
@@ -1075,6 +1088,59 @@ pub(super) fn version_lit(input: &str) -> PResult<'_, Expr> {
     };
     let (parts, plus, minus) = Value::parse_version_string(version);
     Ok((rest, Expr::Literal(Value::Version { parts, plus, minus })))
+}
+
+fn parse_topic_brace_index(input: &str) -> PResult<'_, Expr> {
+    let (r, first) = expression(input)?;
+    let mut current_dim = vec![first];
+    let mut dimensions: Vec<Expr> = Vec::new();
+    let mut has_semicolons = false;
+    let mut r = r;
+
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(',') {
+            let (r3, _) = parse_char(r2, ',')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if r2.starts_with(';') && !r2.starts_with(";;") {
+            has_semicolons = true;
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(std::mem::take(&mut current_dim))
+            };
+            dimensions.push(dim_expr);
+            current_dim = Vec::new();
+            let (r3, _) = parse_char(r2, ';')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if has_semicolons {
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            };
+            dimensions.push(dim_expr);
+            return Ok((r2, Expr::ArrayLiteral(dimensions)));
+        }
+        return Ok((
+            r2,
+            if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            },
+        ));
+    }
 }
 
 /// Parse a topicalized method call: .say, .uc, .defined, etc.
@@ -1177,6 +1243,20 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // .{index} — topicalized hash/associative lookup on $_
+    if let Some(r) = r.strip_prefix('{') {
+        let (r, _) = ws(r)?;
+        let (r, index) = parse_topic_brace_index(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, '}')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::Var("_".to_string())),
+                index: Box::new(index),
+            },
+        ));
+    }
     // .&foo(...) / .&foo: ... — call a code object/sub with topic as first arg
     if let Some(r) = r.strip_prefix('&') {
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -1266,17 +1346,26 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     if r2.starts_with(':') && !r2.starts_with("::") {
         let r3 = &r2[1..];
         let (r3, _) = ws(r3)?;
-        let (r3, first_arg) = expression(r3)?;
+        let (r3, first_arg) = parse_colon_method_arg(r3)?;
         let mut args = vec![first_arg];
         let mut r_inner = r3;
         loop {
             let (r4, _) = ws(r_inner)?;
+            // Adjacent colonpairs without comma
+            if r4.starts_with(':')
+                && !r4.starts_with("::")
+                && let Ok((r5, arg)) = crate::parser::primary::misc::colonpair_expr(r4)
+            {
+                args.push(arg);
+                r_inner = r5;
+                continue;
+            }
             if !r4.starts_with(',') {
                 break;
             }
             let r4 = &r4[1..];
             let (r4, _) = ws(r4)?;
-            let (r4, next) = expression(r4)?;
+            let (r4, next) = parse_colon_method_arg(r4)?;
             args.push(next);
             r_inner = r4;
         }

@@ -1035,6 +1035,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_topical_dot_brace_expression() {
+        let (rest, expr) = expression(".{'a'}").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Index { .. }));
+    }
+
+    #[test]
     fn expression_memo_reuses_result() {
         reset_expression_memo();
         let (rest, expr) = expression("1 + 2").unwrap();
@@ -1802,6 +1809,19 @@ mod tests {
                 assert!(args.is_empty());
             }
             _ => panic!("expected hyper dynamic method call"),
+        }
+    }
+
+    #[test]
+    fn parse_hyper_method_with_unspace_after_operator() {
+        let (rest, expr) = expression("$m»\\\n.foo").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::HyperMethodCall { target, name, .. } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+                assert_eq!(name, "foo");
+            }
+            _ => panic!("expected hyper method call"),
         }
     }
 

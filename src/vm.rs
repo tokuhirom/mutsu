@@ -168,7 +168,11 @@ impl VM {
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
-        (self.interpreter, Ok(self.last_topic_value))
+        let last_stack_value = self.stack.last().cloned();
+        (
+            self.interpreter,
+            Ok(last_stack_value.or(self.last_topic_value)),
+        )
     }
 
     /// Run compiled bytecode without consuming self.
@@ -452,6 +456,8 @@ impl VM {
                 self.interpreter.set_shared_var(&name, val.clone());
                 if name == "_"
                     && let Some(ref source_var) = self.topic_source_var
+                    && !source_var.starts_with('@')
+                    && !source_var.starts_with('%')
                 {
                     let source_name = source_var.clone();
                     self.set_env_with_main_alias(&source_name, val.clone());
@@ -1304,6 +1310,7 @@ impl VM {
                 label,
                 arity,
                 collect,
+                restore_topic,
                 threaded,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
@@ -1313,6 +1320,7 @@ impl VM {
                     label: label.clone(),
                     arity: *arity,
                     collect: *collect,
+                    restore_topic: *restore_topic,
                     threaded: *threaded,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;

@@ -1075,6 +1075,20 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
+            (Value::Junction { kind, values }, _) => match kind {
+                crate::value::JunctionKind::Any => {
+                    values.iter().any(|v| self.smart_match(v, right))
+                }
+                crate::value::JunctionKind::All => {
+                    values.iter().all(|v| self.smart_match(v, right))
+                }
+                crate::value::JunctionKind::One => {
+                    values.iter().filter(|v| self.smart_match(v, right)).count() == 1
+                }
+                crate::value::JunctionKind::None => {
+                    values.iter().all(|v| !self.smart_match(v, right))
+                }
+            },
             // Smartmatch against a flip-flop matcher object produced by ff/fff
             // in SmartMatchExpr RHS context.
             (_, Value::Hash(map))

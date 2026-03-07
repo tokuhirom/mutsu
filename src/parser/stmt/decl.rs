@@ -4,6 +4,18 @@ use super::super::parse_result::{
     PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
 };
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -1118,7 +1130,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (rest, method_name) =
             take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let method_name = method_name.to_string();
-        // Parse optional args
+        // Parse optional args (parenthesized or colon-form)
         let (rest, args) = if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
             let (r, _) = ws(r)?;
@@ -1126,6 +1138,34 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             (r, args)
+        } else if rest.starts_with(':') && !rest.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (rest, Vec::new())
         };

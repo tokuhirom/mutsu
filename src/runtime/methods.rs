@@ -19,6 +19,8 @@ impl Interpreter {
                 | "THREAD"
                 | "raku"
                 | "perl"
+                | "first"
+                | "grep"
         )
     }
 
@@ -966,6 +968,7 @@ impl Interpreter {
                     | "candidates"
                     | "concretization"
                     | "curried_role"
+                    | "enum_value_list"
             )
         {
             let mut how_args = args.to_vec();
@@ -1251,6 +1254,15 @@ impl Interpreter {
                 if matches!(target, Value::Array(..)) {
                     return Ok(Value::Package(Symbol::intern("Any")));
                 }
+                if matches!(target, Value::Set(_)) {
+                    return Ok(Value::Bool(false));
+                }
+                if matches!(target, Value::Bag(_)) {
+                    return Ok(Value::Int(0));
+                }
+                if matches!(target, Value::Mix(_)) {
+                    return Ok(Value::Num(0.0));
+                }
             }
             "note" if args.is_empty() => {
                 let content = format!("{}\n", self.render_gist_value(&target));
@@ -1348,6 +1360,12 @@ impl Interpreter {
                         }
                     });
                     return Ok(ret);
+                }
+                // Thread.start
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Thread"
+                {
+                    return self.dispatch_thread_start(&args);
                 }
             }
             "in" => {
@@ -1776,6 +1794,29 @@ impl Interpreter {
                     other => value_type_name(other).to_string(),
                 }));
             }
+            "^enum_value_list" | "enum_value_list" => {
+                let type_name_owned = match &target {
+                    Value::Package(name) => Some(name.resolve()),
+                    Value::Str(name) => Some(name.to_string()),
+                    _ => None,
+                };
+                let type_name = type_name_owned.as_deref();
+                if let Some(type_name) = type_name
+                    && let Some(variants) = self.enum_types.get(type_name)
+                {
+                    let values: Vec<Value> = variants
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, val))| Value::Enum {
+                            enum_type: Symbol::intern(type_name),
+                            key: Symbol::intern(key),
+                            value: *val,
+                            index,
+                        })
+                        .collect();
+                    return Ok(Value::array(values));
+                }
+            }
             "enums" => {
                 let type_name_owned = match &target {
                     Value::Package(name) => Some(name.resolve()),
@@ -2178,6 +2219,9 @@ impl Interpreter {
                 }
                 return self.dispatch_to_hash(target);
             }
+            "hash" if args.is_empty() => {
+                return self.dispatch_to_hash(target);
+            }
             "any" | "all" | "one" | "none" if args.is_empty() => {
                 let kind = match method {
                     "any" => JunctionKind::Any,
@@ -2242,6 +2286,14 @@ impl Interpreter {
                     return Ok(target);
                 }
                 return self.call_function("produce", vec![callable, target]);
+            }
+            "reduce" => {
+                let callable = args
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
+                let items = Self::value_to_list(&target);
+                return self.reduce_items(callable, items);
             }
             "map" => {
                 if let Value::Instance {
@@ -2630,6 +2682,30 @@ impl Interpreter {
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
                     return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                }
+            }
+            "join" if args.len() <= 1 => {
+                if matches!(
+                    target,
+                    Value::Array(..)
+                        | Value::Seq(..)
+                        | Value::Slip(..)
+                        | Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }
+                ) {
+                    let sep = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let joined = Self::value_to_list(&target)
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    return Ok(Value::str(joined));
                 }
             }
             "grep" => {

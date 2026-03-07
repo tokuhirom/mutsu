@@ -589,7 +589,17 @@ impl VM {
                 | "RatStr"
                 | "ComplexStr"
                 | "Allomorph"
-        )
+        ) || {
+            // Handle parameterized types like Buf[uint8], Array[Int], etc.
+            if let Some(open) = name.find('[')
+                && name.ends_with(']')
+                && open > 0
+            {
+                Self::is_builtin_type(&name[..open])
+            } else {
+                false
+            }
+        }
     }
 
     /// Check if a name is a type with a smiley suffix (:U, :D, :_).
@@ -1154,6 +1164,12 @@ impl VM {
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
+        // Set current_package to the function's defining package so that default
+        // value expressions can resolve package-scoped functions (e.g. &double).
+        let saved_package = self.interpreter.current_package().to_string();
+        if !fn_package.is_empty() && fn_package != "GLOBAL" {
+            self.interpreter.set_current_package(fn_package.to_string());
+        }
         let rw_bindings =
             match self
                 .interpreter
@@ -1161,6 +1177,7 @@ impl VM {
             {
                 Ok(bindings) => bindings,
                 Err(e) => {
+                    self.interpreter.set_current_package(saved_package);
                     if !fn_name.is_empty() {
                         self.interpreter.pop_routine();
                     }
@@ -1277,6 +1294,7 @@ impl VM {
             self.interpreter.set_state_var(key.clone(), val);
         }
 
+        self.interpreter.set_current_package(saved_package);
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }

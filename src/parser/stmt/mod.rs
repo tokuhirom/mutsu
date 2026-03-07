@@ -240,7 +240,7 @@ fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     result
 }
 
-fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
+pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, stmts) = stmt_list_with_mode(input, false)?;
     let (input, _) = ws(input)?;
     let (input, _) = parse_char(input, '}')?;
@@ -1245,6 +1245,14 @@ mod tests {
     fn parse_forward_sub_without_signature_is_invalid() {
         let err = program("sub foo;").err().expect("expected parse error");
         assert!(err.to_string().contains("X::UnitScope::Invalid"));
+    }
+
+    #[test]
+    fn parse_ternary_statement() {
+        let (rest, stmts) = program("1 ?? 2 !! 3;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Expr(Expr::Ternary { .. })));
     }
 
     #[test]

@@ -178,7 +178,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         .ok_or_else(|| PError::expected("Q string"))?;
     // Q:to/DELIM/ or Q:to<DELIM> heredoc
     if let Some(r) = rest.strip_prefix(":to") {
-        return parse_to_heredoc(r);
+        return parse_to_heredoc(r, false);
     }
     // Q:q form — same as q (single-quote semantics)
     if let Some(r) = rest.strip_prefix(":q") {
@@ -245,7 +245,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     Ok((after, Expr::Literal(Value::str(content.to_string()))))
 }
 
-fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
+fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
     let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
     // In Raku, heredoc content starts on the NEXT line.
     // The rest of the current line (after q:to/DELIM/) continues as normal code.
@@ -323,8 +323,11 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
         let after_terminator = after_terminator
             .strip_prefix('\n')
             .unwrap_or(after_terminator);
-        // Check if content has \qq[...] escapes that need processing
-        let expr = if content.contains("\\qq") {
+        // qq:to interpolates like double-quoted strings.
+        let expr = if interpolate {
+            interpolate_heredoc_content(&content)
+        // q:to keeps content literal; only process explicit \qq escapes.
+        } else if content.contains("\\qq") {
             parse_single_quote_qq(&content)
         } else {
             Expr::Literal(Value::str(content))
@@ -341,7 +344,41 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     Err(PError::expected("heredoc terminator"))
 }
 
+fn interpolate_heredoc_content(content: &str) -> Expr {
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut rest = content;
+
+    while !rest.is_empty() {
+        if rest.starts_with("\\$")
+            || rest.starts_with("\\@")
+            || rest.starts_with("\\%")
+            || rest.starts_with("\\&")
+            || rest.starts_with("\\{")
+            || rest.starts_with("\\}")
+            || rest.starts_with("\\\\")
+        {
+            let escaped = rest.as_bytes()[1] as char;
+            current.push(escaped);
+            rest = &rest[2..];
+            continue;
+        }
+        if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
+            rest = r;
+            continue;
+        }
+        let ch = rest.chars().next().expect("non-empty");
+        current.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    finalize_interpolation(parts, current)
+}
+
 fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
+    // Raku allows optional whitespace before the delimiter in q:to/Q:to
+    // forms, e.g. q:to /END/;
+    let input = input.trim_start_matches(' ');
     let open = input
         .chars()
         .next()
@@ -435,14 +472,14 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
 
     // q:to/DELIM/, q:to<DELIM>, qq:to/.../, qq:to<...> heredoc
     if after_q.starts_with(":to") || after_q.starts_with("q:to") {
-        let r = if let Some(stripped) = after_q.strip_prefix("q:to") {
-            stripped
+        let (r, interpolate) = if let Some(stripped) = after_q.strip_prefix("q:to") {
+            (stripped, true)
         } else if let Some(stripped) = after_q.strip_prefix(":to") {
-            stripped
+            (stripped, false)
         } else {
             unreachable!()
         };
-        return parse_to_heredoc(r);
+        return parse_to_heredoc(r, interpolate);
     }
 
     // qw/.../ is an alias for q:w/.../
