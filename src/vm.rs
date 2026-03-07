@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::ast::Stmt;
 use crate::env::Env;
@@ -59,6 +60,19 @@ pub(crate) struct VM {
 }
 
 impl VM {
+    /// Mark a Failure on top of the stack as handled (used by boolean/defined checks).
+    fn mark_failure_handled_on_stack(stack: &mut [Value]) {
+        if let Some(Value::Instance {
+            class_name,
+            attributes,
+            ..
+        }) = stack.last_mut()
+            && *class_name == "Failure"
+        {
+            Arc::make_mut(attributes).insert("handled".to_string(), Value::Bool(true));
+        }
+    }
+
     fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
         let mut seen: HashSet<String> = HashSet::new();
         for op in &code.ops {
@@ -76,6 +90,7 @@ impl VM {
     }
 
     fn runtime_error_from_exception_value(
+        &self,
         value: Value,
         default_message: &str,
         is_fail: bool,
@@ -97,12 +112,19 @@ impl VM {
 
         let mut err = RuntimeError::new(message);
         err.is_fail = is_fail;
-        if let Value::Instance { class_name, .. } = &value
-            && (class_name == "Exception"
-                || class_name.resolve().starts_with("X::")
-                || class_name.resolve().starts_with("CX::"))
-        {
-            err.exception = Some(Box::new(value));
+        if let Value::Instance { class_name, .. } = &value {
+            let cn = class_name.resolve();
+            let is_exception = cn == "Exception"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .interpreter
+                    .mro_readonly(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            if is_exception {
+                err.exception = Some(Box::new(value));
+            }
         }
         err
     }
@@ -905,14 +927,19 @@ impl VM {
                 *ip = *target as usize;
             }
             OpCode::JumpIfFalse(target) => {
+                // Mark Failures as handled when tested for truthiness (e.g. && operator)
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.pop().unwrap();
                 if !val.truthy() {
+                    // Also mark the original (below dup) as handled
+                    Self::mark_failure_handled_on_stack(&mut self.stack);
                     *ip = *target as usize;
                 } else {
                     *ip += 1;
                 }
             }
             OpCode::JumpIfTrue(target) => {
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap();
                 if val.truthy() {
                     *ip = *target as usize;
@@ -921,6 +948,7 @@ impl VM {
                 }
             }
             OpCode::JumpIfNil(target) => {
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap();
                 if !runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
@@ -929,6 +957,7 @@ impl VM {
                 }
             }
             OpCode::JumpIfNotNil(target) => {
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap();
                 if runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
@@ -1001,6 +1030,25 @@ impl VM {
                     // Sink context must realize lazy gathers for side effects.
                     self.interpreter.force_lazy_list_bridge(&list)?;
                     self.env_dirty = true;
+                }
+                *ip += 1;
+            }
+            OpCode::SinkPop => {
+                if let Some(val) = self.stack.pop() {
+                    match &val {
+                        Value::LazyList(list) => {
+                            self.interpreter.force_lazy_list_bridge(list)?;
+                            self.env_dirty = true;
+                        }
+                        _ => {
+                            // Sinking an unhandled Failure always throws (Raku behavior)
+                            if let Some(err) =
+                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                            {
+                                return Err(err);
+                            }
+                        }
+                    }
                 }
                 *ip += 1;
             }
@@ -1410,13 +1458,11 @@ impl VM {
             // -- Error handling --
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(Self::runtime_error_from_exception_value(val, "Died", false));
+                return Err(self.runtime_error_from_exception_value(val, "Died", false));
             }
             OpCode::Fail => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(Self::runtime_error_from_exception_value(
-                    val, "Failed", true,
-                ));
+                return Err(self.runtime_error_from_exception_value(val, "Failed", true));
             }
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);

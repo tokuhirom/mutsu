@@ -800,12 +800,18 @@ impl Interpreter {
 
         let mut err = RuntimeError::new(&msg);
         err.is_fail = is_fail;
-        if let Value::Instance { class_name, .. } = value
-            && (class_name == "Exception"
-                || class_name.resolve().starts_with("X::")
-                || class_name.resolve().starts_with("CX::"))
-        {
-            err.exception = Some(Box::new(value.clone()));
+        if let Value::Instance { class_name, .. } = value {
+            let cn = class_name.resolve();
+            let is_exception = cn == "Exception"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .mro_readonly(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            if is_exception {
+                err.exception = Some(Box::new(value.clone()));
+            }
         }
         err
     }

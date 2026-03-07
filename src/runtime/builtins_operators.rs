@@ -35,7 +35,12 @@ impl Interpreter {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
                 "-" | "−" => crate::builtins::arith_negate(arg.clone()),
-                "~" => Ok(Value::str(crate::runtime::utils::coerce_to_str(arg))),
+                "~" => {
+                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(arg) {
+                        return Err(err);
+                    }
+                    Ok(Value::str(crate::runtime::utils::coerce_to_str(arg)))
+                }
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
@@ -240,6 +245,12 @@ impl Interpreter {
             self.restore_readonly_vars(saved_readonly);
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
+            }
+            // Convert fail errors to Failure values (same as closure call path)
+            if let Err(e) = &result
+                && e.is_fail
+            {
+                return Ok(self.fail_error_to_failure_value(e));
             }
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             return finalized.and_then(|v| {

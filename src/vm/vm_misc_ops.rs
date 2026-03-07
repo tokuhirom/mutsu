@@ -515,6 +515,10 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
+        // Stringifying an unhandled Failure throws
+        if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
+            return Err(err);
+        }
         // If the value is an Instance, try calling the Stringy method
         if let Value::Instance { .. } = &val
             && let Ok(result) =
