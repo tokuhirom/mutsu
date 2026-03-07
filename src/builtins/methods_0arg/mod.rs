@@ -852,6 +852,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         _ => {}
     }
 
+    // Buf/Blob.Str throws X::Buf::AsStr
+    if (method == "Str" || method == "Stringy")
+        && let Value::Instance { class_name, .. } = target
+        && crate::vm::VM::is_buf_value(target)
+    {
+        let cn = class_name.resolve();
+        let mut err = RuntimeError::new(format!(
+            "Cannot use a {cn} as a Str. You can use .decode to convert to Str.",
+        ));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("payload".to_string(), target.clone());
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Buf::AsStr"),
+            attrs,
+        )));
+        return Some(Err(err));
+    }
+
     // CX::Warn methods: message, resume
     if let Value::Instance {
         class_name,

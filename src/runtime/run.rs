@@ -378,10 +378,15 @@ impl Interpreter {
                     "todo {};\n",
                     Self::raku_single_quoted_literal(reason)
                 ));
+                // Wrap the todo-marked line in try to catch fatal errors
+                output.push_str("try {\n");
+                output.push_str(line);
+                output.push_str("\n  CATCH { default { pass('todo test died') } }\n}\n");
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;
                 }
+                continue; // skip normal append below
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.

@@ -192,24 +192,15 @@ impl VM {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
-            // Buf/Blob types cannot be coerced to Str — throw X::Buf::AsStr
-            if let Value::Instance { ref class_name, .. } = v
-                && Self::is_buf_value(&v)
-            {
-                let mut err = RuntimeError::new(format!(
-                    "Cannot use a {} as a Str. You can use .decode to convert to Str.",
-                    class_name.resolve()
-                ));
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("method".to_string(), Value::str("Str".to_string()));
-                attrs.insert("payload".to_string(), v.clone());
-                err.exception = Some(Box::new(Value::make_instance(
-                    crate::symbol::Symbol::intern("X::Buf::AsStr"),
-                    attrs,
-                )));
-                return Err(err);
+            // Buf/Blob types: call .Str via method dispatch to get X::Buf::AsStr
+            if Self::is_buf_value(&v) {
+                let str_result = self
+                    .interpreter
+                    .call_method_with_values(v, "Str", Vec::new())?;
+                result.push_str(&str_result.to_string_value());
+            } else {
+                result.push_str(&crate::runtime::utils::coerce_to_str(&v));
             }
-            result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
         Ok(())
