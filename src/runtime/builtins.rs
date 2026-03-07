@@ -49,6 +49,8 @@ fn multidim_index(target: &Value, indices: &[Value]) -> Value {
         Value::Str(s) => s.parse::<usize>().unwrap_or(0),
         Value::Num(f) => *f as usize,
         Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
         _ => return Value::Nil,
     };
     if i >= items.len() {
@@ -116,6 +118,8 @@ fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         Value::Str(s) => s.parse::<usize>().unwrap_or(0),
         Value::Num(f) => *f as usize,
         Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
         _ => return default(),
     };
     if i >= items.len() {
@@ -154,6 +158,8 @@ fn make_key_tuple(indices: &[Value]) -> Value {
             Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
             Value::Num(f) => Value::Int(*f as i64),
             Value::Rat(n, d) => Value::Int(*n / *d),
+            Value::FatRat(n, d) => Value::Int(*n / *d),
+            Value::BigRat(_, _) => Value::Int(to_float_value(v).unwrap_or(0.0) as i64),
             _ => v.clone(),
         })
         .collect();
@@ -216,6 +222,8 @@ fn multidim_collect_leaves(
         Value::Str(s) => s.parse::<usize>().unwrap_or(0),
         Value::Num(f) => *f as usize,
         Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
         _ => return,
     };
     if i >= items.len() {

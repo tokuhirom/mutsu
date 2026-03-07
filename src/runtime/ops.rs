@@ -867,9 +867,27 @@ impl Interpreter {
                 let b = right.to_bigint();
                 Ok(Value::from_bigint(a ^ b))
             }
-            "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
+            "==" => {
+                if let (Some(a), Some(b)) = (
+                    super::to_big_rat_parts(left),
+                    super::to_big_rat_parts(right),
+                ) {
+                    Ok(Value::Bool(super::big_rat_parts_equal(a, b)))
+                } else {
+                    Ok(Value::Bool(to_num(left) == to_num(right)))
+                }
+            }
             "=" => Ok(right.clone()),
-            "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
+            "!=" => {
+                if let (Some(a), Some(b)) = (
+                    super::to_big_rat_parts(left),
+                    super::to_big_rat_parts(right),
+                ) {
+                    Ok(Value::Bool(!super::big_rat_parts_equal(a, b)))
+                } else {
+                    Ok(Value::Bool(to_num(left) != to_num(right)))
+                }
+            }
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
             ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
             "<=" => Ok(Value::Bool(to_num(left) <= to_num(right))),
@@ -905,18 +923,13 @@ impl Interpreter {
             "cmp" => {
                 let ord = match (left, right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _)
-                    | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _)
-                    | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) =
-                            (super::to_rat_parts(left), super::to_rat_parts(right))
-                        {
-                            super::compare_rat_parts((an, ad), (bn, bd))
-                        } else {
-                            left.to_string_value().cmp(&right.to_string_value())
-                        }
-                    }
+                    (
+                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                    ) => super::to_big_rat_parts(left)
+                        .zip(super::to_big_rat_parts(right))
+                        .and_then(|(a, b)| super::compare_big_rat_parts(a, b))
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Num(a), Value::Num(b)) => {
                         a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                     }
@@ -926,6 +939,29 @@ impl Interpreter {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (l, r)
+                        if matches!(
+                            l,
+                            Value::Int(_)
+                                | Value::BigInt(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        ) && matches!(
+                            r,
+                            Value::Int(_)
+                                | Value::BigInt(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        ) =>
+                    {
+                        let lf = super::to_float_value(l).unwrap_or(0.0);
+                        let rf = super::to_float_value(r).unwrap_or(0.0);
+                        lf.partial_cmp(&rf).unwrap_or(std::cmp::Ordering::Equal)
+                    }
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
                         super::version_cmp_parts(ap, bp)
                     }
@@ -1256,12 +1292,19 @@ impl Interpreter {
                 "Cannot convert Complex to Real: imaginary part not zero",
             ));
         }
-        if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
-            && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
+        if let (Some(a), Some(b)) = (super::to_big_rat_parts(&l), super::to_big_rat_parts(&r))
+            && (matches!(
+                l,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ) || matches!(
+                r,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ))
         {
-            return Ok(Value::Bool(f(
-                super::compare_rat_parts((an, ad), (bn, bd)) as i32
-            )));
+            if let Some(ord) = super::compare_big_rat_parts(a, b) {
+                return Ok(Value::Bool(f(ord as i32)));
+            }
+            return Ok(Value::Bool(false));
         }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {

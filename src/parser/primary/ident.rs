@@ -914,21 +914,6 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("listop argument"));
     }
 
-    // In argument context, .5 should parse as 0.5 (not topic method call)
-    if input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_digit() {
-        let dot_rest = &input[1..]; // skip '.'
-        let end = dot_rest
-            .find(|c: char| !c.is_ascii_digit() && c != '_')
-            .unwrap_or(dot_rest.len());
-        let frac_str = &dot_rest[..end];
-        let rest = &dot_rest[end..];
-        // Parse as Rat: 0.DIGITS
-        let frac_clean: String = frac_str.chars().filter(|c| *c != '_').collect();
-        let denom = 10_i64.pow(frac_clean.len() as u32);
-        let numer: i64 = frac_clean.parse().unwrap_or(0);
-        return Ok((rest, Expr::Literal(crate::value::Value::Rat(numer, denom))));
-    }
-
     // Parse a single term with prefix/postfix operators, but no infix operators.
     // This keeps listop precedence behavior (e.g. `shift @a + 1` parses as
     // `(shift @a) + 1`) while still allowing argument postfix chains like

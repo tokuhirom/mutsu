@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use num_traits::Zero;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
@@ -224,6 +225,18 @@ impl VM {
         match idx {
             Value::Int(i) if *i >= 0 => Some(*i as usize),
             Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+            Value::Rat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                (f >= 0.0).then_some(f as usize)
+            }
+            Value::FatRat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                (f >= 0.0).then_some(f as usize)
+            }
+            Value::BigRat(_, d) if !d.is_zero() => {
+                let f = runtime::to_float_value(idx)?;
+                (f >= 0.0).then_some(f as usize)
+            }
             _ => idx.to_string_value().parse::<usize>().ok(),
         }
     }
@@ -708,6 +721,33 @@ impl VM {
                     Value::array(slice)
                 } else {
                     Value::Seq(Arc::new(slice))
+                }
+            }
+            (Value::Array(items, is_arr), Value::Num(n)) => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                if n < 0.0 {
+                    default
+                } else {
+                    Self::resolve_array_entry(&items, is_arr, n as usize, default)
+                }
+            }
+            (Value::Array(items, is_arr), Value::Rat(n, d)) if d != 0 => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let i = (n as f64 / d as f64) as usize;
+                Self::resolve_array_entry(&items, is_arr, i, default)
+            }
+            (Value::Array(items, is_arr), Value::FatRat(n, d)) if d != 0 => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let i = (n as f64 / d as f64) as usize;
+                Self::resolve_array_entry(&items, is_arr, i, default)
+            }
+            (Value::Array(items, is_arr), Value::BigRat(n, d)) if !d.is_zero() => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let idx = runtime::to_float_value(&Value::BigRat(n, d)).unwrap_or(0.0);
+                if idx < 0.0 {
+                    default
+                } else {
+                    Self::resolve_array_entry(&items, is_arr, idx as usize, default)
                 }
             }
             (Value::Seq(items), Value::Int(i)) => {

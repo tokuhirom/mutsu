@@ -428,7 +428,7 @@ fn is_postfix_operator_char(c: char) -> bool {
 fn is_postfix_operator_boundary(rest: &str) -> bool {
     rest.is_empty()
         || rest.starts_with(|c: char| {
-            c.is_whitespace() || matches!(c, ')' | '}' | ']' | ',' | ';' | ':')
+            c.is_whitespace() || matches!(c, '.' | ')' | '}' | ']' | ',' | ';' | ':')
         })
 }
 
@@ -2224,7 +2224,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
         {
             let after = &rest[len..];
-            if is_postfix_operator_boundary(after) {
+            let ident_continuation = after
+                .as_bytes()
+                .first()
+                .copied()
+                .is_some_and(|b| is_ident_char(Some(b)));
+            if !ident_continuation {
                 // Skip postfix ops that have a precedence level lower than PREFIX
                 // (declared `is looser(&prefix:<...>)`). These will be handled
                 // at the prefix level after the prefix operand is parsed.

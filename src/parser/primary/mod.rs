@@ -84,6 +84,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
 
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
+        try_primary!(number::rational(input));
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
@@ -161,6 +162,13 @@ mod tests {
         let (rest, expr) = primary("0xFF").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Literal(Value::Int(255))));
+    }
+
+    #[test]
+    fn parse_rational_literal() {
+        let (rest, expr) = primary("1/4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Rat(1, 4))));
     }
 
     #[test]
