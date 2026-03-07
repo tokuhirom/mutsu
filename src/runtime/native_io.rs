@@ -348,7 +348,7 @@ impl Interpreter {
                         .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern("Buf"), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
                 }
                 let content = fs::read_to_string(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -1013,7 +1013,10 @@ impl Interpreter {
                         chunk.iter().map(|b| Value::Int(*b as i64)).collect();
                     let mut buf_attrs = HashMap::new();
                     buf_attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    values.push(Value::make_instance(Symbol::intern("Buf"), buf_attrs));
+                    values.push(Value::make_instance(
+                        Symbol::intern("Buf[uint8]"),
+                        buf_attrs,
+                    ));
                 }
                 if bytes.len() < size {
                     break;

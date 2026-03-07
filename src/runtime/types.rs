@@ -1470,6 +1470,19 @@ impl Interpreter {
             if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
             }
+            // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
+            let cn = class_name.resolve();
+            if (constraint == "Buf" || constraint == "Blob")
+                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+            {
+                // Buf constraint accepts any Buf-like, Blob constraint accepts any Blob-like
+                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(&cn) {
+                    return true;
+                }
+                if constraint == "Blob" {
+                    return true; // All Buf/Blob types are Blob (Buf inherits Blob)
+                }
+            }
             // Check parent classes of the instance
             if let Some(class_def) = self.classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {

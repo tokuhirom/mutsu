@@ -1028,11 +1028,7 @@ impl VM {
                 Value::Sub(ref data),
             ) => {
                 // Get element count from the instance
-                let len = if class_name == "Buf"
-                    || class_name == "Blob"
-                    || class_name.resolve().starts_with("Buf[")
-                    || class_name.resolve().starts_with("Blob[")
-                {
+                let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         bytes.len() as i64
                     } else {

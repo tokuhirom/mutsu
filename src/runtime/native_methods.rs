@@ -2088,7 +2088,7 @@ impl Interpreter {
         let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));
-        Value::make_instance(crate::symbol::Symbol::intern("Buf"), attrs)
+        Value::make_instance(crate::symbol::Symbol::intern("Buf[uint8]"), attrs)
     }
 
     /// Extract bytes from a Buf/Blob instance or array

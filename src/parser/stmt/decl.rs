@@ -113,7 +113,17 @@ fn is_supported_variable_trait(trait_name: &str) -> bool {
     // Native typed buffer traits (e.g. `my @a is buf8`, `my @a is blob16`)
     if matches!(
         trait_name,
-        "buf8" | "buf16" | "buf32" | "buf64" | "blob8" | "blob16" | "blob32" | "blob64" | "utf8"
+        "buf"
+            | "blob"
+            | "buf8"
+            | "buf16"
+            | "buf32"
+            | "buf64"
+            | "blob8"
+            | "blob16"
+            | "blob32"
+            | "blob64"
+            | "utf8"
     ) {
         return true;
     }
@@ -894,6 +904,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 trait_name.as_str(),
                 "Buf"
                     | "Blob"
+                    | "buf"
+                    | "blob"
                     | "buf8"
                     | "buf16"
                     | "buf32"

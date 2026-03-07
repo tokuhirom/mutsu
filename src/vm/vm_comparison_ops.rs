@@ -188,7 +188,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())
@@ -198,7 +204,13 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
+                Ok(Value::Bool(
+                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Equal,
+                ))
+            } else {
+                Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+            }
         })?;
         self.stack.push(result);
         Ok(())

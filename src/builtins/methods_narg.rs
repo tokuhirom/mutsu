@@ -240,11 +240,7 @@ pub(crate) fn native_method_1arg(
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Buf"
-                        || class_name == "Blob"
-                        || class_name.resolve().starts_with("Buf[")
-                        || class_name.resolve().starts_with("Blob[") =>
-                    {
+                    } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                         if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                             return Some(Ok(bytes.get(idx).cloned().unwrap_or(Value::Int(0))));
                         }
@@ -1194,14 +1190,7 @@ fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         attributes,
         ..
     } = target
-        && (class_name == "Buf"
-            || class_name == "Blob"
-            || class_name == "utf8"
-            || class_name == "utf16"
-            || class_name.resolve().starts_with("Buf[")
-            || class_name.resolve().starts_with("Blob[")
-            || class_name.resolve().starts_with("buf")
-            || class_name.resolve().starts_with("blob"))
+        && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         && let Some(Value::Array(items, ..)) = attributes.get("bytes")
     {
         return Some(

@@ -1511,7 +1511,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Buf" || class_name == "Blob" => {
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
@@ -1730,7 +1730,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Buf" || class_name == "Blob" => {
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Some(Ok(Value::Int(bytes.len() as i64 - 1)))
                     } else {
@@ -2221,13 +2221,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf"
-                || class_name == "Blob"
-                || class_name == "utf8"
-                || class_name == "utf16"
-                || class_name.resolve().starts_with("buf")
-                || class_name.resolve().starts_with("blob") =>
-            {
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                 if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                     if method == "raku" || method == "perl" {
                         let elems: Vec<String> = bytes

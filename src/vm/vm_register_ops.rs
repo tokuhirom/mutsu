@@ -513,6 +513,8 @@ impl VM {
                 trait_name.as_str(),
                 "Buf"
                     | "Blob"
+                    | "buf"
+                    | "blob"
                     | "buf8"
                     | "buf16"
                     | "buf32"
@@ -527,6 +529,29 @@ impl VM {
                 if has_arg {
                     self.stack.pop(); // discard unused arg
                 }
+                let buf_type = match trait_name.as_str() {
+                    "buf" | "blob" => {
+                        let resolved = self
+                            .interpreter
+                            .call_function("EVAL", vec![Value::str(trait_name.clone())])
+                            .ok()
+                            .or_else(|| self.get_env_with_main_alias(&trait_name))
+                            .or_else(|| self.locals_get_by_name(code, &trait_name));
+                        match resolved {
+                            Some(Value::Package(sym)) => Value::Package(sym),
+                            Some(Value::Scalar(inner)) => match *inner {
+                                Value::Package(sym) => Value::Package(sym),
+                                _ => Value::Package(crate::symbol::Symbol::intern(
+                                    if trait_name == "buf" { "Buf" } else { "Blob" },
+                                )),
+                            },
+                            _ => Value::Package(crate::symbol::Symbol::intern(
+                                if trait_name == "buf" { "Buf" } else { "Blob" },
+                            )),
+                        }
+                    }
+                    _ => Value::Package(crate::symbol::Symbol::intern(&trait_name)),
+                };
                 // Get current value, convert to buf
                 let current = self.locals_get_by_name(code, name).unwrap_or(Value::Nil);
                 let items = match &current {
@@ -536,11 +561,9 @@ impl VM {
                         .collect(),
                     _ => Vec::new(),
                 };
-                let buf = self.interpreter.call_method_with_values(
-                    Value::Package(crate::symbol::Symbol::intern(&trait_name)),
-                    "new",
-                    items,
-                )?;
+                let buf = self
+                    .interpreter
+                    .call_method_with_values(buf_type, "new", items)?;
                 let name_str = name.to_string();
                 self.locals_set_by_name(code, &name_str, buf.clone());
                 self.set_env_with_main_alias(&name_str, buf);

@@ -959,13 +959,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
-            match val {
+            let mut assigned = match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(val)
         };
@@ -1179,13 +1202,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
-            match raw_val {
+            let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };

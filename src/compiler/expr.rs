@@ -1047,7 +1047,25 @@ impl Compiler {
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
                 for part in parts {
-                    self.compile_expr(part);
+                    match part {
+                        // Sigiled collection interpolation in strings should
+                        // flatten values rather than force scalar Str coercion.
+                        Expr::ArrayVar(name) => self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("join"),
+                            args: vec![
+                                Expr::Literal(Value::str(" ".to_string())),
+                                Expr::ArrayVar(name.clone()),
+                            ],
+                        }),
+                        Expr::HashVar(name) => self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("join"),
+                            args: vec![
+                                Expr::Literal(Value::str(" ".to_string())),
+                                Expr::HashVar(name.clone()),
+                            ],
+                        }),
+                        _ => self.compile_expr(part),
+                    }
                 }
                 self.code.emit(OpCode::StringConcat(n));
             }

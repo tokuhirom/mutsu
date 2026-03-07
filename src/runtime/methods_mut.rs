@@ -876,7 +876,7 @@ impl Interpreter {
             attributes,
             id,
         } = &target
-            && (class_name == "Buf" || class_name == "Blob")
+            && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
             let bytes = attributes
                 .get("bytes")
@@ -1280,9 +1280,7 @@ impl Interpreter {
             id: target_id,
         } = target.clone()
         {
-            if (class_name == "Buf"
-                || class_name.resolve().starts_with("Buf[")
-                || class_name.resolve().starts_with("buf"))
+            if crate::runtime::utils::is_buf_like_class(&class_name.resolve())
                 && matches!(method, "write-ubits" | "write-bits")
                 && args.len() == 3
             {
