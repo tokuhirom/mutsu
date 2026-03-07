@@ -10,6 +10,42 @@ static THREAD_HANDLES: std::sync::LazyLock<Mutex<HashMap<u64, std::thread::JoinH
 static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Interpreter {
+    fn callback_uses_supply_list(callback: &Value) -> bool {
+        if let Value::Sub(data) = callback {
+            let dbg = format!("{:?}", data.body);
+            dbg.contains("\"Supply\"") && dbg.contains("\"list\"")
+        } else {
+            false
+        }
+    }
+
+    fn split_host_port_literal(input: &str) -> (String, Option<u16>) {
+        let s = input.trim();
+        if s.is_empty() {
+            return (String::new(), None);
+        }
+        if let Some(stripped) = s.strip_prefix('[')
+            && let Some(end_rel) = stripped.find(']')
+        {
+            let end = end_rel + 1;
+            let host = &s[..=end];
+            let rest = &s[end + 1..];
+            if let Some(port_str) = rest.strip_prefix(':')
+                && let Ok(port) = port_str.parse::<u16>()
+            {
+                return (host.to_string(), Some(port));
+            }
+            return (s.to_string(), None);
+        }
+        if let Some((host, port_str)) = s.rsplit_once(':')
+            && !host.contains(':')
+            && let Ok(port) = port_str.parse::<u16>()
+        {
+            return (host.to_string(), Some(port));
+        }
+        (s.to_string(), None)
+    }
+
     pub(super) fn dispatch_rotate(
         &self,
         target: Value,
@@ -1052,6 +1088,18 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
+
+        // Supply.first returns a new Supply containing the matched value
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Supply"
+        {
+            return self.dispatch_supply_first(attributes, func, has_end);
+        }
+
         let items = crate::runtime::utils::value_to_list(&target);
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
             return Ok(super::builtins_collection::format_first_result(
@@ -1059,6 +1107,56 @@ impl Interpreter {
             ));
         }
         Ok(Value::Nil)
+    }
+
+    fn dispatch_supply_first(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        func: Option<Value>,
+        has_end: bool,
+    ) -> Result<Value, RuntimeError> {
+        let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                let mut a = HashMap::new();
+                a.insert("emitted".to_string(), Value::array(Vec::new()));
+                a.insert("done".to_string(), Value::Bool(false));
+                a
+            });
+            self.supply_emit_buffer.push(Vec::new());
+            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+            self.supply_emit_buffer.pop().unwrap_or_default()
+        } else {
+            attributes
+                .get("values")
+                .and_then(|v| {
+                    if let Value::Array(items, ..) = v {
+                        Some(items.to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+        };
+
+        let result_values = if let Some((_, value)) =
+            self.find_first_match_over_items(func, &source_values, has_end)?
+        {
+            vec![value]
+        } else {
+            Vec::new()
+        };
+
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::array(result_values));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert(
+            "live".to_string(),
+            attributes
+                .get("live")
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
+        );
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.
@@ -1256,6 +1354,7 @@ impl Interpreter {
             out_buffer_capacity: None,
             out_buffer_pending: Vec::new(),
             bin: false,
+            nl_out: "\n".to_string(),
         };
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();
@@ -1266,6 +1365,157 @@ impl Interpreter {
             Symbol::intern("IO::Socket::INET"),
             attrs,
         ))
+    }
+
+    pub(super) fn dispatch_socket_async_listen(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let host = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        let port = args
+            .get(1)
+            .map(|v| match v {
+                Value::Int(i) => *i as u16,
+                Value::Num(f) => *f as u16,
+                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            })
+            .unwrap_or(0);
+        let enc = Self::named_value(args, "enc")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| "utf-8".to_string());
+        let mut attrs = HashMap::new();
+        attrs.insert("host".to_string(), Value::str(host));
+        attrs.insert("port".to_string(), Value::Int(port as i64));
+        attrs.insert("enc".to_string(), Value::str(enc));
+        Ok(Value::make_instance(
+            Symbol::intern("IO::Socket::Async::Listener"),
+            attrs,
+        ))
+    }
+
+    pub(super) fn dispatch_socket_async_connect(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let host = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| "127.0.0.1".to_string());
+        let port = args
+            .get(1)
+            .map(|v| match v {
+                Value::Int(i) => *i as u16,
+                Value::Num(f) => *f as u16,
+                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            })
+            .unwrap_or(0);
+        let enc = Self::named_value(args, "enc")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| "utf-8".to_string());
+
+        let promise = SharedPromise::new();
+        let result = if let Some((_listener_id, listener)) =
+            super::native_methods::lookup_async_listener(&host, port)
+        {
+            let defer_accept = Self::callback_uses_supply_list(&listener.callback);
+            let client_id = super::native_methods::next_async_socket_id();
+            let server_id = super::native_methods::next_async_socket_id();
+            let client_local_port = super::native_methods::allocate_async_listen_port();
+            let server_host = if listener.host == "0.0.0.0" {
+                host.clone()
+            } else {
+                listener.host.clone()
+            };
+
+            super::native_methods::register_async_connection(
+                client_id,
+                super::native_methods::AsyncSocketConnState {
+                    peer_id: Some(server_id),
+                    encoding: enc.clone(),
+                    closed: false,
+                    peer_closed: false,
+                    supply_ids: Vec::new(),
+                    pending_bytes: Vec::new(),
+                    deferred_accept_callback: None,
+                    deferred_accept_socket: None,
+                },
+            );
+            super::native_methods::register_async_connection(
+                server_id,
+                super::native_methods::AsyncSocketConnState {
+                    peer_id: Some(client_id),
+                    encoding: listener.encoding.clone(),
+                    closed: false,
+                    peer_closed: false,
+                    supply_ids: Vec::new(),
+                    pending_bytes: Vec::new(),
+                    deferred_accept_callback: None,
+                    deferred_accept_socket: None,
+                },
+            );
+
+            let mut client_attrs = HashMap::new();
+            client_attrs.insert("conn-id".to_string(), Value::Int(client_id as i64));
+            client_attrs.insert("socket-host".to_string(), Value::str(host.clone()));
+            client_attrs.insert(
+                "socket-port".to_string(),
+                Value::Int(client_local_port as i64),
+            );
+            client_attrs.insert("peer-host".to_string(), Value::str(server_host.clone()));
+            client_attrs.insert("peer-port".to_string(), Value::Int(port as i64));
+            client_attrs.insert("enc".to_string(), Value::str(enc));
+            let client_socket =
+                Value::make_instance(Symbol::intern("IO::Socket::Async"), client_attrs);
+
+            let mut server_attrs = HashMap::new();
+            server_attrs.insert("conn-id".to_string(), Value::Int(server_id as i64));
+            server_attrs.insert("socket-host".to_string(), Value::str(server_host.clone()));
+            server_attrs.insert("socket-port".to_string(), Value::Int(port as i64));
+            server_attrs.insert("peer-host".to_string(), Value::str(host.clone()));
+            server_attrs.insert(
+                "peer-port".to_string(),
+                Value::Int(client_local_port as i64),
+            );
+            server_attrs.insert("enc".to_string(), Value::str(listener.encoding));
+            let server_socket =
+                Value::make_instance(Symbol::intern("IO::Socket::Async"), server_attrs);
+
+            if defer_accept {
+                super::native_methods::update_async_connection(server_id, |conn| {
+                    conn.deferred_accept_callback = Some(listener.callback.clone());
+                    conn.deferred_accept_socket = Some(server_socket.clone());
+                });
+            } else {
+                let _ = self.call_sub_value(listener.callback, vec![server_socket], true);
+            }
+
+            let mut status_attrs = HashMap::new();
+            status_attrs.insert("status".to_string(), Value::str_from("Kept"));
+            status_attrs.insert("result".to_string(), client_socket);
+            status_attrs.insert("cause".to_string(), Value::Nil);
+            Value::make_instance(
+                Symbol::intern("IO::Socket::Async::StatusResult"),
+                status_attrs,
+            )
+        } else {
+            let mut status_attrs = HashMap::new();
+            status_attrs.insert("status".to_string(), Value::str_from("Broken"));
+            status_attrs.insert("result".to_string(), Value::Nil);
+            status_attrs.insert(
+                "cause".to_string(),
+                Value::str(format!("Failed to connect to '{}:{}'", host, port)),
+            );
+            Value::make_instance(
+                Symbol::intern("IO::Socket::Async::StatusResult"),
+                status_attrs,
+            )
+        };
+
+        promise.keep(result, String::new(), String::new());
+        Ok(Value::Promise(promise))
     }
 
     /// Thread.start({ block }) — spawn a real OS thread
@@ -1379,6 +1629,21 @@ impl Interpreter {
             }
         }
 
+        if !host.is_empty() && port == 0 {
+            let (parsed_host, parsed_port) = Self::split_host_port_literal(&host);
+            if let Some(p) = parsed_port {
+                host = parsed_host;
+                port = p;
+            }
+        }
+        if !localhost.is_empty() && localport == 0 {
+            let (parsed_host, parsed_port) = Self::split_host_port_literal(&localhost);
+            if let Some(p) = parsed_port {
+                localhost = parsed_host;
+                localport = p;
+            }
+        }
+
         if listen {
             // Server mode: bind and listen
             let bind_addr = if localhost.is_empty() {
@@ -1406,6 +1671,7 @@ impl Interpreter {
                 out_buffer_capacity: None,
                 out_buffer_pending: Vec::new(),
                 bin: false,
+                nl_out: "\n".to_string(),
             };
             self.handles.insert(id, state);
             let mut attrs = HashMap::new();

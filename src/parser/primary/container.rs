@@ -771,16 +771,16 @@ fn parse_quote_word_list<'a>(
     if reject_lt_operators
         && (input.starts_with('=')
             || (input.starts_with('-')
-                && !input
-                    .as_bytes()
-                    .get(1)
-                    .copied()
-                    .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'/' | b'.'))))
+                && !input.as_bytes().get(1).copied().is_some_and(|b| {
+                    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'/' | b'.' | b'+' | b'-')
+                })))
     {
         return Err(PError::expected("angle list"));
     }
     let end = if quoted_words {
         find_quote_word_close(input, close)
+    } else if close == ">" {
+        find_nested_angle_close(input)
     } else {
         input.find(close)
     };
@@ -845,6 +845,26 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
             });
         }
         i += ch_len;
+    }
+    None
+}
+
+/// Find the closing `>` for `<...>`, handling nested `<>` pairs
+/// (e.g. `<:13<01>/:13<07>>`).
+fn find_nested_angle_close(input: &str) -> Option<usize> {
+    let mut depth: usize = 0;
+    let mut i = 0usize;
+    while i < input.len() {
+        let b = input.as_bytes()[i];
+        if b == b'<' {
+            depth += 1;
+        } else if b == b'>' {
+            if depth == 0 {
+                return Some(i);
+            }
+            depth -= 1;
+        }
+        i += 1;
     }
     None
 }
@@ -958,12 +978,17 @@ fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {
     if lhs.is_empty() || rhs.is_empty() {
         return None;
     }
-    let numer = parse_signed_i64_with_underscores(lhs)?;
-    let denom = parse_signed_i64_with_underscores(rhs)?;
+    // Don't parse negative denominators as Rat (Raku spec: <1/-3> is Str)
+    if rhs.starts_with('-') {
+        return None;
+    }
+    let numer = parse_angle_int(lhs)?;
+    let denom = parse_angle_int(rhs)?;
     Some((numer, denom))
 }
 
-fn parse_signed_i64_with_underscores(s: &str) -> Option<i64> {
+/// Parse an integer that may have a 0x/0b/0o prefix, sign, or underscores.
+fn parse_angle_int(s: &str) -> Option<i64> {
     let (sign, rest) = if let Some(rest) = s.strip_prefix('+') {
         (1i64, rest)
     } else if let Some(rest) = s.strip_prefix('-') {
@@ -971,12 +996,30 @@ fn parse_signed_i64_with_underscores(s: &str) -> Option<i64> {
     } else {
         (1i64, s)
     };
-    if rest.is_empty() || !rest.chars().all(|c| c.is_ascii_digit() || c == '_') {
+    if rest.is_empty() {
         return None;
     }
     let clean: String = rest.chars().filter(|c| *c != '_').collect();
     if clean.is_empty() {
         return None;
+    }
+    if let Some(hex) = clean
+        .strip_prefix("0x")
+        .or_else(|| clean.strip_prefix("0X"))
+    {
+        return i64::from_str_radix(hex, 16).ok().map(|n| sign * n);
+    }
+    if let Some(bin) = clean
+        .strip_prefix("0b")
+        .or_else(|| clean.strip_prefix("0B"))
+    {
+        return i64::from_str_radix(bin, 2).ok().map(|n| sign * n);
+    }
+    if let Some(oct) = clean
+        .strip_prefix("0o")
+        .or_else(|| clean.strip_prefix("0O"))
+    {
+        return i64::from_str_radix(oct, 8).ok().map(|n| sign * n);
     }
     clean.parse::<i64>().ok().map(|n| sign * n)
 }

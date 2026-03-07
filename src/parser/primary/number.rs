@@ -89,7 +89,17 @@ fn parse_prefixed_radix<'a>(
     if clean.is_empty() {
         return Some(Err(PError::expected("radix digits")));
     }
-    Some(Ok((&rest[end..], parse_int_radix(&clean, radix))))
+    // Reject if the next character is a Unicode numeric that wasn't a valid digit for this radix
+    let remaining = &rest[end..];
+    if let Some(next_ch) = remaining.chars().next()
+        && next_ch.is_numeric()
+        && !next_ch.is_ascii_digit()
+    {
+        return Some(Err(PError::expected(
+            "confused by Unicode numeric character after radix literal",
+        )));
+    }
+    Some(Ok((remaining, parse_int_radix(&clean, radix))))
 }
 
 /// Parse an integer string with given radix, using BigInt for overflow.
@@ -182,6 +192,33 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse a rational literal in `numerator/denominator` form with no whitespace.
+/// Examples: `1/4`, `10/3`, `0/0`.
+pub(super) fn rational(input: &str) -> PResult<'_, Expr> {
+    let (rest, numer_clean) =
+        scan_decimal_digits(input).ok_or_else(|| PError::expected("digits"))?;
+    let Some(rest) = rest.strip_prefix('/') else {
+        return Err(PError::expected("rational literal"));
+    };
+    let Some((rest, denom_clean)) = scan_decimal_digits(rest) else {
+        return Err(PError::expected("rational literal"));
+    };
+
+    let value = match (numer_clean.parse::<i64>(), denom_clean.parse::<i64>()) {
+        (Ok(n), Ok(d)) => crate::value::make_rat(n, d),
+        _ => {
+            let n = numer_clean
+                .parse::<num_bigint::BigInt>()
+                .map_err(|_| PError::expected("rational literal"))?;
+            let d = denom_clean
+                .parse::<num_bigint::BigInt>()
+                .map_err(|_| PError::expected("rational literal"))?;
+            crate::value::make_big_rat(n, d)
+        }
+    };
+    Ok((rest, Expr::Literal(value)))
+}
+
 /// Parse a decimal number literal.
 /// In Raku, decimal literals without exponent are Rat, with exponent are Num.
 pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
@@ -228,12 +265,30 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
             return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
         }
         // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
+        // For very large frac_digits, fall back to Num to avoid overflow
         let frac_digits = frac_clean.len() as u32;
+        if frac_digits > 18 {
+            // Too many decimal places for i64 — produce a Num instead
+            let n: f64 = format!("{}.{}", int_clean, frac_clean)
+                .parse()
+                .unwrap_or(0.0);
+            return Ok((rest, Expr::Literal(Value::Num(n))));
+        }
         let denom = 10i64.pow(frac_digits);
         let int_val: i64 = int_clean.parse().unwrap_or(0);
         let frac_val: i64 = frac_clean.parse().unwrap_or(0);
-        let numer = int_val * denom + frac_val;
-        Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
+        let numer = int_val
+            .checked_mul(denom)
+            .and_then(|v| v.checked_add(frac_val));
+        match numer {
+            Some(numer) => Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom)))),
+            None => {
+                let n: f64 = format!("{}.{}", int_clean, frac_clean)
+                    .parse()
+                    .unwrap_or(0.0);
+                Ok((rest, Expr::Literal(Value::Num(n))))
+            }
+        }
     }
 }
 

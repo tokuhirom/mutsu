@@ -1,6 +1,6 @@
 use Test;
 
-plan 44;
+plan 47;
 
 # single-term sequences
 is ~(1 ... 1), '1', '1 ... 1';
@@ -42,6 +42,14 @@ is (1, 0 ... *).[^5].join(', '), '1, 0, -1, -2, -3', 'infinite decreasing';
 is (1, 3, 9 ... *).[^5].join(', '), '1, 3, 9, 27, 81', 'infinite geometric';
 is (81, 27, 9 ... *).[^5].join(', '), '81, 27, 9, 3, 1', 'infinite decreasing geometric';
 is (1, { $_ + 2 } ... *).[^5].join(', '), '1, 3, 5, 7, 9', 'infinite closure';
+my @fib = 0, 1, *+* ... *;
+my @fib-seed = @fib;
+@fib-seed.push(8);
+is infix:<...>(|@fib-seed).join(', '), '0, 1, 1, 2, 3, 5, 8', 'slurped multi-seed LHS from array';
+
+my $geo-rat = infix:<...>((1, 1/2, 1/4), 0).head(10).List;
+isa-ok $geo-rat[3], Rat, 'geometric continuation keeps Rat type';
+isa-ok infix:<...>(|((1/4, 1/2, 1), (8, 9), *)).head(10).List[2], Rat, 'chained geometric seed preserves Rat';
 
 # constant sequences
 is ('c', 'c' ... *).[^5].join(', '), 'c, c, c, c, c', 'constant string';

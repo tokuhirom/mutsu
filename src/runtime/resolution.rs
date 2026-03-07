@@ -800,7 +800,10 @@ impl Interpreter {
             self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    if k != "_" && k != "@_" && merged.contains_key(k) {
+                    if k != "_"
+                        && k != "@_"
+                        && (merged.contains_key(k) || k.starts_with("__mutsu_var_meta::"))
+                    {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
@@ -1050,6 +1053,30 @@ impl Interpreter {
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if let Some(Value::Sub(data)) = func {
+            let requires_full_binding = data.param_defs.iter().any(|pd| {
+                pd.named
+                    || pd.slurpy
+                    || pd.sigilless
+                    || pd.optional_marker
+                    || pd.default.is_some()
+                    || pd.type_constraint.is_some()
+                    || pd.where_constraint.is_some()
+                    || pd.sub_signature.is_some()
+                    || pd.outer_sub_signature.is_some()
+                    || pd.code_signature.is_some()
+                    || pd.shape_constraints.is_some()
+            });
+            if requires_full_binding {
+                let mut result = Vec::new();
+                for item in list_items {
+                    let value = self.call_sub_value(Value::Sub(data.clone()), vec![item], false)?;
+                    match value {
+                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                        v => result.push(v),
+                    }
+                }
+                return Ok(Value::array(result));
+            }
             let arity = if !data.params.is_empty() {
                 // Account for assumed positional args (from .assuming)
                 let effective = data

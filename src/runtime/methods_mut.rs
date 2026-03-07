@@ -93,7 +93,11 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
             Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
             Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n + d, *d),
+            Value::Rat(n, d) => make_rat(n + d, *d),
+            Value::FatRat(n, d) => match make_rat(n + d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => Value::str(Self::string_succ(s)),
             _ => Value::Int(1),
         }
@@ -107,7 +111,11 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
             Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
             Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) | Value::FatRat(n, d) => make_rat(n - d, *d),
+            Value::Rat(n, d) => make_rat(n - d, *d),
+            Value::FatRat(n, d) => match make_rat(n - d, *d) {
+                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                other => other,
+            },
             Value::Str(s) => match Self::string_pred(s) {
                 Ok(prev) => Value::str(prev),
                 Err(_) => Value::Str(s.clone()),
@@ -427,6 +435,9 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        if method == "subbuf-rw" {
+            return self.assign_subbuf_rw(target_var, target, method_args, value);
+        }
         if method == "out-buffer"
             && let Value::Instance { class_name, .. } = &target
             && class_name == "IO::Handle"
@@ -456,6 +467,23 @@ impl Interpreter {
             };
             if let Some(state) = self.handles.get_mut(&id) {
                 state.line_separators = new_seps;
+            }
+            return Ok(value);
+        }
+        // nl-out setter for IO::Handle
+        if method == "nl-out"
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && class_name == "IO::Handle"
+            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+        {
+            let id = *handle_id as usize;
+            let new_nl_out = value.to_string_value();
+            if let Some(state) = self.handles.get_mut(&id) {
+                state.nl_out = new_nl_out;
             }
             return Ok(value);
         }
@@ -873,7 +901,7 @@ impl Interpreter {
             attributes,
             id,
         } = &target
-            && (class_name == "Buf" || class_name == "Blob")
+            && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
             let bytes = attributes
                 .get("bytes")
@@ -946,6 +974,18 @@ impl Interpreter {
                     id: *id,
                 });
             }
+        }
+
+        // Buf/Blob mutating methods: append, push, prepend, unshift, reallocate
+        if matches!(
+            method,
+            "append" | "push" | "prepend" | "unshift" | "reallocate"
+        ) && Self::is_buf_like_value(&target)
+        {
+            if method == "reallocate" {
+                return self.buf_reallocate(target_var, target, &args);
+            }
+            return self.buf_mutate_method(target_var, target, method, args);
         }
 
         if target_var.starts_with('@') {
@@ -1265,9 +1305,7 @@ impl Interpreter {
             id: target_id,
         } = target.clone()
         {
-            if (class_name == "Buf"
-                || class_name.resolve().starts_with("Buf[")
-                || class_name.resolve().starts_with("buf"))
+            if crate::runtime::utils::is_buf_like_class(&class_name.resolve())
                 && matches!(method, "write-ubits" | "write-bits")
                 && args.len() == 3
             {
@@ -1903,5 +1941,171 @@ impl Interpreter {
         } else {
             hash.insert(key, value);
         }
+    }
+
+    fn assign_subbuf_rw(
+        &mut self,
+        target_var: Option<&str>,
+        target: Value,
+        method_args: Vec<Value>,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let mut items = if let Value::Instance { attributes, .. } = &target
+            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        {
+            items.to_vec()
+        } else {
+            Vec::new()
+        };
+
+        let from = method_args.first().map(crate::runtime::to_int).unwrap_or(0) as usize;
+        let len = method_args.get(1).map(crate::runtime::to_int).unwrap_or(0) as usize;
+
+        let new_bytes = if let Value::Instance { attributes, .. } = &value
+            && let Some(Value::Array(new_items, ..)) = attributes.get("bytes")
+        {
+            new_items.to_vec()
+        } else {
+            Vec::new()
+        };
+
+        // splice: remove `len` items at `from`, insert `new_bytes`
+        let end = (from + len).min(items.len());
+        items.splice(from..end, new_bytes);
+
+        let class_name = if let Value::Instance { class_name, .. } = &target {
+            class_name.resolve().to_string()
+        } else {
+            "Buf".to_string()
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("bytes".to_string(), Value::array(items));
+        let new_buf = Value::make_instance(Symbol::intern(&class_name), attrs);
+
+        if let Some(var) = target_var {
+            self.env.insert(var.to_string(), new_buf.clone());
+        }
+        Ok(new_buf)
+    }
+
+    fn buf_reallocate(
+        &mut self,
+        target_var: &str,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (class_name_sym, mut bytes, orig_id) = if let Value::Instance {
+            class_name,
+            attributes,
+            id,
+            ..
+        } = &target
+        {
+            // Blob is immutable — cannot reallocate
+            let cn = class_name.resolve();
+            if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+                return Err(RuntimeError::new(format!(
+                    "Cannot reallocate an immutable {}",
+                    cn
+                )));
+            }
+            let items = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                items.to_vec()
+            } else {
+                Vec::new()
+            };
+            (*class_name, items, *id)
+        } else {
+            return Err(RuntimeError::new("Not a Buf".to_string()));
+        };
+        let new_size = match args.first() {
+            Some(v) => super::to_int(v) as usize,
+            None => 0,
+        };
+        bytes.resize(new_size, Value::Int(0));
+        let mut attrs = HashMap::new();
+        attrs.insert("bytes".to_string(), Value::array(bytes));
+        let updated = Value::Instance {
+            class_name: class_name_sym,
+            attributes: std::sync::Arc::new(attrs),
+            id: orig_id,
+        };
+        self.env.insert(target_var.to_string(), updated.clone());
+        Ok(updated)
+    }
+
+    fn is_buf_like_value(val: &Value) -> bool {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } else {
+            false
+        }
+    }
+
+    fn buf_mutate_method(
+        &mut self,
+        target_var: &str,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let (class_name_sym, mut bytes, orig_id) = if let Value::Instance {
+            class_name,
+            attributes,
+            id,
+            ..
+        } = &target
+        {
+            let items = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                items.to_vec()
+            } else {
+                Vec::new()
+            };
+            (*class_name, items, *id)
+        } else {
+            return Err(RuntimeError::new("Not a Buf".to_string()));
+        };
+
+        // Flatten args to int values
+        let new_items: Vec<Value> = args
+            .into_iter()
+            .flat_map(|a| match a {
+                Value::Int(_) => vec![a],
+                Value::Array(items, ..) => items.to_vec(),
+                Value::Seq(items) => items.to_vec(),
+                Value::Slip(items) => items.to_vec(),
+                _ => vec![a],
+            })
+            .collect();
+
+        match method {
+            "append" | "push" => {
+                bytes.extend(new_items);
+            }
+            "prepend" | "unshift" => {
+                let mut combined = new_items;
+                combined.extend(bytes);
+                bytes = combined;
+            }
+            _ => unreachable!(),
+        }
+
+        let mut attrs = HashMap::new();
+        attrs.insert("bytes".to_string(), Value::array(bytes));
+        let updated = Value::Instance {
+            class_name: class_name_sym,
+            attributes: std::sync::Arc::new(attrs),
+            id: orig_id,
+        };
+        self.env.insert(target_var.to_string(), updated.clone());
+        Ok(updated)
     }
 }

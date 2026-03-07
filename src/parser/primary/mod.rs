@@ -2,6 +2,7 @@ mod container;
 mod ident;
 pub(in crate::parser) mod misc;
 mod number;
+mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;
 mod var;
@@ -84,6 +85,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
 
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
+        try_primary!(number::rational(input));
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
@@ -161,6 +163,13 @@ mod tests {
         let (rest, expr) = primary("0xFF").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Literal(Value::Int(255))));
+    }
+
+    #[test]
+    fn parse_rational_literal() {
+        let (rest, expr) = primary("1/4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Rat(1, 4))));
     }
 
     #[test]
@@ -759,6 +768,8 @@ mod tests {
 
     #[test]
     fn primary_qx_interpolates_command() {
+        // qx does NOT interpolate $x — only qqx does.
+        // qx uses q-style backslash processing (\\ → \).
         reset_primary_memo();
         let (rest, expr) = primary("qx{echo $x}").unwrap();
         assert_eq!(rest, "");
@@ -766,7 +777,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "QX");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::StringInterpolation(_)));
+                assert!(matches!(args[0], Expr::Literal(_)));
             }
             _ => panic!("expected qx call expression"),
         }

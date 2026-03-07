@@ -263,6 +263,7 @@ struct IoHandleState {
     out_buffer_pending: Vec<u8>,
     #[allow(dead_code)]
     bin: bool,
+    nl_out: String,
 }
 
 #[derive(Clone)]
@@ -710,6 +711,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Promise::Vow".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["keep", "break"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Promise::Vow".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Channel".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -759,6 +772,7 @@ impl Interpreter {
                     "lines",
                     "merge",
                     "unique",
+                    "classify",
                     "Supply",
                     "Promise",
                     "schedule-on",
@@ -791,6 +805,35 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: vec!["utf16".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Blob".to_string(),
+            ClassDef {
+                parents: vec!["Any".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Blob".to_string(), "Any".to_string(), "Mu".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Buf".to_string(),
+            ClassDef {
+                parents: vec!["Blob".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "Buf".to_string(),
+                    "Blob".to_string(),
+                    "Any".to_string(),
+                    "Mu".to_string(),
+                ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -847,7 +890,8 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "exitcode", "signal", "command", "pid", "Numeric", "Int", "Bool", "Str", "gist",
+                    "exitcode", "signal", "command", "pid", "err", "out", "Numeric", "Int", "Bool",
+                    "Str", "gist",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -863,7 +907,10 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cancel", "close", "socket-port", "socket-host"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Tap".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
@@ -1044,9 +1091,15 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
+                    "path",
+                    "IO",
+                    "Str",
+                    "gist",
+                    "DESTROY",
                     "close",
                     "get",
                     "getc",
+                    "readchars",
                     "lines",
                     "words",
                     "read",
@@ -1063,6 +1116,10 @@ impl Interpreter {
                     "slurp",
                     "out-buffer",
                     "Supply",
+                    "open",
+                    "nl-out",
+                    "nl-in",
+                    "print-nl",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -1136,6 +1193,42 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Socket::INET".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "IO::Socket::Async".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "close",
+                    "write",
+                    "print",
+                    "Supply",
+                    "socket-port",
+                    "peer-port",
+                    "socket-host",
+                    "peer-host",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["IO::Socket::Async".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "IO::Socket::Async::Listener".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["IO::Socket::Async::Listener".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -1705,6 +1798,7 @@ impl Interpreter {
         {
             let mut attrs = HashMap::new();
             attrs.insert("prefix".to_string(), Value::str_from("."));
+            attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(true));
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);
@@ -2788,6 +2882,7 @@ impl Interpreter {
                 out_buffer_capacity: handle.out_buffer_capacity,
                 out_buffer_pending: handle.out_buffer_pending.clone(),
                 bin: handle.bin,
+                nl_out: handle.nl_out.clone(),
             };
             cloned_handles.insert(*id, cloned);
         }
@@ -3307,5 +3402,23 @@ mod tests {
             .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
             .unwrap();
         assert_eq!(output, "3\n");
+    }
+}
+
+impl Interpreter {
+    /// Flush all open file handle buffers. Call before process exit.
+    pub fn flush_all_handles(&mut self) {
+        for state in self.handles.values_mut() {
+            if state.closed {
+                continue;
+            }
+            if !state.out_buffer_pending.is_empty()
+                && let Some(file) = state.file.as_mut()
+            {
+                let _ = file.write_all(&state.out_buffer_pending);
+                let _ = file.flush();
+                state.out_buffer_pending.clear();
+            }
+        }
     }
 }

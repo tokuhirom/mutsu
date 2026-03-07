@@ -3,10 +3,33 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::value::{ArrayKind, JunctionKind, RuntimeError, Value};
+use num_bigint::BigInt;
+use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
+
+/// Check if a class name represents a Buf-like type (Buf, Buf[uint8], buf8, etc.)
+pub(crate) fn is_buf_like_class(cn: &str) -> bool {
+    matches!(
+        cn,
+        "Buf" | "buf8" | "buf16" | "buf32" | "buf64" | "utf8" | "utf16"
+    ) || cn.starts_with("Buf[")
+        || cn.starts_with("buf")
+}
+
+/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8, etc.)
+pub(crate) fn is_blob_like_class(cn: &str) -> bool {
+    matches!(cn, "Blob" | "blob8" | "blob16" | "blob32" | "blob64")
+        || cn.starts_with("Blob[")
+        || cn.starts_with("blob")
+}
+
+/// Check if a class name represents any Buf or Blob type
+pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
+    is_buf_like_class(cn) || is_blob_like_class(cn)
+}
 
 /// Create a Failure value for operations on empty arrays (pop, shift, etc.)
 pub(crate) fn make_empty_array_failure(op: &str) -> Value {
@@ -226,10 +249,23 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Slip(a), Value::Slip(b)) => {
+            // Empty is a singleton semantic value in Raku even when represented
+            // by distinct empty Slip allocations.
+            (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
+        }
         (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Sub(a), Value::Sub(b)) => {
+            if std::sync::Arc::ptr_eq(a, b) {
+                return true;
+            }
+            // Named subs with the same package and name are identical
+            // (e.g. &foo === &EXPORT::ALL::foo when both resolve to the same definition)
+            let a_name = a.name.resolve();
+            let b_name = b.name.resolve();
+            !a_name.is_empty() && a_name == b_name && a.package == b.package
+        }
         (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
         (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
             a_inner.eqv(b_inner) && a_mix == b_mix
@@ -1171,9 +1207,11 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => val,
         Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
         Value::Enum { value, .. } => Value::Int(value),
@@ -1604,6 +1642,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => left,
         _ => coerce_to_numeric(left),
     };
@@ -1613,6 +1652,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
         | Value::Complex(_, _) => right,
         _ => coerce_to_numeric(right),
     };
@@ -1634,6 +1674,68 @@ pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
         Value::FatRat(n, d) => Some((*n, *d)),
         _ => None,
     }
+}
+
+pub(crate) fn to_big_rat_parts(val: &Value) -> Option<(BigInt, BigInt)> {
+    match val {
+        Value::Int(i) => Some((BigInt::from(*i), BigInt::from(1))),
+        Value::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
+        Value::Rat(n, d) | Value::FatRat(n, d) => Some((BigInt::from(*n), BigInt::from(*d))),
+        Value::BigRat(n, d) => Some((n.clone(), d.clone())),
+        _ => None,
+    }
+}
+
+fn big_rat_parts_to_f64(num: &BigInt, den: &BigInt) -> f64 {
+    if den.is_zero() {
+        if num.is_zero() {
+            f64::NAN
+        } else if num.is_positive() {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        }
+    } else {
+        num.to_f64().unwrap_or(0.0) / den.to_f64().unwrap_or(1.0)
+    }
+}
+
+pub(crate) fn compare_big_rat_parts(
+    a: (BigInt, BigInt),
+    b: (BigInt, BigInt),
+) -> Option<std::cmp::Ordering> {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad.is_zero() || bd.is_zero() {
+        return big_rat_parts_to_f64(&an, &ad).partial_cmp(&big_rat_parts_to_f64(&bn, &bd));
+    }
+    Some((an * &bd).cmp(&(bn * &ad)))
+}
+
+pub(crate) fn big_rat_parts_equal(a: (BigInt, BigInt), b: (BigInt, BigInt)) -> bool {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad.is_zero() || bd.is_zero() {
+        if (ad.is_zero() && an.is_zero()) || (bd.is_zero() && bn.is_zero()) {
+            return false;
+        }
+        return big_rat_parts_to_f64(&an, &ad) == big_rat_parts_to_f64(&bn, &bd);
+    }
+    let ga = an.gcd(&ad);
+    let gb = bn.gcd(&bd);
+    let mut an = an / &ga;
+    let mut ad = ad / ga;
+    let mut bn = bn / &gb;
+    let mut bd = bd / gb;
+    if ad.is_negative() {
+        an = -an;
+        ad = -ad;
+    }
+    if bd.is_negative() {
+        bn = -bn;
+        bd = -bd;
+    }
+    an == bn && ad == bd
 }
 
 fn rat_parts_to_f64(num: i64, den: i64) -> f64 {
@@ -1760,16 +1862,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
 pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
     match val {
         Value::Complex(r, i) => Some((*r, *i)),
-        Value::Int(n) => Some((*n as f64, 0.0)),
-        Value::Num(f) => Some((*f, 0.0)),
-        Value::Rat(n, d) => {
-            if *d != 0 {
-                Some((*n as f64 / *d as f64, 0.0))
-            } else {
-                None
-            }
-        }
-        _ => None,
+        _ => to_float_value(val).map(|v| (v, 0.0)),
     }
 }
 

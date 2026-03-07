@@ -593,6 +593,107 @@ impl Interpreter {
         }
     }
 
+    fn is_buf_value(val: &Value) -> bool {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } else {
+            false
+        }
+    }
+
+    fn extract_buf_bytes(val: &Value) -> Vec<u8> {
+        if let Value::Instance { attributes, .. } = val
+            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        {
+            items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(n) => *n as u8,
+                    _ => 0,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn buf_class_name(val: &Value) -> Option<String> {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            if cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+            {
+                return Some(cn.to_string());
+            }
+        }
+        None
+    }
+
+    fn str_bitwise_op(
+        left: &Value,
+        right: &Value,
+        op: fn(u8, u8) -> u8,
+        pad_to_max: bool,
+    ) -> Result<Value, RuntimeError> {
+        let left_is_buf = Self::is_buf_value(left);
+        let right_is_buf = Self::is_buf_value(right);
+        let any_buf = left_is_buf || right_is_buf;
+        let lb = if left_is_buf {
+            Self::extract_buf_bytes(left)
+        } else {
+            crate::runtime::utils::coerce_to_str(left)
+                .as_bytes()
+                .to_vec()
+        };
+        let rb = if right_is_buf {
+            Self::extract_buf_bytes(right)
+        } else {
+            crate::runtime::utils::coerce_to_str(right)
+                .as_bytes()
+                .to_vec()
+        };
+        let len = if pad_to_max {
+            lb.len().max(rb.len())
+        } else {
+            lb.len().min(rb.len())
+        };
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            let a = lb.get(i).copied().unwrap_or(0);
+            let b = rb.get(i).copied().unwrap_or(0);
+            out.push(op(a, b));
+        }
+        if any_buf {
+            let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            let result_type = match (Self::buf_class_name(left), Self::buf_class_name(right)) {
+                (Some(l), Some(r)) if l == r => l,
+                _ => "Buf".to_string(),
+            };
+            Ok(Value::make_instance(
+                crate::symbol::Symbol::intern(&result_type),
+                attrs,
+            ))
+        } else {
+            Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
+        }
+    }
+
     fn shift_left_i64(a: i64, b: i64) -> Value {
         if b < 0 {
             let shift = b.unsigned_abs();
@@ -654,6 +755,28 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
+        let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
+            match value {
+                Value::Bag(items) => Some((**items).clone()),
+                Value::Set(items) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
+                Value::Hash(items) => Some({
+                    let mut counts = std::collections::HashMap::new();
+                    for (k, v) in items.iter() {
+                        let count = match v {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => *n as i64,
+                            Value::Rat(n, d) if *d != 0 => n / d,
+                            Value::FatRat(n, d) if *d != 0 => n / d,
+                            Value::Bool(b) => i64::from(*b),
+                            _ => return None,
+                        };
+                        counts.insert(k.clone(), count);
+                    }
+                    counts
+                }),
+                _ => None,
+            }
+        };
         let to_num = |v: &Value| -> f64 {
             let mut cur = v;
             while let Value::Mixin(inner, _) = cur {
@@ -776,6 +899,14 @@ impl Interpreter {
         }
         match op {
             "+" => {
+                if let (Some(mut left_counts), Some(right_counts)) =
+                    (to_bag_counts(left), to_bag_counts(right))
+                {
+                    for (key, count) in right_counts {
+                        *left_counts.entry(key).or_insert(0) += count;
+                    }
+                    return Ok(Value::bag(left_counts));
+                }
                 if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) + to_num(right)))
                 } else {
@@ -812,11 +943,28 @@ impl Interpreter {
                 }
             }
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => Ok(Value::str(format!(
-                "{}{}",
-                crate::runtime::utils::coerce_to_str(left),
-                crate::runtime::utils::coerce_to_str(right)
-            ))),
+            "~" => {
+                // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
+                if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    let result_class = if let Value::Instance { class_name, .. } = left {
+                        *class_name
+                    } else {
+                        crate::symbol::Symbol::intern("Buf")
+                    };
+                    let mut bytes = crate::vm::VM::extract_buf_bytes(left);
+                    bytes.extend(crate::vm::VM::extract_buf_bytes(right));
+                    let byte_vals: Vec<Value> =
+                        bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
+                    return Ok(Value::make_instance(result_class, attrs));
+                }
+                Ok(Value::str(format!(
+                    "{}{}",
+                    crate::runtime::utils::coerce_to_str(left),
+                    crate::runtime::utils::coerce_to_str(right)
+                )))
+            }
             "&&" | "and" => {
                 if !left.truthy() {
                     Ok(left.clone())
@@ -867,9 +1015,27 @@ impl Interpreter {
                 let b = right.to_bigint();
                 Ok(Value::from_bigint(a ^ b))
             }
-            "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
+            "==" => {
+                if let (Some(a), Some(b)) = (
+                    super::to_big_rat_parts(left),
+                    super::to_big_rat_parts(right),
+                ) {
+                    Ok(Value::Bool(super::big_rat_parts_equal(a, b)))
+                } else {
+                    Ok(Value::Bool(to_num(left) == to_num(right)))
+                }
+            }
             "=" => Ok(right.clone()),
-            "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
+            "!=" => {
+                if let (Some(a), Some(b)) = (
+                    super::to_big_rat_parts(left),
+                    super::to_big_rat_parts(right),
+                ) {
+                    Ok(Value::Bool(!super::big_rat_parts_equal(a, b)))
+                } else {
+                    Ok(Value::Bool(to_num(left) != to_num(right)))
+                }
+            }
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
             ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
             "<=" => Ok(Value::Bool(to_num(left) <= to_num(right))),
@@ -905,18 +1071,13 @@ impl Interpreter {
             "cmp" => {
                 let ord = match (left, right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _)
-                    | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _)
-                    | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) =
-                            (super::to_rat_parts(left), super::to_rat_parts(right))
-                        {
-                            super::compare_rat_parts((an, ad), (bn, bd))
-                        } else {
-                            left.to_string_value().cmp(&right.to_string_value())
-                        }
-                    }
+                    (
+                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                    ) => super::to_big_rat_parts(left)
+                        .zip(super::to_big_rat_parts(right))
+                        .and_then(|(a, b)| super::compare_big_rat_parts(a, b))
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Num(a), Value::Num(b)) => {
                         a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                     }
@@ -926,6 +1087,29 @@ impl Interpreter {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (l, r)
+                        if matches!(
+                            l,
+                            Value::Int(_)
+                                | Value::BigInt(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        ) && matches!(
+                            r,
+                            Value::Int(_)
+                                | Value::BigInt(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        ) =>
+                    {
+                        let lf = super::to_float_value(l).unwrap_or(0.0);
+                        let rf = super::to_float_value(r).unwrap_or(0.0);
+                        lf.partial_cmp(&rf).unwrap_or(std::cmp::Ordering::Equal)
+                    }
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
                         super::version_cmp_parts(ap, bp)
                     }
@@ -1034,40 +1218,9 @@ impl Interpreter {
                     values: std::sync::Arc::new(vals),
                 })
             }
-            "~|" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let max_len = ls.len().max(rs.len());
-                let mut out = Vec::with_capacity(max_len);
-                for i in 0..max_len {
-                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
-                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
-                    out.push(lb | rb);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "~^" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let max_len = ls.len().max(rs.len());
-                let mut out = Vec::with_capacity(max_len);
-                for i in 0..max_len {
-                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
-                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
-                    out.push(lb ^ rb);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "~&" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let min_len = ls.len().min(rs.len());
-                let mut out = Vec::with_capacity(min_len);
-                for i in 0..min_len {
-                    out.push(ls.as_bytes()[i] & rs.as_bytes()[i]);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
+            "~|" => Self::str_bitwise_op(left, right, |a, b| a | b, true),
+            "~^" => Self::str_bitwise_op(left, right, |a, b| a ^ b, true),
+            "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, true),
             "+<" => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Self::shift_left_i64(*a, *b)),
                 _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),
@@ -1256,12 +1409,19 @@ impl Interpreter {
                 "Cannot convert Complex to Real: imaginary part not zero",
             ));
         }
-        if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
-            && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
+        if let (Some(a), Some(b)) = (super::to_big_rat_parts(&l), super::to_big_rat_parts(&r))
+            && (matches!(
+                l,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ) || matches!(
+                r,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ))
         {
-            return Ok(Value::Bool(f(
-                super::compare_rat_parts((an, ad), (bn, bd)) as i32
-            )));
+            if let Some(ord) = super::compare_big_rat_parts(a, b) {
+                return Ok(Value::Bool(f(ord as i32)));
+            }
+            return Ok(Value::Bool(false));
         }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {

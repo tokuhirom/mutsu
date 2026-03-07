@@ -269,6 +269,18 @@ impl Interpreter {
                         "skip {}, 1;\n",
                         Self::raku_single_quoted_literal(&skip_reason)
                     ));
+                    // Track paren depth for multi-line statements
+                    let mut depth = 0i32;
+                    for ch in trimmed.chars() {
+                        match ch {
+                            '(' | '[' | '{' => depth += 1,
+                            ')' | ']' | '}' => depth -= 1,
+                            _ => {}
+                        }
+                    }
+                    if depth > 0 {
+                        skip_stmt_paren_depth = depth;
+                    }
                     continue;
                 }
                 output.push_str(line);
@@ -443,10 +455,13 @@ impl Interpreter {
                     "todo {};\n",
                     Self::raku_single_quoted_literal(reason)
                 ));
+                output.push_str(line);
+                output.push('\n');
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;
                 }
+                continue; // skip normal append below
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.
@@ -768,7 +783,7 @@ impl Interpreter {
             crate::precomp::save_cached_ast(source_path, &stmts);
         }
 
-        Ok((stmts, false))
+        Ok((stmts, precomp_eligible))
     }
 
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {

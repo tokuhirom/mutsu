@@ -3,6 +3,80 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
+        if let Value::Capture { positional, named } = value
+            && positional.is_empty()
+            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+        {
+            let source_index = match named.get("__mutsu_varref_index") {
+                Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+                _ => None,
+            };
+            return Some((name.to_string(), source_index));
+        }
+        None
+    }
+
+    fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
+        let mut named = std::collections::HashMap::new();
+        named.insert("__mutsu_varref_name".to_string(), Value::str(name));
+        named.insert("__mutsu_varref_value".to_string(), value);
+        if let Some(i) = source_index {
+            named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
+        }
+        Value::Capture {
+            positional: Vec::new(),
+            named,
+        }
+    }
+
+    fn assign_varref_target(
+        &mut self,
+        source_name: &str,
+        source_index: Option<usize>,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        if let Some(i) = source_index {
+            let Some(container) = self.interpreter.env_mut().get_mut(source_name) else {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            };
+            let Value::Array(items, ..) = container else {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            };
+            let arr = Arc::make_mut(items);
+            if i >= arr.len() {
+                arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+            }
+            arr[i] = value;
+            return Ok(());
+        }
+        self.interpreter
+            .env_mut()
+            .insert(source_name.to_string(), value);
+        Ok(())
+    }
+
+    fn resolve_whatever_index_for_target(&mut self, idx: Value, target: Option<&Value>) -> Value {
+        if let Value::Sub(data) = idx {
+            let len = match target {
+                Some(Value::Array(items, ..)) => items.len() as i64,
+                _ => 0,
+            };
+            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+            let mut sub_env = data.env.clone();
+            sub_env.insert(param.to_string(), Value::Int(len));
+            let saved_env = std::mem::take(self.interpreter.env_mut());
+            *self.interpreter.env_mut() = sub_env;
+            let result = self
+                .interpreter
+                .eval_block_value(&data.body)
+                .unwrap_or(Value::Nil);
+            *self.interpreter.env_mut() = saved_env;
+            return result;
+        }
+        idx
+    }
+
     pub(super) fn quant_hash_trait_from_constraint(constraint: &str) -> Option<&'static str> {
         let base = constraint
             .split_once('[')
@@ -128,6 +202,111 @@ impl VM {
         }
     }
 
+    fn coerce_typed_container_assignment(
+        &mut self,
+        var_name: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let coercion_target = |constraint: &str| -> Option<String> {
+            if let Some(open) = constraint.find('(')
+                && constraint.ends_with(')')
+            {
+                let target = &constraint[..open];
+                if !target.is_empty() {
+                    return Some(target.to_string());
+                }
+            }
+            None
+        };
+        if var_name.starts_with('@')
+            && let Some(constraint) = self.interpreter.var_type_constraint(var_name)
+            && let Value::Array(items, kind) = value
+        {
+            let mut coerced_items = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                if matches!(item, Value::Nil) {
+                    coerced_items.push(item.clone());
+                    continue;
+                }
+                let target_type =
+                    coercion_target(&constraint).unwrap_or_else(|| constraint.clone());
+                let coerced = if self.interpreter.type_matches_value(&target_type, item) {
+                    item.clone()
+                } else {
+                    self.interpreter
+                        .try_coerce_value_for_constraint(&constraint, item.clone())?
+                };
+                if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        var_name,
+                        &constraint,
+                        item,
+                    )));
+                }
+                coerced_items.push(coerced);
+            }
+            return Ok(Value::Array(Arc::new(coerced_items), kind));
+        }
+
+        if var_name.starts_with('%')
+            && let Value::Hash(map) = value
+        {
+            let value_constraint = self.interpreter.var_type_constraint(var_name);
+            let key_constraint = self.interpreter.var_hash_key_constraint(var_name);
+            let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
+            for (key, val) in map.iter() {
+                let coerced_key = if let Some(constraint) = &key_constraint {
+                    let key_value = Value::str(key.clone());
+                    let target_type =
+                        coercion_target(constraint).unwrap_or_else(|| constraint.clone());
+                    let coerced = if self
+                        .interpreter
+                        .type_matches_value(&target_type, &key_value)
+                    {
+                        key_value.clone()
+                    } else {
+                        self.interpreter
+                            .try_coerce_value_for_constraint(constraint, key_value.clone())?
+                    };
+                    if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                        return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                            var_name, constraint, &key_value,
+                        )));
+                    }
+                    coerced.to_string_value()
+                } else {
+                    key.clone()
+                };
+                let coerced_val = if let Some(constraint) = &value_constraint {
+                    if matches!(val, Value::Nil) {
+                        val.clone()
+                    } else {
+                        let target_type =
+                            coercion_target(constraint).unwrap_or_else(|| constraint.clone());
+                        let coerced = if self.interpreter.type_matches_value(&target_type, val) {
+                            val.clone()
+                        } else {
+                            self.interpreter
+                                .try_coerce_value_for_constraint(constraint, val.clone())?
+                        };
+                        if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                            return Err(RuntimeError::new(
+                                runtime::utils::type_check_element_error(var_name, constraint, val),
+                            ));
+                        }
+                        coerced
+                    }
+                } else {
+                    val.clone()
+                };
+                coerced_map.insert(coerced_key, coerced_val);
+            }
+            return Ok(Value::hash(coerced_map));
+        }
+
+        Ok(value)
+    }
+
     fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
         match idx {
             Value::Range(a, b) => {
@@ -186,15 +365,28 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_string_concat_op(&mut self, n: u32) {
+    pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
+            // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
+            // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
+            if let Value::Instance { attributes, .. } = &v
+                && Self::is_buf_value(&v)
+                && attributes.contains_key("bytes")
+            {
+                let str_result = self
+                    .interpreter
+                    .call_method_with_values(v, "Str", Vec::new())?;
+                result.push_str(&str_result.to_string_value());
+                continue;
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
+        Ok(())
     }
 
     pub(super) fn exec_post_increment_op(
@@ -396,6 +588,8 @@ impl VM {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let index_target = self.interpreter.env().get(&var_name).cloned();
+        let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let (val, bind_mode, bind_sources) = match raw_val {
             Value::Pair(name, payload) if name == "__mutsu_bind_index_value" => match *payload {
@@ -548,6 +742,7 @@ impl VM {
                 };
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
+                let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -620,11 +815,23 @@ impl VM {
                                     if i >= arr.len() {
                                         arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
                                     }
-                                    arr[i] = if is_self_array_ref {
-                                        Self::self_array_ref_marker()
+                                    if let Some((source_name, source_index)) =
+                                        Self::varref_target(&arr[i])
+                                    {
+                                        pending_varref_update =
+                                            Some((source_name.clone(), source_index, val.clone()));
+                                        arr[i] = Self::make_varref_value(
+                                            source_name,
+                                            val.clone(),
+                                            source_index,
+                                        );
                                     } else {
-                                        val.clone()
-                                    };
+                                        arr[i] = if is_self_array_ref {
+                                            Self::self_array_ref_marker()
+                                        } else {
+                                            val.clone()
+                                        };
+                                    }
                                 }
                             } else {
                                 return Err(RuntimeError::new("Index out of bounds"));
@@ -689,6 +896,9 @@ impl VM {
                 }
                 if let Some((source_name, source_value)) = pending_source_update {
                     self.interpreter.env_mut().insert(source_name, source_value);
+                }
+                if let Some((source_name, source_index, source_value)) = pending_varref_update {
+                    self.assign_varref_target(&source_name, source_index, source_value)?;
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
@@ -946,13 +1156,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, val)?
         } else if name.starts_with('@') {
-            match val {
+            let mut assigned = match val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(val)
         };
@@ -961,6 +1194,9 @@ impl VM {
             && let Some(def) = self.interpreter.var_default(name)
         {
             val = def.clone();
+        }
+        if name.starts_with('@') || name.starts_with('%') {
+            val = self.coerce_typed_container_assignment(name, val)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
@@ -1166,13 +1402,36 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
-            match raw_val {
+            let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
+            };
+            let class_name = match &self.locals[idx] {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                Value::Package(class_name) => Some(*class_name),
+                _ => None,
+            };
+            if let Some(class_name) = class_name {
+                let class = class_name.resolve();
+                if class == "Blob" || class.starts_with("blob") {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if class == "Buf" || class.starts_with("buf") {
+                    let items = runtime::value_to_list(&assigned)
+                        .into_iter()
+                        .map(|v| Value::Int(runtime::to_int(&v)))
+                        .collect::<Vec<_>>();
+                    assigned = self.interpreter.call_method_with_values(
+                        Value::Package(class_name),
+                        "new",
+                        items,
+                    )?;
+                }
             }
+            assigned
         } else {
             Self::normalize_scalar_assignment_value(raw_val)
         };
@@ -1180,6 +1439,9 @@ impl VM {
             && let Some(def) = self.interpreter.var_default(name)
         {
             val = def.clone();
+        }
+        if name.starts_with('@') || name.starts_with('%') {
+            val = self.coerce_typed_container_assignment(name, val)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')

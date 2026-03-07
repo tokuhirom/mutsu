@@ -50,7 +50,7 @@ impl Compiler {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
-                self.code.emit(OpCode::Pop);
+                self.code.emit(OpCode::SinkPop);
             }
             Stmt::Block(stmts) => {
                 // Check for placeholder conflicts in blocks

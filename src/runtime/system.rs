@@ -11,12 +11,47 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names)
             .and_then(|(stmts, _)| {
+                self.check_eval_class_redeclarations(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::new("X::Undeclared::Symbols"));
                 }
                 Ok(value)
             })
+    }
+
+    fn check_eval_class_redeclarations(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let mut seen_classes: HashMap<String, bool> = HashMap::new();
+        for stmt in stmts {
+            let (name, body) = match stmt {
+                Stmt::ClassDecl { name, body, .. } => (name.resolve(), body),
+                _ => continue,
+            };
+            let is_stub = body.len() == 1
+                && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                    if *fn_name == "__mutsu_stub_die");
+            match seen_classes.get(&name) {
+                None => {
+                    seen_classes.insert(name.to_string(), is_stub);
+                }
+                Some(false) => {
+                    return Err(RuntimeError::new(format!(
+                        "X::Redeclaration: Redeclaration of symbol '{}'",
+                        name
+                    )));
+                }
+                Some(true) if is_stub => {
+                    return Err(RuntimeError::new(format!(
+                        "X::Redeclaration: Redeclaration of symbol '{}'",
+                        name
+                    )));
+                }
+                Some(true) => {
+                    seen_classes.insert(name.to_string(), false);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn eval_result_is_unresolved_bareword(&self, stmts: &[Stmt], result: &Value) -> bool {

@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use num_traits::Zero;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
@@ -224,6 +225,18 @@ impl VM {
         match idx {
             Value::Int(i) if *i >= 0 => Some(*i as usize),
             Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+            Value::Rat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                (f >= 0.0).then_some(f as usize)
+            }
+            Value::FatRat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                (f >= 0.0).then_some(f as usize)
+            }
+            Value::BigRat(_, d) if !d.is_zero() => {
+                let f = runtime::to_float_value(idx)?;
+                (f >= 0.0).then_some(f as usize)
+            }
             _ => idx.to_string_value().parse::<usize>().ok(),
         }
     }
@@ -470,10 +483,7 @@ impl VM {
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name)
-                || self.interpreter.is_role(name)
-                || Self::is_builtin_type(name)
-            {
+            } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
                 Value::Package(Symbol::intern(name))
             } else if name.contains("::")
                 && !name.starts_with('$')
@@ -503,8 +513,7 @@ impl VM {
                 self.env_dirty = true;
                 result
             }
-        } else if self.interpreter.has_class(name)
-            || self.interpreter.is_role(name)
+        } else if self.interpreter.has_type(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
@@ -719,6 +728,33 @@ impl VM {
                     Value::array(slice)
                 } else {
                     Value::Seq(Arc::new(slice))
+                }
+            }
+            (Value::Array(items, is_arr), Value::Num(n)) => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                if n < 0.0 {
+                    default
+                } else {
+                    Self::resolve_array_entry(&items, is_arr, n as usize, default)
+                }
+            }
+            (Value::Array(items, is_arr), Value::Rat(n, d)) if d != 0 => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let i = (n as f64 / d as f64) as usize;
+                Self::resolve_array_entry(&items, is_arr, i, default)
+            }
+            (Value::Array(items, is_arr), Value::FatRat(n, d)) if d != 0 => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let i = (n as f64 / d as f64) as usize;
+                Self::resolve_array_entry(&items, is_arr, i, default)
+            }
+            (Value::Array(items, is_arr), Value::BigRat(n, d)) if !d.is_zero() => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let idx = runtime::to_float_value(&Value::BigRat(n, d)).unwrap_or(0.0);
+                if idx < 0.0 {
+                    default
+                } else {
+                    Self::resolve_array_entry(&items, is_arr, idx as usize, default)
                 }
             }
             (Value::Seq(items), Value::Int(i)) => {
@@ -1028,11 +1064,7 @@ impl VM {
                 Value::Sub(ref data),
             ) => {
                 // Get element count from the instance
-                let len = if class_name == "Buf"
-                    || class_name == "Blob"
-                    || class_name.resolve().starts_with("Buf[")
-                    || class_name.resolve().starts_with("Blob[")
-                {
+                let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         bytes.len() as i64
                     } else {

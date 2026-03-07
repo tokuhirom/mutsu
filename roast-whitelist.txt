@@ -32,6 +32,7 @@ roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
+roast/S02-literals/types.t
 roast/S02-literals/version.t
 roast/S02-magicals/78258.t
 roast/S02-magicals/DISTRO.t
@@ -91,6 +92,7 @@ roast/S03-metaops/cross.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
+roast/S03-operators/andthen.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t
@@ -148,6 +150,7 @@ roast/S03-smartmatch/array-array.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
 roast/S03-smartmatch/capture-signature.t
+roast/S03-smartmatch/hash-hash.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
@@ -229,6 +232,7 @@ roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
 roast/S05-modifier/repetition-exhaustive.t
+roast/S05-modifier/repetition.t
 roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t
 roast/S05-substitution/67222.t
@@ -283,6 +287,7 @@ roast/S06-traits/is-rw.t
 roast/S06-traits/misc.t
 roast/S06-traits/native-is-copy.t
 roast/S06-traits/precedence.t
+roast/S06-traits/slurpy-is-rw.t
 roast/S07-hyperrace/for.t
 roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
@@ -316,6 +321,7 @@ roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
 roast/S12-coercion/coercion-return.t
+roast/S12-coercion/coercion-types.t
 roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
 roast/S12-construction/named-params-in-BUILD.t
@@ -346,6 +352,7 @@ roast/S13-overloading/metaoperators.t
 roast/S13-overloading/multiple-signatures.t
 roast/S13-overloading/operators.t
 roast/S13-syntax/aliasing.t
+roast/S13-type-casting/methods.t
 roast/S14-roles/bool.t
 roast/S14-roles/generic-subtyping.t
 roast/S14-roles/instantiation.t
@@ -428,6 +435,7 @@ roast/S16-io/newline.t
 roast/S16-io/note.t
 roast/S16-io/prompt.t
 roast/S16-io/put.t
+roast/S16-io/readchars.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
 roast/S16-io/supply.t
@@ -437,6 +445,7 @@ roast/S16-unfiled/rebindstdhandles.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-lowlevel/atomic-ops.t
+roast/S17-lowlevel/cas-loop-int.t
 roast/S17-lowlevel/thread-start-join-stress.t
 roast/S17-procasync/basic.t
 roast/S17-procasync/kill.t
@@ -455,10 +464,14 @@ roast/S17-scheduler/times.t
 roast/S17-supply/Promise.t
 roast/S17-supply/Seq.t
 roast/S17-supply/act.t
+roast/S17-supply/classify.t
 roast/S17-supply/collate.t
+roast/S17-supply/construction-recursion.t
 roast/S17-supply/decode.t
 roast/S17-supply/delayed.t
 roast/S17-supply/do.t
+roast/S17-supply/elems.t
+roast/S17-supply/first.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t
@@ -468,6 +481,7 @@ roast/S17-supply/list.t
 roast/S17-supply/max.t
 roast/S17-supply/min.t
 roast/S17-supply/on-demand.t
+roast/S17-supply/reduce.t
 roast/S17-supply/repeated.t
 roast/S17-supply/reverse.t
 roast/S17-supply/schedule-on.t
@@ -477,6 +491,7 @@ roast/S17-supply/tail.t
 roast/S17-supply/unique.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
+roast/S19-command-line/dash-e.t
 roast/S19-command-line/help.t
 roast/S19-command-line/repl.t
 roast/S22-package-format/local.t
@@ -497,6 +512,7 @@ roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
 roast/S26-documentation/10-doc-cli.t
+roast/S26-documentation/12-non-breaking-space.t
 roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/module-comment.t
 roast/S26-documentation/multiline-trailing.t
@@ -522,8 +538,10 @@ roast/S32-array/pairs.t
 roast/S32-array/rotate.t
 roast/S32-basics/pairup.t
 roast/S32-basics/xxPOS-native.t
+roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t
 roast/S32-container/zip.t
+roast/S32-encoding/encoder.t
 roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/delete-adverb.t
@@ -536,18 +554,24 @@ roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-hash/slice.t
+roast/S32-io/IO-Socket-Async.t
 roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
+roast/S32-io/io-path-subclasses.t
 roast/S32-io/note.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-io/out-buffering.t
+roast/S32-io/signals.t
+roast/S32-io/socket-accept-and-working-threads.t
+roast/S32-io/socket-host-port-split.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/combinations.t
+roast/S32-list/create.t
 roast/S32-list/cross.t
 roast/S32-list/end.t
 roast/S32-list/first-end-k.t
@@ -569,6 +593,7 @@ roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t
+roast/S32-num/fatrat.t
 roast/S32-num/int.t
 roast/S32-num/is-prime.t
 roast/S32-num/log.t

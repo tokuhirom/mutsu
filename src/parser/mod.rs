@@ -488,4 +488,11 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let err = parse_program(src).expect_err("expected do...for parse error");
         assert!(err.message.contains("X::Obsolete"), "{err:?}");
     }
+
+    #[test]
+    fn parse_program_accepts_leading_dot_decimal_with_postfix_and_method_in_listop_args() {
+        let src = r#"use Test; sub postfix:<R>($x) { $x.FatRat }; isa-ok .88888888888R.WHAT, FatRat, 'leading-dot decimal with postfix/method in args';"#;
+        let parsed = parse_program(src);
+        assert!(parsed.is_ok(), "{parsed:?}");
+    }
 }

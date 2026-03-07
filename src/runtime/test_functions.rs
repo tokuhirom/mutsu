@@ -2,6 +2,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn cmp_eqv_bool(left: &Value, right: &Value) -> bool {
+        use crate::value::JunctionKind;
+        match (left, right) {
+            (
+                Value::Junction {
+                    kind: lkind,
+                    values: lvals,
+                },
+                _,
+            ) => match lkind {
+                JunctionKind::Any => lvals.iter().any(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::All => lvals.iter().all(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::One => {
+                    lvals
+                        .iter()
+                        .filter(|lv| Self::cmp_eqv_bool(lv, right))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => lvals.iter().all(|lv| !Self::cmp_eqv_bool(lv, right)),
+            },
+            (
+                _,
+                Value::Junction {
+                    kind: rkind,
+                    values: rvals,
+                },
+            ) => match rkind {
+                JunctionKind::Any => rvals.iter().any(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::All => rvals.iter().all(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::One => {
+                    rvals
+                        .iter()
+                        .filter(|rv| Self::cmp_eqv_bool(left, rv))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => rvals.iter().all(|rv| !Self::cmp_eqv_bool(left, rv)),
+            },
+            _ => left.eqv(right),
+        }
+    }
+
     fn unwrap_test_arg_value(value: &Value) -> Value {
         match value {
             Value::Capture { positional, named }
@@ -168,6 +211,9 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                 ) {
                     crate::runtime::value_to_list(left) == crate::runtime::value_to_list(right)
+                } else if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    crate::vm::VM::extract_buf_bytes(left)
+                        == crate::vm::VM::extract_buf_bytes(right)
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
@@ -368,10 +414,10 @@ impl Interpreter {
                 "<=" => super::to_float_value(&left) <= super::to_float_value(&right),
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
-                "===" => left == right,
-                "!===" => left != right,
-                "eqv" => left.eqv(&right),
-                "=:=" => left == right,
+                "===" => crate::runtime::utils::values_identical(&left, &right),
+                "!===" => !crate::runtime::utils::values_identical(&left, &right),
+                "eqv" => Self::cmp_eqv_bool(&left, &right),
+                "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal
                     let (lr, li) = match &left {
@@ -848,6 +894,31 @@ impl Interpreter {
             nested.env.insert(k.clone(), v.clone());
         }
         let ok = nested.eval_eval_string(&code).is_ok();
+        for raw in nested.output.lines() {
+            let line = raw.trim_start();
+            let (assert_ok, rest) = if let Some(rest) = line.strip_prefix("ok ") {
+                (true, rest)
+            } else if let Some(rest) = line.strip_prefix("not ok ") {
+                (false, rest)
+            } else {
+                continue;
+            };
+            // Keep TODO failures internal to eval-lives-ok canaries.
+            let todo = line.contains("# TODO");
+            if !assert_ok && todo {
+                continue;
+            }
+            let desc = rest
+                .split_once(" - ")
+                .map(|(_, text)| text)
+                .unwrap_or("")
+                .split_once(" #")
+                .map(|(text, _)| text)
+                .unwrap_or_else(|| rest.split_once(' ').map(|(_, text)| text).unwrap_or(""))
+                .trim()
+                .to_string();
+            self.test_ok(assert_ok, &desc, todo)?;
+        }
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }
@@ -1036,6 +1107,7 @@ impl Interpreter {
                         }
                     });
                 let matched = match expected_val {
+                    Value::Whatever => true, // * matches anything
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),
@@ -1336,6 +1408,7 @@ impl Interpreter {
             }
             nested.set_program_path("<is_run>");
             let result = nested.run(&program);
+            nested.flush_all_handles();
             Self::extract_run_output(&nested, result)
         };
         let mut ok = true;
@@ -1546,16 +1619,35 @@ impl Interpreter {
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
                     let _ = self.supply_emit_timed_buffer.pop();
                 } else {
-                    let values = attributes
-                        .get("values")
-                        .and_then(|v| {
-                            if let Value::Array(a, ..) = v {
-                                Some(a.to_vec())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
+                    let values = if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
+                        let (snap_values, _, _) =
+                            crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
+                        } else {
+                            attributes
+                                .get("values")
+                                .and_then(|v| {
+                                    if let Value::Array(a, ..) = v {
+                                        Some(a.to_vec())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default()
+                        }
+                    } else {
+                        attributes
+                            .get("values")
+                            .and_then(|v| {
+                                if let Value::Array(a, ..) = v {
+                                    Some(a.to_vec())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default()
+                    };
                     let do_cbs = attributes
                         .get("do_callbacks")
                         .and_then(|v| {
@@ -1586,7 +1678,47 @@ impl Interpreter {
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                 let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
                 let emitted = if let Value::Instance { ref attributes, .. } = supply {
-                    if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
+                    if matches!(attributes.get("elems_filter"), Some(Value::Bool(true))) {
+                        let interval = attributes
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attributes
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        if interval <= 0.0 {
+                            (1..=emitted.len())
+                                .map(|idx| Value::Int(initial_count + idx as i64))
+                                .collect::<Vec<_>>()
+                        } else {
+                            let events = if timed_emitted.is_empty() {
+                                let now = std::time::Instant::now();
+                                emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                            } else {
+                                timed_emitted.clone()
+                            };
+                            let mut total = initial_count;
+                            let mut last_emit_at: Option<std::time::Instant> = None;
+                            let mut out = Vec::new();
+                            for (_, ts) in events {
+                                total += 1;
+                                let should_emit = if let Some(last) = last_emit_at {
+                                    ts.duration_since(last).as_secs_f64() >= interval
+                                } else {
+                                    true
+                                };
+                                if should_emit {
+                                    out.push(Value::Int(total));
+                                    last_emit_at = Some(ts);
+                                }
+                            }
+                            out
+                        }
+                    } else if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
                         let as_fn = attributes.get("unique_as").cloned();
                         let with_fn = attributes.get("unique_with").cloned();
                         let expires_secs = attributes.get("unique_expires").map(Value::to_f64);
@@ -1660,6 +1792,20 @@ impl Interpreter {
             }
         }
 
+        // Supply.reduce produces a derived Supply that carries reducer metadata
+        // for live sources. Apply the same reduction over collected tap values.
+        if let Value::Instance { ref attributes, .. } = supply
+            && let Some(reduce_callable) = attributes.get("reduce_callable").cloned()
+            && tap_values.len() > 1
+        {
+            let reduced = self.reduce_items(reduce_callable, tap_values)?;
+            tap_values = if matches!(reduced, Value::Nil) {
+                Vec::new()
+            } else {
+                vec![reduced]
+            };
+        }
+
         // 4. isa-ok on Tap return
         self.test_ok(true, &format!("{} got a tap", desc), false)?;
 
@@ -1689,7 +1835,57 @@ impl Interpreter {
             other => other.clone(),
         };
         let collected_val = Value::array(tap_values);
-        let ok = collected_val == expected_expanded;
+
+        let expected_for_compare = match (&collected_val, &expected_expanded) {
+            (Value::Array(collected_items, ..), Value::Array(expected_items, kind))
+                if collected_items.len() == 1
+                    && matches!(collected_items.first(), Some(Value::Bag(_)))
+                    && expected_items
+                        .iter()
+                        .all(|item| matches!(item, Value::Pair(_, _) | Value::ValuePair(_, _))) =>
+            {
+                let mut map = HashMap::new();
+                let to_count = |v: &Value| match v {
+                    Value::Int(i) => *i,
+                    Value::Num(n) => *n as i64,
+                    Value::Rat(n, d) if *d != 0 => n / d,
+                    Value::FatRat(n, d) if *d != 0 => n / d,
+                    _ => crate::runtime::to_int(v),
+                };
+                for item in expected_items.iter() {
+                    match item {
+                        Value::Pair(key, value) => {
+                            let count = to_count(value);
+                            if count == 1
+                                && let Some((raw_key, raw_weight)) = key.rsplit_once('\t')
+                                && let Ok(weight) = raw_weight.parse::<i64>()
+                            {
+                                map.insert(raw_key.to_string(), weight);
+                            } else {
+                                map.insert(key.clone(), count);
+                            }
+                        }
+                        Value::ValuePair(key, value) => {
+                            let key_text = key.to_string_value();
+                            let count = to_count(value);
+                            if count == 1
+                                && let Some((raw_key, raw_weight)) = key_text.rsplit_once('\t')
+                                && let Ok(weight) = raw_weight.parse::<i64>()
+                            {
+                                map.insert(raw_key.to_string(), weight);
+                            } else {
+                                map.insert(key_text, count);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Value::Array(Arc::new(vec![Value::bag(map)]), *kind)
+            }
+            _ => expected_expanded.clone(),
+        };
+
+        let ok = collected_val == expected_for_compare;
         self.test_ok(ok, &desc, false)?;
 
         self.finish_subtest(ctx, &desc, Ok(()))?;
