@@ -2,6 +2,71 @@ use super::*;
 use crate::ast::Stmt;
 
 impl Interpreter {
+    fn source_has_no_precompilation(code: &str) -> bool {
+        code.lines().any(|line| {
+            let trimmed = line.trim();
+            trimmed == "no precompilation;"
+                || trimmed == "no precompilation"
+                || trimmed.starts_with("no precompilation;")
+                || trimmed.starts_with("no precompilation ")
+        })
+    }
+
+    fn direct_need_dependencies(source: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+            let Some(rest) = trimmed.strip_prefix("need ") else {
+                continue;
+            };
+            let dep = rest
+                .trim()
+                .trim_end_matches(';')
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'');
+            if dep.is_empty() || dep.contains(char::is_whitespace) {
+                continue;
+            }
+            out.push(dep.to_string());
+        }
+        out
+    }
+
+    fn dependency_disables_precomp(&self, source: &str) -> bool {
+        for dep in Self::direct_need_dependencies(source) {
+            let Some(dep_path) = self.resolve_module_path(&dep) else {
+                continue;
+            };
+            let Ok(dep_code) = std::fs::read_to_string(dep_path) else {
+                continue;
+            };
+            if Self::source_has_no_precompilation(&dep_code) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn should_skip_runtime_for_use_only_module(stmts: &[crate::ast::Stmt]) -> bool {
+        if stmts.is_empty()
+            || !stmts
+                .iter()
+                .all(|stmt| matches!(stmt, crate::ast::Stmt::Use { .. }))
+        {
+            return false;
+        }
+        let non_version_use_count = stmts
+            .iter()
+            .filter_map(|stmt| match stmt {
+                crate::ast::Stmt::Use { module, .. } => Some(module.as_str()),
+                _ => None,
+            })
+            .filter(|module| *module != "v6")
+            .count();
+        non_version_use_count > 1
+    }
+
     fn raku_single_quoted_literal(value: &str) -> String {
         let mut escaped = String::with_capacity(value.len() + 2);
         escaped.push('\'');
@@ -672,26 +737,20 @@ impl Interpreter {
         module: &str,
         source_path: &Path,
     ) -> Result<(Vec<crate::ast::Stmt>, bool), RuntimeError> {
-        // Try loading from precompilation cache
-        if self.precomp_enabled
-            && let Some(stmts) = crate::precomp::load_cached_ast(source_path)
-        {
-            return Ok((stmts, true));
-        }
-
-        // Cache miss or disabled — parse from source
+        // Read source first so we can honor precompilation directives before cache lookup.
         let code = fs::read_to_string(source_path).map_err(|err| {
             RuntimeError::new(format!("Failed to read module {}: {}", module, err))
         })?;
 
-        // Check if the source contains `no precompilation;`
-        let has_no_precompilation = code.lines().any(|line| {
-            let trimmed = line.trim();
-            trimmed == "no precompilation;"
-                || trimmed == "no precompilation"
-                || trimmed.starts_with("no precompilation;")
-                || trimmed.starts_with("no precompilation ")
-        });
+        let has_no_precompilation = Self::source_has_no_precompilation(&code);
+        let dependency_disables_precomp = self.dependency_disables_precomp(&code);
+        let precomp_eligible =
+            self.precomp_enabled && !has_no_precompilation && !dependency_disables_precomp;
+
+        // Try loading from precompilation cache when eligible.
+        if precomp_eligible && let Some(stmts) = crate::precomp::load_cached_ast(source_path) {
+            return Ok((stmts, true));
+        }
 
         let preprocessed = Self::preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
@@ -707,8 +766,8 @@ impl Interpreter {
         })?;
         let stmts = Self::merge_unit_class(stmts);
 
-        // Save to precompilation cache (unless `no precompilation` is in effect)
-        if self.precomp_enabled && !has_no_precompilation {
+        // Save to precompilation cache when the module is eligible.
+        if precomp_eligible {
             crate::precomp::save_cached_ast(source_path, &stmts);
         }
 
@@ -720,7 +779,9 @@ impl Interpreter {
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
-        self.run_block(&stmts)?;
+        if !Self::should_skip_runtime_for_use_only_module(&stmts) {
+            self.run_block(&stmts)?;
+        }
         Ok(())
     }
 }

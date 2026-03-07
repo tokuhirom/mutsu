@@ -458,6 +458,8 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, Env)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    need_hidden_classes: HashSet<String>,
+    closure_env_overrides: HashMap<u64, Env>,
     module_load_stack: Vec<String>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
@@ -1631,6 +1633,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            need_hidden_classes: HashSet::new(),
+            closure_env_overrides: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
@@ -1860,7 +1864,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+    pub fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
@@ -1882,6 +1886,8 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
+        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
 
         let result = if module == "Test"
             || matches!(
@@ -1919,6 +1925,51 @@ impl Interpreter {
 
         self.module_load_stack.pop();
         if result.is_ok() {
+            let module_short = if let Some((_, short)) = module.rsplit_once("::") {
+                short
+            } else {
+                module
+            };
+            for class_name in self.classes.keys() {
+                if class_snapshot.contains(class_name) {
+                    continue;
+                }
+                let class_short = class_name
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(class_name.as_str());
+                if class_short != module_short {
+                    self.need_hidden_classes.insert(class_name.clone());
+                    self.need_hidden_classes.insert(class_short.to_string());
+                }
+            }
+            for key in self.env.keys() {
+                if env_snapshot.contains(key) {
+                    continue;
+                }
+                if key.starts_with('$')
+                    || key.starts_with('@')
+                    || key.starts_with('%')
+                    || key.starts_with('&')
+                {
+                    continue;
+                }
+                let key_short = key
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(key.as_str());
+                if !key_short
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    continue;
+                }
+                if key_short != module_short {
+                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_short.to_string());
+                }
+            }
             if module == "strict" {
                 self.strict_mode = true;
             } else if module == "fatal" {
@@ -2091,6 +2142,7 @@ impl Interpreter {
 
     /// Load a module without importing its exports (Raku `need` keyword).
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let is_nested_need = !self.module_load_stack.is_empty();
         if self.loaded_modules.contains(module) {
             return Ok(());
         }
@@ -2103,12 +2155,57 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
+        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
         let saved = self.suppress_exports;
         self.suppress_exports = true;
         let result = self.load_module(module);
         self.suppress_exports = saved;
         self.module_load_stack.pop();
         if result.is_ok() {
+            let short_name = if let Some((_, short)) = module.rsplit_once("::") {
+                short.to_string()
+            } else {
+                module.to_string()
+            };
+            for class_name in self.classes.keys() {
+                if !class_snapshot.contains(class_name) {
+                    self.need_hidden_classes.insert(class_name.clone());
+                    if let Some((_, short)) = class_name.rsplit_once("::") {
+                        self.need_hidden_classes.insert(short.to_string());
+                    }
+                }
+            }
+            for key in self.env.keys() {
+                if env_snapshot.contains(key) {
+                    continue;
+                }
+                if key.starts_with('$')
+                    || key.starts_with('@')
+                    || key.starts_with('%')
+                    || key.starts_with('&')
+                {
+                    continue;
+                }
+                let key_short = key
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(key.as_str());
+                if !key_short
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    continue;
+                }
+                if is_nested_need || key_short != short_name {
+                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_short.to_string());
+                }
+            }
+            if is_nested_need {
+                self.need_hidden_classes.insert(short_name.clone());
+            }
             self.loaded_modules.insert(module.to_string());
         }
         result
@@ -2119,8 +2216,6 @@ impl Interpreter {
             self.strict_mode = false;
         } else if module == "fatal" {
             self.fatal_mode = false;
-        } else if module == "precompilation" {
-            self.precomp_enabled = false;
         }
         Ok(())
     }
@@ -2740,6 +2835,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
+            need_hidden_classes: self.need_hidden_classes.clone(),
+            closure_env_overrides: self.closure_env_overrides.clone(),
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),

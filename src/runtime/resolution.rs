@@ -641,8 +641,17 @@ impl Interpreter {
                 self.env.insert("?LINE".to_string(), Value::Int(line));
             }
             self.push_caller_env();
+            let persist_closure_env = data.name == "" || !self.has_function(&data.name.resolve());
+            let closure_base_env = if persist_closure_env {
+                self.closure_env_overrides
+                    .get(&data.id)
+                    .cloned()
+                    .unwrap_or_else(|| data.env.clone())
+            } else {
+                data.env.clone()
+            };
             let mut new_env = saved_env.clone();
-            for (k, v) in &data.env {
+            for (k, v) in &closure_base_env {
                 if merge_all {
                     new_env.entry(k.clone()).or_insert(v.clone());
                     continue;
@@ -771,6 +780,16 @@ impl Interpreter {
                     // Exception/fail — restore saves
                     self.restore_let_saves(let_mark);
                 }
+            }
+            if persist_closure_env {
+                let mut persisted_closure_env = closure_base_env.clone();
+                for key in closure_base_env.keys() {
+                    if let Some(value) = self.env.get(key).cloned() {
+                        persisted_closure_env.insert(key.clone(), value);
+                    }
+                }
+                self.closure_env_overrides
+                    .insert(data.id, persisted_closure_env);
             }
             let mut merged = saved_env;
             self.pop_caller_env_with_writeback(&mut merged);

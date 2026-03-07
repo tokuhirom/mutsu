@@ -66,8 +66,8 @@ fn cache_dir() -> Option<PathBuf> {
 /// Metadata stored alongside the cached AST.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CacheMetadata {
-    /// Source file modification time as seconds since UNIX epoch.
-    mtime_secs: u64,
+    /// Source file modification time as nanoseconds since UNIX epoch.
+    mtime_nanos: u128,
     /// Interpreter version at the time of caching.
     version: String,
 }
@@ -117,8 +117,8 @@ pub(crate) fn load_cached_ast(source_path: &Path) -> Option<Vec<Stmt>> {
     }
 
     // Validate mtime
-    let source_mtime = source_mtime_secs(source_path)?;
-    if meta.mtime_secs != source_mtime {
+    let source_mtime = source_mtime_nanos(source_path)?;
+    if meta.mtime_nanos != source_mtime {
         // Source changed — remove stale cache
         let _ = fs::remove_file(&cache_file);
         return None;
@@ -142,7 +142,7 @@ pub(crate) fn save_cached_ast(source_path: &Path, stmts: &[Stmt]) {
     let Some(dir) = cache_dir() else {
         return;
     };
-    let Some(source_mtime) = source_mtime_secs(source_path) else {
+    let Some(source_mtime) = source_mtime_nanos(source_path) else {
         return;
     };
 
@@ -150,7 +150,7 @@ pub(crate) fn save_cached_ast(source_path: &Path, stmts: &[Stmt]) {
     let cache_file = dir.join(format!("{}.bin", hash));
 
     let meta = CacheMetadata {
-        mtime_secs: source_mtime,
+        mtime_nanos: source_mtime,
         version: interpreter_version().to_string(),
     };
 
@@ -184,11 +184,11 @@ pub(crate) fn clear_cache() {
 }
 
 /// Get the modification time of a file as seconds since UNIX epoch.
-fn source_mtime_secs(path: &Path) -> Option<u64> {
+fn source_mtime_nanos(path: &Path) -> Option<u128> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata.modified().ok()?;
     let duration = modified.duration_since(SystemTime::UNIX_EPOCH).ok()?;
-    Some(duration.as_secs())
+    Some(duration.as_nanos())
 }
 
 #[cfg(test)]
