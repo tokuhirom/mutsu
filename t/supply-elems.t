@@ -17,7 +17,7 @@ plan 4;
       :done({ $done = True }),
     );
 
-    sleep 0.1;
+    sleep now.Int + 1 - now;
     $supplier.emit(42);
     sleep 1;
     $supplier.emit(43);
@@ -33,7 +33,7 @@ plan 4;
     }
 
     ok $done, "Supplier-backed elems tap signals done";
-    is-deeply @values, [2,5], "Supplier-backed elems(1) emits throttled cumulative counts";
+    is-deeply @values, [1,2,5], "Supplier-backed elems(1) emits throttled cumulative counts";
 }
 
 ok (Supply.from-list(1..3).elems ~~ Supply), "Supply.elems returns a Supply";

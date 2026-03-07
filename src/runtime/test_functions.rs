@@ -1674,7 +1674,6 @@ impl Interpreter {
             {
                 self.supply_emit_buffer.push(Vec::new());
                 self.supply_emit_timed_buffer.push(Vec::new());
-                let after_tap_started_at = std::time::Instant::now();
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                 let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
@@ -1710,9 +1709,7 @@ impl Interpreter {
                                 let should_emit = if let Some(last) = last_emit_at {
                                     ts.duration_since(last).as_secs_f64() >= interval
                                 } else {
-                                    let first_threshold = (interval * 0.5).max(0.0);
-                                    ts.duration_since(after_tap_started_at).as_secs_f64()
-                                        >= first_threshold
+                                    true
                                 };
                                 if should_emit {
                                     out.push(Value::Int(total));

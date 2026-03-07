@@ -406,7 +406,6 @@ struct ClassifyState {
 #[derive(Clone)]
 struct ElemsTraceState {
     interval_seconds: f64,
-    started_at: std::time::Instant,
     last_emit_at: Option<std::time::Instant>,
     emitted_count: i64,
     last_reported_count: i64,
@@ -793,7 +792,6 @@ pub(super) fn register_supplier_elems_tap(
                 classify_state: None,
                 elems_trace: Some(ElemsTraceState {
                     interval_seconds: interval_seconds.max(0.0),
-                    started_at: std::time::Instant::now(),
                     last_emit_at: None,
                     emitted_count: initial_count.max(0),
                     last_reported_count: initial_count.max(0),
@@ -888,8 +886,7 @@ pub(super) fn supplier_emit_callbacks(
                 } else if let Some(last_emit) = elems.last_emit_at {
                     now.duration_since(last_emit).as_secs_f64() >= elems.interval_seconds
                 } else {
-                    let first_threshold = (elems.interval_seconds * 0.5).max(0.0);
-                    now.duration_since(elems.started_at).as_secs_f64() >= first_threshold
+                    true
                 };
                 if should_emit && elems.emitted_count > elems.last_reported_count {
                     elems.last_emit_at = Some(now);
