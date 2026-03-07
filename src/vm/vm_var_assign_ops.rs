@@ -192,15 +192,19 @@ impl VM {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
-            // Buf/Blob types: call .Str via method dispatch to get X::Buf::AsStr
-            if Self::is_buf_value(&v) {
+            // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
+            // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
+            if let Value::Instance { attributes, .. } = &v
+                && Self::is_buf_value(&v)
+                && attributes.contains_key("bytes")
+            {
                 let str_result = self
                     .interpreter
                     .call_method_with_values(v, "Str", Vec::new())?;
                 result.push_str(&str_result.to_string_value());
-            } else {
-                result.push_str(&crate::runtime::utils::coerce_to_str(&v));
+                continue;
             }
+            result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));
         Ok(())

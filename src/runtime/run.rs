@@ -378,10 +378,8 @@ impl Interpreter {
                     "todo {};\n",
                     Self::raku_single_quoted_literal(reason)
                 ));
-                // Wrap the todo-marked line in try to catch fatal errors
-                output.push_str("try {\n");
                 output.push_str(line);
-                output.push_str("\n  CATCH { default { pass('todo test died') } }\n}\n");
+                output.push('\n');
                 *remaining -= 1;
                 if *remaining == 0 {
                     pending_todo = None;
