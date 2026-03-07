@@ -1241,6 +1241,9 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if let Value::Scalar(inner) = value {
+            return self.type_matches_value(constraint, inner.as_ref());
+        }
         if constraint == "UInt" {
             return match value {
                 Value::Int(i) => *i >= 0,
