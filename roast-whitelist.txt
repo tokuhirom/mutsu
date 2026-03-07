@@ -230,6 +230,7 @@ roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
 roast/S05-modifier/repetition-exhaustive.t
+roast/S05-modifier/repetition.t
 roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t
 roast/S05-substitution/67222.t
