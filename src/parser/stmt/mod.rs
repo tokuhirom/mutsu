@@ -1347,6 +1347,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_class_attribute_postfix_of_type() {
+        let (rest, stmts) = program("class Foo { has @.a of Int }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::HasDecl {
+                sigil,
+                type_constraint,
+                ..
+            } = &body[0]
+            {
+                assert_eq!(*sigil, '@');
+                assert_eq!(type_constraint.as_deref(), Some("Int"));
+            } else {
+                panic!("expected HasDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_class_attribute_where_constraint() {
+        let (rest, stmts) = program("class Foo { has $.x where * > 0 }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::HasDecl {
+                where_constraint, ..
+            } = &body[0]
+            {
+                assert!(where_constraint.is_some());
+            } else {
+                panic!("expected HasDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_method_decl_with_match_var_param() {
         let (rest, stmts) = program("class Foo { method TOP($/) { 1 } }").unwrap();
         assert_eq!(rest, "");

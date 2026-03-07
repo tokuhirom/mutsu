@@ -952,7 +952,8 @@ impl Value {
     pub fn bag(m: HashMap<String, i64>) -> Self {
         Value::Bag(Arc::new(m))
     }
-    pub fn mix(m: HashMap<String, f64>) -> Self {
+    pub fn mix(mut m: HashMap<String, f64>) -> Self {
+        m.retain(|_, weight| *weight != 0.0);
         Value::Mix(Arc::new(m))
     }
     pub fn slip(items: Vec<Value>) -> Self {

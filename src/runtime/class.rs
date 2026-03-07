@@ -86,7 +86,7 @@ impl Interpreter {
         false
     }
 
-    pub(super) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
@@ -210,6 +210,7 @@ impl Interpreter {
             Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
         };
         let saved_env = self.env.clone();
+        let saved_var_bindings = self.var_bindings.clone();
         let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
         let role_context = if self.roles.contains_key(owner_class) {
@@ -292,6 +293,7 @@ impl Interpreter {
                         if !self.type_matches_value(expected, &base) {
                             self.method_class_stack.pop();
                             self.env = saved_env;
+                            self.var_bindings = saved_var_bindings;
                             self.restore_readonly_vars(saved_readonly);
                             return Err(RuntimeError::new(format!(
                                 "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
@@ -314,6 +316,12 @@ impl Interpreter {
         for (attr_name, attr_val) in &attributes {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
+            self.var_bindings
+                .insert(attr_name.clone(), format!("!{}", attr_name));
+            self.var_bindings.insert(
+                format!("{}::{}", owner_class, attr_name),
+                format!("!{}", attr_name),
+            );
         }
         // Method signatures must support full parameter binding semantics
         // (coercions, slurpy params, defaults, and named args) for both
@@ -323,9 +331,13 @@ impl Interpreter {
             Err(e) => {
                 self.method_class_stack.pop();
                 self.env = saved_env;
+                self.var_bindings = saved_var_bindings;
                 self.restore_readonly_vars(saved_readonly);
                 return Err(e);
             }
+        }
+        for p in &bind_params {
+            self.var_bindings.remove(p);
         }
         // When the method body is re-compiled by run_block, the compiler
         // qualifies bare variable names with current_package (e.g. "m" →
@@ -401,6 +413,7 @@ impl Interpreter {
         }
         self.method_class_stack.pop();
         self.env = merged_env;
+        self.var_bindings = saved_var_bindings;
         self.restore_readonly_vars(saved_readonly);
         result.map(|v| {
             let adjusted = match (&base, &v) {

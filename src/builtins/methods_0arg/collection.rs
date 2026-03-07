@@ -3,6 +3,40 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::sync::Arc;
 
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+fn f64_to_rat(f: f64) -> (i64, i64) {
+    if f.is_nan() {
+        return (0, 0);
+    }
+    if f.is_infinite() {
+        return if f > 0.0 { (1, 0) } else { (-1, 0) };
+    }
+    let negative = f < 0.0;
+    let f = f.abs();
+    let mut den: i64 = 1;
+    let mut num = f;
+    for _ in 0..18 {
+        if (num - num.round()).abs() < 1e-10 {
+            break;
+        }
+        num *= 10.0;
+        den *= 10;
+    }
+    let n = num.round() as i64;
+    let g = gcd_u64(n.unsigned_abs(), den.unsigned_abs());
+    let n = n / g as i64;
+    let d = den / g as i64;
+    if negative { (-n, d) } else { (n, d) }
+}
+
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
@@ -424,7 +458,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "total" => match target {
             Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
-            Value::Mix(m) => Some(Ok(Value::Num(m.values().sum::<f64>()))),
+            Value::Mix(m) => {
+                let (n, d) = f64_to_rat(m.values().sum::<f64>());
+                Some(Ok(crate::value::make_rat(n, d)))
+            }
             _ => None,
         },
         "minmax" => match target {

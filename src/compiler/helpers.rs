@@ -42,6 +42,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::BitShiftRight => "+>".to_string(),
         TokenKind::IntBitNeg => "+^".to_string(),
         TokenKind::BoolBitNeg => "?^".to_string(),
+        TokenKind::StrBitNeg => "~^".to_string(),
         TokenKind::PercentPercent => "%%".to_string(),
         TokenKind::BangPercentPercent => "!%%".to_string(),
         TokenKind::SlashSlash => "//".to_string(),
@@ -1178,6 +1179,10 @@ impl Compiler {
         };
         let normalized_iterable = Self::normalize_for_iterable(iterable);
         self.compile_expr(&normalized_iterable);
+        if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+            let source_idx = self.code.add_constant(Value::str(source_name));
+            self.code.emit(OpCode::TagContainerRef(source_idx));
+        }
         let loop_idx = self.code.emit(OpCode::ForLoop {
             param_idx,
             param_local: None,
@@ -1185,6 +1190,7 @@ impl Compiler {
             label: label.clone(),
             arity,
             collect: true,
+            restore_topic: true,
             threaded: false,
         });
         self.compile_collected_loop_body(&loop_body);

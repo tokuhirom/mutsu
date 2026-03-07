@@ -348,6 +348,22 @@ impl VM {
                     *ip += 1;
                     return Ok(());
                 }
+                let atomic_name = name.strip_prefix('$').unwrap_or(name);
+                let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+                let is_atomic_int = self.interpreter.var_type_constraint(name).as_deref()
+                    == Some("atomicint")
+                    || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                        == Some("atomicint")
+                    || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+                if is_atomic_int {
+                    let fetched = self.interpreter.call_function(
+                        "__mutsu_atomic_fetch_var",
+                        vec![Value::str(atomic_name.to_string())],
+                    )?;
+                    self.stack.push(fetched);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
                     if name.starts_with('^') {
                         Value::Bool(true)
@@ -456,6 +472,8 @@ impl VM {
                 self.interpreter.set_shared_var(&name, val.clone());
                 if name == "_"
                     && let Some(ref source_var) = self.topic_source_var
+                    && !source_var.starts_with('@')
+                    && !source_var.starts_with('%')
                 {
                     let source_name = source_var.clone();
                     self.set_env_with_main_alias(&source_name, val.clone());
@@ -542,6 +560,10 @@ impl VM {
             }
             OpCode::BoolBitNeg => {
                 self.exec_bool_bit_neg_op();
+                *ip += 1;
+            }
+            OpCode::StrBitNeg => {
+                self.exec_str_bit_neg_op();
                 *ip += 1;
             }
             OpCode::MakeSlip => {
@@ -1078,6 +1100,13 @@ impl VM {
                 self.exec_call_method_dynamic_op(code, *arity)?;
                 *ip += 1;
             }
+            OpCode::CallMethodDynamicMut {
+                arity,
+                target_name_idx,
+            } => {
+                self.exec_call_method_dynamic_mut_op(code, *arity, *target_name_idx)?;
+                *ip += 1;
+            }
             OpCode::CallMethodMut {
                 name_idx,
                 arity,
@@ -1173,7 +1202,7 @@ impl VM {
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {
-                self.exec_string_concat_op(*n);
+                self.exec_string_concat_op(*n)?;
                 *ip += 1;
             }
 
@@ -1220,11 +1249,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {
-                self.exec_post_increment_index_op(code, *name_idx);
+                self.exec_post_increment_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PostDecrementIndex(name_idx) => {
-                self.exec_post_decrement_index_op(code, *name_idx);
+                self.exec_post_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
@@ -1260,11 +1289,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PreIncrementIndex(name_idx) => {
-                self.exec_pre_increment_index_op(code, *name_idx);
+                self.exec_pre_increment_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PreDecrementIndex(name_idx) => {
-                self.exec_pre_decrement_index_op(code, *name_idx);
+                self.exec_pre_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
 
@@ -1308,6 +1337,7 @@ impl VM {
                 label,
                 arity,
                 collect,
+                restore_topic,
                 threaded,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
@@ -1317,6 +1347,7 @@ impl VM {
                     label: label.clone(),
                     arity: *arity,
                     collect: *collect,
+                    restore_topic: *restore_topic,
                     threaded: *threaded,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
@@ -1483,6 +1514,7 @@ impl VM {
                 delete,
                 complement,
                 squash,
+                non_destructive,
             } => {
                 self.exec_transliterate_op(
                     code,
@@ -1491,6 +1523,7 @@ impl VM {
                     *delete,
                     *complement,
                     *squash,
+                    *non_destructive,
                 )?;
                 *ip += 1;
             }

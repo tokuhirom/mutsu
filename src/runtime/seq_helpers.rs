@@ -1588,6 +1588,21 @@ impl Interpreter {
                 }
                 true
             }
+            // Set ~~ Mix: all set elements must exist in the Mix with unit weights.
+            (Value::Set(set), Value::Mix(mix)) => {
+                set.len() == mix.len()
+                    && set.iter().all(|key| {
+                        mix.get(key)
+                            .is_some_and(|weight| weight.is_finite() && *weight == 1.0)
+                    })
+            }
+            // Mix ~~ Set: all mix elements must have unit weights and exist in the set.
+            (Value::Mix(mix), Value::Set(set)) => {
+                mix.len() == set.len()
+                    && mix.iter().all(|(key, weight)| {
+                        weight.is_finite() && *weight == 1.0 && set.contains(key)
+                    })
+            }
             // Array ~~ Hash: check if any element exists as a key in the hash
             (Value::Array(items, ..), Value::Hash(map)) => items.iter().any(|item| {
                 let key = item.to_string_value();
@@ -1917,6 +1932,34 @@ impl Interpreter {
                 } else {
                     false
                 }
+            }
+            // Buf/Blob ~~ Buf/Blob: compare byte contents
+            (
+                Value::Instance {
+                    class_name: cn_a, ..
+                },
+                Value::Instance {
+                    class_name: cn_b, ..
+                },
+            ) if {
+                let a = cn_a.resolve();
+                let b = cn_b.resolve();
+                let is_buf = |cn: &str| {
+                    cn == "Buf"
+                        || cn == "Blob"
+                        || cn == "utf8"
+                        || cn == "utf16"
+                        || cn.starts_with("Buf[")
+                        || cn.starts_with("Blob[")
+                        || cn.starts_with("buf")
+                        || cn.starts_with("blob")
+                };
+                is_buf(&a) && is_buf(&b)
+            } =>
+            {
+                let lb = crate::vm::VM::extract_buf_bytes(left);
+                let rb = crate::vm::VM::extract_buf_bytes(right);
+                lb == rb
             }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,

@@ -33,7 +33,7 @@ impl Interpreter {
             let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::Bool(!arg.truthy())),
-                "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
+                "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
                 "-" | "−" => crate::builtins::arith_negate(arg.clone()),
                 "~" => Ok(Value::str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),

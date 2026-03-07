@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # 3-arg form: cas($var, $expected, $new)
 {
@@ -38,4 +38,13 @@ plan 8;
     cas($a, 10, 20);
     cas($a, 5, 99);  # should not change since $a is 20
     is $a, 20, 'sequential cas operations work correctly';
+}
+
+{
+    my atomicint $value = 0;
+    await start {
+        cas($value, 0, 1);
+        cas($value, 1, 2);
+    };
+    is $value, 2, 'cas updates from start thread are visible to main thread';
 }

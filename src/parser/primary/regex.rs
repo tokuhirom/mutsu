@@ -8,6 +8,31 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
+/// Process escape sequences in a tr/// from/to string.
+/// Handles \n, \t, \r, \x.., \o.., \\, etc.
+fn process_trans_escapes(raw: &str) -> String {
+    let mut result = String::new();
+    let mut rest = raw;
+    while !rest.is_empty() {
+        if rest.starts_with('\\') && rest.len() >= 2 {
+            if let Some((remaining, _)) =
+                super::string::process_escape_sequence(rest, &mut result, &[])
+            {
+                rest = remaining;
+            } else {
+                // Unknown escape: keep as-is
+                result.push('\\');
+                rest = &rest[1..];
+            }
+        } else {
+            let ch = rest.chars().next().unwrap();
+            result.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    result
+}
+
 /// Validate a regex pattern at parse time, converting any RuntimeError to PError.
 fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
     validate_regex_syntax(pattern).map_err(|e| {
@@ -227,7 +252,9 @@ fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -
     rest
 }
 
-fn parse_trans_adverbs(input: &str) -> Option<(&str, bool, bool, bool)> {
+/// Parse tr/TR adverbs and the opening delimiter.
+/// Returns (remaining_after_open, delimiter_char, close_delimiter_char, is_paired, delete, complement, squash).
+fn parse_trans_adverbs(input: &str) -> Option<(&str, char, char, bool, bool, bool, bool)> {
     let mut rest = input;
     let mut delete = false;
     let mut complement = false;
@@ -253,8 +280,21 @@ fn parse_trans_adverbs(input: &str) -> Option<(&str, bool, bool, bool)> {
         rest = &after_colon[name_len..];
     }
 
-    let after_slash = rest.strip_prefix('/')?;
-    Some((after_slash, delete, complement, squash))
+    let open_ch = rest.chars().next()?;
+    if open_ch.is_alphanumeric() || open_ch == '_' || open_ch.is_whitespace() {
+        return None;
+    }
+    let (close_ch, is_paired) = match open_ch {
+        '{' => ('}', true),
+        '[' => (']', true),
+        '(' => (')', true),
+        '<' => ('>', true),
+        other => (other, false),
+    };
+    let after_open = &rest[open_ch.len_utf8()..];
+    Some((
+        after_open, open_ch, close_ch, is_paired, delete, complement, squash,
+    ))
 }
 
 fn has_unescaped_statement_boundary(input: &str) -> bool {
@@ -623,6 +663,17 @@ fn scan_to_delim_inner(
 }
 
 pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
+    // y/// is obsolete — reject with X::Obsolete
+    if input.starts_with("y/")
+        || input.starts_with("y[")
+        || input.starts_with("y{")
+        || input.starts_with("y|")
+    {
+        return Err(PError::fatal(
+            "X::Obsolete: Unsupported use of y///. In Raku please use: tr///.".to_string(),
+        ));
+    }
+
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
         let (spec, adverbs) = parse_match_adverbs(rest)?;
@@ -944,16 +995,19 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     }
 
     // tr[:adverbs]/from/to/ or TR[:adverbs]/from/to/
+    // Supports arbitrary delimiters: tr/.../.../  tr|...|...|  tr[...][...]  tr{...}{...}
+    let is_tr_upper = input.starts_with("TR");
     if let Some(r) = input
         .strip_prefix("tr")
         .or_else(|| input.strip_prefix("TR"))
         .and_then(parse_trans_adverbs)
     {
-        let (r, delete, complement, squash) = r;
+        let (r, _open_ch, close_ch, is_paired, delete, complement, squash) = r;
+        let close_byte = close_ch as u8;
         let mut end = 0;
         let bytes = r.as_bytes();
         while end < bytes.len() {
-            if bytes[end] == b'/' {
+            if bytes[end] == close_byte {
                 break;
             }
             if bytes[end] == b'\\' && end + 1 < bytes.len() {
@@ -964,11 +1018,22 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         }
         let from = &r[..end];
         if end < bytes.len() {
-            let r = &r[end + 1..]; // skip middle /
+            let r = &r[end + 1..]; // skip close delimiter
+            // For paired delimiters, skip optional whitespace and open delimiter of second part
+            let r = if is_paired {
+                let r = r.trim_start();
+                if let Some(r2) = r.strip_prefix(|c: char| c == _open_ch) {
+                    r2
+                } else {
+                    r
+                }
+            } else {
+                r
+            };
             let mut rend = 0;
             let rbytes = r.as_bytes();
             while rend < rbytes.len() {
-                if rbytes[rend] == b'/' {
+                if rbytes[rend] == close_byte {
                     break;
                 }
                 if rbytes[rend] == b'\\' && rend + 1 < rbytes.len() {
@@ -986,11 +1051,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Transliterate {
-                    from: from.to_string(),
-                    to: to.to_string(),
+                    from: process_trans_escapes(from),
+                    to: process_trans_escapes(to),
                     delete,
                     complement,
                     squash,
+                    non_destructive: is_tr_upper,
                 },
             ));
         }
@@ -1001,6 +1067,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
     if let Some(after_m) = input.strip_prefix('m')
+        && !after_m.starts_with("=>")
         && !crate::parser::stmt::simple::is_user_declared_sub("m")
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;

@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::token_kind::TokenKind;
 use crate::value::ArrayKind;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -443,6 +444,7 @@ impl Interpreter {
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
+            "UNBASE" => self.builtin_unbase(&args),
             // Grammar helpers
             "make" => self.builtin_make(&args),
             "made" => self.builtin_made(),
@@ -573,6 +575,7 @@ impl Interpreter {
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
             "squish" => self.builtin_squish(&args),
+            "reduce" => self.builtin_reduce(&args),
             "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
@@ -737,6 +740,40 @@ impl Interpreter {
                 }
             }
             _ => self.call_function_fallback(name, &args),
+        }
+    }
+
+    fn builtin_unbase(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "UNBASE expects a radix and at least one argument",
+            ));
+        }
+        let radix = match args[0] {
+            Value::Int(n) if (2..=36).contains(&n) => n as u32,
+            _ => {
+                return Err(RuntimeError::new(
+                    "UNBASE radix must be an integer in 2..36",
+                ));
+            }
+        };
+
+        let mut out = Vec::with_capacity(args.len() - 1);
+        for arg in args.iter().skip(1) {
+            let text = arg.to_string_value();
+            let Some(parsed) = crate::runtime::parse_radix_number_body(&text, radix) else {
+                return Err(RuntimeError::new(format!(
+                    "Cannot parse '{}' as base {}",
+                    text, radix
+                )));
+            };
+            out.push(parsed);
+        }
+
+        if out.len() == 1 {
+            Ok(out.remove(0))
+        } else {
+            Ok(Value::array(out))
         }
     }
 
@@ -1022,6 +1059,10 @@ impl Interpreter {
                 }
             }
             Value::Hash(map) => {
+                let default_type = var_name
+                    .as_ref()
+                    .and_then(|name| self.var_type_constraint(name))
+                    .unwrap_or_else(|| "Any".to_string());
                 for idx in &indices {
                     let key_str = idx.to_string_value();
                     let key =
@@ -1030,7 +1071,7 @@ impl Interpreter {
                     let value = map
                         .get(&key_str)
                         .cloned()
-                        .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                        .unwrap_or_else(|| Value::Package(Symbol::intern(&default_type)));
                     rows.push((key, value, exists));
                 }
             }
@@ -1279,6 +1320,49 @@ impl Interpreter {
         let adverb = args[2].to_string_value();
         let raw_indices = &args[3..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+            && class_name == "Stash"
+            && let Some(Value::Hash(symbols)) = attributes.get("symbols")
+        {
+            let stash_exists = |idx: &Value| {
+                let key = idx.to_string_value();
+                if symbols.contains_key(&key) {
+                    return true;
+                }
+                if !key.starts_with('$')
+                    && !key.starts_with('@')
+                    && !key.starts_with('%')
+                    && !key.starts_with('&')
+                {
+                    return symbols.contains_key(&format!("${key}"));
+                }
+                false
+            };
+            let stash_indices: Vec<Value> = if indices.len() > 1 {
+                indices.clone()
+            } else {
+                match &indices[0] {
+                    Value::Array(items, ..) => items.to_vec(),
+                    one => vec![one.clone()],
+                }
+            };
+            let exists_vals: Vec<bool> = stash_indices.iter().map(stash_exists).collect();
+            let exists_vals: Vec<bool> = if negated {
+                exists_vals.into_iter().map(|v| !v).collect()
+            } else {
+                exists_vals
+            };
+            if stash_indices.len() > 1 {
+                return Ok(Value::array(
+                    exists_vals.into_iter().map(Value::Bool).collect::<Vec<_>>(),
+                ));
+            }
+            return Ok(Value::Bool(*exists_vals.first().unwrap_or(&false)));
+        }
 
         // Multi-result mode for Whatever/list indices
         if has_multi_indices(&indices) {
@@ -2014,6 +2098,31 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // subbuf-rw as a function: subbuf-rw($buf, from, len) = $value
+        if name == "subbuf-rw" && !call_args.is_empty() {
+            let target = call_args[0].clone();
+            let method_args = call_args[1..].to_vec();
+            // We need to find the variable name for the target to update it.
+            // Search the env for a variable whose value matches the target by identity.
+            let target_var = {
+                let mut found = None;
+                for (k, v) in self.env.iter() {
+                    if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
+                        found = Some(k.clone());
+                        break;
+                    }
+                }
+                found
+            };
+            return self.assign_method_lvalue_with_values(
+                target_var.as_deref(),
+                target,
+                "subbuf-rw",
+                method_args,
+                value,
+            );
+        }
+
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
             if let Some(target_expr) = Self::rw_sub_target_expr(&def.body) {
                 let allow_target_assign =
@@ -2261,11 +2370,30 @@ impl Interpreter {
         name: &str,
         value_key: &str,
     ) -> Value {
-        shared
+        let current = shared
             .get(value_key)
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::Nil);
+        if let Some(constraint) = self.var_type_constraint(name) {
+            let is_untyped_placeholder = matches!(current, Value::Nil)
+                || matches!(current, Value::Package(sym) if sym.resolve() == "Any");
+            if is_untyped_placeholder {
+                return Value::Package(Symbol::intern(&constraint));
+            }
+        }
+        current
+    }
+
+    fn cas_retry_matches(expected_seen: &Value, latest_seen: &Value) -> bool {
+        match (expected_seen, latest_seen) {
+            (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+            (Value::Array(a, ..), Value::Array(b, ..)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => expected_seen == latest_seen,
+        }
     }
 
     fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -2374,42 +2502,114 @@ impl Interpreter {
             // 3-arg form: cas($var, $expected, $new)
             let expected = &args[1];
             let new_val = args[2].clone();
+            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+            let mut did_swap = false;
             let current = {
-                let shared = self.shared_vars.read().unwrap();
-                self.atomic_current_value(&shared, &name, &value_key)
+                let mut shared = self.shared_vars.write().unwrap();
+                let current = self.atomic_current_value(&shared, &name, &value_key);
+                if current == *expected {
+                    shared.insert(value_key.clone(), coerced.clone());
+                    did_swap = true;
+                }
+                current
             };
-            if current == *expected {
-                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
-                self.env.insert(name.clone(), coerced.clone());
-                self.shared_vars
-                    .write()
-                    .unwrap()
-                    .insert(value_key.clone(), coerced);
+            if did_swap {
+                self.env.insert(name.clone(), coerced);
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(value_key);
                     dirty.insert(name);
                 }
+            } else {
+                self.env.insert(name.clone(), current.clone());
             }
             Ok(current)
         } else {
             // 2-arg form: cas($var, &code)
             let code = args[1].clone();
-            let current = {
-                let shared = self.shared_vars.read().unwrap();
-                self.atomic_current_value(&shared, &name, &value_key)
-            };
-            let new_val = self.call_sub_value(code, vec![current], false)?;
-            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
-            self.env.insert(name.clone(), coerced.clone());
-            self.shared_vars
-                .write()
-                .unwrap()
-                .insert(value_key.clone(), coerced.clone());
-            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                dirty.insert(value_key);
-                dirty.insert(name);
+            if let Value::Sub(sub) = &code
+                && sub.params.len() == 1
+                && sub.body.len() == 1
+                && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
+                && *op == TokenKind::Plus
+            {
+                let param = &sub.params[0];
+                let delta_expr = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                    (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                    _ => None,
+                };
+                if let Some(delta_expr) = delta_expr {
+                    let delta = match delta_expr {
+                        Expr::Var(var_name) => {
+                            self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                        }
+                        Expr::Literal(v) => v,
+                        other => self.eval_block_value(&[Stmt::Expr(other)])?,
+                    };
+                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), delta]);
+                }
             }
-            Ok(coerced)
+            loop {
+                let current = {
+                    let shared = self.shared_vars.read().unwrap();
+                    self.atomic_current_value(&shared, &name, &value_key)
+                };
+                self.env.insert(name.clone(), current.clone());
+                let new_val = {
+                    let saved_topic = self.env.get("_").cloned();
+                    let saved_dollar_topic = self.env.get("$_").cloned();
+                    self.env.insert("_".to_string(), current.clone());
+                    self.env.insert("$_".to_string(), current.clone());
+                    let call_args = if let Value::Sub(sub) = &code {
+                        if sub.params.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![current.clone()]
+                        }
+                    } else {
+                        vec![current.clone()]
+                    };
+                    let result = self.call_sub_value(code.clone(), call_args, true)?;
+                    match saved_topic {
+                        Some(v) => {
+                            self.env.insert("_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("_");
+                        }
+                    }
+                    match saved_dollar_topic {
+                        Some(v) => {
+                            self.env.insert("$_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("$_");
+                        }
+                    }
+                    result
+                };
+                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+
+                let mut updated = false;
+                {
+                    let mut shared = self.shared_vars.write().unwrap();
+                    let seen = self.atomic_current_value(&shared, &name, &value_key);
+                    if Self::cas_retry_matches(&current, &seen) {
+                        shared.insert(value_key.clone(), coerced.clone());
+                        updated = true;
+                    } else {
+                        self.env.insert(name.clone(), seen);
+                    }
+                }
+                if updated {
+                    self.env.insert(name.clone(), coerced.clone());
+                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(value_key.clone());
+                        dirty.insert(name.clone());
+                    }
+                    return Ok(coerced);
+                }
+            }
         }
     }
 
@@ -2979,6 +3179,164 @@ impl Interpreter {
                 Ok(out)
             }
         }
+    }
+
+    fn builtin_reduce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let callable = args
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("reduce expects a callable as first argument"))?;
+
+        let mut items = Vec::new();
+        for arg in args.iter().skip(1) {
+            if matches!(arg, Value::Hash(_)) {
+                items.push(arg.clone());
+            } else {
+                items.extend(crate::runtime::value_to_list(arg));
+            }
+        }
+        self.reduce_items(callable, items)
+    }
+
+    pub(crate) fn reduce_items(
+        &mut self,
+        callable: Value,
+        items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if items.is_empty() {
+            return Ok(Value::Nil);
+        }
+        if items.len() == 1 {
+            return Ok(items.into_iter().next().unwrap());
+        }
+
+        let arity = self.reduce_callable_arity(&callable);
+        let step = arity.saturating_sub(1).max(1);
+        let assoc = self.callable_reduce_assoc(&callable);
+        let is_thunky = Self::is_thunky_reduce_op(&callable);
+
+        match assoc {
+            OpAssoc::Right => {
+                let mut acc = items.last().cloned().unwrap();
+                let mut right_edge = items.len().saturating_sub(1);
+                while right_edge >= step {
+                    let start = right_edge - step;
+                    let mut call_args = items[start..right_edge].to_vec();
+                    call_args.push(acc);
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    if is_thunky {
+                        acc = Self::dethunk(self, acc)?;
+                    }
+                    right_edge = start;
+                }
+                Ok(acc)
+            }
+            OpAssoc::Chain => {
+                let mut result = true;
+                for i in 0..items.len() - 1 {
+                    let v = self.call_sub_value(
+                        callable.clone(),
+                        vec![items[i].clone(), items[i + 1].clone()],
+                        true,
+                    )?;
+                    if !v.truthy() {
+                        result = false;
+                        break;
+                    }
+                }
+                Ok(Value::Bool(result))
+            }
+            OpAssoc::Left => {
+                let mut acc = items[0].clone();
+                let mut idx = 1usize;
+                while idx + step <= items.len() {
+                    let mut call_args = vec![acc];
+                    call_args.extend(items[idx..idx + step].iter().cloned());
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    if is_thunky {
+                        acc = Self::dethunk(self, acc)?;
+                    }
+                    idx += step;
+                }
+                Ok(acc)
+            }
+        }
+    }
+
+    fn is_thunky_reduce_op(callable: &Value) -> bool {
+        let name = match callable {
+            Value::Routine { name, .. } => name.resolve(),
+            Value::Sub(data) => data.name.resolve(),
+            _ => return false,
+        };
+        matches!(
+            name.as_str(),
+            "infix:<&&>" | "infix:<||>" | "infix:<and>" | "infix:<or>"
+        )
+    }
+
+    fn dethunk(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        match val {
+            Value::Sub(_) | Value::WeakSub(_) => self.call_sub_value(val, vec![], false),
+            _ => Ok(val),
+        }
+    }
+
+    fn reduce_callable_arity(&self, callable: &Value) -> usize {
+        let (params, param_defs) = self.callable_signature(callable);
+        if !param_defs.is_empty() {
+            let mut total = 0usize;
+            let mut required = 0usize;
+            for pd in &param_defs {
+                if pd.named
+                    || pd.slurpy
+                    || pd.double_slurpy
+                    || pd.traits.iter().any(|t| t == "invocant")
+                {
+                    continue;
+                }
+                total += 1;
+                let is_required = pd.required || (!pd.optional_marker && pd.default.is_none());
+                if is_required {
+                    required += 1;
+                }
+            }
+            if required >= 2 {
+                return required;
+            }
+            if total >= 2 {
+                return total;
+            }
+        }
+        params.len().max(2)
+    }
+
+    fn callable_reduce_assoc(&self, callable: &Value) -> OpAssoc {
+        // Check the name in the operator_assoc map first (handles `is assoc<...>` trait)
+        let name = match callable {
+            Value::Sub(data) => Some(data.name.resolve()),
+            Value::Routine { name, .. } => Some(name.resolve()),
+            _ => None,
+        };
+        if let Some(ref name_str) = name {
+            if let Some(assoc) = self.infix_associativity(name_str) {
+                return match assoc.as_str() {
+                    "right" => OpAssoc::Right,
+                    "chain" => OpAssoc::Chain,
+                    _ => OpAssoc::Left,
+                };
+            }
+            // Also try the infix:<name> form
+            let infix_name = format!("infix:<{}>", name_str);
+            if let Some(assoc) = self.infix_associativity(&infix_name) {
+                return match assoc.as_str() {
+                    "right" => OpAssoc::Right,
+                    "chain" => OpAssoc::Chain,
+                    _ => OpAssoc::Left,
+                };
+            }
+        }
+        Self::op_associativity(callable)
     }
 
     fn builtin_produce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

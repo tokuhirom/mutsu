@@ -1,5 +1,5 @@
 use super::Value;
-use crate::ast::{Expr, ParamDef};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -25,6 +25,8 @@ pub(crate) struct SigParam {
     pub(crate) traits: Vec<String>,
     pub(crate) code_signature: Option<Box<SigInfo>>,
     pub(crate) where_constraint: Option<Box<Expr>>,
+    pub(crate) default_expr: Option<Box<Expr>>,
+    pub(crate) literal_value: Option<Value>,
     pub(crate) named_names: Vec<String>,
 }
 
@@ -95,9 +97,21 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     // extract named_names for introspection.
     let named_names = collect_named_names(p, &name, is_capture);
 
+    // Infer type from literal value if no explicit type constraint
+    let type_constraint = p.type_constraint.clone().or_else(|| {
+        p.literal_value.as_ref().map(|lit| match lit {
+            Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
+            Value::Num(_) => "Num".to_string(),
+            Value::Str(_) => "Str".to_string(),
+            Value::Rat(_, _) => "Rat".to_string(),
+            Value::Bool(_) => "Bool".to_string(),
+            _ => "Any".to_string(),
+        })
+    });
+
     SigParam {
         name,
-        type_constraint: p.type_constraint.clone(),
+        type_constraint,
         multi_invocant: p.multi_invocant,
         named: p.named,
         slurpy: p.slurpy && !is_capture,
@@ -123,6 +137,8 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
             .as_ref()
             .map(|(params, ret)| Box::new(param_defs_to_sig_info(params, ret.clone()))),
         where_constraint: p.where_constraint.clone(),
+        default_expr: p.default.as_ref().map(|e| Box::new(e.clone())),
+        literal_value: p.literal_value.clone(),
         named_names,
     }
 }
@@ -169,11 +185,13 @@ pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<St
 /// Create a Signature Value from SigInfo.
 pub(crate) fn make_signature_value(info: SigInfo) -> Value {
     let raku_str = render_signature(&info);
+    // .gist is like .raku but without the leading ':'
+    let gist_str = raku_str.strip_prefix(':').unwrap_or(&raku_str).to_string();
     let mut attrs = HashMap::new();
     attrs.insert("raku".to_string(), Value::str(raku_str.clone()));
     attrs.insert("perl".to_string(), Value::str(raku_str.clone()));
     attrs.insert("Str".to_string(), Value::str(raku_str.clone()));
-    attrs.insert("gist".to_string(), Value::str(raku_str));
+    attrs.insert("gist".to_string(), Value::str(gist_str));
     attrs.insert(
         "params".to_string(),
         make_params_value_from_sig_params(&info.params),
@@ -206,11 +224,19 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     attrs.insert("name".to_string(), Value::str(display_name));
 
     // type: resolve to type object (Package) instead of string
+    // type_captures: extract ::T style type capture names
+    let mut type_captures: Vec<Value> = Vec::new();
     let type_val = match &p.type_constraint {
+        Some(t) if t.starts_with("::") => {
+            // Type capture like ::T — type is Any, capture name is T
+            type_captures.push(Value::str(t[2..].to_string()));
+            Value::Package(Symbol::intern("Any"))
+        }
         Some(t) => Value::Package(Symbol::intern(t)),
         None => Value::Package(Symbol::intern("Any")),
     };
     attrs.insert("type".to_string(), type_val);
+    attrs.insert("type_captures".to_string(), Value::array(type_captures));
 
     // Slurpy hash (*%named) is considered named in Raku
     let is_named = p.named || (p.slurpy && p.sigil == '%');
@@ -276,9 +302,30 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     let twigil = extract_twigil(&p.name);
     attrs.insert("twigil".to_string(), Value::str(twigil.to_string()));
 
-    // TODO: constraints - needs runtime evaluation support for where clauses
-    // For now, store a marker that allows unconstrained params to smartmatch truely
-    if p.where_constraint.is_none() {
+    // .default: wrap default expression in a closure (Code object)
+    if let Some(ref default_expr) = p.default_expr {
+        let body = vec![Stmt::Expr(*default_expr.clone())];
+        let default_sub = Value::make_sub(
+            Symbol::intern(""),
+            Symbol::intern("<default>"),
+            Vec::new(),
+            Vec::new(),
+            body,
+            false,
+            crate::env::Env::new(),
+        );
+        attrs.insert("default".to_string(), default_sub);
+    }
+
+    // .constraints: for literal values, store the literal directly;
+    // for where clauses, convert the constraint Expr to a Value;
+    // for unconstrained params, Bool(true) smartmatches against anything
+    if let Some(ref lit) = p.literal_value {
+        attrs.insert("constraints".to_string(), lit.clone());
+    } else if let Some(ref where_expr) = p.where_constraint {
+        let constraint_val = where_expr_to_value(where_expr);
+        attrs.insert("constraints".to_string(), constraint_val);
+    } else {
         // Unconstrained param: .constraints smartmatches truely against anything
         attrs.insert("constraints".to_string(), Value::Bool(true));
     }
@@ -318,6 +365,7 @@ fn resolve_inner_display_name(p: &SigParam) -> String {
 }
 
 /// Extract twigil from a parameter name like `$!x` → `!`, `$.x` → `.`, `$*x` → `*`.
+/// Also handles names without sigils like `*a` (from SigParam where sigil is stripped).
 fn extract_twigil(name: &str) -> &str {
     // Name may start with sigil ($, @, %, &) followed by optional twigil
     let after_sigil = if name.starts_with('$')
@@ -327,7 +375,8 @@ fn extract_twigil(name: &str) -> &str {
     {
         &name[1..]
     } else {
-        return "";
+        // SigParam names have sigil stripped — check the name directly
+        name
     };
     if after_sigil.starts_with('!') {
         "!"
@@ -372,8 +421,31 @@ fn render_signature(info: &SigInfo) -> String {
     if info.params.is_empty() && info.return_type.is_none() {
         return ":()".to_string();
     }
-    let parts: Vec<String> = info.params.iter().map(render_param).collect();
-    let params_str = parts.join(", ");
+    // Build params string with ;; separators for multi-invocant boundaries
+    let mut parts = Vec::new();
+    let mut prev_multi_invocant = true;
+    for p in &info.params {
+        if prev_multi_invocant && !p.multi_invocant {
+            // Insert ;; separator
+            parts.push(";;".to_string());
+        }
+        parts.push(render_param(p));
+        prev_multi_invocant = p.multi_invocant;
+    }
+    // Join: items separated by ", " but ;; stands alone
+    let mut params_str = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            if part == ";;" {
+                // ;; replaces the comma
+            } else if i > 0 && parts[i - 1] == ";;" {
+                params_str.push(' ');
+            } else {
+                params_str.push_str(", ");
+            }
+        }
+        params_str.push_str(part);
+    }
     if let Some(ref ret) = info.return_type {
         if params_str.is_empty() {
             format!(":(--> {})", ret)
@@ -391,13 +463,39 @@ fn render_param(p: &SigParam) -> String {
     if p.is_capture {
         result.push('|');
         if !p.name.is_empty() {
-            result.push(p.sigil);
             result.push_str(&p.name);
+        }
+        // Capture sub-signature: |a ($a)
+        if let Some(ref sub) = p.sub_signature {
+            let sub_parts: Vec<String> = sub.iter().map(render_param).collect();
+            result.push_str(&format!(" ({})", sub_parts.join(", ")));
         }
         return result;
     }
 
-    if p.slurpy {
+    // Sigilless (backslash) parameters
+    if p.sigilless {
+        if let Some(ref tc) = p.type_constraint {
+            result.push_str(tc);
+            result.push(' ');
+        }
+        result.push('\\');
+        if !p.name.is_empty() {
+            result.push_str(&p.name);
+        }
+        for t in &p.traits {
+            result.push_str(" is ");
+            result.push_str(t);
+        }
+        if p.has_default {
+            result.push_str(" = ...");
+        }
+        return result;
+    }
+
+    if p.double_slurpy {
+        result.push_str("**");
+    } else if p.slurpy {
         result.push('*');
     }
 
@@ -658,4 +756,42 @@ fn is_supertype_of(t1: &str, t2: &str) -> bool {
         return t2 == "Str";
     }
     false
+}
+
+/// Convert a where-constraint expression to a runtime Value.
+/// For block constraints `{ ... }`, creates a Sub.
+/// For type-name constraints like `Int`, creates a Package.
+fn where_expr_to_value(expr: &Expr) -> Value {
+    match expr {
+        Expr::AnonSub { body, is_rw } => {
+            // Block constraint: { $_ % 2 == 0 }
+            // Create a Sub with no explicit params — $_ is handled implicitly
+            Value::make_sub(
+                Symbol::intern(""),
+                Symbol::intern("<anon>"),
+                Vec::new(),
+                Vec::new(),
+                body.clone(),
+                *is_rw,
+                crate::env::Env::new(),
+            )
+        }
+        Expr::BareWord(name) => {
+            // Type constraint like `Int`, `Str`, etc.
+            Value::Package(Symbol::intern(name))
+        }
+        _ => {
+            // Fallback: wrap in a thunk
+            let body = vec![Stmt::Expr(expr.clone())];
+            Value::make_sub(
+                Symbol::intern(""),
+                Symbol::intern("<constraints>"),
+                Vec::new(),
+                Vec::new(),
+                body,
+                false,
+                crate::env::Env::new(),
+            )
+        }
+    }
 }

@@ -114,6 +114,7 @@ roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/notandthen.t
 roast/S03-operators/numeric-shift.t
+roast/S03-operators/overflow.t
 roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
@@ -156,6 +157,7 @@ roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-phasers/end.t
 roast/S04-phasers/first.t
+roast/S04-statement-modifiers/for.t
 roast/S04-statement-modifiers/given.t
 roast/S04-statement-modifiers/if.t
 roast/S04-statement-modifiers/unless.t
@@ -472,6 +474,7 @@ roast/S17-supply/schedule-on.t
 roast/S17-supply/skip.t
 roast/S17-supply/split.t
 roast/S17-supply/tail.t
+roast/S17-supply/unique.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S19-command-line/help.t
@@ -523,6 +526,7 @@ roast/S32-container/stringify.t
 roast/S32-container/zip.t
 roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
+roast/S32-hash/delete-adverb.t
 roast/S32-hash/delete.t
 roast/S32-hash/exists-adverb.t
 roast/S32-hash/exists.t

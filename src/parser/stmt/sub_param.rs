@@ -735,8 +735,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     if let Some(r) = rest.strip_prefix('\\') {
         let (r, name) = ident(r)?;
         let (r, _) = ws(r)?;
+        // `is copy`, `is rw`, `is readonly`, `is raw` traits
+        let (mut r, _) = ws(r)?;
+        let mut sigilless_traits = Vec::new();
+        while let Some(rt) = keyword("is", r) {
+            let (rt, _) = ws1(rt)?;
+            let (rt, trait_name) = ident(rt)?;
+            validate_param_trait(&trait_name, &sigilless_traits, rt)?;
+            sigilless_traits.push(trait_name);
+            let (rt, _) = ws(rt)?;
+            r = rt;
+        }
         // Default value
         let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
+            let r = &r[1..];
             let (r, _) = ws(r)?;
             let (r, expr) = expression(r)?;
             (r, Some(expr))
@@ -750,6 +762,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.sigilless = true;
         p.default = default;
         p.type_constraint = type_constraint;
+        p.traits = sigilless_traits;
         return Ok((r, p));
     }
 

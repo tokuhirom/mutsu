@@ -110,6 +110,23 @@ fn is_supported_variable_trait(trait_name: &str) -> bool {
     if matches!(trait_name, "default" | "export" | "dynamic") {
         return true;
     }
+    // Native typed buffer traits (e.g. `my @a is buf8`, `my @a is blob16`)
+    if matches!(
+        trait_name,
+        "buf"
+            | "blob"
+            | "buf8"
+            | "buf16"
+            | "buf32"
+            | "buf64"
+            | "blob8"
+            | "blob16"
+            | "blob32"
+            | "blob64"
+            | "utf8"
+    ) {
+        return true;
+    }
     // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
     trait_name
         .chars()
@@ -851,6 +868,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 ));
             }
             let is_builtin = is_supported_variable_trait(&trait_name);
+            if is_hash && (trait_name == "Mix" || trait_name == "MixHash") {
+                type_constraint = Some(trait_name.clone());
+            }
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
             }
@@ -878,9 +898,25 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 continue;
             }
             let (r2, _) = ws(r2)?;
-            // "default" is a supported trait but needs to be in custom_traits
-            // for runtime processing via ApplyVarTrait.
-            let include_in_traits = !is_builtin || trait_name == "default";
+            // "default" and buf-type traits are supported but need to be in
+            // custom_traits for runtime processing via ApplyVarTrait.
+            let is_buf_trait = matches!(
+                trait_name.as_str(),
+                "Buf"
+                    | "Blob"
+                    | "buf"
+                    | "blob"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+                    | "utf8"
+            );
+            let include_in_traits = !is_builtin || trait_name == "default" || is_buf_trait;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
@@ -1222,18 +1258,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
-        let stmt = if is_array {
-            Stmt::SyntheticBlock(vec![
-                stmt,
-                Stmt::Expr(Expr::Call {
+        let stmt = if is_array || bound_name.starts_with('%') {
+            let mut stmts = Vec::new();
+            if bound_name.starts_with('%') {
+                stmts.push(Stmt::MarkReadonly(bound_name.clone()));
+            }
+            stmts.push(stmt);
+            if is_array {
+                stmts.push(Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_record_bound_array_len"),
                     args: vec![Expr::Literal(Value::str(bound_name.clone()))],
-                }),
-                Stmt::Expr(Expr::Call {
+                }));
+                stmts.push(Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_record_shaped_array_dims"),
-                    args: vec![Expr::Literal(Value::str(bound_name))],
-                }),
-            ])
+                    args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                }));
+            }
+            Stmt::SyntheticBlock(stmts)
         } else {
             stmt
         };
@@ -1629,6 +1670,18 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             rest = r_name;
         }
         let (r, _) = ws(rest)?;
+        rest = r;
+    }
+
+    // Postfix container typing: has @.a of Int; has %.h of Str;
+    if (sigil == b'@' || sigil == b'%')
+        && type_constraint.is_none()
+        && let Some(r) = keyword("of", rest)
+    {
+        let (r, _) = ws1(r)?;
+        let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+        let (r, _) = ws(r)?;
+        type_constraint = Some(tc);
         rest = r;
     }
 

@@ -44,6 +44,31 @@ pub(crate) mod temporal_dispatch;
 
 use std::collections::HashMap;
 
+fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+    let mut total = 0.0;
+    for weight in items.values() {
+        if weight.is_finite() && *weight > 0.0 {
+            total += *weight;
+        }
+    }
+    if total <= 0.0 {
+        return None;
+    }
+    let mut needle = builtin_rand() * total;
+    for (key, weight) in items {
+        if !weight.is_finite() || *weight <= 0.0 {
+            continue;
+        }
+        if needle <= *weight {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *weight;
+    }
+    items
+        .iter()
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
+}
+
 fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -852,6 +877,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         _ => {}
     }
 
+    // Buf/Blob.Str throws X::Buf::AsStr
+    if (method == "Str" || method == "Stringy")
+        && let Value::Instance { class_name, .. } = target
+        && crate::vm::VM::is_buf_value(target)
+    {
+        let cn = class_name.resolve();
+        let mut err = RuntimeError::new(format!(
+            "Cannot use a {cn} as a Str. You can use .decode to convert to Str.",
+        ));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("payload".to_string(), target.clone());
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Buf::AsStr"),
+            attrs,
+        )));
+        return Some(Err(err));
+    }
+
     // CX::Warn methods: message, resume
     if let Value::Instance {
         class_name,
@@ -1387,16 +1431,34 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf"
-                || class_name == "Blob"
-                || class_name.resolve().starts_with("Buf[")
-                || class_name.resolve().starts_with("Blob[") =>
+            } if {
+                let cn = class_name.resolve();
+                cn == "Buf"
+                    || cn == "Blob"
+                    || cn == "utf8"
+                    || cn == "utf16"
+                    || cn.starts_with("Buf[")
+                    || cn.starts_with("Blob[")
+                    || cn.starts_with("buf")
+                    || cn.starts_with("blob")
+            } =>
             {
-                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
-                    Some(Ok(Value::Int(bytes.len() as i64)))
+                let elems = if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    bytes.len() as i64
                 } else {
-                    Some(Ok(Value::Int(0)))
-                }
+                    0
+                };
+                let cn = class_name.resolve();
+                let bytes_per_elem: i64 = if cn.contains("16") {
+                    2
+                } else if cn.contains("32") {
+                    4
+                } else if cn.contains("64") {
+                    8
+                } else {
+                    1
+                };
+                Some(Ok(Value::Int(elems * bytes_per_elem)))
             }
             Value::Str(s) => Some(Ok(Value::Int(s.len() as i64))),
             _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
@@ -1474,7 +1536,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Buf" || class_name == "Blob" => {
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
@@ -1693,7 +1755,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Buf" || class_name == "Blob" => {
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Some(Ok(Value::Int(bytes.len() as i64 - 1)))
                     } else {
@@ -2180,6 +2242,48 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     ))))
                 }
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                    if method == "raku" || method == "perl" {
+                        let elems: Vec<String> = bytes
+                            .iter()
+                            .map(|b| match b {
+                                Value::Int(i) => i.to_string(),
+                                _ => "0".to_string(),
+                            })
+                            .collect();
+                        Some(Ok(Value::str(format!(
+                            "{}.new({})",
+                            class_name,
+                            elems.join(",")
+                        ))))
+                    } else {
+                        // gist
+                        if bytes.is_empty() {
+                            Some(Ok(Value::str(format!("{}()", class_name))))
+                        } else {
+                            let hex: Vec<String> = bytes
+                                .iter()
+                                .map(|b| match b {
+                                    Value::Int(i) => format!("{:02X}", *i as u8),
+                                    _ => "00".to_string(),
+                                })
+                                .collect();
+                            Some(Ok(Value::str(format!(
+                                "{}:0x<{}>",
+                                class_name,
+                                hex.join(" ")
+                            ))))
+                        }
+                    }
+                } else {
+                    Some(Ok(Value::str(format!("{}()", class_name))))
+                }
+            }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..
@@ -2368,6 +2472,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "pick" => match target {
+            Value::Mix(_) => Some(Err(RuntimeError::new(
+                "Cannot call .pick on a Mix (immutable)",
+            ))),
             Value::Hash(items) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
@@ -2396,6 +2503,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "roll" => {
+            if let Value::Mix(items) = target {
+                return Some(Ok(sample_weighted_mix_key(items).unwrap_or(Value::Nil)));
+            }
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))
@@ -2741,7 +2851,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let bytes: Vec<Value> = s.as_bytes().iter().map(|&b| Value::Int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(bytes));
-            Some(Ok(Value::make_instance(Symbol::intern("Buf"), attrs)))
+            Some(Ok(Value::make_instance(Symbol::intern("utf8"), attrs)))
         }
         "sink" => match target {
             Value::Instance {

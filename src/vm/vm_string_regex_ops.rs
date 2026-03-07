@@ -47,6 +47,33 @@ fn samemark_per_word(target: &str, source: &str) -> String {
     result
 }
 
+fn normalize_subst_replacement(template: &str) -> String {
+    let mut out = String::new();
+    let mut chars = template.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        let Some(next) = chars.peek().copied() else {
+            out.push('\\');
+            continue;
+        };
+        match next {
+            '\\' => {
+                out.push('\\');
+                chars.next();
+            }
+            '&' => {
+                out.push('&');
+                chars.next();
+            }
+            _ => out.push('\\'),
+        }
+    }
+    out
+}
+
 impl VM {
     fn should_retry_with_canonical_infix_name(name: &str) -> bool {
         matches!(
@@ -65,7 +92,7 @@ impl VM {
         x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = Self::const_str(code, replacement_idx).to_string();
+        let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -113,7 +140,7 @@ impl VM {
         x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = Self::const_str(code, replacement_idx).to_string();
+        let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -217,6 +244,7 @@ impl VM {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_transliterate_op(
         &mut self,
         code: &CompiledCode,
@@ -225,6 +253,7 @@ impl VM {
         delete: bool,
         complement: bool,
         squash: bool,
+        non_destructive: bool,
     ) -> Result<(), RuntimeError> {
         let from = Self::const_str(code, from_idx).to_string();
         let to = Self::const_str(code, to_idx).to_string();
@@ -247,7 +276,9 @@ impl VM {
         }
 
         let result = self.interpreter.dispatch_trans(target, &args)?;
-        if self.in_smartmatch_rhs {
+        // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
+        // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
+        if !non_destructive || self.in_smartmatch_rhs {
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), result.clone());
@@ -289,6 +320,7 @@ impl VM {
         } else {
             right_len
         };
+        let is_smartmatch = op == "~~";
         let mut results = Vec::with_capacity(result_len);
         for i in 0..result_len {
             let l = if left_len == 0 {
@@ -301,7 +333,11 @@ impl VM {
             } else {
                 &right_list[i % right_len]
             };
-            results.push(self.eval_reduction_operator_values(&op, l, r)?);
+            if is_smartmatch {
+                results.push(Value::Bool(self.interpreter.smart_match_values(l, r)));
+            } else {
+                results.push(self.eval_reduction_operator_values(&op, l, r)?);
+            }
         }
         let result = Value::array(results);
         self.stack.push(result);

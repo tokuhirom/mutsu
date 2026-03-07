@@ -107,6 +107,23 @@ impl Interpreter {
                 return Err(make_x_immutable_error(method, typename));
             }
         }
+        // Buf/Blob.allocate(size, fill?)
+        if method == "allocate"
+            && let Value::Package(name) = &target
+        {
+            let cn = name.resolve();
+            if cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+            {
+                return self.buf_allocate(*name, &args);
+            }
+        }
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {
             for arg in &mut args {
@@ -1299,7 +1316,12 @@ impl Interpreter {
                     bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes_vals));
-                return Ok(Value::make_instance(Symbol::intern("Buf"), attrs));
+                let type_name = match encoding.to_lowercase().as_str() {
+                    "utf-8" | "utf8" => "utf8",
+                    "utf-16" | "utf16" => "utf16",
+                    _ => "Buf",
+                };
+                return Ok(Value::make_instance(Symbol::intern(type_name), attrs));
             }
             "decode" => {
                 if let Value::Instance {
@@ -1307,7 +1329,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } = &target
-                    && (class_name == "Buf" || class_name == "Blob")
+                    && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
                 {
                     let encoding = args
                         .first()
@@ -2157,8 +2179,62 @@ impl Interpreter {
                         let items = Self::value_to_list(&other);
                         Value::Seq(std::sync::Arc::new(items))
                     }
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if {
+                        let cn = class_name.resolve();
+                        cn == "Buf"
+                            || cn == "Blob"
+                            || cn == "utf8"
+                            || cn == "utf16"
+                            || cn.starts_with("Buf[")
+                            || cn.starts_with("Blob[")
+                            || cn.starts_with("buf")
+                            || cn.starts_with("blob")
+                    } =>
+                    {
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            Value::Seq(items.clone())
+                        } else {
+                            Value::Seq(std::sync::Arc::new(Vec::new()))
+                        }
+                    }
                     other => Value::Seq(std::sync::Arc::new(vec![other])),
                 });
+            }
+            "List" if args.is_empty() => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                {
+                    let cn = class_name.resolve();
+                    if cn == "Buf"
+                        || cn == "Blob"
+                        || cn == "utf8"
+                        || cn == "utf16"
+                        || cn.starts_with("Buf[")
+                        || cn.starts_with("Blob[")
+                        || cn.starts_with("buf")
+                        || cn.starts_with("blob")
+                    {
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
+                        }
+                        return Ok(Value::Array(
+                            std::sync::Arc::new(Vec::new()),
+                            crate::value::ArrayKind::List,
+                        ));
+                    }
+                }
+                let items = Self::value_to_list(&target);
+                return Ok(Value::Array(
+                    std::sync::Arc::new(items),
+                    crate::value::ArrayKind::List,
+                ));
             }
             "Set" | "SetHash" if args.is_empty() => {
                 return self.dispatch_to_set(target);
@@ -2167,7 +2243,18 @@ impl Interpreter {
                 return self.dispatch_to_bag(target);
             }
             "Mix" | "MixHash" if args.is_empty() => {
-                return self.dispatch_to_mix(target);
+                let result = self.dispatch_to_mix(target)?;
+                if method == "MixHash" {
+                    self.register_container_type_metadata(
+                        &result,
+                        ContainerTypeInfo {
+                            value_type: "Real".to_string(),
+                            key_type: None,
+                            declared_type: Some("MixHash".to_string()),
+                        },
+                    );
+                }
+                return Ok(result);
             }
             "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
                 // Role-ish quant hash family conversion on type objects.
@@ -2296,14 +2383,8 @@ impl Interpreter {
                     .first()
                     .cloned()
                     .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
-                let mut items = Self::value_to_list(&target).into_iter();
-                let Some(mut acc) = items.next() else {
-                    return Ok(Value::Nil);
-                };
-                for item in items {
-                    acc = self.call_sub_value(callable.clone(), vec![acc, item], true)?;
-                }
-                return Ok(acc);
+                let items = Self::value_to_list(&target);
+                return self.reduce_items(callable, items);
             }
             "map" => {
                 if let Value::Instance {
@@ -2558,7 +2639,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name.resolve()) {
-                    for (attr_name, _is_public, default, _is_rw, _, _) in
+                    for (attr_name, _is_public, default, _is_rw, _, _, _) in
                         self.collect_class_attributes(&class_name.resolve())
                     {
                         let val = if let Some(expr) = default {
@@ -2820,20 +2901,38 @@ impl Interpreter {
                     },
                     idx,
                 ) if class_name == "Stash" => {
-                    let key = idx.to_string_value();
                     if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
-                        if let Some(value) = symbols.get(&key) {
-                            return Ok(value.clone());
-                        }
-                        if !key.starts_with('$')
-                            && !key.starts_with('@')
-                            && !key.starts_with('%')
-                            && !key.starts_with('&')
-                        {
-                            let scalar = format!("${key}");
-                            if let Some(value) = symbols.get(&scalar) {
-                                return Ok(value.clone());
+                        let stash_lookup = |raw_key: &str| {
+                            if let Some(value) = symbols.get(raw_key) {
+                                return Some(value.clone());
                             }
+                            if !raw_key.starts_with('$')
+                                && !raw_key.starts_with('@')
+                                && !raw_key.starts_with('%')
+                                && !raw_key.starts_with('&')
+                            {
+                                let scalar = format!("${raw_key}");
+                                if let Some(value) = symbols.get(&scalar) {
+                                    return Some(value.clone());
+                                }
+                            }
+                            None
+                        };
+
+                        if let Value::Array(items, ..) = idx {
+                            let values = items
+                                .iter()
+                                .map(|item| {
+                                    let key = item.to_string_value();
+                                    stash_lookup(&key).unwrap_or(Value::Nil)
+                                })
+                                .collect::<Vec<_>>();
+                            return Ok(Value::array(values));
+                        }
+
+                        let key = idx.to_string_value();
+                        if let Some(value) = stash_lookup(&key) {
+                            return Ok(value);
                         }
                     }
                     return Ok(Value::Nil);
@@ -2963,5 +3062,34 @@ impl Interpreter {
 
         // Instance dispatch, package dispatch, and fallback paths
         self.dispatch_instance_and_fallback(target, method, args)
+    }
+
+    fn buf_allocate(&mut self, class_name: Symbol, args: &[Value]) -> Result<Value, RuntimeError> {
+        let size = match args.first() {
+            Some(v) => super::to_int(v) as usize,
+            None => 0,
+        };
+        let fill_arg = args.get(1);
+        let byte_vals: Vec<Value> = if let Some(fill) = fill_arg {
+            match fill {
+                Value::Int(n) => vec![Value::Int(*n); size],
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    let pattern: Vec<Value> = items.to_vec();
+                    if pattern.is_empty() {
+                        vec![Value::Int(0); size]
+                    } else {
+                        (0..size)
+                            .map(|i| pattern[i % pattern.len()].clone())
+                            .collect()
+                    }
+                }
+                _ => vec![fill.clone(); size],
+            }
+        } else {
+            vec![Value::Int(0); size]
+        };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("bytes".to_string(), Value::array(byte_vals));
+        Ok(Value::make_instance(class_name, attrs))
     }
 }

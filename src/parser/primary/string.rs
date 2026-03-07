@@ -8,6 +8,11 @@ use crate::value::Value;
 use super::super::expr::expression;
 use super::var::parse_var_name_from_str;
 
+/// Map a Unicode opening bracket to its closing counterpart (public for sibling modules).
+pub(super) fn unicode_bracket_close_pub(open: char) -> Option<char> {
+    unicode_bracket_close(open)
+}
+
 /// Map a Unicode opening bracket to its closing counterpart.
 /// Only includes pairs that Raku recognizes for quoting.
 fn unicode_bracket_close(open: char) -> Option<char> {
@@ -173,41 +178,122 @@ fn count_repeated_bracket(input: &str, ch: char) -> usize {
 /// Parse Q quoting with arbitrary delimiters: Q!...!, Q{...}, Q/.../, etc.
 /// Q means no interpolation and no escape processing — content is taken verbatim.
 pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
+    use super::quote_adverbs::{
+        QuoteFlags, parse_colon_adverbs, parse_fused_adverbs_big_q, process_content_with_flags,
+    };
+
     let rest = input
         .strip_prefix('Q')
         .ok_or_else(|| PError::expected("Q string"))?;
-    // Q:to/DELIM/ or Q:to<DELIM> heredoc
-    if let Some(r) = rest.strip_prefix(":to") {
-        return parse_to_heredoc(r, false);
+
+    // Parse fused adverbs (Qs, Qa, Qb, etc.)
+    let mut flags = QuoteFlags::bare_q_big();
+    let rest = parse_fused_adverbs_big_q(rest, &mut flags);
+
+    // Parse colon-separated adverbs (:b, :s, :q, :qq, :to, etc.)
+    let rest = parse_colon_adverbs(rest, &mut flags);
+
+    // Handle :to (heredoc)
+    if flags.heredoc {
+        return parse_to_heredoc(rest, flags.has_interpolation() || flags.qq_mode);
     }
-    // Q:q form — same as q (single-quote semantics)
-    if let Some(r) = rest.strip_prefix(":q") {
-        // Make sure it's not :qq
-        if !r.starts_with('q') {
-            return parse_q_quoted_content(r, false, false);
+
+    // Handle :q/:qq through existing paths when no other adverbs are set
+    if flags.qq_mode
+        && !flags.backslash
+        && !flags.scalar
+        && !flags.array
+        && !flags.hash
+        && !flags.function
+        && !flags.closure
+        && !flags.execute
+    {
+        return parse_q_quoted_content(rest, true, false);
+    }
+    if flags.q_mode
+        && !flags.backslash
+        && !flags.scalar
+        && !flags.array
+        && !flags.hash
+        && !flags.function
+        && !flags.closure
+        && !flags.execute
+    {
+        return parse_q_quoted_content(rest, false, false);
+    }
+
+    // Read delimited content
+    let escape = flags.q_mode || flags.qq_mode || flags.backslash;
+    let (after, content) = read_delimited_content(rest, escape)?;
+
+    // Process content with flags
+    let expr = process_content_with_flags(content, &flags);
+
+    // Apply post-processing (execute, word-split, format)
+    apply_post_processing(after, expr, &flags)
+}
+
+/// Apply execute, word-split, and format post-processing to a quote expression.
+fn apply_post_processing<'a>(
+    after: &'a str,
+    expr: Expr,
+    flags: &super::quote_adverbs::QuoteFlags,
+) -> PResult<'a, Expr> {
+    // Wrap in execute if :x
+    if flags.execute {
+        return Ok((
+            after,
+            Expr::Call {
+                name: Symbol::intern("QX"),
+                args: vec![expr],
+            },
+        ));
+    }
+
+    // Handle :w/:ww word splitting
+    if flags.words || flags.quotewords {
+        if let Expr::Literal(Value::Str(ref s)) = expr {
+            let words: Vec<Expr> = s
+                .split_whitespace()
+                .map(|w| Expr::Literal(Value::str(w.to_string())))
+                .collect();
+            return Ok((after, Expr::ArrayLiteral(words)));
         }
+        return Ok((
+            after,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: Symbol::intern("words"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            },
+        ));
     }
-    // Q:qq form — same as qq (double-quote semantics)
-    if let Some(r) = rest.strip_prefix(":qq") {
-        return parse_q_quoted_content(r, true, false);
+
+    if flags.format {
+        return Ok((
+            after,
+            Expr::Call {
+                name: Symbol::intern("__mutsu_make_format"),
+                args: vec![expr],
+            },
+        ));
     }
-    // Q:s form (interpolating) — e.g. Q:s|...|
-    let (rest, is_scalar_interp) = if let Some(r) = rest.strip_prefix(":s") {
-        (r, true)
-    } else {
-        (rest, false)
-    };
-    // Allow optional whitespace between Q (and adverbs) and the delimiter
-    let rest = rest.trim_start_matches(' ');
+
+    Ok((after, expr))
+}
+
+/// Read delimited content from input. Handles bracket-style and symmetric delimiters.
+fn read_delimited_content<'a>(input: &'a str, escape_backslash: bool) -> PResult<'a, &'a str> {
+    let rest = input.trim_start_matches(' ');
     let delim_char = rest
         .chars()
         .next()
         .ok_or_else(|| PError::expected("Q string delimiter"))?;
-    // Must not be alphanumeric or whitespace
     if delim_char.is_alphanumeric() || delim_char.is_whitespace() {
         return Err(PError::expected("Q string delimiter"));
     }
-    // Check for bracket-style delimiter (possibly doubled)
     let bracket_close = match delim_char {
         '{' => Some('}'),
         '[' => Some(']'),
@@ -220,29 +306,18 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         if repeat_count > 1 {
             let open_str: String = std::iter::repeat_n(delim_char, repeat_count).collect();
             let close_str: String = std::iter::repeat_n(close_char, repeat_count).collect();
-            let (after, content) = read_multi_bracketed(rest, &open_str, &close_str, false)?;
-            if is_scalar_interp {
-                return Ok((after, interpolate_string_content(content)));
-            }
-            return Ok((after, Expr::Literal(Value::str(content.to_string()))));
+            return read_multi_bracketed(rest, &open_str, &close_str, escape_backslash);
         }
-        let (after, content) = read_bracketed(rest, delim_char, close_char, false)?;
-        if is_scalar_interp {
-            return Ok((after, interpolate_string_content(content)));
-        }
-        return Ok((after, Expr::Literal(Value::str(content.to_string()))));
+        return read_bracketed(rest, delim_char, close_char, escape_backslash);
     }
-    // Non-bracket delimiter — same char opens and closes, no nesting
+    // Non-bracket delimiter
     let after_open = &rest[delim_char.len_utf8()..];
     let end = after_open
         .find(delim_char)
         .ok_or_else(|| PError::expected("closing Q delimiter"))?;
     let content = &after_open[..end];
     let after = &after_open[end + delim_char.len_utf8()..];
-    if is_scalar_interp {
-        return Ok((after, interpolate_string_content(content)));
-    }
-    Ok((after, Expr::Literal(Value::str(content.to_string()))))
+    Ok((after, content))
 }
 
 fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
@@ -376,6 +451,9 @@ fn interpolate_heredoc_content(content: &str) -> Expr {
 }
 
 fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
+    // Raku allows optional whitespace before the delimiter in q:to/Q:to
+    // forms, e.g. q:to /END/;
+    let input = input.trim_start_matches(' ');
     let open = input
         .chars()
         .next()
@@ -401,6 +479,10 @@ fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
 
 /// Parse q{...}, q[...], q(...), q<...>, q/.../ quoting forms.
 pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
+    use super::quote_adverbs::{
+        QuoteFlags, parse_colon_adverbs, parse_fused_adverbs_small_q, process_content_with_flags,
+    };
+
     if !input.starts_with('q') {
         return Err(PError::expected("q string"));
     }
@@ -409,196 +491,207 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
     for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
         if let Some(rest_after_nf) = after_q.strip_prefix(nf_form) {
-            let form_upper = nf_form[1..].to_uppercase(); // "NFKC", "NFKD", etc.
-            // Parse the quoted content (can be single or double quoted)
-            let (rest, content) = match rest_after_nf.chars().next() {
-                Some('"') => {
-                    // q:nfkc"..." — double-quoted content (no interpolation for q:)
-                    let inner = &rest_after_nf[1..];
-                    let end = inner
-                        .find('"')
-                        .ok_or_else(|| PError::expected("closing \""))?;
-                    (&inner[end + 1..], &inner[..end])
-                }
-                Some('\'') => {
-                    // q:nfkc'...' — single-quoted content
-                    let inner = &rest_after_nf[1..];
-                    let end = inner
-                        .find('\'')
-                        .ok_or_else(|| PError::expected("closing '"))?;
-                    (&inner[end + 1..], &inner[..end])
-                }
-                Some(c) if !c.is_alphanumeric() && !c.is_whitespace() => {
-                    if let Some(close_char) = unicode_bracket_close(c) {
-                        let inner = &rest_after_nf[c.len_utf8()..];
-                        let end = inner
-                            .find(close_char)
-                            .ok_or_else(|| PError::expected("closing bracket"))?;
-                        (&inner[end + close_char.len_utf8()..], &inner[..end])
-                    } else {
-                        // Symmetric delimiter
-                        let inner = &rest_after_nf[c.len_utf8()..];
-                        let end = inner
-                            .find(c)
-                            .ok_or_else(|| PError::expected("closing delimiter"))?;
-                        (&inner[end + c.len_utf8()..], &inner[..end])
-                    }
-                }
-                _ => {
-                    return Err(PError::expected(
-                        "quote delimiter after normalization adverb",
-                    ));
-                }
-            };
-            use unicode_normalization::UnicodeNormalization;
-            let normalized: String = match form_upper.as_str() {
-                "NFC" => content.nfc().collect(),
-                "NFD" => content.nfd().collect(),
-                "NFKC" => content.nfkc().collect(),
-                _ => content.nfkd().collect(),
-            };
-            return Ok((
-                rest,
-                Expr::Literal(Value::Uni {
-                    form: form_upper,
-                    text: normalized,
-                }),
-            ));
+            return parse_nf_form(rest_after_nf, &nf_form[1..]);
         }
     }
 
-    // q:to/DELIM/, q:to<DELIM>, qq:to/.../, qq:to<...> heredoc
-    if after_q.starts_with(":to") || after_q.starts_with("q:to") {
-        let (r, interpolate) = if let Some(stripped) = after_q.strip_prefix("q:to") {
-            (stripped, true)
-        } else if let Some(stripped) = after_q.strip_prefix(":to") {
-            (stripped, false)
-        } else {
-            unreachable!()
-        };
-        return parse_to_heredoc(r, interpolate);
-    }
+    // Start with q defaults (single-quote semantics)
+    let mut flags = QuoteFlags::q_single();
 
-    // qw/.../ is an alias for q:w/.../
-    let mut q_word_split = false;
-    let mut q_ww_split = false;
-    if let Some(after_w) = after_q.strip_prefix("ww")
-        && after_w.chars().next().is_some_and(|c| !c.is_alphanumeric())
-    {
-        q_ww_split = true;
-        after_q = after_w;
-    } else if let Some(after_w) = after_q.strip_prefix('w')
-        && after_w.chars().next().is_some_and(|c| !c.is_alphanumeric())
-    {
-        q_word_split = true;
-        after_q = after_w;
-    }
-
-    // q:adverb/.../ forms (e.g. q:c/%08b/) — parse and ignore currently
-    // unsupported adverbs while still accepting the quoting delimiter.
-    // Allow whitespace between q and : (e.g. q :w /.../)
-    let mut after_q = after_q.trim_start_matches(' ');
-    let mut q_closure_interp = false;
-    let mut q_format_quote = false;
-    if let Some(mut r) = after_q.strip_prefix(':') {
-        loop {
-            let end = r
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(r.len());
-            if end == 0 {
-                return Err(PError::expected("q adverb name"));
-            }
-            let adverb_name = &r[..end];
-            if adverb_name == "c" {
-                q_closure_interp = true;
-            } else if adverb_name == "o" || adverb_name == "format" {
-                q_format_quote = true;
-            } else if adverb_name == "w" || adverb_name == "words" {
-                q_word_split = true;
-            } else if adverb_name == "ww" || adverb_name == "quotewords" {
-                q_ww_split = true;
-            }
-            r = &r[end..];
-            if let Some(next) = r.strip_prefix(':') {
-                r = next;
-                continue;
-            }
-            break;
-        }
-        after_q = r;
-    }
-
-    // Check for qq forms
-    let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
-        // Accept any non-alphanumeric, non-whitespace character as qq delimiter/adverb marker
-        let is_qq_delim = after_qq
+    // Check for qq first (before fused adverbs, since qqww = qq + ww)
+    if after_q.starts_with('q') {
+        let after_qq = &after_q[1..];
+        // qq is valid if followed by delimiter, colon adverb, or known fused adverb
+        let qq_valid = after_qq
             .chars()
             .next()
-            .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace());
-        if is_qq_delim {
-            (after_qq, true)
-        } else {
-            (after_q, false)
+            .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
+            || after_qq.starts_with("ww")
+                && after_qq[2..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| !c.is_alphanumeric())
+            || after_qq.starts_with('w')
+                && !after_qq.starts_with("ww")
+                && after_qq[1..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| !c.is_alphanumeric());
+        if qq_valid {
+            flags.q_mode = false;
+            flags.qq_mode = true;
+            after_q = after_qq;
         }
-    } else {
-        (after_q, false)
-    };
+    }
 
-    // Parse additional adverbs that may appear after qq detection
-    let mut after_adverb = after_prefix;
-    let mut is_format_adverb = false;
-    while let Some(r) = after_adverb.strip_prefix(':') {
-        let end = r
-            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-            .unwrap_or(r.len());
-        if end == 0 {
+    // Parse fused adverbs (qw, qww, qb — also qqww, qqw via the qq detection above)
+    after_q = parse_fused_adverbs_small_q(after_q, &mut flags);
+
+    // Parse colon-separated adverbs (:b, :s, :a, :h, :f, :c, :x, :w, :ww, :to, etc.)
+    after_q = parse_colon_adverbs(after_q, &mut flags);
+
+    // Handle :to (heredoc)
+    if flags.heredoc {
+        let interpolate = flags.has_interpolation() || flags.qq_mode;
+        return parse_to_heredoc_with_flags(after_q, &flags, interpolate);
+    }
+
+    // Read delimited content
+    let escape = flags.q_mode || flags.qq_mode || flags.backslash;
+    let (rest, content) = read_delimited_content(after_q, escape)?;
+
+    // Process content with flags
+    let expr = process_content_with_flags(content, &flags);
+
+    // Apply post-processing (execute, word-split, format)
+    apply_post_processing(rest, expr, &flags)
+}
+
+/// Parse q:nfc/q:nfd/q:nfkc/q:nfkd forms.
+fn parse_nf_form<'a>(rest_after_nf: &'a str, nf_name: &str) -> PResult<'a, Expr> {
+    let form_upper = nf_name.to_uppercase();
+    let (rest, content) = read_delimited_content(rest_after_nf, false)?;
+    use unicode_normalization::UnicodeNormalization;
+    let normalized: String = match form_upper.as_str() {
+        "NFC" => content.nfc().collect(),
+        "NFD" => content.nfd().collect(),
+        "NFKC" => content.nfkc().collect(),
+        _ => content.nfkd().collect(),
+    };
+    Ok((
+        rest,
+        Expr::Literal(Value::Uni {
+            form: form_upper,
+            text: normalized,
+        }),
+    ))
+}
+
+/// Parse heredoc with flags (supports :c, :w adverbs on heredoc).
+fn parse_to_heredoc_with_flags<'a>(
+    input: &'a str,
+    flags: &super::quote_adverbs::QuoteFlags,
+    interpolate: bool,
+) -> PResult<'a, Expr> {
+    use super::quote_adverbs::process_content_with_flags;
+
+    let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
+    let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
+        (&r[..nl], &r[nl + 1..])
+    } else {
+        return Err(PError::expected("heredoc body after newline"));
+    };
+    // Find the terminator line
+    let mut content_end = None;
+    let mut terminator_end = None;
+    let mut terminator_indent = 0usize;
+    let mut search_pos = 0;
+    while search_pos <= heredoc_start.len() {
+        let line = &heredoc_start[search_pos..];
+        let leading_ws = line
+            .chars()
+            .take_while(|c| matches!(c, ' ' | '\t'))
+            .map(char::len_utf8)
+            .sum::<usize>();
+        let term_pos = search_pos + leading_ws;
+        if heredoc_start[term_pos..].starts_with(delimiter) {
+            let after_delim = &heredoc_start[term_pos + delimiter.len()..];
+            if after_delim.is_empty()
+                || after_delim.starts_with('\n')
+                || after_delim.starts_with('\r')
+                || after_delim.starts_with(';')
+            {
+                content_end = Some(search_pos);
+                terminator_end = Some(term_pos + delimiter.len());
+                terminator_indent = leading_ws;
+                break;
+            }
+        }
+        if let Some(nl) = heredoc_start[search_pos..].find('\n') {
+            search_pos += nl + 1;
+        } else {
             break;
         }
-        let adverb_name = &r[..end];
-        match adverb_name {
-            "o" | "format" => is_format_adverb = true,
-            "w" | "words" => q_word_split = true,
-            "ww" | "quotewords" => q_ww_split = true,
-            "c" => q_closure_interp = true,
-            _ => {} // ignore unknown adverbs
-        }
-        after_adverb = &r[end..];
     }
-    let is_format_quote = q_format_quote || is_format_adverb;
+    if let Some(end) = content_end {
+        let content = &heredoc_start[..end];
+        let content = if terminator_indent == 0 {
+            content.to_string()
+        } else {
+            dedent_heredoc(content, terminator_indent)
+        };
+        let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
+        let after_terminator = after_terminator
+            .strip_prefix('\n')
+            .unwrap_or(after_terminator);
 
-    let (rest, content_expr) = parse_q_quoted_content(after_adverb, is_qq, q_closure_interp)?;
-    if is_format_quote {
-        return Ok((
-            rest,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_make_format"),
-                args: vec![content_expr],
-            },
-        ));
-    }
-    // q:w and qw — split on whitespace into a list of string literals
-    if q_word_split || q_ww_split {
-        // For q:w, extract the literal string and split on whitespace at parse time
-        if let Expr::Literal(Value::Str(ref s)) = content_expr {
-            let words: Vec<Expr> = s
-                .split_whitespace()
-                .map(|w| Expr::Literal(Value::str(w.to_string())))
-                .collect();
-            return Ok((rest, Expr::ArrayLiteral(words)));
+        // Process content based on flags
+        let expr = if interpolate {
+            interpolate_heredoc_content(&content)
+        } else if flags.closure || flags.words || flags.backslash {
+            // Use flags-based processing for heredoc with adverbs
+            process_content_with_flags(&content, flags)
+        } else if content.contains("\\qq") {
+            parse_single_quote_qq(&content)
+        } else {
+            Expr::Literal(Value::str(content))
+        };
+
+        // Apply word splitting if :w
+        let expr = if flags.words {
+            if let Expr::Literal(Value::Str(ref s)) = expr {
+                let words: Vec<Expr> = s
+                    .split_whitespace()
+                    .map(|w| Expr::Literal(Value::str(w.to_string())))
+                    .collect();
+                Expr::ArrayLiteral(words)
+            } else {
+                Expr::MethodCall {
+                    target: Box::new(expr),
+                    name: Symbol::intern("words"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                }
+            }
+        } else {
+            expr
+        };
+
+        if rest_of_line.trim().is_empty() {
+            return Ok((after_terminator, expr));
         }
-        // For qq:w/qq:ww with interpolation, we need runtime splitting
-        return Ok((
-            rest,
-            Expr::MethodCall {
-                target: Box::new(content_expr),
-                name: Symbol::intern("words"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
-            },
-        ));
+        let combined = format!("{}\n{}", rest_of_line, after_terminator);
+        let leaked: &'static str = Box::leak(combined.into_boxed_str());
+        return Ok((leaked, expr));
     }
-    Ok((rest, content_expr))
+    Err(PError::expected("heredoc terminator"))
+}
+
+/// Dedent heredoc content by removing leading whitespace matching the terminator's indentation.
+fn dedent_heredoc(content: &str, terminator_indent: usize) -> String {
+    let mut dedented = String::new();
+    for segment in content.split_inclusive('\n') {
+        let mut bytes_to_strip = terminator_indent;
+        let mut strip_pos = 0usize;
+        for ch in segment.chars() {
+            if bytes_to_strip == 0 {
+                break;
+            }
+            if matches!(ch, ' ' | '\t') {
+                let len = ch.len_utf8();
+                if len > bytes_to_strip {
+                    break;
+                }
+                bytes_to_strip -= len;
+                strip_pos += len;
+            } else {
+                break;
+            }
+        }
+        dedented.push_str(&segment[strip_pos..]);
+    }
+    dedented
 }
 
 /// Helper to build the final expression from quoted content.
@@ -661,12 +754,18 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
     Err(PError::expected("q string delimiter"))
 }
 
-/// Parse qx{...}, qx[...], qx(...), qx<...>, qx/.../, qx`...` forms.
-/// qx executes the command and returns captured stdout as a string.
+/// Parse qx{...}, qqx{...} forms.
+/// qx executes with single-quote (backslash) interpolation.
+/// qqx executes with full interpolation.
 pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
-    let after_qx = input
-        .strip_prefix("qx")
-        .ok_or_else(|| PError::expected("qx string"))?;
+    // Try qqx first, then qx
+    let (after_qx, is_qq) = if let Some(r) = input.strip_prefix("qqx") {
+        (r, true)
+    } else if let Some(r) = input.strip_prefix("qx") {
+        (r, false)
+    } else {
+        return Err(PError::expected("qx string"));
+    };
     let delim = after_qx
         .chars()
         .next()
@@ -675,17 +774,22 @@ pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("qx string delimiter"));
     }
 
-    let (rest, command_expr) = if let Some(close_char) = unicode_bracket_close(delim) {
-        let (rest, content) = read_bracketed(after_qx, delim, close_char, true)?;
-        (rest, interpolate_string_content(content))
+    let (rest, content) = if let Some(close_char) = unicode_bracket_close(delim) {
+        read_bracketed(after_qx, delim, close_char, true)?
     } else {
         let body = &after_qx[delim.len_utf8()..];
         let end = body
             .find(delim)
             .ok_or_else(|| PError::expected(&format!("closing '{delim}'")))?;
-        let content = &body[..end];
-        let rest = &body[end + delim.len_utf8()..];
-        (rest, interpolate_string_content(content))
+        (&body[end + delim.len_utf8()..], &body[..end])
+    };
+
+    let command_expr = if is_qq {
+        interpolate_string_content(content)
+    } else {
+        // qx uses q-style backslash (only \\ → \)
+        let s = content.replace("\\\\", "\\");
+        Expr::Literal(Value::str(s))
     };
 
     Ok((
@@ -813,6 +917,24 @@ pub(super) fn process_escape_sequence<'a>(
                     current.push(ch);
                 }
                 return Some((&r[len..], true));
+            }
+            // \c followed by a single character → control character
+            // \c@ = NUL (0), \cA = SOH (1), ..., \cZ = SUB (26)
+            // \c? = DEL (127), \cI = TAB (9)
+            if let Some(ch) = r.chars().next() {
+                let ctrl = match ch {
+                    '@' => Some(0u32),
+                    'A'..='Z' => Some(ch as u32 - 'A' as u32 + 1),
+                    'a'..='z' => Some(ch as u32 - 'a' as u32 + 1),
+                    '?' => Some(127),
+                    _ => None,
+                };
+                if let Some(code) = ctrl {
+                    if let Some(ctrl_ch) = char::from_u32(code) {
+                        current.push(ctrl_ch);
+                    }
+                    return Some((&r[ch.len_utf8()..], true));
+                }
             }
             return Some((r, true));
         }
@@ -1027,6 +1149,14 @@ pub(super) fn try_interpolate_var<'a>(
             let name = &var_rest[..end];
             let expr = Expr::HashVar(name.to_string());
             let tail = &var_rest[end..];
+            // Zen-slice: %hash<> should stringify the whole hash
+            if let Some(after_zen) = tail.strip_prefix("<>") {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                }
+                parts.push(expr);
+                return Some(after_zen);
+            }
             let (expr, remainder) = parse_postcircumfix_index(tail, expr);
             // In qq-like strings, `%hash` without a postcircumfix remains literal.
             // Only interpolate hash variables for explicit access forms like

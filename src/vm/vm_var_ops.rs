@@ -509,6 +509,17 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(Symbol::intern(name))
+        } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            let result = self
+                .interpreter
+                .call_sub_value(callable, Vec::new(), false)?;
+            self.env_dirty = true;
+            result
         } else if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(name)
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(name)
@@ -863,33 +874,30 @@ impl VM {
                 failure_attrs.insert("exception".to_string(), ex);
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
+            (Value::Set(s), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| Value::Bool(s.contains(&k.to_string_value())))
+                    .collect(),
+            ),
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
-            (Value::Set(s), Value::Array(indices, ..)) => Value::array(
-                indices
-                    .iter()
-                    .map(|idx| Value::Bool(s.contains(&idx.to_string_value())))
-                    .collect(),
-            ),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
-            (Value::Bag(b), Value::Array(indices, ..)) => Value::array(
-                indices
-                    .iter()
-                    .map(|idx| Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)))
+            (Value::Bag(b), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| Value::Int(*b.get(&k.to_string_value()).unwrap_or(&0)))
                     .collect(),
             ),
+            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
-            (Value::Mix(m), Value::Str(key)) => {
-                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
-            }
-            (Value::Mix(m), Value::Array(indices, ..)) => Value::array(
-                indices
-                    .iter()
-                    .map(|idx| {
-                        Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+            (Value::Mix(m), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| {
+                        Self::mix_weight_as_value(*m.get(&k.to_string_value()).unwrap_or(&0.0))
                     })
                     .collect(),
             ),
+            (Value::Mix(m), Value::Str(key)) => {
+                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
+            }
             (Value::Mix(m), idx) => {
                 Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
             }
@@ -1020,11 +1028,7 @@ impl VM {
                 Value::Sub(ref data),
             ) => {
                 // Get element count from the instance
-                let len = if class_name == "Buf"
-                    || class_name == "Blob"
-                    || class_name.resolve().starts_with("Buf[")
-                    || class_name.resolve().starts_with("Blob[")
-                {
+                let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
                     if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         bytes.len() as i64
                     } else {
@@ -1177,6 +1181,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         // Sync OS environment and $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
             // Remove from OS environment
@@ -1212,11 +1223,32 @@ impl VM {
                     .insert("*HOME".to_string(), Value::Nil);
             }
         }
+        // Save type metadata before delete (Arc::make_mut may change pointer)
+        let saved_meta = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+            if matches!(container, Value::Mix(_)) && !target_is_mixhash {
+                return Err(RuntimeError::new("X::Immutable"));
+            }
             Self::delete_from_container(container, idx)?
         } else {
             Self::delete_from_missing_container(idx)
         };
+        // Re-register type metadata if it was lost due to Arc::make_mut
+        if let Some(info) = saved_meta
+            && let Some(container) = self.interpreter.env().get(&var_name)
+            && self
+                .interpreter
+                .container_type_metadata(container)
+                .is_none()
+        {
+            let container = container.clone();
+            self.interpreter
+                .register_container_type_metadata(&container, info);
+        }
         self.stack.push(result);
         Ok(())
     }
@@ -1608,7 +1640,18 @@ impl VM {
             let idx = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
-            if let Value::Hash(map) = &target {
+            if let Some(map) = match &target {
+                Value::Hash(map) => Some(map.clone()),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => match attributes.get("symbols") {
+                    Some(Value::Hash(map)) => Some(map.clone()),
+                    _ => None,
+                },
+                _ => None,
+            } {
                 if adverb_bits == 5 {
                     return Err(crate::value::RuntimeError::new(
                         "Unsupported combination of :exists and :v adverbs".to_string(),
@@ -1850,16 +1893,18 @@ impl VM {
                         let key = idx.clone();
                         let result = match adverb_bits {
                             0 | 5 => Value::Bool(result_bool),
+                            // :kv — filter by actual existence, not negated result
                             1 => {
-                                if result_bool {
+                                if exists {
                                     Value::array(vec![key, Value::Bool(result_bool)])
                                 } else {
                                     Value::array(Vec::new())
                                 }
                             }
                             2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                            // :p — filter by actual existence, not negated result
                             3 => {
-                                if result_bool {
+                                if exists {
                                     Value::ValuePair(
                                         Box::new(key),
                                         Box::new(Value::Bool(result_bool)),

@@ -2,6 +2,7 @@ mod container;
 mod ident;
 pub(in crate::parser) mod misc;
 mod number;
+mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;
 mod var;
@@ -428,6 +429,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_q_to_heredoc_with_space_before_delimiter() {
+        let src = "q:to /END/;\nhello\nEND\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, ";\n");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
+    }
+
+    #[test]
     fn parse_match_regex_with_repetition_modifiers() {
         let (rest1, expr1) = primary("m:2x/ab/").unwrap();
         assert_eq!(rest1, "");
@@ -737,6 +746,8 @@ mod tests {
 
     #[test]
     fn primary_qx_interpolates_command() {
+        // qx does NOT interpolate $x — only qqx does.
+        // qx uses q-style backslash processing (\\ → \).
         reset_primary_memo();
         let (rest, expr) = primary("qx{echo $x}").unwrap();
         assert_eq!(rest, "");
@@ -744,7 +755,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "QX");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::StringInterpolation(_)));
+                assert!(matches!(args[0], Expr::Literal(_)));
             }
             _ => panic!("expected qx call expression"),
         }

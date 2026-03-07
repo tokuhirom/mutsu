@@ -141,12 +141,13 @@ pub(super) type ClassAttributeDef = (
     bool,
     Option<Option<String>>,
     char,
+    Option<Expr>,
 );
 
 #[derive(Clone, Default)]
 struct ClassDef {
     parents: Vec<String>,
-    // (name, is_public, default, is_rw, is_required, sigil)
+    // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
     attributes: Vec<ClassAttributeDef>,
     attribute_types: HashMap<String, String>, // attr_name -> type constraint
     methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
@@ -457,6 +458,8 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, Env)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    need_hidden_classes: HashSet<String>,
+    closure_env_overrides: HashMap<u64, Env>,
     module_load_stack: Vec<String>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
@@ -494,12 +497,15 @@ pub struct Interpreter {
     var_hash_key_constraints: HashMap<String, String>,
     /// Type metadata for Array values keyed by Arc pointer identity.
     array_type_metadata: HashMap<usize, ContainerTypeInfo>,
+    /// Type metadata for Mix values keyed by Arc pointer identity.
+    mix_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for Hash values keyed by Arc pointer identity.
     hash_type_metadata: HashMap<usize, ContainerTypeInfo>,
     /// Type metadata for instance values keyed by stable instance id.
     instance_type_metadata: HashMap<u64, ContainerTypeInfo>,
     let_saves: Vec<(String, Value, bool)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,
@@ -973,6 +979,7 @@ impl Interpreter {
                     "IO",
                     "basename",
                     "dirname",
+                    "cleanup",
                     "parent",
                     "sibling",
                     "child",
@@ -1626,6 +1633,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            need_hidden_classes: HashSet::new(),
+            closure_env_overrides: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
@@ -1644,10 +1653,12 @@ impl Interpreter {
             container_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
             array_type_metadata: HashMap::new(),
+            mix_type_metadata: HashMap::new(),
             hash_type_metadata: HashMap::new(),
             instance_type_metadata: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
@@ -1853,7 +1864,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+    pub fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
@@ -1875,6 +1886,8 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
+        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
 
         let result = if module == "Test"
             || matches!(
@@ -1912,6 +1925,51 @@ impl Interpreter {
 
         self.module_load_stack.pop();
         if result.is_ok() {
+            let module_short = if let Some((_, short)) = module.rsplit_once("::") {
+                short
+            } else {
+                module
+            };
+            for class_name in self.classes.keys() {
+                if class_snapshot.contains(class_name) {
+                    continue;
+                }
+                let class_short = class_name
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(class_name.as_str());
+                if class_short != module_short {
+                    self.need_hidden_classes.insert(class_name.clone());
+                    self.need_hidden_classes.insert(class_short.to_string());
+                }
+            }
+            for key in self.env.keys() {
+                if env_snapshot.contains(key) {
+                    continue;
+                }
+                if key.starts_with('$')
+                    || key.starts_with('@')
+                    || key.starts_with('%')
+                    || key.starts_with('&')
+                {
+                    continue;
+                }
+                let key_short = key
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(key.as_str());
+                if !key_short
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    continue;
+                }
+                if key_short != module_short {
+                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_short.to_string());
+                }
+            }
             if module == "strict" {
                 self.strict_mode = true;
             } else if module == "fatal" {
@@ -2084,6 +2142,7 @@ impl Interpreter {
 
     /// Load a module without importing its exports (Raku `need` keyword).
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let is_nested_need = !self.module_load_stack.is_empty();
         if self.loaded_modules.contains(module) {
             return Ok(());
         }
@@ -2096,12 +2155,57 @@ impl Interpreter {
             )));
         }
         self.module_load_stack.push(module.to_string());
+        let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
         let saved = self.suppress_exports;
         self.suppress_exports = true;
         let result = self.load_module(module);
         self.suppress_exports = saved;
         self.module_load_stack.pop();
         if result.is_ok() {
+            let short_name = if let Some((_, short)) = module.rsplit_once("::") {
+                short.to_string()
+            } else {
+                module.to_string()
+            };
+            for class_name in self.classes.keys() {
+                if !class_snapshot.contains(class_name) {
+                    self.need_hidden_classes.insert(class_name.clone());
+                    if let Some((_, short)) = class_name.rsplit_once("::") {
+                        self.need_hidden_classes.insert(short.to_string());
+                    }
+                }
+            }
+            for key in self.env.keys() {
+                if env_snapshot.contains(key) {
+                    continue;
+                }
+                if key.starts_with('$')
+                    || key.starts_with('@')
+                    || key.starts_with('%')
+                    || key.starts_with('&')
+                {
+                    continue;
+                }
+                let key_short = key
+                    .rsplit_once("::")
+                    .map(|(_, short)| short)
+                    .unwrap_or(key.as_str());
+                if !key_short
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    continue;
+                }
+                if is_nested_need || key_short != short_name {
+                    self.need_hidden_classes.insert(key.clone());
+                    self.need_hidden_classes.insert(key_short.to_string());
+                }
+            }
+            if is_nested_need {
+                self.need_hidden_classes.insert(short_name.clone());
+            }
             self.loaded_modules.insert(module.to_string());
         }
         result
@@ -2112,8 +2216,6 @@ impl Interpreter {
             self.strict_mode = false;
         } else if module == "fatal" {
             self.fatal_mode = false;
-        } else if module == "precompilation" {
-            self.precomp_enabled = false;
         }
         Ok(())
     }
@@ -2329,6 +2431,10 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.insert(id, info);
             }
+            Value::Mix(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.mix_type_metadata.insert(id, info);
+            }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.hash_type_metadata.insert(id, info);
@@ -2346,6 +2452,10 @@ impl Interpreter {
             Value::Array(items, ..) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.get(&id).cloned()
+            }
+            Value::Mix(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.mix_type_metadata.get(&id).cloned()
             }
             Value::Hash(items) => {
                 let id = Arc::as_ptr(items) as usize;
@@ -2725,6 +2835,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
+            need_hidden_classes: self.need_hidden_classes.clone(),
+            closure_env_overrides: self.closure_env_overrides.clone(),
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
@@ -2743,10 +2855,12 @@ impl Interpreter {
             container_defaults: self.container_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             array_type_metadata: self.array_type_metadata.clone(),
+            mix_type_metadata: self.mix_type_metadata.clone(),
             hash_type_metadata: self.hash_type_metadata.clone(),
             instance_type_metadata: self.instance_type_metadata.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_timed_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
@@ -2854,9 +2968,6 @@ impl Interpreter {
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
-        if !self.shared_vars_active {
-            return None;
-        }
         let sv = self.shared_vars.read().unwrap();
         sv.get(key).cloned()
     }
