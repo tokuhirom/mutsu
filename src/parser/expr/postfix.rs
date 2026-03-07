@@ -1883,6 +1883,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             } else {
                 &rest[2..]
             };
+            let after_hyper = consume_unspace(after_hyper);
             // Hyper `.=` assignment is handled by statement-level assignment parsing.
             if after_hyper.starts_with(".=") {
                 break;
