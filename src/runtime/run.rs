@@ -771,7 +771,7 @@ impl Interpreter {
             crate::precomp::save_cached_ast(source_path, &stmts);
         }
 
-        Ok((stmts, false))
+        Ok((stmts, precomp_eligible))
     }
 
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {

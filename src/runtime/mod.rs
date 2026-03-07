@@ -1785,6 +1785,7 @@ impl Interpreter {
         {
             let mut attrs = HashMap::new();
             attrs.insert("prefix".to_string(), Value::str_from("."));
+            attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(true));
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);
