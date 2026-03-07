@@ -505,6 +505,43 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // :16(expr) — radix conversion shorthand (equivalent to UNBASE(16, expr))
+    {
+        let mut digit_end = 0;
+        let mut base_clean = String::new();
+        for c in r.chars() {
+            let Some(dv) = crate::builtins::unicode::unicode_decimal_digit_value(c) else {
+                break;
+            };
+            digit_end += c.len_utf8();
+            base_clean.push(char::from_digit(dv, 10).unwrap());
+        }
+        if digit_end > 0 {
+            let after_digits = &r[digit_end..];
+            if let Some(after_paren) = after_digits.strip_prefix('(') {
+                let base: u32 = base_clean.parse().unwrap_or(0);
+                if !(2..=36).contains(&base) {
+                    return Err(PError::expected("generic radix base 2..36"));
+                }
+                let (r_args, _) = ws(after_paren)?;
+                let (r_args, mut args) = parse_call_arg_list(r_args)?;
+                let (r_args, _) = ws(r_args)?;
+                let (r_args, _) = parse_char(r_args, ')')?;
+                if args.is_empty() {
+                    return Err(PError::expected("known call arguments"));
+                }
+                let mut call_args = vec![Expr::Literal(Value::Int(base as i64))];
+                call_args.append(&mut args);
+                return Ok((
+                    r_args,
+                    Expr::Call {
+                        name: Symbol::intern("UNBASE"),
+                        args: call_args,
+                    },
+                ));
+            }
+        }
+    }
     // :123name (numeric leading-value pair) => :name(123)
     // Handles ASCII digits and Unicode Nd (decimal digit) characters
     {

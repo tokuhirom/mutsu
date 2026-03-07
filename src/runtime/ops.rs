@@ -633,6 +633,22 @@ impl Interpreter {
         }
     }
 
+    fn shift_left_bigint(a: &num_bigint::BigInt, b: i64) -> Value {
+        if b < 0 {
+            Value::from_bigint(a >> (b.unsigned_abs() as usize))
+        } else {
+            Value::from_bigint(a << (b as usize))
+        }
+    }
+
+    fn shift_right_bigint(a: &num_bigint::BigInt, b: i64) -> Value {
+        if b < 0 {
+            Value::from_bigint(a << (b.unsigned_abs() as usize))
+        } else {
+            Value::from_bigint(a >> (b as usize))
+        }
+    }
+
     pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,
@@ -685,6 +701,9 @@ impl Interpreter {
             }
             match cur {
                 Value::Int(i) => *i,
+                Value::BigInt(n) => n
+                    .to_i64()
+                    .unwrap_or_else(|| if n.is_negative() { i64::MIN } else { i64::MAX }),
                 Value::Num(f) => *f as i64,
                 Value::Rat(n, d) => {
                     if *d == 0 {
@@ -1049,8 +1068,14 @@ impl Interpreter {
                 }
                 Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
             }
-            "+<" => Ok(Self::shift_left_i64(to_int(left), to_int(right))),
-            "+>" => Ok(Self::shift_right_i64(to_int(left), to_int(right))),
+            "+<" => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Self::shift_left_i64(*a, *b)),
+                _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),
+            },
+            "+>" => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Self::shift_right_i64(*a, *b)),
+                _ => Ok(Self::shift_right_bigint(&left.to_bigint(), to_int(right))),
+            },
             "x" => {
                 if matches!(right, Value::Whatever) {
                     let mut env = crate::env::Env::new();

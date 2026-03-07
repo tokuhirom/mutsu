@@ -1338,6 +1338,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_colon_args_adjacent_colonpairs() {
+        let src = "IO::Path.new: :volume<foo> :dirname<bar> :basename<ber> :SPEC(IO::Spec::Win32)";
+        let (rest, expr) = expression(src).unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall { name, args, .. } => {
+                assert_eq!(name, "new");
+                assert_eq!(args.len(), 4);
+            }
+            _ => panic!("expected method call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_indir_with_hyphenated_call_arg_and_block() {
+        let (rest, expr) = expression("indir make-temp-dir, { 42 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "indir");
+                assert_eq!(args.len(), 2);
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
     fn parse_paren_expr_with_space_dot_method_chain() {
         let (rest, expr) = expression("(^3 .map: -> \\x --> Int { $i++ }).sink").unwrap();
         assert_eq!(rest, "");

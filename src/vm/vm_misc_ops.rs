@@ -485,6 +485,7 @@ impl VM {
             if !trimmed.is_empty()
                 && trimmed.parse::<i64>().is_err()
                 && trimmed.parse::<f64>().is_err()
+                && crate::runtime::utils::parse_prefixed_generic_radix_literal(trimmed).is_none()
             {
                 let mut ex_attrs = std::collections::HashMap::new();
                 ex_attrs.insert(

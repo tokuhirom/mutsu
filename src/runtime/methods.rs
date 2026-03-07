@@ -2548,7 +2548,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name.resolve()) {
-                    for (attr_name, _is_public, default, _is_rw, _, _) in
+                    for (attr_name, _is_public, default, _is_rw, _, _, _) in
                         self.collect_class_attributes(&class_name.resolve())
                     {
                         let val = if let Some(expr) = default {
@@ -2790,20 +2790,38 @@ impl Interpreter {
                     },
                     idx,
                 ) if class_name == "Stash" => {
-                    let key = idx.to_string_value();
                     if let Some(Value::Hash(symbols)) = attributes.get("symbols") {
-                        if let Some(value) = symbols.get(&key) {
-                            return Ok(value.clone());
-                        }
-                        if !key.starts_with('$')
-                            && !key.starts_with('@')
-                            && !key.starts_with('%')
-                            && !key.starts_with('&')
-                        {
-                            let scalar = format!("${key}");
-                            if let Some(value) = symbols.get(&scalar) {
-                                return Ok(value.clone());
+                        let stash_lookup = |raw_key: &str| {
+                            if let Some(value) = symbols.get(raw_key) {
+                                return Some(value.clone());
                             }
+                            if !raw_key.starts_with('$')
+                                && !raw_key.starts_with('@')
+                                && !raw_key.starts_with('%')
+                                && !raw_key.starts_with('&')
+                            {
+                                let scalar = format!("${raw_key}");
+                                if let Some(value) = symbols.get(&scalar) {
+                                    return Some(value.clone());
+                                }
+                            }
+                            None
+                        };
+
+                        if let Value::Array(items, ..) = idx {
+                            let values = items
+                                .iter()
+                                .map(|item| {
+                                    let key = item.to_string_value();
+                                    stash_lookup(&key).unwrap_or(Value::Nil)
+                                })
+                                .collect::<Vec<_>>();
+                            return Ok(Value::array(values));
+                        }
+
+                        let key = idx.to_string_value();
+                        if let Some(value) = stash_lookup(&key) {
+                            return Ok(value);
                         }
                     }
                     return Ok(Value::Nil);

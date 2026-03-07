@@ -1640,6 +1640,18 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
+    // Postfix container typing: has @.a of Int; has %.h of Str;
+    if (sigil == b'@' || sigil == b'%')
+        && type_constraint.is_none()
+        && let Some(r) = keyword("of", rest)
+    {
+        let (r, _) = ws1(r)?;
+        let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+        let (r, _) = ws(r)?;
+        type_constraint = Some(tc);
+        rest = r;
+    }
+
     // Optional `where` constraint
     let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;

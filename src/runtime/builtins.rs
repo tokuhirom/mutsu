@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::token_kind::TokenKind;
 use crate::value::ArrayKind;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -443,6 +444,7 @@ impl Interpreter {
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
+            "UNBASE" => self.builtin_unbase(&args),
             // Grammar helpers
             "make" => self.builtin_make(&args),
             "made" => self.builtin_made(),
@@ -738,6 +740,40 @@ impl Interpreter {
                 }
             }
             _ => self.call_function_fallback(name, &args),
+        }
+    }
+
+    fn builtin_unbase(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "UNBASE expects a radix and at least one argument",
+            ));
+        }
+        let radix = match args[0] {
+            Value::Int(n) if (2..=36).contains(&n) => n as u32,
+            _ => {
+                return Err(RuntimeError::new(
+                    "UNBASE radix must be an integer in 2..36",
+                ));
+            }
+        };
+
+        let mut out = Vec::with_capacity(args.len() - 1);
+        for arg in args.iter().skip(1) {
+            let text = arg.to_string_value();
+            let Some(parsed) = crate::runtime::parse_radix_number_body(&text, radix) else {
+                return Err(RuntimeError::new(format!(
+                    "Cannot parse '{}' as base {}",
+                    text, radix
+                )));
+            };
+            out.push(parsed);
+        }
+
+        if out.len() == 1 {
+            Ok(out.remove(0))
+        } else {
+            Ok(Value::array(out))
         }
     }
 
@@ -1284,6 +1320,49 @@ impl Interpreter {
         let adverb = args[2].to_string_value();
         let raw_indices = &args[3..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+            && class_name == "Stash"
+            && let Some(Value::Hash(symbols)) = attributes.get("symbols")
+        {
+            let stash_exists = |idx: &Value| {
+                let key = idx.to_string_value();
+                if symbols.contains_key(&key) {
+                    return true;
+                }
+                if !key.starts_with('$')
+                    && !key.starts_with('@')
+                    && !key.starts_with('%')
+                    && !key.starts_with('&')
+                {
+                    return symbols.contains_key(&format!("${key}"));
+                }
+                false
+            };
+            let stash_indices: Vec<Value> = if indices.len() > 1 {
+                indices.clone()
+            } else {
+                match &indices[0] {
+                    Value::Array(items, ..) => items.to_vec(),
+                    one => vec![one.clone()],
+                }
+            };
+            let exists_vals: Vec<bool> = stash_indices.iter().map(stash_exists).collect();
+            let exists_vals: Vec<bool> = if negated {
+                exists_vals.into_iter().map(|v| !v).collect()
+            } else {
+                exists_vals
+            };
+            if stash_indices.len() > 1 {
+                return Ok(Value::array(
+                    exists_vals.into_iter().map(Value::Bool).collect::<Vec<_>>(),
+                ));
+            }
+            return Ok(Value::Bool(*exists_vals.first().unwrap_or(&false)));
+        }
 
         // Multi-result mode for Whatever/list indices
         if has_multi_indices(&indices) {
@@ -2383,6 +2462,8 @@ impl Interpreter {
                 let shared = self.shared_vars.read().unwrap();
                 self.atomic_current_value(&shared, &name, &value_key)
             };
+            // Keep the lexical/env view in sync with the shared atomic value.
+            self.env.insert(name.clone(), current.clone());
             if current == *expected {
                 let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
                 self.env.insert(name.clone(), coerced.clone());
@@ -2403,7 +2484,100 @@ impl Interpreter {
                 let shared = self.shared_vars.read().unwrap();
                 self.atomic_current_value(&shared, &name, &value_key)
             };
-            let new_val = self.call_sub_value(code, vec![current], false)?;
+            self.env.insert(name.clone(), current.clone());
+            let new_val = if let Value::Sub(sub) = &code {
+                if sub.params.len() == 1
+                    && sub.body.len() == 1
+                    && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
+                    && *op == TokenKind::Plus
+                {
+                    let param = &sub.params[0];
+                    let delta_expr = match (left.as_ref(), right.as_ref()) {
+                        (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                        (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                        _ => None,
+                    };
+                    if let Some(delta_expr) = delta_expr {
+                        let delta = match delta_expr {
+                            Expr::Var(var_name) => {
+                                self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                            }
+                            Expr::Literal(v) => v,
+                            other => self.eval_block_value(&[Stmt::Expr(other)])?,
+                        };
+                        crate::builtins::arith_add(current.clone(), delta)?
+                    } else {
+                        let saved_topic = self.env.get("_").cloned();
+                        let saved_dollar_topic = self.env.get("$_").cloned();
+                        self.env.insert("_".to_string(), current.clone());
+                        self.env.insert("$_".to_string(), current.clone());
+                        let result = self.call_sub_value(code, vec![current], false)?;
+                        match saved_topic {
+                            Some(v) => {
+                                self.env.insert("_".to_string(), v);
+                            }
+                            None => {
+                                self.env.remove("_");
+                            }
+                        }
+                        match saved_dollar_topic {
+                            Some(v) => {
+                                self.env.insert("$_".to_string(), v);
+                            }
+                            None => {
+                                self.env.remove("$_");
+                            }
+                        }
+                        result
+                    }
+                } else {
+                    let saved_topic = self.env.get("_").cloned();
+                    let saved_dollar_topic = self.env.get("$_").cloned();
+                    self.env.insert("_".to_string(), current.clone());
+                    self.env.insert("$_".to_string(), current.clone());
+                    let result = self.call_sub_value(code, vec![current], false)?;
+                    match saved_topic {
+                        Some(v) => {
+                            self.env.insert("_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("_");
+                        }
+                    }
+                    match saved_dollar_topic {
+                        Some(v) => {
+                            self.env.insert("$_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("$_");
+                        }
+                    }
+                    result
+                }
+            } else {
+                let saved_topic = self.env.get("_").cloned();
+                let saved_dollar_topic = self.env.get("$_").cloned();
+                self.env.insert("_".to_string(), current.clone());
+                self.env.insert("$_".to_string(), current.clone());
+                let result = self.call_sub_value(code, vec![current], false)?;
+                match saved_topic {
+                    Some(v) => {
+                        self.env.insert("_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                match saved_dollar_topic {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
+                result
+            };
             let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
             self.env.insert(name.clone(), coerced.clone());
             self.shared_vars

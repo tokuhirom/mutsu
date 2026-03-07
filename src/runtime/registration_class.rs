@@ -780,7 +780,7 @@ impl Interpreter {
                     type_constraint,
                     is_required,
                     sigil,
-                    where_constraint: _,
+                    where_constraint,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     class_def.attributes.push((
@@ -790,6 +790,7 @@ impl Interpreter {
                         *is_rw,
                         is_required.clone(),
                         *sigil,
+                        where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
                     ));
                     if let Some(tc) = type_constraint {
                         class_def
@@ -1193,7 +1194,7 @@ impl Interpreter {
                     is_required,
                     sigil,
                     handles,
-                    where_constraint: _,
+                    where_constraint,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     if let Some(class_def) = self.classes.get_mut(name) {
@@ -1204,6 +1205,7 @@ impl Interpreter {
                             *is_rw,
                             is_required.clone(),
                             *sigil,
+                            where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
                         ));
                         if let Some(tc) = type_constraint {
                             class_def
@@ -1286,7 +1288,7 @@ impl Interpreter {
                     type_constraint: _,
                     is_required,
                     sigil,
-                    where_constraint: _,
+                    where_constraint,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.attributes.push((
@@ -1296,6 +1298,7 @@ impl Interpreter {
                         *is_rw,
                         is_required.clone(),
                         *sigil,
+                        where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
                     ));
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name_str)
@@ -1556,7 +1559,7 @@ impl Interpreter {
         let mut max_bytes = 0u32;
         let mut raw_value: u64 = 0;
 
-        for (attr_name, _is_public, _default, _is_rw, _, _) in &class_attrs {
+        for (attr_name, _is_public, _default, _is_rw, _, _, _) in &class_attrs {
             if let Some(val) = named_args.get(attr_name) {
                 let int_val = match val {
                     Value::Int(i) => *i as u64,
@@ -1581,7 +1584,7 @@ impl Interpreter {
         // Build attributes from shared bytes
         let bytes = raw_value.to_le_bytes();
         let mut attrs = HashMap::new();
-        for (attr_name, _is_public, default, _is_rw, _, _) in &class_attrs {
+        for (attr_name, _is_public, default, _is_rw, _, _, _) in &class_attrs {
             if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name) {
                 let byte_width = Self::native_type_byte_width(&type_constraint);
                 let val = match byte_width {
@@ -1637,7 +1640,7 @@ impl Interpreter {
     /// Get the type constraint for a class attribute, searching MRO.
     fn get_attr_type_constraint(&self, class_name: &str, attr_name: &str) -> Option<String> {
         if let Some(class_def) = self.classes.get(class_name) {
-            for (name, _is_public, _default, _is_rw, _, _) in &class_def.attributes {
+            for (name, _is_public, _default, _is_rw, _, _, _) in &class_def.attributes {
                 if name == attr_name {
                     return class_def.attribute_types.get(attr_name).cloned();
                 }

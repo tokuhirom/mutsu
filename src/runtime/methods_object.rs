@@ -139,7 +139,7 @@ impl Interpreter {
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     self.env.insert(param_name.clone(), type_arg.clone());
                 }
-                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -694,32 +694,73 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "IO::Path" => {
-                    let mut path = String::new();
+                    let mut positional_path: Option<String> = None;
+                    let mut basename_part: Option<String> = None;
+                    let mut dirname_part: Option<String> = None;
+                    let mut volume_part: Option<String> = None;
                     let mut cwd_attr: Option<String> = None;
+                    let mut spec_attr: Option<Value> = None;
                     for arg in &args {
                         match arg {
                             Value::Pair(key, value) if key == "CWD" => {
                                 cwd_attr = Some(value.to_string_value());
                             }
+                            Value::Pair(key, value) if key == "SPEC" => {
+                                spec_attr = Some((**value).clone());
+                            }
+                            Value::Pair(key, value) if key == "basename" => {
+                                basename_part = Some(value.to_string_value());
+                            }
+                            Value::Pair(key, value) if key == "dirname" => {
+                                dirname_part = Some(value.to_string_value());
+                            }
+                            Value::Pair(key, value) if key == "volume" => {
+                                volume_part = Some(value.to_string_value());
+                            }
                             Value::Instance {
                                 class_name,
                                 attributes,
                                 ..
-                            } if path.is_empty() && class_name == "IO::Path" => {
-                                path = attributes
-                                    .get("path")
-                                    .map(|v| v.to_string_value())
-                                    .unwrap_or_default();
+                            } if positional_path.is_none() && class_name == "IO::Path" => {
+                                positional_path = Some(
+                                    attributes
+                                        .get("path")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default(),
+                                );
                                 if cwd_attr.is_none() {
                                     cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
                                 }
                             }
-                            _ if path.is_empty() => {
-                                path = arg.to_string_value();
+                            Value::Pair(_, _) => {}
+                            _ if positional_path.is_none() => {
+                                positional_path = Some(arg.to_string_value());
                             }
                             _ => {}
                         }
                     }
+                    let path = if let Some(positional) = positional_path {
+                        positional
+                    } else if let Some(basename) = basename_part {
+                        let mut built = match dirname_part {
+                            Some(dirname) if !dirname.is_empty() => {
+                                if dirname.ends_with('/') || dirname.ends_with('\\') {
+                                    format!("{dirname}{basename}")
+                                } else {
+                                    format!("{dirname}/{basename}")
+                                }
+                            }
+                            _ => basename,
+                        };
+                        if let Some(volume) = volume_part
+                            && !volume.is_empty()
+                        {
+                            built = format!("{volume}:{built}");
+                        }
+                        built
+                    } else {
+                        String::new()
+                    };
                     if path.contains('\0') {
                         return Err(RuntimeError::new(
                             "X::IO::Null: Found null byte in pathname",
@@ -729,6 +770,9 @@ impl Interpreter {
                     attrs.insert("path".to_string(), Value::str(path));
                     if let Some(cwd) = cwd_attr {
                         attrs.insert("cwd".to_string(), Value::str(cwd));
+                    }
+                    if let Some(spec) = spec_attr {
+                        attrs.insert("SPEC".to_string(), spec);
                     }
                     return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }
@@ -1089,7 +1133,7 @@ impl Interpreter {
 
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
-                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -1165,7 +1209,7 @@ impl Interpreter {
                         _ => None,
                     })
                     .collect();
-                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                     &class_attrs_info
                 {
                     if let Some(reason) = is_required {
@@ -1184,7 +1228,7 @@ impl Interpreter {
                 // Build a sigil map for later coercion
                 let sigil_map: HashMap<String, char> = class_attrs_info
                     .iter()
-                    .map(|(name, _, _, _, _, sigil)| (name.clone(), *sigil))
+                    .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
                     .collect();
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
@@ -1212,6 +1256,7 @@ impl Interpreter {
                         }
                     }
                 }
+                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 let int_ctor_val =
                     if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
                         return Err(RuntimeError::new("Cannot convert type object to Int"));
@@ -1249,7 +1294,7 @@ impl Interpreter {
                         self.env.insert(name.clone(), value.clone());
                     }
                 }
-                for (attr_name, _is_public, default, _is_rw, _is_required, sigil) in
+                for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
                     class_attrs_info.clone()
                 {
                     if attrs.contains_key(&attr_name) {
@@ -1268,10 +1313,15 @@ impl Interpreter {
                         let val = result?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else {
-                        Value::Nil
+                        match sigil {
+                            '@' => Value::real_array(Vec::new()),
+                            '%' => Value::hash(HashMap::new()),
+                            _ => Value::Nil,
+                        }
                     };
                     attrs.insert(attr_name, val);
                 }
+                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 // Restore env after default evaluation
                 self.env = saved_default_env.clone();
                 let class_def = self.classes.get(class_key);
@@ -1292,7 +1342,7 @@ impl Interpreter {
                     )?;
                     attrs = updated;
                     // After BUILD runs, check required attributes that BUILD didn't set
-                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
                     {
                         if let Some(reason) = is_required {
@@ -1307,6 +1357,7 @@ impl Interpreter {
                             }
                         }
                     }
+                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 }
                 if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let tweak_args = if has_direct_tweak {
@@ -1322,6 +1373,7 @@ impl Interpreter {
                         Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
+                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
@@ -1419,6 +1471,44 @@ impl Interpreter {
         }
     }
 
+    fn check_attribute_where_constraint(&mut self, pred: &Expr, value: &Value) -> bool {
+        let pred_val = match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        match self.call_sub_value(pred_val, vec![value.clone()], false) {
+            Ok(result) => result.truthy(),
+            Err(_) => false,
+        }
+    }
+
+    fn enforce_attribute_where_constraints(
+        &mut self,
+        class_attrs_info: &[ClassAttributeDef],
+        attrs: &HashMap<String, Value>,
+    ) -> Result<(), RuntimeError> {
+        for (attr_name, _is_public, _default, _is_rw, _is_required, _sigil, where_constraint) in
+            class_attrs_info
+        {
+            let Some(pred) = where_constraint else {
+                continue;
+            };
+            let Some(value) = attrs.get(attr_name) else {
+                continue;
+            };
+            if matches!(value, Value::Nil) {
+                continue;
+            }
+            if !self.check_attribute_where_constraint(pred, value) {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to $!{}; where constraint failed",
+                    attr_name
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Construct a Proxy subclass instance: extracts FETCH/STORE from args,
     /// initializes subclass attributes (with defaults), and returns a Proxy
     /// with shared mutable subclass attrs.
@@ -1445,7 +1535,8 @@ impl Interpreter {
 
         // Initialize subclass attributes with defaults
         let class_attrs_info = self.collect_class_attributes(class_name);
-        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil) in &class_attrs_info
+        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil, _) in
+            &class_attrs_info
         {
             if !extra_attrs.contains_key(attr_name) {
                 let default_val = if let Some(expr) = default_expr {
@@ -1461,6 +1552,7 @@ impl Interpreter {
                 extra_attrs.insert(attr_name.clone(), default_val);
             }
         }
+        self.enforce_attribute_where_constraints(&class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
         Ok(Value::Proxy {
