@@ -158,12 +158,20 @@ fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
 }
 
 fn varref_from_value(value: &Value) -> Option<(String, Value)> {
+    indexed_varref_from_value(value).map(|(name, inner, _)| (name, inner))
+}
+
+fn indexed_varref_from_value(value: &Value) -> Option<(String, Value, Option<usize>)> {
     if let Value::Capture { positional, named } = value
         && positional.is_empty()
         && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
         && let Some(inner) = named.get("__mutsu_varref_value")
     {
-        return Some((name.to_string(), inner.clone()));
+        let source_index = match named.get("__mutsu_varref_index") {
+            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            _ => None,
+        };
+        return Some((name.to_string(), inner.clone(), source_index));
     }
     None
 }
@@ -173,6 +181,19 @@ fn unwrap_varref_value(value: Value) -> Value {
         inner
     } else {
         value
+    }
+}
+
+fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
+    let mut named = std::collections::HashMap::new();
+    named.insert("__mutsu_varref_name".to_string(), Value::str(name));
+    named.insert("__mutsu_varref_value".to_string(), value);
+    if let Some(i) = source_index {
+        named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
+    }
+    Value::Capture {
+        positional: Vec::new(),
+        named,
     }
 }
 
@@ -2035,6 +2056,7 @@ impl Interpreter {
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
+        let mut raw_slurpy_sources = std::collections::HashSet::new();
         if param_defs.is_empty() {
             if params.is_empty() {
                 // No param_defs and no placeholder params — nothing to bind.
@@ -2188,11 +2210,42 @@ impl Interpreter {
                     }
                 } else {
                     let mut items = Vec::new();
+                    let is_raw_slurpy = pd.traits.iter().any(|t| t == "raw");
                     while positional_idx < args.len() {
+                        let raw_arg = args[positional_idx].clone();
+                        if is_raw_slurpy
+                            && let Some((source_name, source_value, source_index)) =
+                                indexed_varref_from_value(&raw_arg)
+                        {
+                            if raw_slurpy_sources.insert(source_name.clone()) {
+                                rw_bindings.push((source_name.clone(), source_name.clone()));
+                            }
+                            self.env.insert(source_name.clone(), source_value.clone());
+                            if !pd.double_slurpy
+                                && let Value::Array(arr, kind) = &source_value
+                                && !kind.is_itemized()
+                            {
+                                for (idx, item) in arr.iter().cloned().enumerate() {
+                                    items.push(make_varref_value(
+                                        source_name.clone(),
+                                        item,
+                                        Some(idx),
+                                    ));
+                                }
+                            } else {
+                                items.push(make_varref_value(
+                                    source_name,
+                                    source_value,
+                                    source_index,
+                                ));
+                            }
+                            positional_idx += 1;
+                            continue;
+                        }
                         // *@ (flattening slurpy): flatten list args but preserve
                         // itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values — they are named args for *%_ or will be rejected
-                        match unwrap_varref_value(args[positional_idx].clone()) {
+                        match unwrap_varref_value(raw_arg) {
                             Value::Pair(..) => {
                                 // Named arg — leave for *%_ slurpy or post-loop check
                             }
