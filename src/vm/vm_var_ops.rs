@@ -132,8 +132,11 @@ impl VM {
     }
 
     pub(super) fn anon_state_key(name: &str) -> Option<String> {
-        let _ = name;
-        None
+        if name.starts_with("__ANON_STATE_") {
+            Some(format!("__anon_state::{name}"))
+        } else {
+            None
+        }
     }
 
     /// Convert a Failure's exception Value into a RuntimeError.
