@@ -9,6 +9,66 @@ thread_local! {
     pub(super) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
 }
 
+/// Optimize an Alternation: if all branches are single-token CharClass or Literal
+/// patterns (no captures, quantifier One), merge them into a single CharClass atom.
+/// This dramatically speeds up grammar tokens with many Unicode range alternations.
+fn try_collapse_alternation_to_charclass(alt_patterns: &[RegexPattern]) -> Option<RegexAtom> {
+    if alt_patterns.len() < 2 {
+        return None;
+    }
+    let mut merged_items: Vec<ClassItem> = Vec::new();
+    for pat in alt_patterns {
+        if pat.anchor_start || pat.anchor_end {
+            return None;
+        }
+        // Allow single-token patterns, or patterns where all extra tokens are
+        // optional ws (sigspace-inserted whitespace matchers)
+        let effective_tokens: Vec<&RegexToken> = pat
+            .tokens
+            .iter()
+            .filter(|t| {
+                // Keep non-ws tokens; skip optional ws tokens
+                if matches!(t.quant, RegexQuant::ZeroOrOne | RegexQuant::ZeroOrMore) {
+                    if let RegexAtom::CharClass(class) = &t.atom
+                        && !class.negated
+                        && class.items.len() == 1
+                        && matches!(class.items[0], ClassItem::Space)
+                    {
+                        return false; // skip this ws token
+                    }
+                    if let RegexAtom::Named(name) = &t.atom {
+                        let raw = name.trim().trim_start_matches('.').trim_start_matches('&');
+                        if raw == "ws" {
+                            return false;
+                        }
+                    }
+                }
+                true
+            })
+            .collect();
+        if effective_tokens.len() != 1 {
+            return None;
+        }
+        let token = effective_tokens[0];
+        if !matches!(token.quant, RegexQuant::One) || token.named_capture.is_some() {
+            return None;
+        }
+        match &token.atom {
+            RegexAtom::CharClass(class) if !class.negated => {
+                merged_items.extend(class.items.iter().cloned());
+            }
+            RegexAtom::Literal(ch) => {
+                merged_items.push(ClassItem::Char(*ch));
+            }
+            _ => return None,
+        }
+    }
+    Some(RegexAtom::CharClass(CharClass {
+        negated: false,
+        items: merged_items,
+    }))
+}
+
 fn regex_single_quote_closes(open: char, ch: char) -> bool {
     match open {
         '\'' => ch == '\'',
@@ -494,9 +554,11 @@ impl Interpreter {
                 }
             }
             if alt_patterns.len() > 1 {
+                let atom = try_collapse_alternation_to_charclass(&alt_patterns)
+                    .unwrap_or(RegexAtom::Alternation(alt_patterns));
                 return Some(RegexPattern {
                     tokens: vec![RegexToken {
-                        atom: RegexAtom::Alternation(alt_patterns),
+                        atom,
                         quant: RegexQuant::One,
                         named_capture: None,
                         ratchet: false,
@@ -1165,7 +1227,8 @@ impl Interpreter {
                                     if alt_patterns.is_empty() {
                                         continue;
                                     }
-                                    RegexAtom::Alternation(alt_patterns)
+                                    try_collapse_alternation_to_charclass(&alt_patterns)
+                                        .unwrap_or(RegexAtom::Alternation(alt_patterns))
                                 } else {
                                     // Strip dot prefix for non-capturing named calls
                                     // <.alpha> is the same as <alpha> but without named capture
@@ -1285,9 +1348,11 @@ impl Interpreter {
                                 alt_patterns.push(p);
                             }
                         }
+                        let group_atom = try_collapse_alternation_to_charclass(&alt_patterns)
+                            .unwrap_or(RegexAtom::Alternation(alt_patterns));
                         let group_pat = RegexPattern {
                             tokens: vec![RegexToken {
-                                atom: RegexAtom::Alternation(alt_patterns),
+                                atom: group_atom,
                                 quant: RegexQuant::One,
                                 named_capture: None,
                                 ratchet: false,
@@ -1360,7 +1425,8 @@ impl Interpreter {
                                 alt_patterns.push(p);
                             }
                         }
-                        RegexAtom::Alternation(alt_patterns)
+                        try_collapse_alternation_to_charclass(&alt_patterns)
+                            .unwrap_or(RegexAtom::Alternation(alt_patterns))
                     } else {
                         let parsed_group = if ignore_case || sigspace {
                             let mut scoped = String::new();
