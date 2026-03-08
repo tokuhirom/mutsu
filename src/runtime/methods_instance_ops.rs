@@ -194,6 +194,37 @@ impl Interpreter {
                 }
             }
 
+            if class_name == "Attribute" {
+                match method {
+                    "set_build" => {
+                        let build = args.first().cloned().ok_or_else(|| {
+                            RuntimeError::new("Attribute.set_build expects a build callback")
+                        })?;
+                        let owner = attributes
+                            .get("__mutsu_attr_owner")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let attr_name = attributes
+                            .get("__mutsu_attr_name")
+                            .or_else(|| attributes.get("name"))
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if owner.is_empty() || attr_name.is_empty() {
+                            return Err(RuntimeError::new(
+                                "Attribute.set_build missing owner or attribute name",
+                            ));
+                        }
+                        self.attribute_build_overrides
+                            .insert((owner, attr_name), build);
+                        return Ok(target.clone());
+                    }
+                    "name" => {
+                        return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
+                    }
+                    _ => {}
+                }
+            }
+
             // IO::Spec methods
             if class_name == "IO::Spec" {
                 match method {

@@ -680,6 +680,22 @@ impl VM {
             }
         }
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        let (raw_val, bind_source) = if let Value::Capture { positional, named } = &raw_val {
+            if positional.is_empty() {
+                if let (Some(Value::Str(source_name)), Some(inner)) = (
+                    named.get("__mutsu_varref_name"),
+                    named.get("__mutsu_varref_value"),
+                ) {
+                    (inner.clone(), Some(source_name.to_string()))
+                } else {
+                    (raw_val, None)
+                }
+            } else {
+                (raw_val, None)
+            }
+        } else {
+            (raw_val, None)
+        };
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
@@ -749,17 +765,49 @@ impl VM {
         {
             return Err(RuntimeError::new("X::Assignment::RO"));
         }
+        if let Some(source_name) = bind_source {
+            let mut resolved_source = source_name;
+            let mut seen = std::collections::HashSet::new();
+            while seen.insert(resolved_source.clone()) {
+                let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
+                let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+                    break;
+                };
+                resolved_source = next.to_string();
+            }
+            self.interpreter
+                .env_mut()
+                .insert(alias_key.clone(), Value::str(resolved_source));
+            self.interpreter
+                .env_mut()
+                .insert(readonly_key, Value::Bool(false));
+        }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());
-        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.to_string())
             } else {
                 None
             }
-        }) {
-            self.update_local_if_exists(code, &alias_name, &val);
-            self.interpreter.env_mut().insert(alias_name, val.clone());
+        });
+        let mut seen_aliases = std::collections::HashSet::new();
+        while let Some(current_alias) = alias_name {
+            if !seen_aliases.insert(current_alias.clone()) {
+                break;
+            }
+            self.update_local_if_exists(code, &current_alias, &val);
+            self.interpreter
+                .env_mut()
+                .insert(current_alias.clone(), val.clone());
+            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                if let Value::Str(name) = v {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            });
         }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter

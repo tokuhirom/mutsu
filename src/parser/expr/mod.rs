@@ -1193,6 +1193,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_private_postfix_colon_args() {
+        let (rest, expr) = expression("self.bless!SET-SELF: pulled, i").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                ..
+            } => {
+                assert_eq!(name, "SET-SELF");
+                assert_eq!(modifier, Some('!'));
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0], Expr::BareWord(ref n) if n.as_str() == "pulled"));
+                assert!(matches!(args[1], Expr::BareWord(ref n) if n.as_str() == "i"));
+                assert!(matches!(
+                    *target,
+                    Expr::MethodCall {
+                        name,
+                        modifier: None,
+                        ..
+                    } if name == "bless"
+                ));
+            }
+            _ => panic!("expected private method call expression"),
+        }
+    }
+
+    #[test]
     fn parse_postfix_angle_index_requires_closing() {
         let err = expression("$x<foo").unwrap_err();
         assert!(err.message().contains("closing '>'"));
@@ -1202,7 +1232,17 @@ mod tests {
     fn parse_postfix_angle_index_zen() {
         let (rest, expr) = expression("$x<>").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Var(ref n) if n.as_str() == "x"));
+        assert!(matches!(
+            expr,
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                ..
+            } if name == "__mutsu_zen_angle"
+                && args.is_empty()
+                && matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
+        ));
     }
 
     #[test]

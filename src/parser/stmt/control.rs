@@ -918,6 +918,92 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
+    // Capture-all pointy parameter: -> |, -> |$c, -> |c
+    if let Some(stripped) = rest.strip_prefix('|') {
+        let (r, _) = ws(stripped)?;
+        // Optional capture variable name with sigil
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
+            let (r, name) = var_name(r)?;
+            return Ok((
+                r,
+                ParamDef {
+                    name,
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint,
+                    literal_value: None,
+                    sub_signature: None,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    is_invocant: false,
+                    shape_constraints: None,
+                },
+            ));
+        }
+
+        // Sigilless capture variable name
+        if let Ok((r, name)) = ident(r)
+            && !matches!(name.as_str(), "where" | "is")
+        {
+            return Ok((
+                r,
+                ParamDef {
+                    name,
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: true,
+                    type_constraint,
+                    literal_value: None,
+                    sub_signature: None,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    is_invocant: false,
+                    shape_constraints: None,
+                },
+            ));
+        }
+
+        // Bare capture marker
+        return Ok((
+            r,
+            ParamDef {
+                name: "_capture".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: true,
+                double_slurpy: false,
+                sigilless: false,
+                type_constraint,
+                literal_value: None,
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
+    }
+
     // Anonymous callable pointy parameter with code signature: -> &:(Str) { ... }
     if rest.starts_with("&:(") {
         let r = &rest[1..]; // skip '&'

@@ -1,6 +1,11 @@
 use super::*;
 use crate::symbol::Symbol;
 
+type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFunction>;
+type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
+type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
+type ProtectBlockCapturedSlots = std::sync::Arc<Vec<usize>>;
+
 impl Interpreter {
     const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
 
@@ -995,26 +1000,79 @@ impl Interpreter {
         if let Value::Sub(data) = code {
             // Targeted sync: only refresh variables the closure captures
             // (much cheaper than syncing ALL shared vars)
-            {
-                let sv = self.shared_vars.read().unwrap();
-                if !sv.is_empty() {
-                    for key in data.env.keys() {
-                        if let Some(val) = sv.get(key) {
-                            self.env.insert(key.clone(), val.clone());
-                        }
-                    }
-                }
-            }
-            if let Some(ref cc) = data.compiled_code {
-                self.run_compiled_block(cc, &std::collections::HashMap::new())
-            } else {
-                let compiler = crate::compiler::Compiler::new();
-                let (compiled, compiled_fns) = compiler.compile(&data.body);
-                self.run_compiled_block(&compiled, &compiled_fns)
-            }
+            self.sync_shared_vars_for_env(&data.env);
+            let (compiled, compiled_fns) = self.get_or_compile_protect_block(data);
+            self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
         }
+    }
+
+    pub(crate) fn get_or_compile_protect_block(
+        &mut self,
+        data: &std::sync::Arc<crate::value::SubData>,
+    ) -> (ProtectBlockCompiled, ProtectBlockCompiledFns) {
+        if let Some(ref cc) = data.compiled_code {
+            return (
+                cc.clone(),
+                std::sync::Arc::new(std::collections::HashMap::new()),
+            );
+        }
+        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let captured_slots = compiled
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                std::sync::Arc::new(captured_slots),
+            )
+        });
+        (entry.0.clone(), entry.1.clone())
+    }
+
+    pub(crate) fn get_or_compile_protect_block_with_slots(
+        &mut self,
+        data: &std::sync::Arc<crate::value::SubData>,
+    ) -> (
+        ProtectBlockCompiled,
+        ProtectBlockCompiledFns,
+        ProtectBlockCapturedSlots,
+    ) {
+        if let Some(ref cc) = data.compiled_code {
+            let slots = cc
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            return (
+                cc.clone(),
+                std::sync::Arc::new(std::collections::HashMap::new()),
+                std::sync::Arc::new(slots),
+            );
+        }
+        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let captured_slots = compiled
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                std::sync::Arc::new(captured_slots),
+            )
+        });
+        (entry.0.clone(), entry.1.clone(), entry.2.clone())
     }
 
     /// Run pre-compiled bytecode and return the `$_` topic value.
