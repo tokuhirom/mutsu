@@ -289,6 +289,35 @@ impl Interpreter {
                 return Ok(Value::make_instance(*class_name, attrs));
             }
             match base_class_name {
+                "IterationBuffer" => {
+                    let mut items = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals) => {
+                                items.extend(vals.iter().cloned())
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "IterationBuffer" => {
+                                if let Some(
+                                    Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals),
+                                ) = attributes.get("__mutsu_iterationbuffer_items")
+                                {
+                                    items.extend(vals.iter().cloned());
+                                }
+                            }
+                            other => items.push(other.clone()),
+                        }
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "__mutsu_iterationbuffer_items".to_string(),
+                        Value::real_array(items),
+                    );
+                    return Ok(Value::make_instance(*class_name, attrs));
+                }
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
                         // Check for :data argument to populate the shaped array
