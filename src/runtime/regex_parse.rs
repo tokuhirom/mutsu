@@ -245,9 +245,15 @@ impl Interpreter {
             return pattern.to_string();
         }
 
-        let with_count = Regex::new(r"^(.+?)\*\*([0-9]+(?:\.\.(?:[0-9]+|\*))?)(?:(%%|%)(.+))?$")
-            .expect("ltm count regex is valid");
-        let bare_sep = Regex::new(r"^(.+?)(%%|%)(.+)$").expect("ltm sep regex is valid");
+        static WITH_COUNT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(r"^(.+?)\*\*([0-9]+(?:\.\.(?:[0-9]+|\*))?)(?:(%%|%)(.+))?$")
+                .expect("ltm count regex is valid")
+        });
+        static BARE_SEP: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(r"^(.+?)(%%|%)(.+)$").expect("ltm sep regex is valid")
+        });
+        let with_count = &*WITH_COUNT;
+        let bare_sep = &*BARE_SEP;
 
         if let Some(caps) = with_count.captures(&compact) {
             let atom = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
@@ -1793,11 +1799,9 @@ impl Interpreter {
             }
         }
         // Check for named rule with parens containing code: <alpha(...)>
-        if ::regex::Regex::new(r"<\w+\(.*\)>")
-            .ok()
-            .and_then(|re| re.find(s))
-            .is_some()
-        {
+        static NAMED_RULE_RE: std::sync::LazyLock<Regex> =
+            std::sync::LazyLock::new(|| Regex::new(r"<\w+\(.*\)>").expect("valid regex"));
+        if NAMED_RULE_RE.find(s).is_some() {
             return true;
         }
         // Check for :my variable declaration
