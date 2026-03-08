@@ -2892,9 +2892,9 @@ impl Interpreter {
                 {
                     continue;
                 }
-                // Snapshot parent values at spawn time. Keeping stale entries
-                // from earlier unrelated spawns leaks lexical state by name.
-                sv.insert(key.clone(), val.clone());
+                // Only insert if not already present — existing values may have
+                // been updated by earlier threads that are already running.
+                sv.entry(key.clone()).or_insert_with(|| val.clone());
             }
         }
         self.shared_vars_active = true;
