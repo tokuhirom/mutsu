@@ -760,6 +760,7 @@ impl Interpreter {
                     "emit",
                     "tap",
                     "act",
+                    "encode",
                     "decode",
                     "repeated",
                     "do",
