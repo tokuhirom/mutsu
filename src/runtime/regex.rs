@@ -15,6 +15,22 @@ fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// Check if an atom is "simple" — it only advances position without producing
+/// any captures. Used to enable a fast path in ratcheted quantifier loops
+/// that avoids cloning RegexCaptures on every iteration.
+fn is_simple_atom(atom: &RegexAtom) -> bool {
+    matches!(
+        atom,
+        RegexAtom::Literal(_)
+            | RegexAtom::CharClass(_)
+            | RegexAtom::Any
+            | RegexAtom::Newline
+            | RegexAtom::NotNewline
+            | RegexAtom::UnicodeProp { .. }
+            | RegexAtom::CompositeClass { .. }
+    )
+}
+
 impl Interpreter {
     fn regex_escape_literal(text: &str) -> String {
         let mut out = String::new();
@@ -678,6 +694,30 @@ impl Interpreter {
         (decls, remaining)
     }
 
+    /// Try to resolve a Named regex atom to a pre-parsed pattern for fast-path
+    /// matching. Returns Some((parsed_pattern, package)) if the Named atom
+    /// resolves to exactly one token candidate with no arguments.
+    fn try_resolve_named_to_pattern(
+        &self,
+        atom: &RegexAtom,
+        pkg: &str,
+    ) -> Option<(RegexPattern, String)> {
+        let RegexAtom::Named(name) = atom else {
+            return None;
+        };
+        let spec = Self::parse_named_regex_lookup_spec(name);
+        if !spec.arg_exprs.is_empty() {
+            return None;
+        }
+        let candidates = self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg);
+        if candidates.len() != 1 {
+            return None;
+        }
+        let (sub_pat, sub_pkg, _sym_key) = &candidates[0];
+        let parsed = self.parse_regex(sub_pat)?;
+        Some((parsed, sub_pkg.clone()))
+    }
+
     pub(super) fn regex_match_with_captures_core(
         &self,
         pattern: &str,
@@ -1273,76 +1313,178 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrMore => {
-                    let mut positions = Vec::new();
-                    positions.push((pos, caps.clone()));
-                    let mut current = pos;
-                    let mut current_caps = caps.clone();
-                    while let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        current,
-                        &current_caps,
-                        pkg,
-                        pattern.ignore_case,
-                    ) {
-                        if next == current {
-                            break;
-                        }
-                        let new_caps = apply_named_capture(token, current, next, new_caps);
-                        current_caps = new_caps.clone();
-                        positions.push((next, new_caps));
-                        current = next;
-                    }
-                    if token.ratchet
-                        && let Some(last) = positions.last().cloned()
+                    // Fast path: ratcheted simple atom with no named capture
+                    // avoids all RegexCaptures cloning by only tracking position.
+                    if token.ratchet && token.named_capture.is_none() && is_simple_atom(&token.atom)
                     {
-                        positions = vec![last];
-                    }
-                    for (p, c) in positions {
-                        stack.push((idx + 1, p, c));
-                    }
-                }
-                RegexQuant::OneOrMore => {
-                    let (mut current, mut current_caps) = match self
-                        .regex_match_atom_with_capture_in_pkg(
+                        let mut current = pos;
+                        while let Some(next) = self.regex_match_atom_in_pkg(
                             &token.atom,
                             chars,
-                            pos,
-                            &caps,
+                            current,
                             pkg,
                             pattern.ignore_case,
                         ) {
-                        Some((next, new_caps)) => {
-                            let new_caps = apply_named_capture(token, pos, next, new_caps);
-                            (next, new_caps)
+                            if next == current {
+                                break;
+                            }
+                            current = next;
                         }
-                        None => continue,
-                    };
-                    let mut positions = Vec::new();
-                    positions.push((current, current_caps.clone()));
-                    while let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        current,
-                        &current_caps,
-                        pkg,
-                        pattern.ignore_case,
-                    ) {
-                        if next == current {
-                            break;
-                        }
-                        let new_caps = apply_named_capture(token, current, next, new_caps);
-                        current_caps = new_caps.clone();
-                        positions.push((next, new_caps));
-                        current = next;
-                    }
-                    if token.ratchet
-                        && let Some(last) = positions.last().cloned()
+                        stack.push((idx + 1, current, caps));
+                    } else if token.ratchet
+                        && token.named_capture.is_none()
+                        && let Some((resolved, resolved_pkg)) =
+                            self.try_resolve_named_to_pattern(&token.atom, pkg)
                     {
-                        positions = vec![last];
+                        // Fast path for ratcheted Named token: resolve pattern once,
+                        // match directly without creating new Interpreter per iteration
+                        let mut current = pos;
+                        while current < chars.len() {
+                            if let Some(end) = self.regex_match_end_from_in_pkg(
+                                &resolved,
+                                chars,
+                                current,
+                                &resolved_pkg,
+                            ) {
+                                if end == current {
+                                    break;
+                                }
+                                current = end;
+                            } else {
+                                break;
+                            }
+                        }
+                        stack.push((idx + 1, current, caps));
+                    } else {
+                        let mut positions = Vec::new();
+                        positions.push((pos, caps.clone()));
+                        let mut current = pos;
+                        let mut current_caps = caps.clone();
+                        while let Some((next, new_caps)) = self
+                            .regex_match_atom_with_capture_in_pkg(
+                                &token.atom,
+                                chars,
+                                current,
+                                &current_caps,
+                                pkg,
+                                pattern.ignore_case,
+                            )
+                        {
+                            if next == current {
+                                break;
+                            }
+                            let new_caps = apply_named_capture(token, current, next, new_caps);
+                            current_caps = new_caps.clone();
+                            positions.push((next, new_caps));
+                            current = next;
+                        }
+                        if token.ratchet
+                            && let Some(last) = positions.last().cloned()
+                        {
+                            positions = vec![last];
+                        }
+                        for (p, c) in positions {
+                            stack.push((idx + 1, p, c));
+                        }
                     }
-                    for (p, c) in positions {
-                        stack.push((idx + 1, p, c));
+                }
+                RegexQuant::OneOrMore => {
+                    // Fast path: ratcheted simple atom with no named capture
+                    if token.ratchet && token.named_capture.is_none() && is_simple_atom(&token.atom)
+                    {
+                        let Some(mut current) = self.regex_match_atom_in_pkg(
+                            &token.atom,
+                            chars,
+                            pos,
+                            pkg,
+                            pattern.ignore_case,
+                        ) else {
+                            continue;
+                        };
+                        while let Some(next) = self.regex_match_atom_in_pkg(
+                            &token.atom,
+                            chars,
+                            current,
+                            pkg,
+                            pattern.ignore_case,
+                        ) {
+                            if next == current {
+                                break;
+                            }
+                            current = next;
+                        }
+                        stack.push((idx + 1, current, caps));
+                    } else if token.ratchet
+                        && token.named_capture.is_none()
+                        && let Some((resolved, resolved_pkg)) =
+                            self.try_resolve_named_to_pattern(&token.atom, pkg)
+                    {
+                        // Fast path for ratcheted Named token
+                        let Some(mut current) =
+                            self.regex_match_end_from_in_pkg(&resolved, chars, pos, &resolved_pkg)
+                        else {
+                            continue;
+                        };
+                        while current < chars.len() {
+                            if let Some(end) = self.regex_match_end_from_in_pkg(
+                                &resolved,
+                                chars,
+                                current,
+                                &resolved_pkg,
+                            ) {
+                                if end == current {
+                                    break;
+                                }
+                                current = end;
+                            } else {
+                                break;
+                            }
+                        }
+                        stack.push((idx + 1, current, caps));
+                    } else {
+                        let (mut current, mut current_caps) = match self
+                            .regex_match_atom_with_capture_in_pkg(
+                                &token.atom,
+                                chars,
+                                pos,
+                                &caps,
+                                pkg,
+                                pattern.ignore_case,
+                            ) {
+                            Some((next, new_caps)) => {
+                                let new_caps = apply_named_capture(token, pos, next, new_caps);
+                                (next, new_caps)
+                            }
+                            None => continue,
+                        };
+                        let mut positions = Vec::new();
+                        positions.push((current, current_caps.clone()));
+                        while let Some((next, new_caps)) = self
+                            .regex_match_atom_with_capture_in_pkg(
+                                &token.atom,
+                                chars,
+                                current,
+                                &current_caps,
+                                pkg,
+                                pattern.ignore_case,
+                            )
+                        {
+                            if next == current {
+                                break;
+                            }
+                            let new_caps = apply_named_capture(token, current, next, new_caps);
+                            current_caps = new_caps.clone();
+                            positions.push((next, new_caps));
+                            current = next;
+                        }
+                        if token.ratchet
+                            && let Some(last) = positions.last().cloned()
+                        {
+                            positions = vec![last];
+                        }
+                        for (p, c) in positions {
+                            stack.push((idx + 1, p, c));
+                        }
                     }
                 }
             }

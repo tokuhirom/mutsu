@@ -307,6 +307,7 @@ roast/S11-modules/module-file.t
 roast/S11-modules/module.t
 roast/S11-modules/need.t
 roast/S11-modules/rakulib.t
+roast/S11-modules/re-export.t
 roast/S11-modules/require.t
 roast/S11-modules/runtime.t
 roast/S12-attributes/defaults.t
@@ -542,6 +543,7 @@ roast/S32-array/pairs.t
 roast/S32-array/rotate.t
 roast/S32-basics/pairup.t
 roast/S32-basics/xxPOS-native.t
+roast/S32-container/cat.t
 roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t
 roast/S32-container/zip.t
