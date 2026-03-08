@@ -1368,7 +1368,9 @@ impl Interpreter {
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),
             "Supply" => self.native_supply_mut(attributes, method, args),
-            "Supplier" => self.native_supplier_mut(attributes, method, args),
+            "Supplier" | "Supplier::Preserving" => {
+                self.native_supplier_mut(attributes, method, args)
+            }
             "Proc::Async" => self.native_proc_async_mut(attributes, method, args),
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on '{}'",
@@ -1476,7 +1478,7 @@ impl Interpreter {
             "Proc::Async" => self.native_proc_async(attributes, method, args),
             "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
-            "Supplier" => self.native_supplier(attributes, method, args),
+            "Supplier" | "Supplier::Preserving" => self.native_supplier(attributes, method, args),
             "Tap" => self.native_tap(attributes, method),
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
                 self.native_scheduler(attributes, method, args)

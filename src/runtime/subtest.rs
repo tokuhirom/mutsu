@@ -1,13 +1,16 @@
 use super::*;
-use crate::runtime::native_methods::{SupplyEvent, take_supply_channel};
+use crate::runtime::native_methods::{SupplyEvent, supplier_snapshot, take_supply_channel};
 use crate::symbol::Symbol;
 use std::sync::mpsc;
 use std::time::Duration;
 
 /// A subscription registered by a `whenever` block inside a `react` block.
 pub(crate) struct ReactSubscription {
-    pub receiver: mpsc::Receiver<SupplyEvent>,
+    pub receiver: Option<mpsc::Receiver<SupplyEvent>>,
+    pub supplier_id: Option<u64>,
+    pub supplier_next_index: usize,
     pub callback: Value,
+    pub close_callbacks: Vec<Value>,
     pub done: bool,
     /// When true, split incoming chunks into lines before calling the callback.
     pub is_lines: bool,
@@ -157,8 +160,28 @@ impl Interpreter {
                             && let Some(rx) = take_supply_channel(sid)
                         {
                             react_subs.push(ReactSubscription {
-                                receiver: rx,
+                                receiver: Some(rx),
+                                supplier_id: None,
+                                supplier_next_index: 0,
                                 callback,
+                                close_callbacks: Self::extract_supply_on_close_callbacks(
+                                    attributes,
+                                ),
+                                done: false,
+                                is_lines,
+                                line_buffer: String::new(),
+                            });
+                            continue;
+                        }
+                        if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                            react_subs.push(ReactSubscription {
+                                receiver: None,
+                                supplier_id: Some(*supplier_id as u64),
+                                supplier_next_index: 0,
+                                callback,
+                                close_callbacks: Self::extract_supply_on_close_callbacks(
+                                    attributes,
+                                ),
                                 done: false,
                                 is_lines,
                                 line_buffer: String::new(),
@@ -196,8 +219,11 @@ impl Interpreter {
                             let _ = tx.send(SupplyEvent::Done);
                         });
                         react_subs.push(ReactSubscription {
-                            receiver: rx,
+                            receiver: Some(rx),
+                            supplier_id: None,
+                            supplier_next_index: 0,
                             callback,
+                            close_callbacks: Vec::new(),
                             done: false,
                             is_lines: false,
                             line_buffer: String::new(),
@@ -221,8 +247,68 @@ impl Interpreter {
                     continue;
                 }
                 all_done = false;
+                if let Some(supplier_id) = sub.supplier_id {
+                    let (values, done, quit) = supplier_snapshot(supplier_id);
+                    while sub.supplier_next_index < values.len() {
+                        let value = values[sub.supplier_next_index].clone();
+                        sub.supplier_next_index += 1;
+                        if sub.is_lines {
+                            let chunk = value.to_string_value();
+                            sub.line_buffer.push_str(&chunk);
+                            while let Some(pos) = sub.line_buffer.find('\n') {
+                                let line = sub.line_buffer[..pos].to_string();
+                                sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
+                                match self.call_sub_value(
+                                    sub.callback.clone(),
+                                    vec![Value::str(line)],
+                                    true,
+                                ) {
+                                    Err(e) if e.is_react_done => break 'react_loop,
+                                    other => {
+                                        other?;
+                                    }
+                                }
+                            }
+                        } else {
+                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => {
+                                    other?;
+                                }
+                            }
+                        }
+                    }
+                    if let Some(error) = quit {
+                        Self::run_react_close_callbacks(self, &react_subs);
+                        let msg = error.to_string_value();
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(error));
+                        return Err(err);
+                    }
+                    if done {
+                        if sub.is_lines && !sub.line_buffer.is_empty() {
+                            let remaining = std::mem::take(&mut sub.line_buffer);
+                            match self.call_sub_value(
+                                sub.callback.clone(),
+                                vec![Value::str(remaining)],
+                                true,
+                            ) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => {
+                                    other?;
+                                }
+                            }
+                        }
+                        sub.done = true;
+                    }
+                    continue;
+                }
+                let Some(receiver) = sub.receiver.as_ref() else {
+                    sub.done = true;
+                    continue;
+                };
                 // Try to receive with a short timeout
-                match sub.receiver.recv_timeout(timeout) {
+                match receiver.recv_timeout(timeout) {
                     Ok(SupplyEvent::Emit(value)) => {
                         if sub.is_lines {
                             let chunk = value.to_string_value();
@@ -284,7 +370,24 @@ impl Interpreter {
             }
         }
 
+        Self::run_react_close_callbacks(self, &react_subs);
         Ok(())
+    }
+
+    fn extract_supply_on_close_callbacks(attributes: &HashMap<String, Value>) -> Vec<Value> {
+        if let Some(Value::Array(callbacks, ..)) = attributes.get("on_close_callbacks") {
+            callbacks.to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn run_react_close_callbacks(&mut self, react_subs: &[ReactSubscription]) {
+        for sub in react_subs {
+            for callback in &sub.close_callbacks {
+                let _ = self.call_sub_value(callback.clone(), Vec::new(), true);
+            }
+        }
     }
 
     /// Resolve the supply_id to use for channel lookup.

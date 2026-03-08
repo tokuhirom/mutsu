@@ -735,7 +735,7 @@ impl Interpreter {
                     ));
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
-                "Supplier" => {
+                "Supplier" | "Supplier::Preserving" => {
                     let mut attrs = HashMap::new();
                     attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                     attrs.insert("done".to_string(), Value::Bool(false));

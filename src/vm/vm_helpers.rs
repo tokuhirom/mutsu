@@ -106,6 +106,10 @@ impl VM {
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
+        // Anonymous scalar placeholders (from bare `$`) are invocation-local.
+        if name.starts_with("__ANON_STATE_") {
+            return None;
+        }
         // Fall back to shared_vars for cross-thread visibility of variables
         // that were explicitly updated by other threads.
         if let Some(v) = self.interpreter.get_shared_var(name) {
@@ -141,6 +145,10 @@ impl VM {
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        if name.starts_with("__ANON_STATE_") {
+            self.interpreter.env_mut().insert(name.to_string(), value);
+            return;
+        }
         if !name.starts_with('^') {
             let placeholder = format!("^{name}");
             if self.interpreter.env().contains_key(&placeholder) {
@@ -904,6 +912,16 @@ impl VM {
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
+                continue;
+            }
+            if let Some(bare) = name
+                .strip_prefix('$')
+                .or_else(|| name.strip_prefix('@'))
+                .or_else(|| name.strip_prefix('%'))
+                .or_else(|| name.strip_prefix('&'))
+                && let Some(val) = self.interpreter.env().get(bare)
+            {
+                self.locals[i] = val.clone();
             }
         }
     }
@@ -920,8 +938,7 @@ impl VM {
         if self.locals_dirty {
             for (i, name) in code.locals.iter().enumerate() {
                 if code.simple_locals[i] {
-                    self.interpreter
-                        .set_shared_var(name, self.locals[i].clone());
+                    self.set_env_with_main_alias(name, self.locals[i].clone());
                 }
             }
             self.locals_dirty = false;
@@ -1618,6 +1635,8 @@ impl VM {
             .iter()
             .map(|(_, source)| source.clone())
             .collect();
+        let captured_names: std::collections::HashSet<&str> =
+            data.env.keys().map(|s| s.as_str()).collect();
         // Write back captured-variable changes, but NOT the closure's own
         // parameters/locals (which live in cc.locals).  Without this filter,
         // recursive &?BLOCK calls clobber the outer frame's $n, etc.
@@ -1626,11 +1645,12 @@ impl VM {
         for (k, v) in self.interpreter.env().iter() {
             if k != "_"
                 && k != "@_"
+                && !rw_sources.contains(k)
                 && (restored_env.contains_key(k)
+                    || captured_names.contains(k.as_str())
                     || k.starts_with("__mutsu_predictive_seq_iter::")
                     || k.starts_with("__mutsu_sigilless_alias::!"))
-                && !rw_sources.contains(k)
-                && !local_names.contains(k.as_str())
+                && (!local_names.contains(k.as_str()) || captured_names.contains(k.as_str()))
             {
                 restored_env.insert(k.clone(), v.clone());
             }

@@ -790,6 +790,7 @@ impl Interpreter {
                     "lines",
                     "merge",
                     "unique",
+                    "on-close",
                     "classify",
                     "Supply",
                     "Promise",
@@ -867,6 +868,18 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Supplier".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Supplier::Preserving".to_string(),
+            ClassDef {
+                parents: vec!["Supplier".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Supplier::Preserving".to_string(), "Supplier".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -3037,13 +3050,11 @@ impl Interpreter {
         values: Vec<Value>,
         target_fallback: &Value,
     ) -> Value {
-        if key.starts_with('@') {
+        if key.starts_with('@') && self.shared_vars_active {
             // Drop env's copy of the Arc first so that shared_vars holds
             // the only strong reference (refcount=1).  This allows
             // Arc::make_mut to mutate the vector in-place (O(1)) instead
             // of deep-copying it every time (which would make N pushes O(n²)).
-            // Reads still work because get_env_with_main_alias checks
-            // shared_vars first when shared_vars_active is true.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
             if let Some(shared_value) = sv.remove(key) {
@@ -3053,6 +3064,7 @@ impl Interpreter {
                     let result = Value::Array(Arc::clone(&arc_items), kind);
                     sv.insert(key.to_string(), Value::Array(arc_items, kind));
                     drop(sv);
+                    self.env.insert(key.to_string(), result.clone());
                     let needs_mark_dirty = self
                         .shared_vars_dirty
                         .read()
@@ -3070,6 +3082,7 @@ impl Interpreter {
                 items.extend(values);
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
+                self.env.insert(key.to_string(), result.clone());
                 let needs_mark_dirty = self
                     .shared_vars_dirty
                     .read()
@@ -3215,8 +3228,26 @@ impl Interpreter {
             let Value::Str(alias_name) = alias else {
                 continue;
             };
+            if let Some(bare) = alias_name
+                .strip_prefix('$')
+                .or_else(|| alias_name.strip_prefix('@'))
+                .or_else(|| alias_name.strip_prefix('%'))
+                .or_else(|| alias_name.strip_prefix('&'))
+                && let Some(value) = current_env.get(bare).cloned()
+            {
+                saved_env.insert(alias_name.to_string(), value.clone());
+                saved_env.insert(bare.to_string(), value);
+                continue;
+            }
             saved_env.insert(key.clone(), alias.clone());
             if let Some(value) = current_env.get(alias_name.as_str()).cloned() {
+                saved_env.insert(alias_name.to_string(), value);
+                continue;
+            }
+            if let Some(bare_name) = key.strip_prefix("__mutsu_sigilless_alias::")
+                && let Some(value) = current_env.get(bare_name).cloned()
+            {
+                saved_env.insert(bare_name.to_string(), value.clone());
                 saved_env.insert(alias_name.to_string(), value);
             }
         }

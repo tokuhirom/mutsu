@@ -920,7 +920,8 @@ impl Interpreter {
             || (matches!(method, "list" | "Array" | "Seq")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+                && matches!(&target, Value::Instance { class_name, .. }
+                    if class_name == "Supplier" || class_name == "Supplier::Preserving"))
             || matches!(&target, Value::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
             || (matches!(&target, Value::Instance { .. })
