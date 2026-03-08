@@ -726,6 +726,12 @@ impl VM {
         let end = body_end as usize;
         let body_start = *ip + 1;
 
+        // React callbacks run through the interpreter path and capture from env.
+        // Flush VM locals first so captured vars (e.g., @received in loop scopes)
+        // are visible/mutable from whenever callbacks.
+        self.ensure_env_synced(code);
+        self.sync_env_from_locals(code);
+
         // Enter react mode: whenever blocks will register subscriptions
         self.interpreter.enter_react();
         let saved_depth = self.stack.len();
@@ -734,6 +740,7 @@ impl VM {
 
         // Run the react event loop (processes all registered subscriptions)
         let event_result = self.interpreter.run_react_event_loop();
+        self.sync_locals_from_env(code);
         self.env_dirty = true;
 
         *ip = end;

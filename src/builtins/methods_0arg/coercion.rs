@@ -310,7 +310,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "Supply" => {
             if let Value::Instance { class_name, .. } = target
-                && class_name == "Supplier"
+                && (class_name == "Supplier" || class_name == "Supplier::Preserving")
             {
                 // Supplier.Supply has runtime behavior (live stream), not generic coercion.
                 return None;
@@ -324,7 +324,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Supplier.Supply must be handled by runtime native methods
             // so the returned Supply remains linked to Supplier.emit/.done.
             if let Value::Instance { class_name, .. } = target
-                && class_name == "Supplier"
+                && (class_name == "Supplier" || class_name == "Supplier::Preserving")
             {
                 return None;
             }

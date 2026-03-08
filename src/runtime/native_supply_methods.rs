@@ -410,6 +410,20 @@ impl Interpreter {
                 }
                 Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()))
             }
+            "on-close" => {
+                let close_cb = args.first().cloned().unwrap_or(Value::Nil);
+                let mut new_attrs = attributes.clone();
+                let mut callbacks = if let Some(Value::Array(existing, ..)) =
+                    attributes.get("on_close_callbacks")
+                {
+                    existing.to_vec()
+                } else {
+                    Vec::new()
+                };
+                callbacks.push(close_cb);
+                new_attrs.insert("on_close_callbacks".to_string(), Value::array(callbacks));
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+            }
             "do" => {
                 // Supply.do($callback) — create a new Supply that calls $callback
                 // as a side-effect for each value, passing values through
@@ -913,6 +927,22 @@ impl Interpreter {
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                 Ok((tap_instance, attrs))
+            }
+            "on-close" => {
+                let close_cb = args.first().cloned().unwrap_or(Value::Nil);
+                let mut new_attrs = attrs.clone();
+                let mut callbacks =
+                    if let Some(Value::Array(existing, ..)) = attrs.get("on_close_callbacks") {
+                        existing.to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                callbacks.push(close_cb);
+                new_attrs.insert("on_close_callbacks".to_string(), Value::array(callbacks));
+                Ok((
+                    Value::make_instance(Symbol::intern("Supply"), new_attrs),
+                    attrs,
+                ))
             }
             "repeated" => {
                 let as_fn = Self::named_value(&args, "as");

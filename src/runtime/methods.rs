@@ -720,7 +720,8 @@ impl Interpreter {
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+                && matches!(&target, Value::Instance { class_name, .. }
+                    if class_name == "Supplier" || class_name == "Supplier::Preserving"))
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
