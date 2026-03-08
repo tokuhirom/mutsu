@@ -29,13 +29,12 @@ fn try_collapse_alternation_to_charclass(alt_patterns: &[RegexPattern]) -> Optio
             .filter(|t| {
                 // Keep non-ws tokens; skip optional ws tokens
                 if matches!(t.quant, RegexQuant::ZeroOrOne | RegexQuant::ZeroOrMore) {
-                    if let RegexAtom::CharClass(class) = &t.atom {
-                        if !class.negated
-                            && class.items.len() == 1
-                            && matches!(class.items[0], ClassItem::Space)
-                        {
-                            return false; // skip this ws token
-                        }
+                    if let RegexAtom::CharClass(class) = &t.atom
+                        && !class.negated
+                        && class.items.len() == 1
+                        && matches!(class.items[0], ClassItem::Space)
+                    {
+                        return false; // skip this ws token
                     }
                     if let RegexAtom::Named(name) = &t.atom {
                         let raw = name.trim().trim_start_matches('.').trim_start_matches('&');
