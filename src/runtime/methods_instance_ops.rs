@@ -96,6 +96,104 @@ impl Interpreter {
                 ));
             }
 
+            if class_name == "IterationBuffer" {
+                let mut items = match attributes.get("__mutsu_iterationbuffer_items") {
+                    Some(Value::Array(values, ..))
+                    | Some(Value::Seq(values))
+                    | Some(Value::Slip(values)) => values.to_vec(),
+                    _ => Vec::new(),
+                };
+                let iterationbuffer_values = |value: &Value| -> Vec<Value> {
+                    match value {
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if class_name == "IterationBuffer" => {
+                            match attributes.get("__mutsu_iterationbuffer_items") {
+                                Some(Value::Array(values, ..))
+                                | Some(Value::Seq(values))
+                                | Some(Value::Slip(values)) => values.to_vec(),
+                                _ => Vec::new(),
+                            }
+                        }
+                        _ => Self::value_to_list(value),
+                    }
+                };
+                let mut update_items = |new_items: Vec<Value>| {
+                    let mut updated_attrs = (**attributes).clone();
+                    updated_attrs.insert(
+                        "__mutsu_iterationbuffer_items".to_string(),
+                        Value::real_array(new_items),
+                    );
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        *target_id,
+                        updated_attrs.clone(),
+                    );
+                    Value::Instance {
+                        class_name: *class_name,
+                        attributes: std::sync::Arc::new(updated_attrs),
+                        id: *target_id,
+                    }
+                };
+                match method {
+                    "elems" if args.is_empty() => return Ok(Value::Int(items.len() as i64)),
+                    "AT-POS" if args.len() == 1 => {
+                        let index = crate::runtime::to_int(&args[0]);
+                        if index >= 0
+                            && let Some(value) = items.get(index as usize)
+                        {
+                            return Ok(value.clone());
+                        }
+                        return Ok(Value::Package(Symbol::intern("Mu")));
+                    }
+                    "BIND-POS" if args.len() == 2 => {
+                        let index = crate::runtime::to_int(&args[0]);
+                        if index >= 0 {
+                            let idx = index as usize;
+                            if idx >= items.len() {
+                                items.resize(idx + 1, Value::Package(Symbol::intern("Mu")));
+                            }
+                            items[idx] = args[1].clone();
+                        }
+                        let bound = args[1].clone();
+                        update_items(items);
+                        return Ok(bound);
+                    }
+                    "push" if !args.is_empty() => {
+                        items.extend(args.iter().cloned());
+                        let result = args.last().cloned().unwrap_or(Value::Nil);
+                        update_items(items);
+                        return Ok(result);
+                    }
+                    "unshift" if !args.is_empty() => {
+                        let mut prepended = args.clone();
+                        prepended.extend(items);
+                        let result = args.last().cloned().unwrap_or(Value::Nil);
+                        update_items(prepended);
+                        return Ok(result);
+                    }
+                    "List" if args.is_empty() => return Ok(Value::array(items)),
+                    "Slip" if args.is_empty() => return Ok(Value::slip(items)),
+                    "Seq" if args.is_empty() => return Ok(Value::Seq(std::sync::Arc::new(items))),
+                    "append" if args.len() == 1 => {
+                        items.extend(iterationbuffer_values(&args[0]));
+                        return Ok(update_items(items));
+                    }
+                    "prepend" if args.len() == 1 => {
+                        let mut prepended = iterationbuffer_values(&args[0]);
+                        prepended.extend(items);
+                        return Ok(update_items(prepended));
+                    }
+                    "clear" if args.is_empty() => {
+                        update_items(Vec::new());
+                        return Ok(Value::Nil);
+                    }
+                    _ => {}
+                }
+            }
+
             // IO::Spec methods
             if class_name == "IO::Spec" {
                 match method {

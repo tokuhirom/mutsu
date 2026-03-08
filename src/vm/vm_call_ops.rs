@@ -529,6 +529,25 @@ impl VM {
         {
             skip_native = true;
         }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method.as_str(),
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
+            )
+        {
+            skip_native = true;
+        }
         if quoted
             && skip_native
             && matches!(
@@ -1192,6 +1211,25 @@ impl VM {
                     | "stdout"
                     | "stderr"
                     | "Supply"
+            )
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method.as_str(),
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
             )
         {
             skip_native = true;

@@ -688,6 +688,22 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "IterationBuffer".to_string(),
+            ClassDef {
+                parents: vec!["Any".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "IterationBuffer".to_string(),
+                    "Any".to_string(),
+                    "Mu".to_string(),
+                ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Promise".to_string(),
             ClassDef {
                 parents: Vec::new(),

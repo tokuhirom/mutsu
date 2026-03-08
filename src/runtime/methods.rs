@@ -134,6 +134,24 @@ impl Interpreter {
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
+        if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method,
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
+            )
+        {
+            return self.dispatch_instance_and_fallback(target, method, args);
+        }
         // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw X::Immutable
         if matches!(
             method,
