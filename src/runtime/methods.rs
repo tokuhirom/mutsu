@@ -134,6 +134,24 @@ impl Interpreter {
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
+        if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method,
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
+            )
+        {
+            return self.dispatch_instance_and_fallback(target, method, args);
+        }
         // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw X::Immutable
         if matches!(
             method,
@@ -1389,22 +1407,38 @@ impl Interpreter {
             "return-rw" if args.is_empty() => {
                 return Ok(target);
             }
-            "encode" => {
+            "encode" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
+            {
                 let encoding = args
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "utf-8".to_string());
+                let normalized_encoding = self
+                    .find_encoding(&encoding)
+                    .map(|e| e.name.as_str().to_lowercase())
+                    .unwrap_or_else(|| encoding.to_lowercase());
                 let input = target.to_string_value();
                 let translated = self.translate_newlines_for_encode(&input);
-                let bytes = self.encode_with_encoding(&translated, &encoding)?;
-                let bytes_vals: Vec<Value> =
-                    bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                 let mut attrs = HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes_vals));
-                let type_name = match encoding.to_lowercase().as_str() {
-                    "utf-8" | "utf8" => "utf8",
-                    "utf-16" | "utf16" => "utf16",
-                    _ => "Buf",
+                let type_name = match normalized_encoding.as_str() {
+                    "utf-16" | "utf16" => {
+                        let units: Vec<Value> = translated
+                            .encode_utf16()
+                            .map(|u| Value::Int(u as i64))
+                            .collect();
+                        attrs.insert("bytes".to_string(), Value::array(units));
+                        "utf16"
+                    }
+                    _ => {
+                        let bytes = self.encode_with_encoding(&translated, &encoding)?;
+                        let bytes_vals: Vec<Value> =
+                            bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                        attrs.insert("bytes".to_string(), Value::array(bytes_vals));
+                        match normalized_encoding.as_str() {
+                            "utf-8" | "utf8" => "utf8",
+                            _ => "Buf",
+                        }
+                    }
                 };
                 return Ok(Value::make_instance(Symbol::intern(type_name), attrs));
             }
@@ -1416,11 +1450,40 @@ impl Interpreter {
                 } = &target
                     && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
                 {
+                    let default_encoding = if class_name == "utf16" {
+                        "utf-16"
+                    } else {
+                        "utf-8"
+                    };
                     let encoding = args
                         .first()
                         .map(|v| v.to_string_value())
-                        .unwrap_or_else(|| "utf-8".to_string());
-                    let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        .unwrap_or_else(|| default_encoding.to_string());
+                    let normalized_encoding = self
+                        .find_encoding(&encoding)
+                        .map(|e| e.name.as_str().to_lowercase())
+                        .unwrap_or_else(|| encoding.to_lowercase());
+                    let bytes = if class_name == "utf16" {
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            let use_be = normalized_encoding == "utf-16be";
+                            let mut out = Vec::with_capacity(items.len() * 2);
+                            for item in items.iter() {
+                                let unit = match item {
+                                    Value::Int(i) => *i as u16,
+                                    _ => 0u16,
+                                };
+                                let pair = if use_be {
+                                    unit.to_be_bytes()
+                                } else {
+                                    unit.to_le_bytes()
+                                };
+                                out.extend_from_slice(&pair);
+                            }
+                            out
+                        } else {
+                            Vec::new()
+                        }
+                    } else if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                         items
                             .iter()
                             .map(|v| match v {

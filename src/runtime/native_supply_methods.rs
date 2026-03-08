@@ -11,6 +11,28 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "encode" => {
+                let source_values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                let mut emitted: Vec<Value> = Vec::with_capacity(source_values.len());
+                for chunk in source_values {
+                    emitted.push(self.call_method_with_values(chunk, "encode", args.clone())?);
+                }
+
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(emitted));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert(
+                    "live".to_string(),
+                    attributes
+                        .get("live")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
+                );
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+            }
             "decode" => {
                 let encoding = args
                     .first()

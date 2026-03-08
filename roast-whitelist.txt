@@ -291,6 +291,7 @@ roast/S06-traits/precedence.t
 roast/S06-traits/slurpy-is-rw.t
 roast/S07-hyperrace/for.t
 roast/S07-hyperrace/stress.t
+roast/S07-iterationbuffer/iterationbuffer.t
 roast/S07-slip/slip.t
 roast/S09-multidim/indexing.t
 roast/S09-multidim/subs.t
@@ -472,6 +473,7 @@ roast/S17-supply/decode.t
 roast/S17-supply/delayed.t
 roast/S17-supply/do.t
 roast/S17-supply/elems.t
+roast/S17-supply/encode.t
 roast/S17-supply/first.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
