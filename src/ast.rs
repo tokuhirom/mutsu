@@ -101,11 +101,15 @@ pub(crate) enum Expr {
         pattern: String,
         replacement: String,
         samemark: bool,
+        nth: Option<String>,
+        x: Option<usize>,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
         samemark: bool,
+        nth: Option<String>,
+        x: Option<usize>,
     },
     Transliterate {
         from: String,
@@ -113,6 +117,7 @@ pub(crate) enum Expr {
         delete: bool,
         complement: bool,
         squash: bool,
+        non_destructive: bool,
     },
     MethodCall {
         target: Box<Expr>,
@@ -145,6 +150,7 @@ pub(crate) enum Expr {
     Exists {
         target: Box<Expr>,
         negated: bool,
+        delete: bool,
         arg: Option<Box<Expr>>,
         adverb: ExistsAdverb,
     },
@@ -183,6 +189,17 @@ pub(crate) enum Expr {
     Index {
         target: Box<Expr>,
         index: Box<Expr>,
+    },
+    /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
+    MultiDimIndex {
+        target: Box<Expr>,
+        dimensions: Vec<Expr>,
+    },
+    /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
+    MultiDimIndexAssign {
+        target: Box<Expr>,
+        dimensions: Vec<Expr>,
+        value: Box<Expr>,
     },
     IndexAssign {
         target: Box<Expr>,

@@ -62,6 +62,22 @@ fn is_coercion_constraint(constraint: &str) -> bool {
     bytes.last() == Some(&b')') && bytes.contains(&b'(') && !bytes.contains(&b'[')
 }
 
+pub(crate) fn coerce_impossible_error(target: &str, got: &Value) -> RuntimeError {
+    let msg = format!(
+        "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
+        super::value_type_name(got),
+        target
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("from".to_string(), got.clone());
+    attrs.insert("to".to_string(), Value::str(target.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Coerce::Impossible"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Coerce a value to the target type.
 fn coerce_value(target: &str, value: Value) -> Value {
     let base_target = if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_")
@@ -87,6 +103,8 @@ fn coerce_value(target: &str, value: Value) -> Value {
             _ => value,
         },
         "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
+        "Array" | "List" => crate::runtime::utils::coerce_to_array(value),
+        "Hash" => crate::runtime::utils::coerce_to_hash(value),
         "Rat" => {
             match &value {
                 Value::Rat(_, _) => value,
@@ -140,12 +158,20 @@ fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
 }
 
 fn varref_from_value(value: &Value) -> Option<(String, Value)> {
+    indexed_varref_from_value(value).map(|(name, inner, _)| (name, inner))
+}
+
+fn indexed_varref_from_value(value: &Value) -> Option<(String, Value, Option<usize>)> {
     if let Value::Capture { positional, named } = value
         && positional.is_empty()
         && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
         && let Some(inner) = named.get("__mutsu_varref_value")
     {
-        return Some((name.to_string(), inner.clone()));
+        let source_index = match named.get("__mutsu_varref_index") {
+            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+            _ => None,
+        };
+        return Some((name.to_string(), inner.clone(), source_index));
     }
     None
 }
@@ -155,6 +181,19 @@ fn unwrap_varref_value(value: Value) -> Value {
         inner
     } else {
         value
+    }
+}
+
+fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
+    let mut named = std::collections::HashMap::new();
+    named.insert("__mutsu_varref_name".to_string(), Value::str(name));
+    named.insert("__mutsu_varref_value".to_string(), value);
+    if let Some(i) = source_index {
+        named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
+    }
+    Value::Capture {
+        positional: Vec::new(),
+        named,
     }
 }
 
@@ -172,6 +211,7 @@ fn named_values_from_unpack_target(value: &Value) -> std::collections::HashMap<S
         Value::Hash(map) => (**map).clone(),
         Value::Pair(key, val) => {
             let mut out = std::collections::HashMap::new();
+            out.insert(key.clone(), *val.clone());
             out.insert("key".to_string(), Value::str(key.clone()));
             out.insert("value".to_string(), *val.clone());
             out
@@ -187,7 +227,15 @@ fn extract_named_from_unpack_target(
     name: &str,
 ) -> Option<Value> {
     let named = named_values_from_unpack_target(value);
+    let lookup_name = name
+        .strip_prefix('$')
+        .or_else(|| name.strip_prefix('@'))
+        .or_else(|| name.strip_prefix('%'))
+        .unwrap_or(name);
     if let Some(v) = named.get(name) {
+        return Some(v.clone());
+    }
+    if let Some(v) = named.get(lookup_name) {
         return Some(v.clone());
     }
     interpreter
@@ -348,6 +396,17 @@ fn bind_sub_signature_from_value(
             }
             continue;
         };
+        if let Value::Pair(key, inner) = &candidate {
+            let bind_name = sub_pd
+                .name
+                .strip_prefix('$')
+                .or_else(|| sub_pd.name.strip_prefix('@'))
+                .or_else(|| sub_pd.name.strip_prefix('%'))
+                .unwrap_or(sub_pd.name.as_str());
+            if sub_pd.named || bind_name == key {
+                candidate = *inner.clone();
+            }
+        }
         if let Some(constraint) = &sub_pd.type_constraint {
             if let Some((_target, source)) = parse_coercion_type(constraint) {
                 if let Some(src) = source
@@ -382,7 +441,8 @@ fn bind_sub_signature_from_value(
     }
     // If there are unconsumed positional elements and no slurpy param, error
     let has_slurpy = sub_params.iter().any(|p| p.slurpy);
-    if !has_slurpy && nested_positional_idx < positional.len() {
+    let has_positional_params = sub_params.iter().any(|p| !p.named && !p.slurpy);
+    if has_positional_params && !has_slurpy && nested_positional_idx < positional.len() {
         return Err(RuntimeError::new(
             "Too many positional arguments in sub-signature binding".to_string(),
         ));
@@ -565,6 +625,19 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
+        let mut resolved = source_name.to_string();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(resolved.clone()) {
+            let key = sigilless_alias_key(&resolved);
+            let Some(Value::Str(next)) = self.env.get(&key) else {
+                break;
+            };
+            resolved = next.to_string();
+        }
+        resolved
+    }
+
     /// Save the current readonly_vars set (call before function body execution).
     pub(crate) fn save_readonly_vars(&self) -> HashSet<String> {
         self.readonly_vars.clone()
@@ -632,6 +705,24 @@ impl Interpreter {
 
     fn bind_param_value(&mut self, name: &str, value: Value) {
         self.env.insert(name.to_string(), value.clone());
+        if let Some(attr_name) = name.strip_prefix('!')
+            && let Some(Value::Instance {
+                class_name,
+                attributes,
+                id,
+            }) = self.env.get("self").cloned()
+        {
+            let mut updated_attrs = (*attributes).clone();
+            updated_attrs.insert(attr_name.to_string(), value.clone());
+            self.env.insert(
+                "self".to_string(),
+                Value::Instance {
+                    class_name,
+                    attributes: std::sync::Arc::new(updated_attrs),
+                    id,
+                },
+            );
+        }
         if matches!(
             value,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -670,7 +761,7 @@ impl Interpreter {
 
     fn missing_optional_param_value(pd: &ParamDef) -> Value {
         if pd.name.starts_with('@') {
-            return Value::array(Vec::new());
+            return Value::real_array(Vec::new());
         }
         if pd.name.starts_with('%') {
             return Value::hash(std::collections::HashMap::new());
@@ -746,6 +837,34 @@ impl Interpreter {
             // Register as both Endian::NativeEndian and bare NativeEndian
             self.env
                 .insert(format!("Endian::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
+    pub(super) fn init_protocol_family_enum(&mut self) {
+        let variants = vec![
+            ("PF_UNSPEC".to_string(), 0i64),
+            ("PF_INET".to_string(), 1i64),
+            ("PF_INET6".to_string(), 2i64),
+            ("PF_LOCAL".to_string(), 3i64),
+            ("PF_UNIX".to_string(), 3i64),
+            ("PF_MAX".to_string(), 4i64),
+        ];
+        self.enum_types
+            .insert("ProtocolFamily".to_string(), variants.clone());
+        self.env.insert(
+            "ProtocolFamily".to_string(),
+            Value::Package(Symbol::intern("ProtocolFamily")),
+        );
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: Symbol::intern("ProtocolFamily"),
+                key: Symbol::intern(key),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("ProtocolFamily::{}", key), enum_val.clone());
             self.env.insert(key.clone(), enum_val);
         }
     }
@@ -915,6 +1034,15 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
+            return true;
+        }
+        if constraint == "Baggy" && matches!(value_type, "Bag" | "BagHash" | "Mix" | "MixHash") {
+            return true;
+        }
+        if constraint == "Mixy" && matches!(value_type, "Mix" | "MixHash") {
+            return true;
+        }
         // Metamodel:: is an alias for Perl6::Metamodel::
         if constraint.starts_with("Metamodel::") {
             let full = format!("Perl6::{}", constraint);
@@ -1000,6 +1128,32 @@ impl Interpreter {
         {
             return true;
         }
+        // Buf/Blob type hierarchy:
+        // Blob is the immutable base; Buf extends Blob (mutable)
+        // utf8 is a subtype of Blob
+        // buf8/buf16/buf32/buf64 are subtypes of Buf (and transitively Blob)
+        // blob8/blob16/blob32/blob64 are subtypes of Blob
+        if constraint == "Blob"
+            && matches!(
+                value_type,
+                "Buf"
+                    | "utf8"
+                    | "utf16"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+            )
+        {
+            return true;
+        }
+        if constraint == "Buf" && matches!(value_type, "buf8" | "buf16" | "buf32" | "buf64") {
+            return true;
+        }
         false
     }
 
@@ -1009,6 +1163,12 @@ impl Interpreter {
             || self.roles.contains_key(name)
             || self.enum_types.contains_key(name)
             || self.subsets.contains_key(name)
+            || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
+                self.classes.contains_key(&base)
+                    || self.roles.contains_key(&base)
+                    || self.enum_types.contains_key(&base)
+                    || self.subsets.contains_key(&base)
+            })
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
@@ -1115,7 +1275,7 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
         if let Some(role) = role {
-            for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+            for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                 role.attributes.iter().enumerate()
             {
                 let value = if let Some(arg) = role_args.get(idx) {
@@ -1133,6 +1293,9 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if let Value::Scalar(inner) = value {
+            return self.type_matches_value(constraint, inner.as_ref());
+        }
         if constraint == "UInt" {
             return match value {
                 Value::Int(i) => *i >= 0,
@@ -1153,6 +1316,12 @@ impl Interpreter {
         }
         if constraint == "Variable" && varref_from_value(value).is_some() {
             return true;
+        }
+        if let Value::Enum { enum_type, .. } = value {
+            let enum_name = enum_type.resolve();
+            if constraint == enum_name || Self::type_matches(constraint, &enum_name) {
+                return true;
+            }
         }
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
             let package_base = package_name.split('[').next().unwrap_or(package_name);
@@ -1187,6 +1356,13 @@ impl Interpreter {
             };
         }
         if let Value::Package(package_name) = value
+            && let Some((pkg_target, pkg_source)) = parse_coercion_type(&package_name.resolve())
+            && (Self::type_matches(constraint, pkg_target)
+                || pkg_source.is_some_and(|src| Self::type_matches(constraint, src)))
+        {
+            return true;
+        }
+        if let Value::Package(package_name) = value
             && let Some((target, source)) = parse_coercion_type(constraint)
         {
             let pkg_resolved = package_name.resolve();
@@ -1215,6 +1391,21 @@ impl Interpreter {
                     }
                     return false;
                 }
+                "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
+                    if let Value::Instance { class_name, .. } = value {
+                        let cn = class_name.resolve();
+                        if cn == "Buf"
+                            || cn == "Blob"
+                            || cn.starts_with("Buf[")
+                            || cn.starts_with("Blob[")
+                            || cn.starts_with("buf")
+                            || cn.starts_with("blob")
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
                 "Hash" | "Associative" => {
                     if let Value::Hash(map) = value {
                         return map.values().all(|v| self.type_matches_value(inner, v));
@@ -1227,6 +1418,33 @@ impl Interpreter {
                                 false
                             }
                         });
+                    }
+                    return false;
+                }
+                "Buf" | "Blob" => {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = value
+                    {
+                        let class = class_name.resolve();
+                        let class_ok = if base == "Buf" {
+                            class == "Buf" || class.starts_with("Buf[") || class.starts_with("buf")
+                        } else {
+                            class == "Blob"
+                                || class == "Buf"
+                                || class.starts_with("Blob[")
+                                || class.starts_with("blob")
+                                || class.starts_with("Buf[")
+                                || class.starts_with("buf")
+                        };
+                        if !class_ok {
+                            return false;
+                        }
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            return items.iter().all(|v| self.type_matches_value(inner, v));
+                        }
                     }
                     return false;
                 }
@@ -1391,6 +1609,19 @@ impl Interpreter {
             if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
             }
+            // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
+            let cn = class_name.resolve();
+            if (constraint == "Buf" || constraint == "Blob")
+                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+            {
+                // Buf constraint accepts any Buf-like, Blob constraint accepts any Blob-like
+                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(&cn) {
+                    return true;
+                }
+                if constraint == "Blob" {
+                    return true; // All Buf/Blob types are Blob (Buf inherits Blob)
+                }
+            }
             // Check parent classes of the instance
             if let Some(class_def) = self.classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {
@@ -1495,7 +1726,8 @@ impl Interpreter {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
                         let mut named = std::collections::HashMap::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if let Value::Pair(key, val) = arg {
                                 named.insert(key, *val);
@@ -1508,7 +1740,8 @@ impl Interpreter {
                         // For single-star slurpy (*@), flatten list arguments but preserve
                         // itemized Arrays ($[...] / .item) as single positional values.
                         let mut items = Vec::new();
-                        for arg in &args[i..] {
+                        let remaining = args.get(i..).unwrap_or(&[]);
+                        for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
                                 && let Value::Array(arr, kind) = &arg
@@ -1522,8 +1755,9 @@ impl Interpreter {
                         Some(Value::real_array(items))
                     }
                 } else if is_subsig_capture {
+                    let remaining = args.get(i..).unwrap_or(&[]);
                     Some(sub_signature_target_from_remaining_args(
-                        &args[i..]
+                        &remaining
                             .iter()
                             .cloned()
                             .map(unwrap_varref_value)
@@ -1622,6 +1856,12 @@ impl Interpreter {
                         // Coercion source-type validation is deferred until bind time.
                         return false;
                     }
+                }
+                if pd.name.starts_with('&')
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !self.type_matches_value("Callable", arg)
+                {
+                    return false;
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {
@@ -1768,15 +2008,16 @@ impl Interpreter {
                 } else {
                     has_positional_slurpy = true;
                 }
-            } else {
+            } else if pd.default.is_none() && !pd.optional_marker {
                 required += 1;
             }
         }
+        let max_positional = positional_params.iter().filter(|p| !p.slurpy).count();
         if has_positional_slurpy {
             if positional_arg_count < required {
                 return false;
             }
-        } else if positional_arg_count != required {
+        } else if positional_arg_count < required || positional_arg_count > max_positional {
             return false;
         }
         if !has_hash_slurpy {
@@ -1850,6 +2091,7 @@ impl Interpreter {
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
+        let mut raw_slurpy_sources = std::collections::HashSet::new();
         if param_defs.is_empty() {
             if params.is_empty() {
                 // No param_defs and no placeholder params — nothing to bind.
@@ -1861,7 +2103,11 @@ impl Interpreter {
             // and named placeholders ($:name) by matching Pair arg keys.
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .filter(|a| match a {
+                    Value::Pair(..) => false,
+                    Value::ValuePair(key, _) => !matches!(key.as_ref(), Value::Str(..)),
+                    _ => true,
+                })
                 .cloned()
                 .collect();
             let named_args: Vec<(String, Value)> = plain_args
@@ -2003,11 +2249,42 @@ impl Interpreter {
                     }
                 } else {
                     let mut items = Vec::new();
+                    let is_raw_slurpy = pd.traits.iter().any(|t| t == "raw");
                     while positional_idx < args.len() {
+                        let raw_arg = args[positional_idx].clone();
+                        if is_raw_slurpy
+                            && let Some((source_name, source_value, source_index)) =
+                                indexed_varref_from_value(&raw_arg)
+                        {
+                            if raw_slurpy_sources.insert(source_name.clone()) {
+                                rw_bindings.push((source_name.clone(), source_name.clone()));
+                            }
+                            self.env.insert(source_name.clone(), source_value.clone());
+                            if !pd.double_slurpy
+                                && let Value::Array(arr, kind) = &source_value
+                                && !kind.is_itemized()
+                            {
+                                for (idx, item) in arr.iter().cloned().enumerate() {
+                                    items.push(make_varref_value(
+                                        source_name.clone(),
+                                        item,
+                                        Some(idx),
+                                    ));
+                                }
+                            } else {
+                                items.push(make_varref_value(
+                                    source_name,
+                                    source_value,
+                                    source_index,
+                                ));
+                            }
+                            positional_idx += 1;
+                            continue;
+                        }
                         // *@ (flattening slurpy): flatten list args but preserve
                         // itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values — they are named args for *%_ or will be rejected
-                        match unwrap_varref_value(args[positional_idx].clone()) {
+                        match unwrap_varref_value(raw_arg) {
                             Value::Pair(..) => {
                                 // Named arg — leave for *%_ slurpy or post-loop check
                             }
@@ -2144,6 +2421,14 @@ impl Interpreter {
                         "Required named parameter '{}' not passed",
                         pd.name
                     )));
+                } else if !found && !pd.name.is_empty() {
+                    // Only bind a default if the env doesn't already have a value
+                    // (e.g. BUILD/TWEAK attribute bindings pre-populate the env).
+                    if !self.env.contains_key(&pd.name) {
+                        let value = Self::missing_optional_param_value(pd);
+                        self.bind_param_value(&pd.name, value);
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    }
                 }
             } else {
                 // Positional param — skip over Value::Pair entries (named args)
@@ -2196,9 +2481,27 @@ impl Interpreter {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
                         if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
+                            let resolved_source =
+                                self.resolve_sigilless_alias_source_name(&source_name);
                             value = inner;
-                            self.env.insert(alias_key, Value::str(source_name));
+                            self.env.insert(alias_key, Value::str(resolved_source));
                             self.env.insert(readonly_key, Value::Bool(false));
+                        } else if let Some(source_name) = arg_sources
+                            .as_ref()
+                            .and_then(|names| names.get(positional_idx))
+                            .and_then(|name| name.as_ref())
+                            .cloned()
+                        {
+                            let resolved_source =
+                                self.resolve_sigilless_alias_source_name(&source_name);
+                            if let Some(source_val) = self.env.get(&resolved_source).cloned() {
+                                value = source_val;
+                                self.env.insert(alias_key, Value::str(resolved_source));
+                                self.env.insert(readonly_key, Value::Bool(false));
+                            } else {
+                                self.env.remove(&alias_key);
+                                self.env.insert(readonly_key, Value::Bool(true));
+                            }
                         } else {
                             self.env.remove(&alias_key);
                             self.env.insert(readonly_key, Value::Bool(true));
@@ -2213,7 +2516,7 @@ impl Interpreter {
                                 captured_name.to_string(),
                                 Self::captured_type_object(&value),
                             );
-                        } else if let Some((_target, source)) = parse_coercion_type(constraint) {
+                        } else if let Some((target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
@@ -2234,7 +2537,11 @@ impl Interpreter {
                                 err.exception = Some(Box::new(exception));
                                 return Err(err);
                             }
+                            let original = value.clone();
                             value = self.try_coerce_value_for_constraint(constraint, value)?;
+                            if !self.type_matches_value(target, &value) {
+                                return Err(coerce_impossible_error(constraint, &original));
+                            }
                         } else if pd.name.starts_with('@') {
                             let ok = match &value {
                                 Value::Array(items, ..) => {
@@ -2542,24 +2849,56 @@ impl Interpreter {
                 vec![],
                 Some(value.clone()),
             )?;
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|c| c == "Str")
+            && let Some(inner) = attributes.get("value").cloned()
+            && !matches!(inner, Value::Nil)
+            && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)
+            && self.type_matches_value(base_target, &coerced)
+        {
             return Ok(coerced);
         }
-        let result = coerce_value(target, value.clone());
-        if std::mem::discriminant(&result) == std::mem::discriminant(&value) {
-            if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
-                return Ok(coerced);
-            }
-            if self.classes.contains_key(base_target)
-                && let Ok(coerced) = self.call_method_with_values(
-                    Value::Package(Symbol::intern(base_target)),
-                    "COERCE",
-                    vec![value],
-                )
-            {
-                return Ok(coerced);
-            }
+        if let Some(variants) = self.enum_types.get(base_target).cloned()
+            && let Some(enum_value) =
+                self.coerce_to_enum_variant(base_target, &variants, value.clone())
+        {
+            return Ok(enum_value);
         }
-        Ok(result)
+        let result = coerce_value(target, value.clone());
+        if self.type_matches_value(base_target, &result) {
+            return Ok(result);
+        }
+        if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
+        if self.classes.contains_key(base_target)
+            && let Ok(coerced) = self.call_method_with_values(
+                Value::Package(Symbol::intern(base_target)),
+                "COERCE",
+                vec![value.clone()],
+            )
+        {
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
+        Err(coerce_impossible_error(target, &value))
     }
 
     pub(crate) fn coerce_value_for_constraint(&mut self, constraint: &str, value: Value) -> Value {

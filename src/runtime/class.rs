@@ -86,7 +86,7 @@ impl Interpreter {
         false
     }
 
-    pub(super) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
@@ -202,7 +202,7 @@ impl Interpreter {
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         // For type-object calls (no attributes), use Package so self.new works
-        let base = if let Some(invocant) = invocant {
+        let mut base = if let Some(invocant) = invocant {
             invocant
         } else if attributes.is_empty() {
             Value::Package(Symbol::intern(receiver_class_name))
@@ -210,6 +210,7 @@ impl Interpreter {
             Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
         };
         let saved_env = self.env.clone();
+        let saved_var_bindings = self.var_bindings.clone();
         let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
         let role_context = if self.roles.contains_key(owner_class) {
@@ -257,16 +258,50 @@ impl Interpreter {
                     if let Some(captured_name) = constraint.strip_prefix("::") {
                         self.env
                             .insert(captured_name.to_string(), Self::captured_type_object(&base));
-                    } else if !self.type_matches_value(constraint, &base) {
-                        self.method_class_stack.pop();
-                        self.env = saved_env;
-                        self.restore_readonly_vars(saved_readonly);
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                            param_name,
-                            constraint,
-                            super::value_type_name(&base)
-                        )));
+                    } else {
+                        let coercion_target = if let Some(open) = constraint.find('(') {
+                            if constraint.ends_with(')') && open > 0 {
+                                Some(&constraint[..open])
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let expected = coercion_target.unwrap_or(constraint.as_str());
+                        if coercion_target.is_some() {
+                            let mut candidate = self
+                                .try_coerce_value_for_constraint(constraint, base.clone())
+                                .unwrap_or_else(|_| base.clone());
+                            if !self.type_matches_value(expected, &candidate)
+                                && let Ok(coerced) =
+                                    self.call_method_with_values(base.clone(), expected, vec![])
+                            {
+                                candidate = coerced;
+                            }
+                            if self.type_matches_value(expected, &candidate) {
+                                base = candidate;
+                                self.env.insert("self".to_string(), base.clone());
+                            }
+                        } else if !self.type_matches_value(constraint, &base)
+                            && let Ok(coerced) =
+                                self.try_coerce_value_for_constraint(constraint, base.clone())
+                        {
+                            base = coerced;
+                            self.env.insert("self".to_string(), base.clone());
+                        }
+                        if !self.type_matches_value(expected, &base) {
+                            self.method_class_stack.pop();
+                            self.env = saved_env;
+                            self.var_bindings = saved_var_bindings;
+                            self.restore_readonly_vars(saved_readonly);
+                            return Err(RuntimeError::new(format!(
+                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                                param_name,
+                                constraint,
+                                super::value_type_name(&base)
+                            )));
+                        }
                     }
                 }
                 self.env.insert(param_name.clone(), base.clone());
@@ -281,6 +316,12 @@ impl Interpreter {
         for (attr_name, attr_val) in &attributes {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
+            self.var_bindings
+                .insert(attr_name.clone(), format!("!{}", attr_name));
+            self.var_bindings.insert(
+                format!("{}::{}", owner_class, attr_name),
+                format!("!{}", attr_name),
+            );
         }
         // Method signatures must support full parameter binding semantics
         // (coercions, slurpy params, defaults, and named args) for both
@@ -290,9 +331,13 @@ impl Interpreter {
             Err(e) => {
                 self.method_class_stack.pop();
                 self.env = saved_env;
+                self.var_bindings = saved_var_bindings;
                 self.restore_readonly_vars(saved_readonly);
                 return Err(e);
             }
+        }
+        for p in &bind_params {
+            self.var_bindings.remove(p);
         }
         // When the method body is re-compiled by run_block, the compiler
         // qualifies bare variable names with current_package (e.g. "m" →
@@ -368,6 +413,7 @@ impl Interpreter {
         }
         self.method_class_stack.pop();
         self.env = merged_env;
+        self.var_bindings = saved_var_bindings;
         self.restore_readonly_vars(saved_readonly);
         result.map(|v| {
             let adjusted = match (&base, &v) {

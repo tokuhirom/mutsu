@@ -826,6 +826,84 @@ impl Interpreter {
         result
     }
 
+    /// Parse :x(...) style repeat bounds.
+    /// Returns (min_required, max_to_return). `max_to_return = None` means unbounded.
+    pub(super) fn parse_match_repeat_bounds(value: &Value) -> Option<(usize, Option<usize>)> {
+        fn parse_non_negative_int(v: &Value) -> Option<i64> {
+            match v {
+                Value::Int(i) => Some((*i).max(0)),
+                Value::Num(n) if n.is_finite() && n.fract() == 0.0 => Some((*n as i64).max(0)),
+                Value::Str(s) => s.trim().parse::<i64>().ok().map(|i| i.max(0)),
+                Value::Whatever => Some(i64::MAX),
+                _ => None,
+            }
+        }
+
+        fn adjust_range_bounds(
+            start: i64,
+            end: i64,
+            excl_start: bool,
+            excl_end: bool,
+        ) -> Option<(usize, Option<usize>)> {
+            let mut min = start;
+            let mut max = end;
+            if excl_start {
+                min = min.saturating_add(1);
+            }
+            if excl_end && max != i64::MAX {
+                max = max.saturating_sub(1);
+            }
+            min = min.max(0);
+            if max != i64::MAX {
+                max = max.max(0);
+                if max < min {
+                    return None;
+                }
+                Some((min as usize, Some(max as usize)))
+            } else {
+                Some((min as usize, None))
+            }
+        }
+
+        match value {
+            Value::Range(start, end) => adjust_range_bounds(*start, *end, false, false),
+            Value::RangeExcl(start, end) => adjust_range_bounds(*start, *end, false, true),
+            Value::RangeExclStart(start, end) => adjust_range_bounds(*start, *end, true, false),
+            Value::RangeExclBoth(start, end) => adjust_range_bounds(*start, *end, true, true),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let min = parse_non_negative_int(start.as_ref())?;
+                let max = parse_non_negative_int(end.as_ref())?;
+                adjust_range_bounds(min, max, *excl_start, *excl_end)
+            }
+            _ => {
+                let n = parse_non_negative_int(value)?;
+                if n == i64::MAX {
+                    Some((0, None))
+                } else {
+                    Some((n as usize, Some(n as usize)))
+                }
+            }
+        }
+    }
+
+    /// Apply :x bounds to already-ordered matches.
+    pub(super) fn select_matches_by_repeat_bounds(
+        matches: Vec<RegexCaptures>,
+        min_required: usize,
+        max_to_return: Option<usize>,
+    ) -> Option<Vec<RegexCaptures>> {
+        if matches.len() < min_required {
+            return None;
+        }
+        let take_n = max_to_return.unwrap_or(matches.len()).min(matches.len());
+        Some(matches.into_iter().take(take_n).collect())
+    }
+
     /// Apply multiple regex captures (for :g, :ov, :ex) — set $/ to list of Match objects.
     fn apply_multi_regex_captures(&mut self, selected: &[RegexCaptures]) {
         let slash_list = selected
@@ -846,6 +924,93 @@ impl Interpreter {
                 self.env.insert(i.to_string(), Value::str(cap.clone()));
             }
         }
+    }
+
+    fn set_pending_nth_error(message: String) {
+        crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+            *e.borrow_mut() = Some(RuntimeError::new(message));
+        });
+    }
+
+    fn parse_nth_token(token: &str, total: usize) -> Result<usize, String> {
+        let t = token.trim();
+        if t.is_empty() {
+            return Err("Invalid :nth index ()".to_string());
+        }
+        if t.eq_ignore_ascii_case("-Inf") {
+            return Err("Invalid :nth index (-Inf)".to_string());
+        }
+        if t == "*" {
+            if total == 0 {
+                return Err("Invalid :nth index (*)".to_string());
+            }
+            return Ok(total);
+        }
+        if let Some(rest) = t.strip_prefix("*-") {
+            let n = rest
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid :nth index ({t})"))?;
+            if n >= total {
+                return Err(format!("Invalid :nth index ({t})"));
+            }
+            return Ok(total - n);
+        }
+        let n = t
+            .parse::<i64>()
+            .map_err(|_| format!("Invalid :nth index ({t})"))?;
+        if n <= 0 {
+            return Err(format!("Invalid :nth index ({t})"));
+        }
+        Ok(n as usize)
+    }
+
+    fn collect_nth_indices_from_value(
+        &self,
+        value: &Value,
+        total: usize,
+        out: &mut Vec<usize>,
+    ) -> Result<(), String> {
+        match value {
+            Value::Int(i) => out.push(Self::parse_nth_token(&i.to_string(), total)?),
+            Value::Num(n) => {
+                if n.fract() != 0.0 {
+                    return Err(format!("Invalid :nth index ({n})"));
+                }
+                out.push(Self::parse_nth_token(&format!("{}", *n as i64), total)?);
+            }
+            Value::Str(s) => {
+                for piece in s.split(',') {
+                    out.push(Self::parse_nth_token(piece, total)?);
+                }
+            }
+            Value::Whatever => out.push(Self::parse_nth_token("*", total)?),
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    self.collect_nth_indices_from_value(item, total, out)?;
+                }
+            }
+            _ => {
+                return Err(format!("Invalid :nth index ({})", value.to_string_value()));
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_nth_indices(&self, raw: &str, total: usize) -> Result<Vec<usize>, String> {
+        let raw = raw.trim();
+        if raw.starts_with('$') {
+            let var_name = raw.trim_start_matches('$');
+            let value = self.env.get(var_name).cloned().unwrap_or(Value::Nil);
+            let mut out = Vec::new();
+            self.collect_nth_indices_from_value(&value, total, &mut out)?;
+            return Ok(out);
+        }
+        let mut out = Vec::new();
+        for token in raw.split(',') {
+            out.push(Self::parse_nth_token(token, total)?);
+        }
+        Ok(out)
     }
 
     /// Get the match continuation position from `$/.to`, defaulting to 0.
@@ -988,6 +1153,20 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
+            (Value::Junction { kind, values }, _) => match kind {
+                crate::value::JunctionKind::Any => {
+                    values.iter().any(|v| self.smart_match(v, right))
+                }
+                crate::value::JunctionKind::All => {
+                    values.iter().all(|v| self.smart_match(v, right))
+                }
+                crate::value::JunctionKind::One => {
+                    values.iter().filter(|v| self.smart_match(v, right)).count() == 1
+                }
+                crate::value::JunctionKind::None => {
+                    values.iter().all(|v| !self.smart_match(v, right))
+                }
+            },
             // Smartmatch against a flip-flop matcher object produced by ff/fff
             // in SmartMatchExpr RHS context.
             (_, Value::Hash(map))
@@ -1114,6 +1293,58 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
+            // :nth(...) and ordinal forms (:1st, :2nd, :3rd, :4th, ...)
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    nth: Some(raw_nth),
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                let non_overlapping = self.select_non_overlapping_matches(all);
+                let resolved = match self.resolve_nth_indices(raw_nth, non_overlapping.len()) {
+                    Ok(v) => v,
+                    Err(message) => {
+                        Self::set_pending_nth_error(message);
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                };
+                if resolved.is_empty() {
+                    Self::set_pending_nth_error("Invalid :nth index".to_string());
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                let mut selected = Vec::new();
+                for idx in resolved {
+                    if idx == 0 || idx > non_overlapping.len() {
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                    selected.push(non_overlapping[idx - 1].clone());
+                }
+                if selected.len() == 1 {
+                    self.apply_single_regex_captures(&selected[0]);
+                } else {
+                    self.apply_multi_regex_captures(&selected);
+                }
+                true
+            }
             // :pos/:p anchored match (non-exhaustive/non-global) — match at $/.to (or 0)
             (
                 _,
@@ -1134,6 +1365,43 @@ impl Interpreter {
                 }
                 self.env.insert("/".to_string(), Value::Nil);
                 false
+            }
+            // :x(N) without :g/:ex/:ov — require at least N non-overlapping matches,
+            // return first N in $/.
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    global: false,
+                    exhaustive: false,
+                    overlap: false,
+                    repeat: Some(needed),
+                    perl5,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let all = if *perl5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pattern, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pattern, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
+                let non_overlapping = self.select_non_overlapping_matches(all);
+                let Some(selected) =
+                    Self::select_matches_by_repeat_bounds(non_overlapping, *needed, Some(*needed))
+                else {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                };
+                self.apply_multi_regex_captures(&selected);
+                true
             }
             // :g (global) — find all non-overlapping matches
             (
@@ -1434,6 +1702,21 @@ impl Interpreter {
                     }
                 }
                 true
+            }
+            // Set ~~ Mix: all set elements must exist in the Mix with unit weights.
+            (Value::Set(set), Value::Mix(mix)) => {
+                set.len() == mix.len()
+                    && set.iter().all(|key| {
+                        mix.get(key)
+                            .is_some_and(|weight| weight.is_finite() && *weight == 1.0)
+                    })
+            }
+            // Mix ~~ Set: all mix elements must have unit weights and exist in the set.
+            (Value::Mix(mix), Value::Set(set)) => {
+                mix.len() == set.len()
+                    && mix.iter().all(|(key, weight)| {
+                        weight.is_finite() && *weight == 1.0 && set.contains(key)
+                    })
             }
             // Array ~~ Hash: check if any element exists as a key in the hash
             (Value::Array(items, ..), Value::Hash(map)) => items.iter().any(|item| {
@@ -1765,6 +2048,34 @@ impl Interpreter {
                     false
                 }
             }
+            // Buf/Blob ~~ Buf/Blob: compare byte contents
+            (
+                Value::Instance {
+                    class_name: cn_a, ..
+                },
+                Value::Instance {
+                    class_name: cn_b, ..
+                },
+            ) if {
+                let a = cn_a.resolve();
+                let b = cn_b.resolve();
+                let is_buf = |cn: &str| {
+                    cn == "Buf"
+                        || cn == "Blob"
+                        || cn == "utf8"
+                        || cn == "utf16"
+                        || cn.starts_with("Buf[")
+                        || cn.starts_with("Blob[")
+                        || cn.starts_with("buf")
+                        || cn.starts_with("blob")
+                };
+                is_buf(&a) && is_buf(&b)
+            } =>
+            {
+                let lb = crate::vm::VM::extract_buf_bytes(left);
+                let rb = crate::vm::VM::extract_buf_bytes(right);
+                lb == rb
+            }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
             // When RHS is a Bool, result is that Bool
@@ -2043,6 +2354,66 @@ impl Interpreter {
             Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
             _ => None,
         }
+    }
+
+    pub(super) fn seq_value_to_rat(v: &Value) -> Option<(i64, i64)> {
+        match v {
+            Value::Int(i) => Some((*i, 1)),
+            Value::Rat(n, d) if *d != 0 => Some((*n, *d)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn seq_geometric_ratio_rat(a: &Value, b: &Value, c: &Value) -> Option<(i64, i64)> {
+        fn normalize(mut n: i128, mut d: i128) -> Option<(i64, i64)> {
+            if d == 0 {
+                return None;
+            }
+            if d < 0 {
+                n = -n;
+                d = -d;
+            }
+            fn gcd_i128(mut x: i128, mut y: i128) -> i128 {
+                x = x.abs();
+                y = y.abs();
+                while y != 0 {
+                    let t = y;
+                    y = x % y;
+                    x = t;
+                }
+                x
+            }
+            let g = gcd_i128(n, d);
+            let nn = n / g;
+            let dd = d / g;
+            if nn < i64::MIN as i128
+                || nn > i64::MAX as i128
+                || dd < i64::MIN as i128
+                || dd > i64::MAX as i128
+            {
+                return None;
+            }
+            Some((nn as i64, dd as i64))
+        }
+
+        let (an, ad) = Self::seq_value_to_rat(a)?;
+        let (bn, bd) = Self::seq_value_to_rat(b)?;
+        let (cn, cd) = Self::seq_value_to_rat(c)?;
+        if an == 0 || bn == 0 {
+            return None;
+        }
+
+        // b^2 == a*c in rational space means a,b,c are geometric.
+        let left = (bn as i128) * (bn as i128) * (ad as i128) * (cd as i128);
+        let right = (an as i128) * (cn as i128) * (bd as i128) * (bd as i128);
+        if left != right {
+            return None;
+        }
+
+        // ratio = b / a.
+        let num = (bn as i128) * (ad as i128);
+        let den = (bd as i128) * (an as i128);
+        normalize(num, den)
     }
 
     /// Check if a value matches a type name for sequence type endpoints.

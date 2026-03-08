@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::Expr;
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::expr::expression;
@@ -11,6 +12,7 @@ use super::super::helpers::{
 };
 use super::container::paren_expr;
 use super::current_line_number;
+use super::misc::parse_block_body;
 
 static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -42,6 +44,31 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     // Handle $(stmt; expr) — statement block in scalar context
     // Try to parse as a statement list first (for cases like `$(let $a = 23; $a)`)
     if let Some(inner) = input.strip_prefix('(') {
+        // Handle $(;) — semicolons only inside $() produce an empty itemized list
+        {
+            let mut r = inner;
+            loop {
+                r = r.trim_start();
+                if let Some(rest) = r.strip_prefix(';') {
+                    r = rest;
+                } else {
+                    break;
+                }
+            }
+            r = r.trim_start();
+            if let Some(rest) = r.strip_prefix(')') {
+                return Ok((
+                    rest,
+                    Expr::MethodCall {
+                        target: Box::new(Expr::ArrayLiteral(Vec::new())),
+                        name: Symbol::intern("item"),
+                        args: vec![],
+                        modifier: None,
+                        quoted: false,
+                    },
+                ));
+            }
+        }
         if let Ok(result) = parse_dollar_paren_block(inner) {
             return Ok(result);
         }
@@ -350,17 +377,7 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
-        // @.attr is equivalent to self.attr in list context
-        return Ok((
-            rest,
-            Expr::MethodCall {
-                target: Box::new(Expr::BareWord("self".to_string())),
-                name: crate::symbol::Symbol::intern(&name),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-            },
-        ));
+        return Ok((rest, Expr::Var(format!(".{}", name))));
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
@@ -419,24 +436,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
-        // %.attr is equivalent to self.attr in hash context
-        // Wrap in a MethodCall to .hash to coerce to hash context
-        return Ok((
-            rest,
-            Expr::MethodCall {
-                target: Box::new(Expr::MethodCall {
-                    target: Box::new(Expr::BareWord("self".to_string())),
-                    name: crate::symbol::Symbol::intern(&name),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                }),
-                name: crate::symbol::Symbol::intern("Hash"),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-            },
-        ));
+        return Ok((rest, Expr::Var(format!(".{}", name))));
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
@@ -503,6 +503,11 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, expr));
+    }
+    // Callable block literal dereference: &{ ... }
+    if input.starts_with('{') {
+        let (rest, body) = parse_block_body(input)?;
+        return Ok((rest, Expr::AnonSub { body, is_rw: false }));
     }
     // Handle &[op] — short form for &infix:<op>
     if let Some(after_bracket) = input.strip_prefix('[')
@@ -639,18 +644,16 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     }
 
     let (rest, name) = parse_ident_with_hyphens(rest)?;
-    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>, &term:<OP>
+    // Check for operator reference:
+    // &infix:<OP>, &infix:<<OP>>, &infix:«OP», &[op], ...
     if twigil.is_empty()
-        && matches!(name, "infix" | "prefix" | "postfix" | "term")
-        && rest.starts_with(":<")
+        && matches!(
+            name,
+            "infix" | "prefix" | "postfix" | "term" | "circumfix" | "postcircumfix"
+        )
+        && let Some((r, full_name)) = parse_operator_code_ref_suffix(name, rest)
     {
-        let r = &rest[2..]; // skip ':' and '<'
-        if let Some(end_pos) = r.find('>') {
-            let op_name = &r[..end_pos];
-            let r = &r[end_pos + 1..];
-            let full_name = format!("{}:<{}>", name, op_name);
-            return Ok((r, Expr::CodeVar(full_name)));
-        }
+        return Ok((r, Expr::CodeVar(full_name)));
     }
     let full_name = if twigil.is_empty() {
         normalize_raku_identifier(name)
@@ -658,6 +661,67 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         format!("{}{}", twigil, normalize_raku_identifier(name))
     };
     Ok((rest, Expr::CodeVar(full_name)))
+}
+
+fn parse_operator_code_ref_suffix<'a>(category: &str, rest: &'a str) -> Option<(&'a str, String)> {
+    if let Some(after_open) = rest.strip_prefix(":<<")
+        && let Some(end_pos) = after_open.find(">>")
+    {
+        let symbol = after_open[..end_pos].trim();
+        let after_close = &after_open[end_pos + 2..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":<") {
+        // Nested <...> is valid in categorical operator names.
+        let mut depth = 1u32;
+        let mut chars = after_open.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let symbol = &after_open[..i];
+                        let after_close = &after_open[i + 1..];
+                        return Some((after_close, format!("{category}:<{symbol}>")));
+                    }
+                }
+                '<' => depth += 1,
+                '\\' => {
+                    chars.next();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":\u{ab}")
+        && let Some(end_pos) = after_open.find('\u{bb}')
+    {
+        let symbol = after_open[..end_pos].trim();
+        let after_close = &after_open[end_pos + '\u{bb}'.len_utf8()..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":['")
+        && let Some(end_pos) = after_open.find("']")
+    {
+        let symbol = after_open[..end_pos]
+            .replace("\\'", "'")
+            .replace("\\\\", "\\");
+        let after_close = &after_open[end_pos + 2..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    if let Some(after_open) = rest.strip_prefix(":[\"")
+        && let Some(end_pos) = after_open.find("\"]")
+    {
+        let symbol = &after_open[..end_pos];
+        let after_close = &after_open[end_pos + 2..];
+        return Some((after_close, format!("{category}:<{symbol}>")));
+    }
+
+    None
 }
 
 /// Parse `$(stmt; stmt; ... expr)` — statement block in scalar context.

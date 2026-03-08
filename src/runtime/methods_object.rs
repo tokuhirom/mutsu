@@ -139,7 +139,7 @@ impl Interpreter {
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     self.env.insert(param_name.clone(), type_arg.clone());
                 }
-                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -169,6 +169,125 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
+            if cn_resolved.starts_with("IO::Path::") && !self.classes.contains_key(&cn_resolved) {
+                self.classes.insert(
+                    cn_resolved.clone(),
+                    ClassDef {
+                        parents: vec!["IO::Path".to_string()],
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        native_methods: std::collections::HashSet::new(),
+                        mro: Vec::new(),
+                        attribute_types: HashMap::new(),
+                        wildcard_handles: Vec::new(),
+                    },
+                );
+            }
+            let class_key = if self.classes.contains_key(&cn_resolved) {
+                cn_resolved.as_str()
+            } else {
+                base_class_name
+            };
+            let is_io_path_like = base_class_name == "IO::Path"
+                || self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "IO::Path");
+            if is_io_path_like && !self.has_user_method(class_key, "new") {
+                let mut positional_path: Option<String> = None;
+                let mut basename_part: Option<String> = None;
+                let mut dirname_part: Option<String> = None;
+                let mut volume_part: Option<String> = None;
+                let mut cwd_attr: Option<String> = None;
+                let mut spec_attr: Option<Value> = None;
+                for arg in &args {
+                    match arg {
+                        Value::Pair(key, value) if key == "CWD" => {
+                            cwd_attr = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "SPEC" => {
+                            spec_attr = Some((**value).clone());
+                        }
+                        Value::Pair(key, value) if key == "basename" => {
+                            basename_part = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "dirname" => {
+                            dirname_part = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "volume" => {
+                            volume_part = Some(value.to_string_value());
+                        }
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if positional_path.is_none()
+                            && self
+                                .class_mro(&class_name.resolve())
+                                .iter()
+                                .any(|n| n == "IO::Path") =>
+                        {
+                            positional_path = Some(
+                                attributes
+                                    .get("path")
+                                    .map(|v| v.to_string_value())
+                                    .unwrap_or_default(),
+                            );
+                            if cwd_attr.is_none() {
+                                cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
+                            }
+                        }
+                        Value::Pair(_, _) => {}
+                        _ if positional_path.is_none() => {
+                            positional_path = Some(arg.to_string_value());
+                        }
+                        _ => {}
+                    }
+                }
+                let path = if let Some(positional) = positional_path {
+                    positional
+                } else if let Some(basename) = basename_part {
+                    let mut built = match dirname_part {
+                        Some(dirname) if !dirname.is_empty() => {
+                            if dirname.ends_with('/') || dirname.ends_with('\\') {
+                                format!("{dirname}{basename}")
+                            } else {
+                                format!("{dirname}/{basename}")
+                            }
+                        }
+                        _ => basename,
+                    };
+                    if let Some(volume) = volume_part
+                        && !volume.is_empty()
+                    {
+                        built = format!("{volume}:{built}");
+                    }
+                    built
+                } else {
+                    String::new()
+                };
+                if path.contains('\0') {
+                    return Err(RuntimeError::new(
+                        "X::IO::Null: Found null byte in pathname",
+                    ));
+                }
+                let mut attrs = HashMap::new();
+                attrs.insert("path".to_string(), Value::str(path));
+                if let Some(cwd) = cwd_attr {
+                    attrs.insert("cwd".to_string(), Value::str(cwd));
+                }
+                if cn_resolved.starts_with("IO::Path::") {
+                    let spec_name =
+                        format!("IO::Spec::{}", cn_resolved.trim_start_matches("IO::Path::"));
+                    attrs.insert(
+                        "SPEC".to_string(),
+                        Value::Package(Symbol::intern(&spec_name)),
+                    );
+                } else if let Some(spec) = spec_attr {
+                    attrs.insert("SPEC".to_string(), spec);
+                }
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             match base_class_name {
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
@@ -307,19 +426,58 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    return Ok(Value::array(codepoints));
+                    return Ok(Value::real_array(codepoints));
                 }
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator
                     if let Some(iterator) = args.first() {
+                        if matches!(iterator, Value::Instance { .. })
+                            && self.type_matches_value("PredictiveIterator", iterator)
+                        {
+                            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                            if let Value::Seq(items) = &seq {
+                                let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                                self.env.insert(
+                                    format!("__mutsu_predictive_seq_iter::{seq_id}"),
+                                    iterator.clone(),
+                                );
+                            }
+                            return Ok(seq);
+                        }
+                        if let Value::Instance { attributes, .. } = iterator
+                            && let Some(Value::Array(items, ..)) =
+                                attributes.get("items").or_else(|| attributes.get("stuff"))
+                        {
+                            return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
+                        }
                         let mut items = Vec::new();
+                        let iter_slot = "$mutsu_seq_new_iterator";
+                        let saved_iter = self.env.get(iter_slot).cloned();
+                        self.env.insert(iter_slot.to_string(), iterator.clone());
+                        let mut iterations = 0usize;
                         loop {
+                            iterations += 1;
+                            let current_iter =
+                                self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
                             let val =
-                                self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd") {
+                                self.call_method_with_values(current_iter, "pull-one", vec![])?;
+                            if iterations > 10_000 {
+                                return Err(RuntimeError::new(format!(
+                                    "Seq.new iterator did not terminate (last value: {})",
+                                    val.to_string_value()
+                                )));
+                            }
+                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                                || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                            {
                                 break;
                             }
                             items.push(val);
+                        }
+                        if let Some(prev) = saved_iter {
+                            self.env.insert(iter_slot.to_string(), prev);
+                        } else {
+                            self.env.remove(iter_slot);
                         }
                         return Ok(Value::Seq(std::sync::Arc::new(items)));
                     }
@@ -531,6 +689,9 @@ impl Interpreter {
                     }
                     return Err(RuntimeError::new("DateTime.new requires arguments"));
                 }
+                "IO::Socket::INET" => {
+                    return self.dispatch_socket_inet_new(&args);
+                }
                 "Promise" => {
                     return Ok(Value::Promise(SharedPromise::new()));
                 }
@@ -635,6 +796,7 @@ impl Interpreter {
                         self.make_io_path_instance(&canonical_prefix),
                     );
                     attrs.insert("short-id".to_string(), Value::str_from("file"));
+                    attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(false));
                     let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);
@@ -647,11 +809,13 @@ impl Interpreter {
                             Value::Pair(key, value) if key == "w" => {
                                 w_flag = value.truthy();
                             }
+                            Value::Pair(key, _value) if key == "out" => {}
                             _ => positional.push(arg.clone()),
                         }
                     }
                     let stdout_id = super::native_methods::next_supply_id();
                     let stderr_id = super::native_methods::next_supply_id();
+                    let supply_id = super::native_methods::next_supply_id();
                     let mut stdout_supply_attrs = HashMap::new();
                     stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -662,6 +826,11 @@ impl Interpreter {
                     stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     stderr_supply_attrs
                         .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+                    let mut merged_supply_attrs = HashMap::new();
+                    merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    merged_supply_attrs
+                        .insert("supply_id".to_string(), Value::Int(supply_id as i64));
 
                     let mut attrs = HashMap::new();
                     attrs.insert("cmd".to_string(), Value::array(positional));
@@ -674,49 +843,14 @@ impl Interpreter {
                         "stderr".to_string(),
                         Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
                     );
+                    attrs.insert(
+                        "supply".to_string(),
+                        Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
+                    );
                     if w_flag {
                         attrs.insert("w".to_string(), Value::Bool(true));
                     }
                     return Ok(Value::make_instance(*class_name, attrs));
-                }
-                "IO::Path" => {
-                    let mut path = String::new();
-                    let mut cwd_attr: Option<String> = None;
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "CWD" => {
-                                cwd_attr = Some(value.to_string_value());
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if path.is_empty() && class_name == "IO::Path" => {
-                                path = attributes
-                                    .get("path")
-                                    .map(|v| v.to_string_value())
-                                    .unwrap_or_default();
-                                if cwd_attr.is_none() {
-                                    cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
-                                }
-                            }
-                            _ if path.is_empty() => {
-                                path = arg.to_string_value();
-                            }
-                            _ => {}
-                        }
-                    }
-                    if path.contains('\0') {
-                        return Err(RuntimeError::new(
-                            "X::IO::Null: Found null byte in pathname",
-                        ));
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert("path".to_string(), Value::str(path));
-                    if let Some(cwd) = cwd_attr {
-                        attrs.insert("cwd".to_string(), Value::str(cwd));
-                    }
-                    return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }
                 "utf8" | "utf16" => {
                     let elems: Vec<Value> = args
@@ -737,7 +871,8 @@ impl Interpreter {
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
-                    let byte_vals: Vec<Value> = args
+                    let cn = class_name.resolve();
+                    let raw_vals: Vec<Value> = args
                         .iter()
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
@@ -765,15 +900,28 @@ impl Interpreter {
                                     Vec::new()
                                 }
                             }
-                            _ => vec![],
+                            other => vec![Value::Int(to_int(other))],
                         })
                         .collect();
-                    let is_blob = class_name.resolve().starts_with("Blob")
-                        || class_name.resolve().starts_with("blob");
-                    let type_name = if is_blob { "Blob" } else { "Buf" }.to_string();
+                    // Mask values to unsigned range based on element size
+                    let byte_vals: Vec<Value> = raw_vals
+                        .into_iter()
+                        .map(|v| {
+                            let i = to_int(&v);
+                            if cn.contains("64") {
+                                Value::Int(i as u64 as i64)
+                            } else if cn.contains("32") {
+                                Value::Int(i as u32 as i64)
+                            } else if cn.contains("16") {
+                                Value::Int(i as u16 as i64)
+                            } else {
+                                Value::Int(i as u8 as i64)
+                            }
+                        })
+                        .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern(&type_name), attrs));
+                    return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Rat" => {
                     let a = match args.first() {
@@ -787,21 +935,36 @@ impl Interpreter {
                     return Ok(make_rat(a, b));
                 }
                 "FatRat" => {
+                    use crate::value::make_big_rat;
+                    use num_bigint::BigInt;
                     let a = match args.first() {
-                        Some(v) => to_int(v),
-                        None => 0,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(0),
                     };
                     let b = match args.get(1) {
-                        Some(v) => to_int(v),
-                        None => 1,
+                        Some(Value::BigInt(bi)) => (**bi).clone(),
+                        Some(v) => BigInt::from(to_int(v)),
+                        None => BigInt::from(1),
                     };
-                    return Ok(Value::FatRat(a, b));
+                    return Ok(match make_big_rat(a, b) {
+                        Value::Rat(n, d) => Value::FatRat(n, d),
+                        Value::BigRat(n, d) => Value::BigRat(n, d),
+                        other => other,
+                    });
+                }
+                "Pair" => {
+                    // Pair.new(key, value)
+                    let key = args.first().cloned().unwrap_or(Value::Nil);
+                    let value = args.get(1).cloned().unwrap_or(Value::Nil);
+                    return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
                 }
                 "Set" | "SetHash" => {
                     let mut elems = HashSet::new();
                     for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            elems.insert(item.to_string_value());
+                        let coerced = self.dispatch_to_set(arg.clone())?;
+                        if let Value::Set(set_items) = coerced {
+                            elems.extend(set_items.iter().cloned());
                         }
                     }
                     return Ok(Value::set(elems));
@@ -835,7 +998,18 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Ok(Value::mix(weights));
+                    let result = Value::mix(weights);
+                    if class_name.resolve() == "MixHash" {
+                        self.register_container_type_metadata(
+                            &result,
+                            ContainerTypeInfo {
+                                value_type: "Real".to_string(),
+                                key_type: None,
+                                declared_type: Some("MixHash".to_string()),
+                            },
+                        );
+                    }
+                    return Ok(result);
                 }
                 "Complex" => {
                     let re = match args.first() {
@@ -1050,7 +1224,7 @@ impl Interpreter {
 
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
-                for (idx, (attr_name, _is_public, default_expr, _, _, _)) in
+                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     role.attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
@@ -1126,7 +1300,7 @@ impl Interpreter {
                         _ => None,
                     })
                     .collect();
-                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                     &class_attrs_info
                 {
                     if let Some(reason) = is_required {
@@ -1145,7 +1319,7 @@ impl Interpreter {
                 // Build a sigil map for later coercion
                 let sigil_map: HashMap<String, char> = class_attrs_info
                     .iter()
-                    .map(|(name, _, _, _, _, sigil)| (name.clone(), *sigil))
+                    .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
                     .collect();
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
@@ -1173,6 +1347,7 @@ impl Interpreter {
                         }
                     }
                 }
+                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 let int_ctor_val =
                     if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
                         return Err(RuntimeError::new("Cannot convert type object to Int"));
@@ -1210,13 +1385,20 @@ impl Interpreter {
                         self.env.insert(name.clone(), value.clone());
                     }
                 }
-                for (attr_name, _is_public, default, _is_rw, _is_required, sigil) in
+                for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
                     class_attrs_info.clone()
                 {
                     if attrs.contains_key(&attr_name) {
                         continue;
                     }
-                    let val = if let Some(expr) = default {
+                    let val = if let Some(build_override) = self
+                        .attribute_build_overrides
+                        .get(&(class_key.to_string(), attr_name.clone()))
+                        .cloned()
+                    {
+                        let val = self.call_sub_value(build_override, Vec::new(), false)?;
+                        Self::coerce_attr_value_by_sigil(val, sigil)
+                    } else if let Some(expr) = default {
                         let temp_self = Value::make_instance(*class_name, attrs.clone());
                         let old_self = self.env.get("self").cloned();
                         self.env.insert("self".to_string(), temp_self);
@@ -1229,12 +1411,24 @@ impl Interpreter {
                         let val = result?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else {
-                        Value::Nil
+                        match sigil {
+                            '@' => Value::real_array(Vec::new()),
+                            '%' => Value::hash(HashMap::new()),
+                            _ => Value::Nil,
+                        }
                     };
                     attrs.insert(attr_name, val);
                 }
-                // Restore env after default evaluation
-                self.env = saved_default_env.clone();
+                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                // Restore env after default evaluation, but preserve side effects
+                // on variables that already existed in the caller environment.
+                let mut restored_env = saved_default_env.clone();
+                for (key, value) in self.env.iter() {
+                    if restored_env.contains_key(key) {
+                        restored_env.insert(key.clone(), value.clone());
+                    }
+                }
+                self.env = restored_env;
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
                 let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
@@ -1253,7 +1447,7 @@ impl Interpreter {
                     )?;
                     attrs = updated;
                     // After BUILD runs, check required attributes that BUILD didn't set
-                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil) in
+                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
                     {
                         if let Some(reason) = is_required {
@@ -1268,6 +1462,7 @@ impl Interpreter {
                             }
                         }
                     }
+                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
                 if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let tweak_args = if has_direct_tweak {
@@ -1283,6 +1478,7 @@ impl Interpreter {
                         Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
+                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
@@ -1380,6 +1576,73 @@ impl Interpreter {
         }
     }
 
+    fn check_attribute_where_constraint(&mut self, pred: &Expr, value: &Value) -> bool {
+        let pred_val = match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        match self.call_sub_value(pred_val, vec![value.clone()], false) {
+            Ok(result) => result.truthy(),
+            Err(_) => false,
+        }
+    }
+
+    fn collect_attribute_type_constraints(&mut self, class_name: &str) -> HashMap<String, String> {
+        let mut constraints = HashMap::new();
+        for owner in self.class_mro(class_name) {
+            if let Some(class_def) = self.classes.get(&owner) {
+                for (attr_name, tc) in &class_def.attribute_types {
+                    constraints
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| tc.clone());
+                }
+            }
+        }
+        constraints
+    }
+
+    fn enforce_attribute_where_constraints(
+        &mut self,
+        class_name: &str,
+        class_attrs_info: &[ClassAttributeDef],
+        attrs: &HashMap<String, Value>,
+    ) -> Result<(), RuntimeError> {
+        let type_constraints = self.collect_attribute_type_constraints(class_name);
+        for (attr_name, _is_public, _default, _is_rw, _is_required, _sigil, where_constraint) in
+            class_attrs_info
+        {
+            if let Some(constraint) = type_constraints.get(attr_name)
+                && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
+                && let Some(value) = attrs.get(attr_name)
+                && !matches!(value, Value::Nil)
+                && !self.type_matches_value(constraint, value)
+            {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to $!{}; expected {}, got {}",
+                    attr_name,
+                    constraint,
+                    super::value_type_name(value)
+                )));
+            }
+            let Some(pred) = where_constraint else {
+                continue;
+            };
+            let Some(value) = attrs.get(attr_name) else {
+                continue;
+            };
+            if matches!(value, Value::Nil) {
+                continue;
+            }
+            if !self.check_attribute_where_constraint(pred, value) {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to $!{}; where constraint failed",
+                    attr_name
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Construct a Proxy subclass instance: extracts FETCH/STORE from args,
     /// initializes subclass attributes (with defaults), and returns a Proxy
     /// with shared mutable subclass attrs.
@@ -1406,7 +1669,8 @@ impl Interpreter {
 
         // Initialize subclass attributes with defaults
         let class_attrs_info = self.collect_class_attributes(class_name);
-        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil) in &class_attrs_info
+        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil, _) in
+            &class_attrs_info
         {
             if !extra_attrs.contains_key(attr_name) {
                 let default_val = if let Some(expr) = default_expr {
@@ -1422,6 +1686,7 @@ impl Interpreter {
                 extra_attrs.insert(attr_name.clone(), default_val);
             }
         }
+        self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
         Ok(Value::Proxy {

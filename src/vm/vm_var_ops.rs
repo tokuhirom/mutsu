@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use num_traits::Zero;
 use std::sync::Arc;
 
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
@@ -221,6 +222,18 @@ impl VM {
         match idx {
             Value::Int(i) if *i >= 0 => Some(*i as usize),
             Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+            Value::Rat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                (f >= 0.0).then_some(f as usize)
+            }
+            Value::FatRat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                (f >= 0.0).then_some(f as usize)
+            }
+            Value::BigRat(_, d) if !d.is_zero() => {
+                let f = runtime::to_float_value(idx)?;
+                (f >= 0.0).then_some(f as usize)
+            }
             _ => idx.to_string_value().parse::<usize>().ok(),
         }
     }
@@ -290,9 +303,7 @@ impl VM {
         val: Value,
     ) -> Result<(), RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
-        let depth = shape
-            .as_ref()
-            .map_or_else(|| Self::array_depth(target), |s| s.len());
+        let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "assign to",
@@ -326,9 +337,7 @@ impl VM {
 
     fn delete_array_multidim(target: &mut Value, indices: &[Value]) -> Result<Value, RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
-        let depth = shape
-            .as_ref()
-            .map_or_else(|| Self::array_depth(target), |s| s.len());
+        let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "delete from",
@@ -471,10 +480,7 @@ impl VM {
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name)
-                || self.interpreter.is_role(name)
-                || Self::is_builtin_type(name)
-            {
+            } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
                 Value::Package(Symbol::intern(name))
             } else if name.contains("::")
                 && !name.starts_with('$')
@@ -504,12 +510,22 @@ impl VM {
                 self.env_dirty = true;
                 result
             }
-        } else if self.interpreter.has_class(name)
-            || self.interpreter.is_role(name)
+        } else if self.interpreter.has_type(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(Symbol::intern(name))
+        } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
+            && matches!(
+                callable,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            let result = self
+                .interpreter
+                .call_sub_value(callable, Vec::new(), false)?;
+            self.env_dirty = true;
+            result
         } else if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(name)
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(name)
@@ -558,6 +574,8 @@ impl VM {
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
+        } else if name == "i" {
+            Value::Complex(0.0, 1.0)
         } else if name == "NaN" {
             Value::Num(f64::NAN)
         } else if name == "Inf" {
@@ -589,13 +607,54 @@ impl VM {
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
+        if let Value::Junction { kind, values } = &target {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                self.stack.push(value.clone());
+                self.stack.push(index.clone());
+                self.exec_index_op()?;
+                results.push(self.stack.pop().unwrap_or(Value::Nil));
+            }
+            self.stack.push(Value::junction(kind.clone(), results));
+            return Ok(());
+        }
+        if let Value::Junction { kind, values } = &index {
+            let mut results = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                self.stack.push(target.clone());
+                self.stack.push(value.clone());
+                self.exec_index_op()?;
+                results.push(self.stack.pop().unwrap_or(Value::Nil));
+            }
+            self.stack.push(Value::junction(kind.clone(), results));
+            return Ok(());
+        }
         // If target is a Failure, propagate it (// will catch it as undefined)
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
             self.stack.push(target);
             return Ok(());
         }
         if let Value::LazyList(ref ll) = target {
-            target = Value::array(self.interpreter.force_lazy_list_bridge(ll)?);
+            let forced = if matches!(
+                ll.env.get("__mutsu_lazylist_from_gather"),
+                Some(Value::Bool(true))
+            ) {
+                match &index {
+                    Value::Int(i) if *i >= 0 => self
+                        .interpreter
+                        .force_lazy_list_prefix_bridge(ll, (*i as usize).saturating_add(1))?,
+                    Value::Range(_, end) if *end >= 0 => self
+                        .interpreter
+                        .force_lazy_list_prefix_bridge(ll, (*end as usize).saturating_add(1))?,
+                    Value::RangeExcl(_, end) if *end > 0 => self
+                        .interpreter
+                        .force_lazy_list_prefix_bridge(ll, *end as usize)?,
+                    _ => self.interpreter.force_lazy_list_bridge(ll)?,
+                }
+            } else {
+                self.interpreter.force_lazy_list_bridge(ll)?
+            };
+            target = Value::array(forced);
         }
         let result = match (target, index) {
             (Value::Array(items, is_arr), Value::Int(i)) => {
@@ -687,6 +746,33 @@ impl VM {
                     Value::array(slice)
                 } else {
                     Value::Seq(Arc::new(slice))
+                }
+            }
+            (Value::Array(items, is_arr), Value::Num(n)) => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                if n < 0.0 {
+                    default
+                } else {
+                    Self::resolve_array_entry(&items, is_arr, n as usize, default)
+                }
+            }
+            (Value::Array(items, is_arr), Value::Rat(n, d)) if d != 0 => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let i = (n as f64 / d as f64) as usize;
+                Self::resolve_array_entry(&items, is_arr, i, default)
+            }
+            (Value::Array(items, is_arr), Value::FatRat(n, d)) if d != 0 => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let i = (n as f64 / d as f64) as usize;
+                Self::resolve_array_entry(&items, is_arr, i, default)
+            }
+            (Value::Array(items, is_arr), Value::BigRat(n, d)) if !d.is_zero() => {
+                let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                let idx = runtime::to_float_value(&Value::BigRat(n, d)).unwrap_or(0.0);
+                if idx < 0.0 {
+                    default
+                } else {
+                    Self::resolve_array_entry(&items, is_arr, idx as usize, default)
                 }
             }
             (Value::Seq(items), Value::Int(i)) => {
@@ -842,57 +928,125 @@ impl VM {
                 failure_attrs.insert("exception".to_string(), ex);
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
+            (Value::Set(s), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| Value::Bool(s.contains(&k.to_string_value())))
+                    .collect(),
+            ),
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
+            (Value::Bag(b), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| Value::Int(*b.get(&k.to_string_value()).unwrap_or(&0)))
+                    .collect(),
+            ),
             (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
-            (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(key.as_str()).unwrap_or(&0.0)),
-            (Value::Mix(m), idx) => Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)),
+            (Value::Mix(m), Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .map(|k| {
+                        Self::mix_weight_as_value(*m.get(&k.to_string_value()).unwrap_or(&0.0))
+                    })
+                    .collect(),
+            ),
+            (Value::Mix(m), Value::Str(key)) => {
+                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
+            }
+            (Value::Mix(m), idx) => {
+                Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+            }
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
-                let (start, _end, _excl_start, _excl_end) = range_params(range);
-                if i < 0 {
-                    Value::Nil
+                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                    if i < 0 {
+                        Value::Nil
+                    } else {
+                        Value::Int(start + i)
+                    }
                 } else {
-                    Value::Int(start + i)
+                    let items = crate::runtime::utils::value_to_list(range);
+                    if i < 0 {
+                        Value::Nil
+                    } else {
+                        items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    }
                 }
             }
             (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
-                let (start, end, _excl_start, excl_end) = range_params(range);
-                let actual_end = if excl_end { end - 1 } else { end };
-                let mut result = Vec::new();
-                for i in a..b {
-                    let val = start + i;
-                    if val > actual_end {
-                        break;
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
+                    let mut result = Vec::new();
+                    for i in a..b {
+                        let val = start + i;
+                        if val > actual_end {
+                            break;
+                        }
+                        result.push(Value::Int(val));
                     }
-                    result.push(Value::Int(val));
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let start = a.max(0) as usize;
+                    let end_excl = b.max(0) as usize;
+                    if start >= items.len() {
+                        Value::array(Vec::new())
+                    } else {
+                        let end_excl = end_excl.min(items.len());
+                        if start >= end_excl {
+                            Value::array(Vec::new())
+                        } else {
+                            Value::array(items[start..end_excl].to_vec())
+                        }
+                    }
                 }
-                Value::array(result)
             }
             (ref range, Value::Range(a, b)) if range.is_range() => {
-                let (start, end, _excl_start, excl_end) = range_params(range);
-                let actual_end = if excl_end { end - 1 } else { end };
-                let mut result = Vec::new();
-                for i in a..=b {
-                    let val = start + i;
-                    if val > actual_end {
-                        break;
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
+                    let mut result = Vec::new();
+                    for i in a..=b {
+                        let val = start + i;
+                        if val > actual_end {
+                            break;
+                        }
+                        result.push(Value::Int(val));
                     }
-                    result.push(Value::Int(val));
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let start = a.max(0) as usize;
+                    let end = b.max(-1) as usize;
+                    if start >= items.len() {
+                        Value::array(Vec::new())
+                    } else {
+                        let end = end.min(items.len().saturating_sub(1));
+                        Value::array(items[start..=end].to_vec())
+                    }
                 }
-                Value::array(result)
             }
             (ref range, Value::Array(indices, ..)) if range.is_range() => {
-                let (start, _end, _excl_start, _excl_end) = range_params(range);
-                let result: Vec<Value> = indices
-                    .iter()
-                    .map(|idx| match idx {
-                        Value::Int(i) => Value::Int(start + i),
-                        _ => Value::Nil,
-                    })
-                    .collect();
-                Value::array(result)
+                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|idx| match idx {
+                            Value::Int(i) => Value::Int(start + i),
+                            _ => Value::Nil,
+                        })
+                        .collect();
+                    Value::array(result)
+                } else {
+                    let items = crate::runtime::utils::value_to_list(range);
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .map(|idx| match idx {
+                            Value::Int(i) if *i >= 0 => {
+                                items.get(*i as usize).cloned().unwrap_or(Value::Nil)
+                            }
+                            _ => Value::Nil,
+                        })
+                        .collect();
+                    Value::array(result)
+                }
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (Value::Array(ref items, ..), Value::Sub(ref data)) => {
@@ -913,6 +1067,48 @@ impl VM {
                             Value::Nil
                         } else {
                             items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        }
+                    }
+                    _ => Value::Nil,
+                }
+            }
+            // WhateverCode index on Instance (e.g. Buf): $buf[*-1]
+            (
+                Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                },
+                Value::Sub(ref data),
+            ) => {
+                // Get element count from the instance
+                let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        bytes.len() as i64
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                match idx {
+                    Value::Int(i) => {
+                        if i < 0 {
+                            Value::Nil
+                        } else if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                            bytes.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        } else {
+                            Value::Nil
                         }
                     }
                     _ => Value::Nil,
@@ -1039,6 +1235,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let target_is_mixhash = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v))
+            .and_then(|info| info.declared_type)
+            .is_some_and(|t| t == "MixHash");
         // Sync OS environment and $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
             // Remove from OS environment
@@ -1074,11 +1277,32 @@ impl VM {
                     .insert("*HOME".to_string(), Value::Nil);
             }
         }
+        // Save type metadata before delete (Arc::make_mut may change pointer)
+        let saved_meta = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+            if matches!(container, Value::Mix(_)) && !target_is_mixhash {
+                return Err(RuntimeError::new("X::Immutable"));
+            }
             Self::delete_from_container(container, idx)?
         } else {
             Self::delete_from_missing_container(idx)
         };
+        // Re-register type metadata if it was lost due to Arc::make_mut
+        if let Some(info) = saved_meta
+            && let Some(container) = self.interpreter.env().get(&var_name)
+            && self
+                .interpreter
+                .container_type_metadata(container)
+                .is_none()
+        {
+            let container = container.clone();
+            self.interpreter
+                .register_container_type_metadata(&container, info);
+        }
         self.stack.push(result);
         Ok(())
     }
@@ -1089,6 +1313,330 @@ impl VM {
         let result = Self::delete_from_container(&mut target, idx)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Multi-dimensional indexing: @a[$x;$y;$z]
+    /// Stack: [target, dim0, dim1, ..., dimN-1] → [result]
+    pub(super) fn exec_multi_dim_index_op(&mut self, ndims: u32) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let target = self.stack.pop().unwrap_or(Value::Nil);
+
+        let result = self.multi_dim_index_read(&target, &dims)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Read a value from a nested array using multi-dimensional indices.
+    /// Each dimension can be:
+    /// - A scalar (Int, Str, Num, Rat, WhateverCode) — index into that level
+    /// - Whatever (*) — iterate all elements at that level
+    /// - An array/list — iterate specified indices at that level
+    fn multi_dim_index_read(
+        &mut self,
+        target: &Value,
+        dims: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if dims.is_empty() {
+            return Ok(target.clone());
+        }
+        let dim = &dims[0];
+        let rest = &dims[1..];
+
+        match dim {
+            Value::Whatever => {
+                // Iterate all elements at this level
+                let items = match target {
+                    Value::Array(items, ..) => items,
+                    _ => return Ok(Value::Nil),
+                };
+                let has_more_multi = rest
+                    .iter()
+                    .any(|v| matches!(v, Value::Whatever | Value::Array(..)));
+                let mut out = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    let result = self.multi_dim_index_read(item, rest)?;
+                    if has_more_multi {
+                        // Flatten intermediate array results from deeper * or list dims
+                        if let Value::Array(inner, ..) = &result {
+                            out.extend(inner.iter().cloned());
+                        } else {
+                            out.push(result);
+                        }
+                    } else {
+                        out.push(result);
+                    }
+                }
+                Ok(Value::array(out))
+            }
+            Value::Array(indices, ..) => {
+                // Multiple indices at this dimension level
+                let items = match target {
+                    Value::Array(items, ..) => items,
+                    _ => return Ok(Value::Nil),
+                };
+                let has_more_multi = rest
+                    .iter()
+                    .any(|v| matches!(v, Value::Whatever | Value::Array(..)));
+                let mut out = Vec::with_capacity(indices.len());
+                for idx in indices.iter() {
+                    let result = if let Some(i) = Self::index_to_usize(idx) {
+                        if i < items.len() {
+                            self.multi_dim_index_read(&items[i], rest)?
+                        } else {
+                            self.multi_dim_index_read(&Value::Nil, rest)?
+                        }
+                    } else {
+                        Value::Nil
+                    };
+                    if has_more_multi {
+                        if let Value::Array(inner, ..) = &result {
+                            out.extend(inner.iter().cloned());
+                        } else {
+                            out.push(result);
+                        }
+                    } else {
+                        out.push(result);
+                    }
+                }
+                Ok(Value::array(out))
+            }
+            _ => {
+                // Scalar index — resolve WhateverCode first
+                let resolved = self.resolve_whatever_code_index(dim, target);
+                let idx = resolved.as_ref().unwrap_or(dim);
+                if let Some(i) = Self::index_to_usize(idx) {
+                    let items = match target {
+                        Value::Array(items, ..) => items,
+                        _ => return Ok(Value::Nil),
+                    };
+                    if i < items.len() {
+                        self.multi_dim_index_read(&items[i], rest)
+                    } else {
+                        // Out of bounds — return Nil for scalar index
+                        Ok(Value::Nil)
+                    }
+                } else {
+                    // Non-numeric index (e.g., string "0")
+                    let i = idx.to_string_value().parse::<usize>().ok();
+                    if let Some(i) = i {
+                        let items = match target {
+                            Value::Array(items, ..) => items,
+                            _ => return Ok(Value::Nil),
+                        };
+                        if i < items.len() {
+                            self.multi_dim_index_read(&items[i], rest)
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    } else {
+                        Ok(Value::Nil)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Resolve WhateverCode (e.g., *-1) or numeric coercion for a dimension index.
+    fn resolve_whatever_code_index(&mut self, dim: &Value, target: &Value) -> Option<Value> {
+        if let Value::Sub(data) = dim {
+            let len = match target {
+                Value::Array(items, ..) => items.len() as i64,
+                _ => 0,
+            };
+            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+            let mut sub_env = data.env.clone();
+            sub_env.insert(param.to_string(), Value::Int(len));
+            let saved_env = std::mem::take(self.interpreter.env_mut());
+            *self.interpreter.env_mut() = sub_env;
+            let result = self
+                .interpreter
+                .eval_block_value(&data.body)
+                .unwrap_or(Value::Nil);
+            *self.interpreter.env_mut() = saved_env;
+            return Some(result);
+        }
+        if let Value::Rat(n, d) = dim {
+            return Some(Value::Int(*n / *d));
+        }
+        if let Value::Num(f) = dim {
+            return Some(Value::Int(*f as i64));
+        }
+        if let Value::Str(s) = dim
+            && let Ok(i) = s.parse::<i64>()
+        {
+            return Some(Value::Int(i));
+        }
+        None
+    }
+
+    /// Multi-dimensional index assignment with named target.
+    /// Stack: [value, dim0, dim1, ..., dimN-1]
+    pub(super) fn exec_multi_dim_index_assign_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        ndims: u32,
+    ) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+
+        let var_name = Self::const_str(code, name_idx).to_string();
+
+        // Resolve WhateverCode indices
+        let target_val = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let dims = self.resolve_multidim_indices_for_assign(&target_val, &dims)?;
+
+        // Get mutable reference to the target variable
+        if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+            Self::multi_dim_assign(container, &dims, value.clone())?;
+        }
+
+        self.stack.push(value);
+        Ok(())
+    }
+
+    /// Multi-dimensional index assignment with generic (expression) target.
+    /// Stack: [target, dim0, ..., dimN-1, value]
+    pub(super) fn exec_multi_dim_index_assign_generic_op(
+        &mut self,
+        ndims: u32,
+    ) -> Result<(), RuntimeError> {
+        let ndims = ndims as usize;
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let mut dims = Vec::with_capacity(ndims);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        dims.reverse();
+        let mut target = self.stack.pop().unwrap_or(Value::Nil);
+        Self::multi_dim_assign(&mut target, &dims, value.clone())?;
+        self.stack.push(value);
+        Ok(())
+    }
+
+    /// Recursively assign a value into a nested array at the given dimension indices.
+    fn multi_dim_assign(
+        target: &mut Value,
+        dims: &[Value],
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        if dims.is_empty() {
+            *target = value;
+            return Ok(());
+        }
+
+        let dim = &dims[0];
+        let rest = &dims[1..];
+
+        // For multi-index dimensions (arrays), need to distribute values
+        if let Value::Array(indices, ..) = dim {
+            if let Value::Array(values, ..) = &value {
+                // Distribute values to indices
+                for (i, idx) in indices.iter().enumerate() {
+                    let val = values.get(i).cloned().unwrap_or(Value::Nil);
+                    let ii = Self::index_to_usize(idx).unwrap_or(0);
+                    Self::ensure_array_size(target, ii + 1);
+                    if let Value::Array(items, ..) = target {
+                        let items = std::sync::Arc::make_mut(items);
+                        Self::multi_dim_assign(&mut items[ii], rest, val)?;
+                    }
+                }
+            } else {
+                // Single value assigned to multiple indices
+                for idx in indices.iter() {
+                    let ii = Self::index_to_usize(idx).unwrap_or(0);
+                    Self::ensure_array_size(target, ii + 1);
+                    if let Value::Array(items, ..) = target {
+                        let items = std::sync::Arc::make_mut(items);
+                        Self::multi_dim_assign(&mut items[ii], rest, value.clone())?;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Scalar index
+        let Some(i) = Self::index_to_usize(dim) else {
+            return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
+        };
+
+        Self::ensure_array_size(target, i + 1);
+
+        if let Value::Array(items, ..) = target {
+            let items = std::sync::Arc::make_mut(items);
+            Self::multi_dim_assign(&mut items[i], rest, value)?;
+        }
+
+        Ok(())
+    }
+
+    /// Resolve WhateverCode indices for multidim assignment.
+    fn resolve_multidim_indices_for_assign(
+        &mut self,
+        target: &Value,
+        indices: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut resolved = Vec::with_capacity(indices.len());
+        let mut current = target.clone();
+        for idx in indices {
+            if let Value::Sub(..) = idx {
+                let len = match &current {
+                    Value::Array(items, ..) => Value::Int(items.len() as i64),
+                    _ => Value::Int(0),
+                };
+                let result = self
+                    .interpreter
+                    .call_sub_value(idx.clone(), vec![len], false)?;
+                current =
+                    Self::index_array_multidim(&current, std::slice::from_ref(&result), false)
+                        .unwrap_or(Value::Nil);
+                resolved.push(result);
+            } else {
+                current = Self::index_array_multidim(&current, std::slice::from_ref(idx), false)
+                    .unwrap_or(Value::Nil);
+                resolved.push(idx.clone());
+            }
+        }
+        Ok(resolved)
+    }
+
+    /// Ensure the target is an array with at least `min_size` elements.
+    fn ensure_array_size(target: &mut Value, min_size: usize) {
+        match target {
+            Value::Array(items, ..) => {
+                if items.len() < min_size {
+                    let items = std::sync::Arc::make_mut(items);
+                    items.resize(
+                        min_size,
+                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                    );
+                }
+            }
+            Value::Nil | Value::Package(..) => {
+                let mut items = Vec::with_capacity(min_size);
+                items.resize(
+                    min_size,
+                    Value::Package(crate::symbol::Symbol::intern("Any")),
+                );
+                *target = Value::real_array(items);
+            }
+            _ => {}
+        }
     }
 
     /// Rich :exists adverb handler supporting negation, parameterized arg,
@@ -1146,7 +1694,18 @@ impl VM {
             let idx = self.stack.pop().unwrap_or(Value::Nil);
             let target = self.stack.pop().unwrap_or(Value::Nil);
             Self::throw_if_failure(&target)?;
-            if let Value::Hash(map) = &target {
+            if let Some(map) = match &target {
+                Value::Hash(map) => Some(map.clone()),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => match attributes.get("symbols") {
+                    Some(Value::Hash(map)) => Some(map.clone()),
+                    _ => None,
+                },
+                _ => None,
+            } {
                 if adverb_bits == 5 {
                     return Err(crate::value::RuntimeError::new(
                         "Unsupported combination of :exists and :v adverbs".to_string(),
@@ -1384,11 +1943,81 @@ impl VM {
                     }
                     _ => {
                         let exists = map.contains_key(&idx.to_string_value());
-                        let result = Value::Bool(exists ^ effective_negated);
+                        let result_bool = exists ^ effective_negated;
+                        let key = idx.clone();
+                        let result = match adverb_bits {
+                            0 | 5 => Value::Bool(result_bool),
+                            // :kv — filter by actual existence, not negated result
+                            1 => {
+                                if exists {
+                                    Value::array(vec![key, Value::Bool(result_bool)])
+                                } else {
+                                    Value::array(Vec::new())
+                                }
+                            }
+                            2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                            // :p — filter by actual existence, not negated result
+                            3 => {
+                                if exists {
+                                    Value::ValuePair(
+                                        Box::new(key),
+                                        Box::new(Value::Bool(result_bool)),
+                                    )
+                                } else {
+                                    Value::array(Vec::new())
+                                }
+                            }
+                            4 => {
+                                Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool)))
+                            }
+                            _ => Value::Bool(result_bool),
+                        };
                         self.stack.push(result);
                         return Ok(());
                     }
                 }
+            }
+            if let Value::Set(set) = &target {
+                let exists_for_key = |key: &Value| set.contains(&key.to_string_value());
+                let result = match &idx {
+                    Value::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .collect(),
+                    ),
+                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            if let Value::Bag(bag) = &target {
+                let exists_for_key = |key: &Value| bag.contains_key(&key.to_string_value());
+                let result = match &idx {
+                    Value::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .collect(),
+                    ),
+                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            if let Value::Mix(mix) = &target {
+                let exists_for_key = |key: &Value| mix.contains_key(&key.to_string_value());
+                let result = match &idx {
+                    Value::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|k| Value::Bool(exists_for_key(k) ^ effective_negated))
+                            .collect(),
+                    ),
+                    _ => Value::Bool(exists_for_key(&idx) ^ effective_negated),
+                };
+                self.stack.push(result);
+                return Ok(());
             }
             let idxs = match &idx {
                 Value::Int(i) => vec![*i],
@@ -1431,6 +2060,12 @@ impl VM {
                     let exists = match (&target, &idx) {
                         (Value::Hash(map), Value::Str(key)) => map.contains_key(key.as_str()),
                         (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        (Value::Set(set), Value::Str(key)) => set.contains(key.as_str()),
+                        (Value::Set(set), other) => set.contains(&other.to_string_value()),
+                        (Value::Bag(bag), Value::Str(key)) => bag.contains_key(key.as_str()),
+                        (Value::Bag(bag), other) => bag.contains_key(&other.to_string_value()),
+                        (Value::Mix(mix), Value::Str(key)) => mix.contains_key(key.as_str()),
+                        (Value::Mix(mix), other) => mix.contains_key(&other.to_string_value()),
                         (
                             Value::Instance {
                                 class_name,
@@ -1578,6 +2213,18 @@ impl VM {
     fn delete_from_container(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
         Ok(match container {
             Value::Hash(hash) => match idx {
+                Value::Whatever => {
+                    let h = Arc::make_mut(hash);
+                    let removed: Vec<Value> = h.values().cloned().collect();
+                    h.clear();
+                    Value::array(removed)
+                }
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    let h = Arc::make_mut(hash);
+                    let removed: Vec<Value> = h.values().cloned().collect();
+                    h.clear();
+                    Value::array(removed)
+                }
                 Value::Array(keys, ..) => {
                     let h = Arc::make_mut(hash);
                     let removed = keys
@@ -1649,26 +2296,40 @@ impl VM {
             },
         })
     }
+
+    fn mix_weight_as_value(weight: f64) -> Value {
+        if weight.is_finite() && weight.fract() == 0.0 {
+            Value::Int(weight as i64)
+        } else {
+            Value::Num(weight)
+        }
+    }
 }
 
 /// Extract (start, end, excl_start, excl_end) from a Range value.
-fn range_params(v: &Value) -> (i64, i64, bool, bool) {
+fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
     match v {
-        Value::Range(a, b) => (*a, *b, false, false),
-        Value::RangeExcl(a, b) => (*a, *b, false, true),
-        Value::RangeExclStart(a, b) => (*a + 1, *b, true, false),
-        Value::RangeExclBoth(a, b) => (*a + 1, *b, true, true),
+        Value::Range(a, b) => Some((*a, *b, false, false)),
+        Value::RangeExcl(a, b) => Some((*a, *b, false, true)),
+        Value::RangeExclStart(a, b) => Some((*a + 1, *b, true, false)),
+        Value::RangeExclBoth(a, b) => Some((*a + 1, *b, true, true)),
         Value::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
+            if !start.is_numeric() || !end.is_numeric() {
+                return None;
+            }
             let s = start.to_f64() as i64;
             let e = end.to_f64() as i64;
+            if start.to_f64().is_nan() || end.to_f64().is_nan() {
+                return None;
+            }
             let s = if *excl_start { s + 1 } else { s };
-            (s, e, *excl_start, *excl_end)
+            Some((s, e, *excl_start, *excl_end))
         }
-        _ => (0, 0, false, false),
+        _ => None,
     }
 }

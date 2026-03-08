@@ -81,35 +81,50 @@ impl Interpreter {
                 let orig = shared.clone();
                 let new_promise = SharedPromise::new_with_class(shared.class_name());
                 let ret = Value::Promise(new_promise.clone());
-                let mut thread_interp = self.clone_for_thread();
-                std::thread::spawn(move || {
+                if orig.is_resolved() {
                     let (result, output, stderr) = orig.wait();
-                    match thread_interp.call_sub_value(block, vec![result], false) {
-                        Ok(v) => {
-                            let out = std::mem::take(&mut thread_interp.output);
-                            let err = std::mem::take(&mut thread_interp.stderr_output);
-                            new_promise.keep(
-                                v,
-                                format!("{}{}", output, out),
-                                format!("{}{}", stderr, err),
-                            );
-                        }
+                    match self.call_sub_value(block, vec![result], true) {
+                        Ok(v) => new_promise.keep(v, output, stderr),
                         Err(e) => {
-                            let out = std::mem::take(&mut thread_interp.output);
-                            let err = std::mem::take(&mut thread_interp.stderr_output);
                             let error_val = if let Some(ex) = e.exception {
                                 *ex
                             } else {
                                 Value::str(e.message)
                             };
-                            new_promise.break_with(
-                                error_val,
-                                format!("{}{}", output, out),
-                                format!("{}{}", stderr, err),
-                            );
+                            new_promise.break_with(error_val, output, stderr);
                         }
                     }
-                });
+                } else {
+                    let mut thread_interp = self.clone_for_thread();
+                    std::thread::spawn(move || {
+                        let (result, output, stderr) = orig.wait();
+                        match thread_interp.call_sub_value(block, vec![result], true) {
+                            Ok(v) => {
+                                let out = std::mem::take(&mut thread_interp.output);
+                                let err = std::mem::take(&mut thread_interp.stderr_output);
+                                new_promise.keep(
+                                    v,
+                                    format!("{}{}", output, out),
+                                    format!("{}{}", stderr, err),
+                                );
+                            }
+                            Err(e) => {
+                                let out = std::mem::take(&mut thread_interp.output);
+                                let err = std::mem::take(&mut thread_interp.stderr_output);
+                                let error_val = if let Some(ex) = e.exception {
+                                    *ex
+                                } else {
+                                    Value::str(e.message)
+                                };
+                                new_promise.break_with(
+                                    error_val,
+                                    format!("{}{}", output, out),
+                                    format!("{}{}", stderr, err),
+                                );
+                            }
+                        }
+                    });
+                }
                 Ok(ret)
             }
             "keep" => {

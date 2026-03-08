@@ -37,6 +37,7 @@ pub(crate) enum OpCode {
     Negate,
     IntBitNeg,  // +^ prefix: integer bitwise negation
     BoolBitNeg, // ?^ prefix: boolean bitwise negation
+    StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
     Decont,     // decontainerize: Array(_, true) → Array(_, false) for slurpy flattening
 
@@ -174,6 +175,8 @@ pub(crate) enum OpCode {
     // -- Stack manipulation --
     Dup,
     Pop,
+    /// Pop with sink context — throws unhandled Failures when fatal_mode is active
+    SinkPop,
 
     // -- Range creation --
     MakeRange,
@@ -233,6 +236,12 @@ pub(crate) enum OpCode {
     CallMethodDynamic {
         arity: u32,
     },
+    /// Dynamic method call on a variable target (allows mutation/writeback).
+    /// Stack layout: [target, name_str, arg0, arg1, ...]
+    CallMethodDynamicMut {
+        arity: u32,
+        target_name_idx: u32,
+    },
     /// Statement-level call: pop `arity` args, call name (no push).
     ExecCall {
         name_idx: u32,
@@ -284,6 +293,19 @@ pub(crate) enum OpCode {
     Index,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
+    /// Multi-dimensional indexing: @a[$x;$y;$z]
+    /// Stack: [target, dim0, dim1, ..., dimN] → [result]
+    #[allow(dead_code)]
+    MultiDimIndex(u32),
+    /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
+    /// Stack: [value, dim0, dim1, ..., dimN] (target by name)
+    MultiDimIndexAssign {
+        name_idx: u32,
+        ndims: u32,
+    },
+    /// Multi-dimensional index assignment (generic target)
+    /// Stack: [target, dim0, ..., dimN, value]
+    MultiDimIndexAssignGeneric(u32),
     /// Hash hyperslice: recursively iterate hash with given adverb mode.
     /// Stack: [target] → [result list]
     HyperSlice(u8),
@@ -363,6 +385,8 @@ pub(crate) enum OpCode {
         label: Option<String>,
         arity: u32,
         collect: bool,
+        /// Restore outer `$_` after loop execution (used by postfix/do-for semantics).
+        restore_topic: bool,
         /// When true, run the loop body in a spawned thread (race for / hyper for).
         threaded: bool,
     },
@@ -420,6 +444,8 @@ pub(crate) enum OpCode {
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        nth_idx: Option<u32>,
+        x_count: Option<u32>,
     },
 
     // -- Non-destructive substitution (S///) --
@@ -427,6 +453,8 @@ pub(crate) enum OpCode {
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        nth_idx: Option<u32>,
+        x_count: Option<u32>,
     },
 
     // -- Transliteration (tr///) --
@@ -436,6 +464,7 @@ pub(crate) enum OpCode {
         delete: bool,
         complement: bool,
         squash: bool,
+        non_destructive: bool,
     },
 
     // -- Take (gather/take) --

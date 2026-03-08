@@ -8,7 +8,7 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::add_parse_warning;
-use super::{block, ident, keyword, parse_raku_ident};
+use super::{block, block_inner, ident, keyword, parse_raku_ident};
 
 /// Known valid parameter traits for `is <trait>` in signatures.
 const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw"];
@@ -674,10 +674,25 @@ pub(super) fn sub_decl_body(
     if rest.is_empty() {
         return Err(PError::expected("sub body '{ ... }'"));
     }
-    let (rest, body) = match block(rest) {
-        Ok(ok) => ok,
-        Err(_) if name.starts_with("trait_auxiliary:<") => consume_raw_sub_body(rest)?,
-        Err(err) => return Err(err),
+    let (rest, body) = if param_defs.iter().any(|p| p.sigilless) {
+        // When there are sigilless params, we need to register them as term
+        // symbols in the block scope so they shadow keywords (e.g. \return).
+        let (r, _) = parse_char(rest, '{')?;
+        super::simple::push_scope();
+        for pd in &param_defs {
+            if pd.sigilless {
+                super::simple::register_user_term_symbol(&pd.name);
+            }
+        }
+        let result = block_inner(r);
+        super::simple::pop_scope();
+        result?
+    } else {
+        match block(rest) {
+            Ok(ok) => ok,
+            Err(_) if name.starts_with("trait_auxiliary:<") => consume_raw_sub_body(rest)?,
+            Err(err) => return Err(err),
+        }
     };
     // When no explicit signature is given, collect placeholder variables
     // ($^a, $^b, &^c, etc.) from the body as implicit parameters.

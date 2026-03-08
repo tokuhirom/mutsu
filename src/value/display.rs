@@ -309,26 +309,24 @@ impl Value {
                 excl_start,
                 excl_end,
             } => {
-                // String ranges expand to space-separated elements
-                if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref())
-                    && a.len() == 1
-                    && b.len() == 1
-                {
-                    let s = a.chars().next().unwrap() as u32;
-                    let e = b.chars().next().unwrap() as u32;
-                    let s = if *excl_start { s + 1 } else { s };
-                    let items: Vec<String> = if *excl_end {
-                        (s..e)
-                            .filter_map(char::from_u32)
-                            .map(|c| c.to_string())
-                            .collect()
-                    } else {
-                        (s..=e)
-                            .filter_map(char::from_u32)
-                            .map(|c| c.to_string())
-                            .collect()
-                    };
-                    return items.join(" ");
+                let is_infinite = matches!(
+                    end.as_ref(),
+                    Value::Whatever | Value::HyperWhatever | Value::Sub(_)
+                ) || matches!(end.as_ref(), Value::Num(n) if n.is_infinite() && n.is_sign_positive());
+                if !is_infinite {
+                    let items = crate::runtime::utils::value_to_list(self);
+                    // `value_to_list` may return `[self.clone()]` for non-expandable ranges
+                    // (e.g. NaN endpoints). Avoid recursive `.Str` by only expanding when
+                    // the single returned item is not itself a GenericRange.
+                    let single_generic_range = items.len() == 1
+                        && matches!(items.first(), Some(Value::GenericRange { .. }));
+                    if !single_generic_range {
+                        return items
+                            .iter()
+                            .map(|v| v.to_str_context())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                    }
                 }
                 let prefix = if *excl_start { "^" } else { "" };
                 let sep = if *excl_end { "..^" } else { ".." };
@@ -520,7 +518,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf" || class_name == "Blob" => {
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                 if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                     if bytes.is_empty() {
                         format!("{}()", class_name)
@@ -623,6 +621,7 @@ impl Value {
                 exhaustive,
                 overlap,
                 repeat,
+                nth,
                 perl5,
                 ignore_case,
                 sigspace,
@@ -648,6 +647,9 @@ impl Value {
                 }
                 if let Some(count) = repeat {
                     prefix.push_str(&format!(":x({count})"));
+                }
+                if let Some(raw) = nth {
+                    prefix.push_str(&format!(":nth({raw})"));
                 }
                 if *perl5 {
                     prefix.push_str(":P5");

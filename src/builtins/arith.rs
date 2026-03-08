@@ -22,6 +22,16 @@ fn as_bigint(value: &Value) -> Option<NumBigInt> {
     }
 }
 
+fn to_big_rat_parts(value: &Value) -> Option<(NumBigInt, NumBigInt)> {
+    match value {
+        Value::Int(i) => Some((NumBigInt::from(*i), NumBigInt::from(1))),
+        Value::BigInt(i) => Some(((**i).clone(), NumBigInt::from(1))),
+        Value::Rat(n, d) | Value::FatRat(n, d) => Some((NumBigInt::from(*n), NumBigInt::from(*d))),
+        Value::BigRat(n, d) => Some((n.clone(), d.clone())),
+        _ => None,
+    }
+}
+
 fn instance_days(value: &Value) -> Option<i64> {
     match value {
         Value::Instance {
@@ -62,6 +72,13 @@ fn make_duration(secs: f64) -> Value {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("value".to_string(), Value::Num(secs));
     Value::make_instance(Symbol::intern("Duration"), attrs)
+}
+
+fn make_fat_rat(num: i64, den: i64) -> Value {
+    match make_rat(num, den) {
+        Value::Rat(n, d) => Value::FatRat(n, d),
+        other => other,
+    }
 }
 
 // ── Arithmetic operators ─────────────────────────────────────────────
@@ -146,11 +163,34 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a + b)
+    } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
+        && (matches!(
+            l,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        ) || matches!(
+            r,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        ))
+    {
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        match make_big_rat(an * bd.clone() + bn * ad.clone(), ad * bd) {
+            Value::Rat(n, d) if has_fat_rat => Value::FatRat(n, d),
+            other => other,
+        }
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
-        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-            make_rat(an * bd + bn * ad, ad * bd)
+        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
+            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        if has_rat {
+            let n = an * bd + bn * ad;
+            let d = ad * bd;
+            if has_fat_rat {
+                make_fat_rat(n, d)
+            } else {
+                make_rat(n, d)
+            }
         } else {
             match (l, r) {
                 (Value::Int(a), Value::Int(b)) => match a.checked_add(b) {
@@ -259,11 +299,34 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a - b)
+    } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
+        && (matches!(
+            l,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        ) || matches!(
+            r,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        ))
+    {
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        match make_big_rat(an * bd.clone() - bn * ad.clone(), ad * bd) {
+            Value::Rat(n, d) if has_fat_rat => Value::FatRat(n, d),
+            other => other,
+        }
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
-        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-            make_rat(an * bd - bn * ad, ad * bd)
+        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
+            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        if has_rat {
+            let n = an * bd - bn * ad;
+            let d = ad * bd;
+            if has_fat_rat {
+                make_fat_rat(n, d)
+            } else {
+                make_rat(n, d)
+            }
         } else {
             match (l, r) {
                 (Value::Int(a), Value::Int(b)) => match a.checked_sub(b) {
@@ -314,11 +377,34 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
         && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
     {
         Value::from_bigint(a * b)
+    } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
+        && (matches!(
+            l,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        ) || matches!(
+            r,
+            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+        ))
+    {
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        match make_big_rat(an * bn, ad * bd) {
+            Value::Rat(n, d) if has_fat_rat => Value::FatRat(n, d),
+            other => other,
+        }
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
-        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-            make_rat(an * bn, ad * bd)
+        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
+            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        if has_rat {
+            let n = an * bn;
+            let d = ad * bd;
+            if has_fat_rat {
+                make_fat_rat(n, d)
+            } else {
+                make_rat(n, d)
+            }
         } else {
             match (l, r) {
                 (Value::Int(a), Value::Int(b)) => {
@@ -384,6 +470,17 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             }
             return Ok(Value::Num(lf / rf));
         }
+        let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+        let has_big_rat = matches!(l, Value::BigRat(_, _)) || matches!(r, Value::BigRat(_, _));
+        if (has_fat_rat || has_big_rat)
+            && let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
+        {
+            let result = make_big_rat(an * bd, ad * bn);
+            return Ok(match result {
+                Value::Rat(n, d) if has_fat_rat => Value::FatRat(n, d),
+                other => other,
+            });
+        }
         if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
             && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
         {
@@ -393,49 +490,25 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             if (&a % &b).is_zero() {
                 return Ok(Value::from_bigint(a / b));
             }
+            return Ok(make_big_rat(a, b));
+        }
+        if let (Some((an, ad)), Some((bn, bd))) =
+            (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
+        {
+            let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
+                || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+            let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+            if has_rat || matches!((&l, &r), (Value::Int(_), Value::Int(_))) {
+                let n = an * bd;
+                let d = ad * bn;
+                return Ok(if has_fat_rat {
+                    make_fat_rat(n, d)
+                } else {
+                    make_rat(n, d)
+                });
+            }
         }
         Ok(match (&l, &r) {
-            (Value::BigInt(a), Value::Int(b)) => {
-                if *b == 0 {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                let bb = NumBigInt::from(*b);
-                if (&**a % &bb).is_zero() {
-                    Value::from_bigint(&**a / bb)
-                } else {
-                    Value::Num((a.to_string().parse::<f64>().unwrap_or(0.0)) / (*b as f64))
-                }
-            }
-            (Value::Int(a), Value::BigInt(b)) => {
-                if b.is_zero() {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                let aa = NumBigInt::from(*a);
-                if (&aa % &**b).is_zero() {
-                    Value::from_bigint(aa / &**b)
-                } else {
-                    Value::Num((*a as f64) / b.to_string().parse::<f64>().unwrap_or(1.0))
-                }
-            }
-            (Value::BigInt(a), Value::BigInt(b)) => {
-                if b.is_zero() {
-                    return Err(RuntimeError::numeric_divide_by_zero());
-                }
-                if (&**a % &**b).is_zero() {
-                    Value::from_bigint(&**a / &**b)
-                } else {
-                    Value::Num(
-                        a.to_string().parse::<f64>().unwrap_or(0.0)
-                            / b.to_string().parse::<f64>().unwrap_or(1.0),
-                    )
-                }
-            }
-            (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
-                let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
-                let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
-                let new_d = ad * bn;
-                make_rat(an * bd, new_d)
-            }
             (Value::Num(_), Value::Num(b)) if *b == 0.0 => {
                 return Err(RuntimeError::numeric_divide_by_zero());
             }
@@ -475,14 +548,21 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
     }
     if let (Some((an, ad)), Some((bn, bd))) = (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
-        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+        if matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
+            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _))
+        {
             if bn == 0 {
                 return Err(RuntimeError::new("Modulo by zero"));
             }
-            // Rat % Rat = Rat: (a/b) % (c/d) = ((a*d) mod (b*c)) / (b*d)
-            let num = (an * bd) % (ad * bn);
+            // Rational modulo with divisor-sign semantics.
+            let num = num_integer::Integer::mod_floor(&(an * bd), &(ad * bn));
             let den = ad * bd;
-            Ok(crate::value::make_rat(num, den))
+            let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
+            Ok(if has_fat_rat {
+                make_fat_rat(num, den)
+            } else {
+                crate::value::make_rat(num, den)
+            })
         } else {
             Ok(match (l, r) {
                 (Value::Int(_), Value::Int(0)) => {
@@ -620,6 +700,32 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     make_big_rat(nn, dd)
                 }
             }
+            (Value::FatRat(n, d), Value::Int(b)) if b >= 0 => {
+                let p = b as u32;
+                if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
+                    make_fat_rat(np, dp)
+                } else {
+                    let nn = NumBigInt::from(n).pow(p);
+                    let dd = NumBigInt::from(d).pow(p);
+                    match make_big_rat(nn, dd) {
+                        Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                        other => other,
+                    }
+                }
+            }
+            (Value::FatRat(n, d), Value::Int(b)) => {
+                let p = (-b) as u32;
+                if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
+                    make_fat_rat(dp, np)
+                } else {
+                    let nn = NumBigInt::from(d).pow(p);
+                    let dd = NumBigInt::from(n).pow(p);
+                    match make_big_rat(nn, dd) {
+                        Value::Rat(nn, dd) => Value::FatRat(nn, dd),
+                        other => other,
+                    }
+                }
+            }
             (Value::BigRat(n, d), Value::Int(b)) if b >= 0 => {
                 let p = b as u32;
                 make_big_rat(n.pow(p), d.pow(p))
@@ -725,6 +831,13 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
         Value::Rat(n, d) => {
             if let Some(neg) = n.checked_neg() {
                 Ok(Value::Rat(neg, d))
+            } else {
+                Ok(Value::Num(-(n as f64) / d as f64))
+            }
+        }
+        Value::FatRat(n, d) => {
+            if let Some(neg) = n.checked_neg() {
+                Ok(make_fat_rat(neg, d))
             } else {
                 Ok(Value::Num(-(n as f64) / d as f64))
             }

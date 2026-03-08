@@ -58,6 +58,13 @@ impl Interpreter {
         });
     }
 
+    fn has_other_typed_candidates_with_prefix(&self, prefix: &str, typed_key: &str) -> bool {
+        self.functions
+            .keys()
+            .map(|key| key.resolve())
+            .any(|key| key.starts_with(prefix) && key != typed_key)
+    }
+
     pub(super) fn resolve_function_with_alias(
         &mut self,
         name: &str,
@@ -113,6 +120,34 @@ impl Interpreter {
             .filter(|v| !matches!(v, Value::Pair(..)))
             .count();
         if name.contains("::") {
+            let type_sig: Vec<&str> = arg_values
+                .iter()
+                .map(|v| {
+                    let unwrapped = if let Value::Capture { positional, named } = v {
+                        if positional.is_empty() {
+                            named
+                                .get("__mutsu_varref_value")
+                                .cloned()
+                                .unwrap_or_else(|| v.clone())
+                        } else {
+                            v.clone()
+                        }
+                    } else {
+                        v.clone()
+                    };
+                    super::value_type_name(&unwrapped)
+                })
+                .collect();
+            let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
+            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
+                // Skip fast-path if candidate has where constraints — need full matching
+                let prefix = format!("{}/{arity}:", name);
+                if def.param_defs.iter().all(|p| p.where_constraint.is_none())
+                    && !self.has_other_typed_candidates_with_prefix(&prefix, &typed_key)
+                {
+                    return Some(def.clone());
+                }
+            }
             let prefix = format!("{}/{arity}:", name);
             let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
@@ -145,6 +180,51 @@ impl Interpreter {
             }
             return self.functions.get(&Symbol::intern(name)).cloned();
         }
+        let type_sig: Vec<&str> = arg_values
+            .iter()
+            .filter(|v| !matches!(v, Value::Pair(..)))
+            .map(|v| {
+                let unwrapped = if let Value::Capture { positional, named } = v {
+                    if positional.is_empty() {
+                        named
+                            .get("__mutsu_varref_value")
+                            .cloned()
+                            .unwrap_or_else(|| v.clone())
+                    } else {
+                        v.clone()
+                    }
+                } else {
+                    v.clone()
+                };
+                super::value_type_name(&unwrapped)
+            })
+            .collect();
+        let typed_key = format!(
+            "{}::{}/{}:{}",
+            self.current_package,
+            name,
+            arity,
+            type_sig.join(",")
+        );
+        if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
+            // Skip fast-path if candidate has where constraints — need full matching
+            let prefix = format!("{}::{}/{}:", self.current_package, name, arity);
+            if def.param_defs.iter().all(|p| p.where_constraint.is_none())
+                && !self.has_other_typed_candidates_with_prefix(&prefix, &typed_key)
+            {
+                return Some(def.clone());
+            }
+        }
+        let typed_global = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
+        if let Some(def) = self.functions.get(&Symbol::intern(&typed_global))
+            && def.param_defs.iter().all(|p| p.where_constraint.is_none())
+            && !self.has_other_typed_candidates_with_prefix(
+                &format!("GLOBAL::{}/{}:", name, arity),
+                &typed_global,
+            )
+        {
+            return Some(def.clone());
+        }
         // Try matching against all typed candidates for this name/arity
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
@@ -163,13 +243,13 @@ impl Interpreter {
                 return Some(def);
             }
         }
+        let mut found_multi_candidates = false;
         // If there is an untyped-arity slot candidate for this arity, check it too.
         // This covers catch-all multis and where-constrained captures.
         let generic_keys = [
             format!("{}::{}/{}", self.current_package, name, arity),
             format!("GLOBAL::{}/{}", name, arity),
         ];
-        let mut found_multi_candidates = false;
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
@@ -187,6 +267,45 @@ impl Interpreter {
                 if self.args_match_param_types(arg_values, &def.param_defs) {
                     return Some(def);
                 }
+            }
+        }
+        // Try optional/default candidates with different arities.
+        // These can match calls with fewer positional arguments.
+        let optional_prefixes = [
+            format!("{}::{}/", self.current_package, name),
+            format!("GLOBAL::{}/", name),
+        ];
+        let mut optional_candidates: Vec<(String, FunctionDef)> = self
+            .functions
+            .iter()
+            .filter(|(k, def)| {
+                let ks = k.resolve();
+                optional_prefixes
+                    .iter()
+                    .any(|prefix| ks.starts_with(prefix))
+                    && def
+                        .param_defs
+                        .iter()
+                        .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
+            })
+            .map(|(k, def)| (k.resolve(), def.clone()))
+            .collect();
+        if !optional_candidates.is_empty() {
+            found_multi_candidates = true;
+        }
+        optional_candidates.sort_by(|a, b| {
+            let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+            let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
+            let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+            let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+            b_has_where
+                .cmp(&a_has_where)
+                .then(b_has_subsig.cmp(&a_has_subsig))
+                .then(a.0.cmp(&b.0))
+        });
+        for (_, def) in optional_candidates {
+            if self.args_match_param_types(arg_values, &def.param_defs) {
+                return Some(def);
             }
         }
         // Try slurpy candidates with different arities (slurpy params accept
@@ -626,7 +745,21 @@ impl Interpreter {
         if name.contains("::") {
             let type_sig: Vec<&str> = arg_values
                 .iter()
-                .map(|v| super::value_type_name(v))
+                .map(|v| {
+                    let unwrapped = if let Value::Capture { positional, named } = v {
+                        if positional.is_empty() {
+                            named
+                                .get("__mutsu_varref_value")
+                                .cloned()
+                                .unwrap_or_else(|| v.clone())
+                        } else {
+                            v.clone()
+                        }
+                    } else {
+                        v.clone()
+                    };
+                    super::value_type_name(&unwrapped)
+                })
                 .collect();
             let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
             if let Some(def) = self.functions.get(&Symbol::intern(&typed_key))

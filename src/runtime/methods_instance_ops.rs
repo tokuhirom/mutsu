@@ -96,6 +96,37 @@ impl Interpreter {
                 ));
             }
 
+            if class_name == "Attribute" {
+                match method {
+                    "set_build" => {
+                        let build = args.first().cloned().ok_or_else(|| {
+                            RuntimeError::new("Attribute.set_build expects a build callback")
+                        })?;
+                        let owner = attributes
+                            .get("__mutsu_attr_owner")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let attr_name = attributes
+                            .get("__mutsu_attr_name")
+                            .or_else(|| attributes.get("name"))
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if owner.is_empty() || attr_name.is_empty() {
+                            return Err(RuntimeError::new(
+                                "Attribute.set_build missing owner or attribute name",
+                            ));
+                        }
+                        self.attribute_build_overrides
+                            .insert((owner, attr_name), build);
+                        return Ok(target.clone());
+                    }
+                    "name" => {
+                        return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
+                    }
+                    _ => {}
+                }
+            }
+
             // IO::Spec methods
             if class_name == "IO::Spec" {
                 match method {
@@ -206,21 +237,74 @@ impl Interpreter {
                         let Some(source_path) = found_path else {
                             return Ok(Value::Nil);
                         };
-                        // Load the module, using precompilation cache when available
-                        let (stmts, precompiled) =
-                            self.parse_module_source(&short_name_str, &source_path)?;
-                        self.run_block(&stmts)?;
+                        let repo_precomp_enabled = attributes
+                            .get("__mutsu_precomp_enabled")
+                            .is_none_or(Value::truthy);
+                        // Load the module, using precompilation cache when available.
+                        // Explicitly constructed FileSystem repositories default to
+                        // precomp-disabled behavior.
+                        let (stmts, precompiled) = if repo_precomp_enabled {
+                            self.parse_module_source(&short_name_str, &source_path)?
+                        } else {
+                            let saved = self.precomp_enabled;
+                            self.precomp_enabled = false;
+                            let parsed = self.parse_module_source(&short_name_str, &source_path);
+                            self.precomp_enabled = saved;
+                            parsed?
+                        };
+                        let compile_time_only = !stmts.is_empty()
+                            && stmts
+                                .iter()
+                                .all(|stmt| matches!(stmt, crate::ast::Stmt::Use { .. }));
+                        let non_version_use_count = if compile_time_only {
+                            stmts
+                                .iter()
+                                .filter_map(|stmt| match stmt {
+                                    crate::ast::Stmt::Use { module, .. } => Some(module.as_str()),
+                                    _ => None,
+                                })
+                                .filter(|module| *module != "v6")
+                                .count()
+                        } else {
+                            0
+                        };
+                        let skip_runtime = compile_time_only && non_version_use_count > 1;
+                        if !skip_runtime {
+                            self.run_block(&stmts)?;
+                        }
                         self.loaded_modules.insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
                         attrs.insert("short-name".to_string(), Value::str(short_name_str));
-                        attrs.insert("precompiled".to_string(), Value::Bool(precompiled));
+                        attrs.insert(
+                            "precompiled".to_string(),
+                            Value::Bool(precompiled && repo_precomp_enabled),
+                        );
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
                         return Ok(compunit);
                     }
                     _ => {}
                 }
+            }
+            if class_name == "CompUnit" {
+                match method {
+                    // Rakudo exposes a handle object that can answer .globalish-package.
+                    // For mutsu, the current process-global stash models this behavior.
+                    "handle" => {
+                        return Ok(Value::make_instance(
+                            Symbol::intern("CompUnit::Handle"),
+                            HashMap::new(),
+                        ));
+                    }
+                    "globalish-package" => {
+                        return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                    }
+                    _ => {}
+                }
+            }
+            if class_name == "CompUnit::Handle" && method == "globalish-package" {
+                return Ok(Value::Package(Symbol::intern("GLOBAL")));
             }
             if method == "can" {
                 let method_name = args
@@ -237,6 +321,43 @@ impl Interpreter {
                         "isa" | "gist" | "raku" | "perl" | "name" | "clone"
                     );
                 return Ok(Value::Bool(can));
+            }
+            if class_name == "Proc::Async" {
+                if matches!(
+                    method,
+                    "start"
+                        | "kill"
+                        | "write"
+                        | "close-stdin"
+                        | "ready"
+                        | "print"
+                        | "say"
+                        | "Supply"
+                ) {
+                    let (result, updated) = self.call_native_instance_method_mut(
+                        &class_name.resolve(),
+                        (**attributes).clone(),
+                        method,
+                        args,
+                    )?;
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        *target_id,
+                        updated,
+                    );
+                    return Ok(result);
+                }
+                if matches!(
+                    method,
+                    "command" | "started" | "w" | "pid" | "stdout" | "stderr" | "Supply"
+                ) {
+                    return self.call_native_instance_method(
+                        &class_name.resolve(),
+                        attributes,
+                        method,
+                        args,
+                    );
+                }
             }
             if self.is_native_method(&class_name.resolve(), method) {
                 return self.call_native_instance_method(
@@ -642,6 +763,21 @@ impl Interpreter {
             }
         }
 
+        if let Value::Package(type_name) = &target {
+            match (type_name.resolve().as_str(), method) {
+                ("CompUnit", "handle") => {
+                    return Ok(Value::make_instance(
+                        Symbol::intern("CompUnit::Handle"),
+                        HashMap::new(),
+                    ));
+                }
+                ("CompUnit", "globalish-package") | ("CompUnit::Handle", "globalish-package") => {
+                    return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                }
+                _ => {}
+            }
+        }
+
         // .can for Package values
         if method == "can"
             && !args.is_empty()
@@ -743,6 +879,43 @@ impl Interpreter {
             }
             "raku" | "perl" if args.is_empty() => match target {
                 Value::Package(name) => Ok(Value::str(name.resolve())),
+                Value::Junction { kind, values } => {
+                    let kind_name = match kind {
+                        JunctionKind::Any => "any",
+                        JunctionKind::All => "all",
+                        JunctionKind::One => "one",
+                        JunctionKind::None => "none",
+                    };
+                    let mut parts = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        if let Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } = value
+                            && self
+                                .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
+                                .is_some()
+                        {
+                            let attrs_map = (**attributes).clone();
+                            if let Ok((rendered, _)) = self.run_instance_method(
+                                &class_name.resolve(),
+                                attrs_map,
+                                "raku",
+                                Vec::new(),
+                                None,
+                            ) {
+                                parts.push(rendered.to_string_value());
+                                continue;
+                            }
+                        }
+                        let rendered = self
+                            .call_method_with_values(value.clone(), "raku", Vec::new())
+                            .unwrap_or_else(|_| Value::str(value.to_string_value()));
+                        parts.push(rendered.to_string_value());
+                    }
+                    Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))))
+                }
                 other => Ok(Value::str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {

@@ -789,7 +789,7 @@ fn native_function_2arg(
         }
         "index" => {
             // Skip native path for junctions — fall through to interpreter for auto-threading
-            if matches!(arg1, Value::Junction { .. }) {
+            if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
                 return None;
             }
             let s = arg1.to_string_value();
@@ -812,6 +812,9 @@ fn native_function_2arg(
             }))
         }
         "substr" => {
+            if matches!(arg1, Value::Junction { .. }) || matches!(arg2, Value::Junction { .. }) {
+                return None;
+            }
             let s = arg1.to_string_value();
             let start = match arg2 {
                 Value::Int(i) => (*i).max(0) as usize,
@@ -926,6 +929,12 @@ fn native_function_3arg(
     match name {
         "expmod" => Some(crate::builtins::expmod(arg1, arg2, arg3)),
         "substr" => {
+            if matches!(arg1, Value::Junction { .. })
+                || matches!(arg2, Value::Junction { .. })
+                || matches!(arg3, Value::Junction { .. })
+            {
+                return None;
+            }
             let s = arg1.to_string_value();
             let start = match arg2 {
                 Value::Int(i) => (*i).max(0) as usize,

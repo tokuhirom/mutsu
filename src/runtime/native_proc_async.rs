@@ -10,17 +10,47 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        let proc_async_error = |class_name: &str, attrs: &[(&str, Value)]| {
+            let mut ex_attrs = HashMap::new();
+            for (k, v) in attrs {
+                ex_attrs.insert((*k).to_string(), v.clone());
+            }
+            let message = class_name.to_string();
+            ex_attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern(class_name), ex_attrs);
+            RuntimeError {
+                exception: Some(Box::new(ex)),
+                ..RuntimeError::new(message)
+            }
+        };
         match method {
             "start" => {
                 use std::process::{Command, Stdio};
 
+                if attrs.get("started").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error("X::Proc::Async::AlreadyStarted", &[]));
+                }
                 attrs.insert("started".to_string(), Value::Bool(true));
 
                 // Extract command and args
-                let cmd_arr = match attrs.get("cmd") {
+                let mut cmd_arr = match attrs.get("cmd") {
                     Some(Value::Array(arr, ..)) => arr.to_vec(),
                     _ => Vec::new(),
                 };
+                if let Some(first) = cmd_arr.first().cloned() {
+                    let expanded = match first {
+                        Value::Array(items, ..) => Some(items.to_vec()),
+                        Value::Seq(items) => Some(items.to_vec()),
+                        Value::Slip(items) => Some(items.to_vec()),
+                        _ => None,
+                    };
+                    if let Some(mut items) = expanded {
+                        if cmd_arr.len() > 1 {
+                            items.extend(cmd_arr.into_iter().skip(1));
+                        }
+                        cmd_arr = items;
+                    }
+                }
                 let (program, cmd_args): (String, Vec<String>) = if cmd_arr.is_empty() {
                     return Err(RuntimeError::new("Proc::Async: no command specified"));
                 } else {
@@ -46,10 +76,14 @@ impl Interpreter {
                     }
                     None
                 });
-
-                // Get taps for non-streaming (backward compat) replay
-                let stdout_taps = stdout_supply_id.map(get_supply_taps).unwrap_or_default();
-                let stderr_taps = stderr_supply_id.map(get_supply_taps).unwrap_or_default();
+                let merged_supply_id = attrs.get("supply").and_then(|v| {
+                    if let Value::Instance { attributes, .. } = v
+                        && let Some(Value::Int(id)) = attributes.get("supply_id")
+                    {
+                        return Some(*id as u64);
+                    }
+                    None
+                });
 
                 // Check if :w flag is set (stdin should be piped)
                 let w_flag = attrs.get("w").map(|v| v.truthy()).unwrap_or(false);
@@ -234,21 +268,46 @@ impl Interpreter {
                     let collected_stderr = stderr_handle
                         .and_then(|h| h.join().ok())
                         .unwrap_or_default();
+                    let collected_stdout = collected_stdout.replace("\r\n", "\n");
 
                     // Clean up stdin registry
                     if let Ok(mut map) = proc_stdin_map().lock() {
                         map.remove(&pid);
                     }
+                    if let Some(sid) = stdout_supply_id {
+                        set_supply_collected_output(sid, collected_stdout.clone());
+                    }
+                    if let Some(sid) = stderr_supply_id {
+                        set_supply_collected_output(sid, collected_stderr.clone());
+                    }
+                    let collected_merged = format!("{}{}", collected_stdout, collected_stderr);
+                    if let Some(sid) = merged_supply_id {
+                        set_supply_collected_output(sid, collected_merged.clone());
+                    }
+                    let stdout_taps = stdout_supply_id.map(get_supply_taps).unwrap_or_default();
+                    let stderr_taps = stderr_supply_id.map(get_supply_taps).unwrap_or_default();
+                    let supply_taps = merged_supply_id.map(get_supply_taps).unwrap_or_default();
 
                     let mut proc_attrs = HashMap::new();
                     proc_attrs.insert("exitcode".to_string(), Value::Int(exit_code));
                     proc_attrs.insert("signal".to_string(), Value::Int(signal));
                     proc_attrs.insert("command".to_string(), Value::real_array(cmd_arr_clone));
                     proc_attrs.insert("pid".to_string(), Value::Int(pid as i64));
+                    if let Some(sid) = stdout_supply_id {
+                        proc_attrs.insert("stdout_supply_id".to_string(), Value::Int(sid as i64));
+                    }
+                    if let Some(sid) = stderr_supply_id {
+                        proc_attrs.insert("stderr_supply_id".to_string(), Value::Int(sid as i64));
+                    }
                     proc_attrs.insert("collected_stdout".to_string(), Value::str(collected_stdout));
                     proc_attrs.insert("collected_stderr".to_string(), Value::str(collected_stderr));
+                    proc_attrs.insert("collected_merged".to_string(), Value::str(collected_merged));
                     proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
                     proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
+                    if let Some(sid) = merged_supply_id {
+                        proc_attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
+                    }
+                    proc_attrs.insert("supply_taps".to_string(), Value::array(supply_taps));
                     let proc_val = Value::make_instance(Symbol::intern("Proc"), proc_attrs);
 
                     promise.keep(proc_val, String::new(), String::new());
@@ -257,6 +316,17 @@ impl Interpreter {
                 Ok((ret, attrs))
             }
             "kill" => {
+                let started = attrs.get("started").is_some_and(|v| v.truthy());
+                let has_pid = attrs.contains_key("pid");
+                if !started {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::MustBeStarted",
+                        &[("method", Value::str_from("kill"))],
+                    ));
+                }
+                if !has_pid {
+                    return Ok((Value::Nil, attrs));
+                }
                 #[cfg(feature = "native")]
                 if let Some(Value::Int(pid)) = attrs.get("pid") {
                     let sig = args
@@ -283,6 +353,21 @@ impl Interpreter {
                 Ok((Value::Nil, attrs))
             }
             "write" => {
+                if !attrs.get("w").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::OpenForWriting",
+                        &[("method", Value::str_from("write"))],
+                    ));
+                }
+                let started = attrs.get("started").is_some_and(|v| v.truthy());
+                let has_pid = attrs.contains_key("pid");
+                let spawn_failed = attrs.contains_key("spawn_error");
+                if !started || (!has_pid && !spawn_failed) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::MustBeStarted",
+                        &[("method", Value::str_from("write"))],
+                    ));
+                }
                 // If process failed to spawn, die with the spawn error
                 if let Some(err) = attrs.get("spawn_error").cloned() {
                     let p = SharedPromise::new();
@@ -297,7 +382,18 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Buf" => {
+                    } if {
+                        let cn = class_name.resolve();
+                        cn == "Buf"
+                            || cn == "Blob"
+                            || cn == "utf8"
+                            || cn == "utf16"
+                            || cn.starts_with("buf")
+                            || cn.starts_with("blob")
+                            || cn.starts_with("Buf[")
+                            || cn.starts_with("Blob[")
+                    } =>
+                    {
                         if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                             items
                                 .iter()
@@ -336,6 +432,17 @@ impl Interpreter {
                 Ok((Value::Promise(p), attrs))
             }
             "close-stdin" => {
+                let started = attrs.get("started").is_some_and(|v| v.truthy());
+                let has_pid = attrs.contains_key("pid");
+                if !started {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::MustBeStarted",
+                        &[("method", Value::str_from("close-stdin"))],
+                    ));
+                }
+                if !has_pid {
+                    return Ok((Value::Bool(true), attrs));
+                }
                 if let Some(Value::Int(pid)) = attrs.get("pid") {
                     let pid = *pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
@@ -366,7 +473,60 @@ impl Interpreter {
                 attrs.insert("ready_promise".to_string(), Value::Promise(promise.clone()));
                 Ok((Value::Promise(promise), attrs))
             }
+            "stdout" | "stderr" => {
+                if attrs.get("supply_selected").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
+                }
+                if method == "stdout" {
+                    attrs.insert("stdout_selected".to_string(), Value::Bool(true));
+                } else {
+                    attrs.insert("stderr_selected".to_string(), Value::Bool(true));
+                }
+                if attrs.get("started").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::TapBeforeSpawn",
+                        &[("handle", Value::str_from(method))],
+                    ));
+                }
+                if !args.is_empty() {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::CharsOrBytes",
+                        &[("handle", Value::str_from(method))],
+                    ));
+                }
+                let value = attrs.get(method).cloned().unwrap_or(Value::Nil);
+                Ok((value, attrs))
+            }
+            "Supply" => {
+                if attrs.get("stdout_selected").is_some_and(|v| v.truthy())
+                    || attrs.get("stderr_selected").is_some_and(|v| v.truthy())
+                {
+                    return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
+                }
+                attrs.insert("supply_selected".to_string(), Value::Bool(true));
+                Ok((attrs.get("supply").cloned().unwrap_or(Value::Nil), attrs))
+            }
             "print" | "say" => {
+                if !attrs.get("w").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::OpenForWriting",
+                        &[("method", Value::str_from(method))],
+                    ));
+                }
+                let started = attrs.get("started").is_some_and(|v| v.truthy());
+                let has_pid = attrs.contains_key("pid");
+                let spawn_failed = attrs.contains_key("spawn_error");
+                if !started || (!has_pid && !spawn_failed) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::MustBeStarted",
+                        &[("method", Value::str_from(method))],
+                    ));
+                }
+                if let Some(err) = attrs.get("spawn_error").cloned() {
+                    let p = SharedPromise::new();
+                    p.break_with(err, String::new(), String::new());
+                    return Ok((Value::Promise(p), attrs));
+                }
                 // Write string to stdin of process
                 let data = args.first().cloned().unwrap_or(Value::Nil);
                 let mut s = data.to_string_value();

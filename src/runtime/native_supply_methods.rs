@@ -303,12 +303,15 @@ impl Interpreter {
                 // Immutable tap: emit all values and return a Tap instance
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+                let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(attributes);
 
                 if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
                     let has_unique =
                         matches!(attributes.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                    let is_elems =
+                        matches!(attributes.get("elems_filter"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attributes
                             .get("line_chomp")
@@ -331,6 +334,25 @@ impl Interpreter {
                             as_fn,
                             with_fn,
                             expires,
+                        );
+                    } else if is_elems {
+                        let interval = attributes
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attributes
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        register_supplier_elems_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            interval,
+                            initial_count,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -356,8 +378,16 @@ impl Interpreter {
                     });
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
+                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                    && let Some(collected) = get_supply_collected_output(*sid as u64)
+                    && !collected.is_empty()
+                {
+                    let _ = self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                }
 
                 // For on-demand supplies, execute the callback to produce values
+                let mut on_demand_quit: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
@@ -367,8 +397,28 @@ impl Interpreter {
                     });
                     // Use supply_emit_buffer to collect emitted values
                     self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
+                    let callback_result =
+                        self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                    let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                    if let Err(err) = callback_result {
+                        on_demand_quit = Some(
+                            err.exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message)),
+                        );
+                    }
+                    emitted
+                } else if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
+                    // For supplier-backed supplies, get current values from supplier state
+                    let (snap_values, _, _) = supplier_snapshot(*sid as u64);
+                    if !snap_values.is_empty() {
+                        snap_values
+                    } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
+                        v.to_vec()
+                    } else {
+                        Vec::new()
+                    }
                 } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
                     v.to_vec()
                 } else {
@@ -393,19 +443,36 @@ impl Interpreter {
                     let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
                 }
 
+                if let Some(quit_reason) = on_demand_quit {
+                    if let Some(quit_fn) = quit_cb {
+                        let _ = self.call_sub_value(quit_fn, vec![quit_reason], true);
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                }
+
                 if let Some(done_fn) = done_cb {
                     if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
-                        let supplier_is_done = attributes
-                            .get("supplier_done")
-                            .map(Value::truthy)
-                            .unwrap_or(false);
-                        if supplier_is_done {
+                        let sid = *supplier_id as u64;
+                        let (_, is_done, _) = supplier_snapshot(sid);
+                        if is_done {
                             let _ = self.call_sub_value(done_fn, vec![], true);
                         } else {
-                            register_supplier_done_callback(*supplier_id as u64, done_fn);
+                            register_supplier_done_callback(sid, done_fn);
                         }
                     } else {
                         let _ = self.call_sub_value(done_fn, vec![], true);
+                    }
+                }
+                if let Some(quit_fn) = quit_cb {
+                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                        let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
+                        if let Some(reason) = quit_reason {
+                            let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                        } else {
+                            register_supplier_quit_callback(*supplier_id as u64, quit_fn);
+                        }
+                    } else if let Some(reason) = attributes.get("quit_reason").cloned() {
+                        let _ = self.call_sub_value(quit_fn, vec![reason], true);
                     }
                 }
                 Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()))
@@ -540,6 +607,7 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "unique" => self.supply_unique(attributes, &args),
+            "classify" => self.supply_classify(attributes, &args),
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
@@ -597,6 +665,12 @@ impl Interpreter {
             "done" => {
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_done(supplier_id);
+                    for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    }
+                    for done_cb in take_supplier_done_callbacks(supplier_id) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
                 Ok(Value::Nil)
             }
@@ -607,6 +681,12 @@ impl Interpreter {
                     .unwrap_or_else(|| Value::str_from("Died"));
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason);
+                    for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    }
+                    for done_cb in take_supplier_done_callbacks(supplier_id) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
                 Ok(Value::Nil)
             }
@@ -631,6 +711,9 @@ impl Interpreter {
                 // Push to supply_emit_buffer if active
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
                     buf.push(value.clone());
+                }
+                if let Some(buf) = self.supply_emit_timed_buffer.last_mut() {
+                    buf.push((value.clone(), std::time::Instant::now()));
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_emit(supplier_id, value.clone());
@@ -674,6 +757,12 @@ impl Interpreter {
                                     let _ = self.call_sub_value(callback, vec![val], true);
                                 }
                             }
+                            SupplierEmitAction::ClassifyCheck {
+                                value: val,
+                                tap_index,
+                            } => {
+                                self.handle_classify_emit(sid, tap_index, val)?;
+                            }
                         }
                     }
                 }
@@ -685,10 +774,19 @@ impl Interpreter {
                     supplier_done(supplier_id);
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    for (tap, emitted) in flush_supplier_line_taps(*supplier_id as u64) {
+                    let sid = *supplier_id as u64;
+                    // Propagate done to classify sub-suppliers
+                    let classify_subs = get_classify_sub_supplier_ids(sid);
+                    for sub_sid in classify_subs {
+                        supplier_done(sub_sid);
+                        for done_cb in take_supplier_done_callbacks(sub_sid) {
+                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
+                    }
+                    for (tap, emitted) in flush_supplier_line_taps(sid) {
                         let _ = self.call_sub_value(tap, vec![emitted], true);
                     }
-                    for done_cb in take_supplier_done_callbacks(*supplier_id as u64) {
+                    for done_cb in take_supplier_done_callbacks(sid) {
                         let _ = self.call_sub_value(done_cb, Vec::new(), true);
                     }
                 }
@@ -747,11 +845,13 @@ impl Interpreter {
             "tap" | "act" => {
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+                let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(&attrs);
 
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
+                    let is_elems = matches!(attrs.get("elems_filter"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
                         register_supplier_lines_tap(
@@ -771,6 +871,25 @@ impl Interpreter {
                             as_fn,
                             with_fn,
                             expires,
+                        );
+                    } else if is_elems {
+                        let interval = attrs
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attrs
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        register_supplier_elems_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            interval,
+                            initial_count,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -797,9 +916,18 @@ impl Interpreter {
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
                 }
+                if let Some(Value::Int(sid)) = attrs.get("supply_id")
+                    && let Some(collected) = get_supply_collected_output(*sid as u64)
+                    && !collected.is_empty()
+                {
+                    let _ = self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
+                    return Ok((tap_instance, attrs));
+                }
 
                 // For on-demand supplies, execute the callback to produce values
                 let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
+                let mut on_demand_quit: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
@@ -808,8 +936,17 @@ impl Interpreter {
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
-                    let _ = self.call_sub_value(on_demand_cb, vec![emitter], false);
-                    self.supply_emit_buffer.pop().unwrap_or_default()
+                    let callback_result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+                    let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                    if let Err(err) = callback_result {
+                        on_demand_quit = Some(
+                            err.exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message)),
+                        );
+                    }
+                    emitted
                 } else if has_unique {
                     if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
                         Arc::make_mut(items).push(tap_cb.clone());
@@ -879,7 +1016,16 @@ impl Interpreter {
                     } else {
                         attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
                     }
-                    if let Some(Value::Array(values, ..)) = attrs.get("values") {
+                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        let (snap_values, _, _) = supplier_snapshot(*supplier_id as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
+                        } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
+                            values.to_vec()
+                        } else {
+                            Vec::new()
+                        }
+                    } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
                         values.to_vec()
                     } else {
                         Vec::new()
@@ -904,6 +1050,14 @@ impl Interpreter {
                     let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
                 }
 
+                if let Some(quit_reason) = on_demand_quit {
+                    if let Some(quit_fn) = quit_cb {
+                        let _ = self.call_sub_value(quit_fn, vec![quit_reason], true);
+                    }
+                    let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
+                    return Ok((tap_instance, attrs));
+                }
+
                 // Call done callback after all values emitted
                 if let Some(done_fn) = done_cb {
                     if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
@@ -923,6 +1077,18 @@ impl Interpreter {
                         }
                     } else {
                         let _ = self.call_sub_value(done_fn, vec![], true);
+                    }
+                }
+                if let Some(quit_fn) = quit_cb {
+                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
+                        if let Some(reason) = quit_reason {
+                            let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                        } else {
+                            register_supplier_quit_callback(*supplier_id as u64, quit_fn);
+                        }
+                    } else if let Some(reason) = attrs.get("quit_reason").cloned() {
+                        let _ = self.call_sub_value(quit_fn, vec![reason], true);
                     }
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
@@ -1080,6 +1246,164 @@ impl Interpreter {
                 .unwrap_or(Value::Bool(false)),
         );
         Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+    }
+
+    /// Supply.classify(mapper) — returns a Supply that emits Pair(key, Supply) for each
+    /// classification group. The mapper can be a Block, Hash, or Array.
+    fn supply_classify(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mapper = args.first().cloned().unwrap_or(Value::Nil);
+
+        if let Some(Value::Int(source_supplier_id)) = attributes.get("supplier_id") {
+            let source_sid = *source_supplier_id as u64;
+            // Create a new supplier for the classify output
+            let classify_supplier_id = next_supplier_id();
+            // Register a classify tap on the source supplier
+            register_supplier_classify_tap(source_sid, mapper, classify_supplier_id);
+            // Return a Supply backed by the classify supplier
+            let mut supply_attrs = HashMap::new();
+            supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+            supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            supply_attrs.insert("live".to_string(), Value::Bool(true));
+            supply_attrs.insert(
+                "supplier_id".to_string(),
+                Value::Int(classify_supplier_id as i64),
+            );
+            return Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs));
+        }
+
+        // Non-live supply: process all values upfront
+        let values = match attributes.get("values") {
+            Some(Value::Array(items, ..)) => items.to_vec(),
+            _ => Vec::new(),
+        };
+        let mut keys_order: Vec<Value> = Vec::new();
+        let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
+        for val in values {
+            let key = self.apply_classify_mapper(&mapper, &val)?;
+            let key_str = key.to_string_value();
+            if !buckets.contains_key(&key_str) {
+                keys_order.push(key);
+            }
+            buckets.entry(key_str).or_default().push(val);
+        }
+        // Build result as array of pairs (key => Supply)
+        let mut result_values = Vec::new();
+        for key in keys_order {
+            let key_str = key.to_string_value();
+            let items = buckets.remove(&key_str).unwrap_or_default();
+            let mut sub_attrs = HashMap::new();
+            sub_attrs.insert("values".to_string(), Value::array(items));
+            sub_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            sub_attrs.insert("live".to_string(), Value::Bool(false));
+            let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_attrs);
+            result_values.push(Value::ValuePair(Box::new(key), Box::new(sub_supply)));
+        }
+        let mut new_attrs = HashMap::new();
+        new_attrs.insert("values".to_string(), Value::array(result_values));
+        new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        new_attrs.insert("live".to_string(), Value::Bool(false));
+        Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+    }
+
+    /// Apply a classify mapper (Block/Hash/Array) to a value.
+    fn apply_classify_mapper(
+        &mut self,
+        mapper: &Value,
+        value: &Value,
+    ) -> Result<Value, RuntimeError> {
+        match mapper {
+            Value::Hash(map) => {
+                let key = value.to_string_value();
+                if let Some(v) = map.get(&key) {
+                    Ok(v.clone())
+                } else {
+                    // Hash with `is default(0)` — default value
+                    Ok(Value::Int(0))
+                }
+            }
+            Value::Array(items, ..) => {
+                let idx = value.to_f64() as usize;
+                if idx < items.len() {
+                    Ok(items[idx].clone())
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => {
+                // Assume callable (Sub, block, etc.)
+                self.call_sub_value(mapper.clone(), vec![value.clone()], true)
+            }
+        }
+    }
+
+    /// Handle a ClassifyCheck action during supplier emit.
+    pub(super) fn handle_classify_emit(
+        &mut self,
+        source_supplier_id: u64,
+        tap_index: usize,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        let (mapper, classify_supplier_id, mut seen_keys, mut key_supplier_ids) =
+            match get_classify_state(source_supplier_id, tap_index) {
+                Some(state) => state,
+                None => return Ok(()),
+            };
+
+        let key = self.apply_classify_mapper(&mapper, &value)?;
+        let key_str = key.to_string_value();
+
+        // Find or create sub-supplier for this key
+        let sub_supplier_id = if let Some((_, sid)) = key_supplier_ids
+            .iter()
+            .find(|(k, _)| k.to_string_value() == key_str)
+        {
+            *sid
+        } else {
+            // New key — create sub-supplier and its Supply
+            let sub_sid = next_supplier_id();
+            seen_keys.push(key.clone());
+            key_supplier_ids.push((key.clone(), sub_sid));
+
+            // Update state before emitting (so it's visible to callbacks)
+            update_classify_state(source_supplier_id, tap_index, seen_keys, key_supplier_ids);
+
+            // Create a Supply for this sub-supplier
+            let mut sub_supply_attrs = HashMap::new();
+            sub_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+            sub_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            sub_supply_attrs.insert("live".to_string(), Value::Bool(true));
+            sub_supply_attrs.insert("supplier_id".to_string(), Value::Int(sub_sid as i64));
+            let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_supply_attrs);
+
+            // Emit Pair(key, supply) to the classify supplier's taps
+            let pair = Value::ValuePair(Box::new(key), Box::new(sub_supply));
+            supplier_emit(classify_supplier_id, pair.clone());
+            let actions = supplier_emit_callbacks(classify_supplier_id, &pair);
+            for action in actions {
+                if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
+                    Self::sleep_for_supply_delay(delay_seconds);
+                    let _ = self.call_sub_value(tap, vec![emitted], true);
+                }
+            }
+
+            sub_sid
+        };
+
+        // Emit the value to the sub-supplier
+        supplier_emit(sub_supplier_id, value.clone());
+        let actions = supplier_emit_callbacks(sub_supplier_id, &value);
+        for action in actions {
+            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
+                Self::sleep_for_supply_delay(delay_seconds);
+                let _ = self.call_sub_value(tap, vec![emitted], true);
+            }
+        }
+
+        Ok(())
     }
 
     /// Check if a key is already in the unique filter's seen list.

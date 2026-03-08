@@ -50,7 +50,7 @@ impl Compiler {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
-                self.code.emit(OpCode::Pop);
+                self.code.emit(OpCode::SinkPop);
             }
             Stmt::Block(stmts) => {
                 // Check for placeholder conflicts in blocks
@@ -207,6 +207,10 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
+                if let Some(tc) = type_constraint {
+                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                }
                 self.compile_expr(expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -234,10 +238,6 @@ impl Compiler {
                         let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::SetGlobal(idx));
                     }
-                }
-                if let Some(tc) = type_constraint {
-                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
                 if *is_export {
                     let tags_idx = if export_tags.is_empty() {
@@ -310,7 +310,11 @@ impl Compiler {
                 // Emit readonly check for assignment to potentially readonly params
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::CheckReadOnly(name_idx));
-                self.compile_expr(expr);
+                if matches!(op, AssignOp::Bind) {
+                    self.compile_call_arg(expr);
+                } else {
+                    self.compile_expr(expr);
+                }
                 self.emit_set_named_var(name);
             }
             Stmt::If {
@@ -393,6 +397,7 @@ impl Compiler {
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
+                let restore_topic = param.is_none() && params.is_empty() && body.len() == 1;
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -418,6 +423,10 @@ impl Compiler {
                 };
                 let normalized_iterable = Self::normalize_for_iterable(iterable);
                 self.compile_expr(&normalized_iterable);
+                if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+                    let source_idx = self.code.add_constant(Value::str(source_name));
+                    self.code.emit(OpCode::TagContainerRef(source_idx));
+                }
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local: None,
@@ -425,6 +434,7 @@ impl Compiler {
                     label: label.clone(),
                     arity,
                     collect: false,
+                    restore_topic,
                     threaded: *mode != crate::ast::ForMode::Normal,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
@@ -696,14 +706,36 @@ impl Compiler {
             // Given/When/Default
             Stmt::Given { topic, body } => {
                 self.compile_expr(topic);
+                if let Some(source_name) = match topic {
+                    Expr::Var(name) => Some(name.clone()),
+                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                    Expr::HashVar(name) => Some(format!("%{}", name)),
+                    _ => None,
+                } {
+                    let name_idx = self.code.add_constant(Value::str(source_name));
+                    self.code.emit(OpCode::TagContainerRef(name_idx));
+                }
                 let given_idx = self.code.emit(OpCode::Given { body_end: 0 });
-                for s in body {
-                    self.compile_stmt(s);
+                for (i, s) in body.iter().enumerate() {
+                    let is_last = i == body.len() - 1;
+                    if is_last {
+                        if let Stmt::Expr(expr) = s {
+                            self.compile_expr(expr);
+                            if let Expr::Var(name) = expr {
+                                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                                self.code.emit(OpCode::TagContainerRef(name_idx));
+                            }
+                        } else {
+                            self.compile_stmt(s);
+                        }
+                    } else {
+                        self.compile_stmt(s);
+                    }
                 }
                 self.code.patch_body_end(given_idx);
             }
             Stmt::When { cond, body } => {
-                self.compile_condition_expr(cond);
+                self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;

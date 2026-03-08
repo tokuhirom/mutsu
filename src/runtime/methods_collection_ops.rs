@@ -2,7 +2,187 @@ use super::*;
 use crate::ast::{CallArg, ControlFlowKind};
 use crate::symbol::Symbol;
 
+use std::sync::Mutex;
+
+static THREAD_HANDLES: std::sync::LazyLock<Mutex<HashMap<u64, std::thread::JoinHandle<()>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 impl Interpreter {
+    fn is_lazy_tail_target(target: &Value) -> bool {
+        match target {
+            Value::LazyList(_) => true,
+            Value::Range(_, end)
+            | Value::RangeExcl(_, end)
+            | Value::RangeExclStart(_, end)
+            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            Value::GenericRange { start, end, .. } => {
+                let start_f = start.to_f64();
+                let end_f = end.to_f64();
+                !start_f.is_finite() || !end_f.is_finite() || start_f.is_nan() || end_f.is_nan()
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn dispatch_tail(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if Self::is_lazy_tail_target(&target) {
+            let mut attrs = HashMap::new();
+            attrs.insert("action".to_string(), Value::str_from("tail"));
+            attrs.insert(
+                "message".to_string(),
+                Value::str_from("Cannot .tail a lazy list"),
+            );
+            let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
+            let mut err = RuntimeError::new("X::Cannot::Lazy");
+            err.exception = Some(Box::new(exception));
+            return Err(err);
+        }
+
+        if let Value::Seq(items) = &target
+            && items.is_empty()
+        {
+            let seq_id = std::sync::Arc::as_ptr(items) as usize;
+            let key = format!("__mutsu_predictive_seq_iter::{seq_id}");
+            if let Some(iterator) = self.env.get(&key).cloned() {
+                let iter_slot = "$mutsu_predictive_tail_iterator";
+                let saved_iter = self.env.get(iter_slot).cloned();
+                self.env.insert(iter_slot.to_string(), iterator);
+
+                let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
+                let count_only = self
+                    .call_method_mut_with_values(
+                        iter_slot,
+                        current_iter.clone(),
+                        "count-only",
+                        vec![],
+                    )
+                    .or_else(|_| {
+                        self.call_method_with_values(current_iter, "count-only", vec![])
+                    })?;
+                let total_len = count_only.to_f64().max(0.0) as usize;
+                let tail_count = if args.is_empty() {
+                    if total_len == 0 { 0 } else { 1 }
+                } else {
+                    self.resolve_supply_tail_count(args.first(), total_len)?
+                };
+                let skip = total_len.saturating_sub(tail_count);
+                for _ in 0..skip {
+                    let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
+                    let skipped = self
+                        .call_method_mut_with_values(
+                            iter_slot,
+                            current_iter.clone(),
+                            "skip-one",
+                            vec![],
+                        )
+                        .or_else(|_| {
+                            self.call_method_with_values(current_iter, "skip-one", vec![])
+                        })?;
+                    if !skipped.truthy() {
+                        break;
+                    }
+                }
+                let mut pulled = Vec::with_capacity(tail_count);
+                for _ in 0..tail_count {
+                    let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
+                    let value = self
+                        .call_method_mut_with_values(
+                            iter_slot,
+                            current_iter.clone(),
+                            "pull-one",
+                            vec![],
+                        )
+                        .or_else(|_| {
+                            self.call_method_with_values(current_iter, "pull-one", vec![])
+                        })?;
+                    if matches!(&value, Value::Str(s) if s.as_str() == "IterationEnd")
+                        || matches!(&value, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                    {
+                        break;
+                    }
+                    pulled.push(value);
+                }
+                if let Some(updated_iter) = self.env.get(iter_slot).cloned() {
+                    if let Value::Instance { attributes, .. } = &updated_iter {
+                        for (meta_key, source_name) in attributes.iter() {
+                            let Some(attr_name) = meta_key.strip_prefix("__mutsu_attr_alias::")
+                            else {
+                                continue;
+                            };
+                            let Value::Str(source_name) = source_name else {
+                                continue;
+                            };
+                            if let Some(attr_value) = attributes.get(attr_name).cloned() {
+                                self.env.insert(source_name.to_string(), attr_value);
+                            }
+                        }
+                    }
+                    self.env.insert(key, updated_iter);
+                }
+                if let Some(prev) = saved_iter {
+                    self.env.insert(iter_slot.to_string(), prev);
+                } else {
+                    self.env.remove(iter_slot);
+                }
+                if args.is_empty() {
+                    return Ok(pulled.pop().unwrap_or(Value::Nil));
+                }
+                return Ok(Value::array(pulled));
+            }
+        }
+
+        let items = crate::runtime::utils::value_to_list(&target);
+        if args.is_empty() {
+            return Ok(items.last().cloned().unwrap_or(Value::Nil));
+        }
+
+        let tail_count = self.resolve_supply_tail_count(args.first(), items.len())?;
+        let start = items.len().saturating_sub(tail_count);
+        Ok(Value::array(items[start..].to_vec()))
+    }
+
+    fn callback_uses_supply_list(callback: &Value) -> bool {
+        if let Value::Sub(data) = callback {
+            let dbg = format!("{:?}", data.body);
+            dbg.contains("\"Supply\"") && dbg.contains("\"list\"")
+        } else {
+            false
+        }
+    }
+
+    fn split_host_port_literal(input: &str) -> (String, Option<u16>) {
+        let s = input.trim();
+        if s.is_empty() {
+            return (String::new(), None);
+        }
+        if let Some(stripped) = s.strip_prefix('[')
+            && let Some(end_rel) = stripped.find(']')
+        {
+            let end = end_rel + 1;
+            let host = &s[..=end];
+            let rest = &s[end + 1..];
+            if let Some(port_str) = rest.strip_prefix(':')
+                && let Ok(port) = port_str.parse::<u16>()
+            {
+                return (host.to_string(), Some(port));
+            }
+            return (s.to_string(), None);
+        }
+        if let Some((host, port_str)) = s.rsplit_once(':')
+            && !host.contains(':')
+            && let Ok(port) = port_str.parse::<u16>()
+        {
+            return (host.to_string(), Some(port));
+        }
+        (s.to_string(), None)
+    }
+
     pub(super) fn dispatch_rotate(
         &self,
         target: Value,
@@ -24,6 +204,11 @@ impl Interpreter {
         let by = match args.first() {
             Some(Value::Int(i)) => *i,
             Some(Value::Num(n)) => *n as i64,
+            Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
+            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+                use num_traits::ToPrimitive;
+                (n / d).to_i64().unwrap_or(1)
+            }
             Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
             None => 1,
         };
@@ -1040,6 +1225,18 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
+
+        // Supply.first returns a new Supply containing the matched value
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Supply"
+        {
+            return self.dispatch_supply_first(attributes, func, has_end);
+        }
+
         let items = crate::runtime::utils::value_to_list(&target);
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
             return Ok(super::builtins_collection::format_first_result(
@@ -1047,6 +1244,56 @@ impl Interpreter {
             ));
         }
         Ok(Value::Nil)
+    }
+
+    fn dispatch_supply_first(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        func: Option<Value>,
+        has_end: bool,
+    ) -> Result<Value, RuntimeError> {
+        let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                let mut a = HashMap::new();
+                a.insert("emitted".to_string(), Value::array(Vec::new()));
+                a.insert("done".to_string(), Value::Bool(false));
+                a
+            });
+            self.supply_emit_buffer.push(Vec::new());
+            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+            self.supply_emit_buffer.pop().unwrap_or_default()
+        } else {
+            attributes
+                .get("values")
+                .and_then(|v| {
+                    if let Value::Array(items, ..) = v {
+                        Some(items.to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+        };
+
+        let result_values = if let Some((_, value)) =
+            self.find_first_match_over_items(func, &source_values, has_end)?
+        {
+            vec![value]
+        } else {
+            Vec::new()
+        };
+
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::array(result_values));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert(
+            "live".to_string(),
+            attributes
+                .get("live")
+                .cloned()
+                .unwrap_or(Value::Bool(false)),
+        );
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.
@@ -1239,10 +1486,12 @@ impl Interpreter {
             encoding: "utf-8".to_string(),
             file: None,
             socket: Some(stream),
+            listener: None,
             closed: false,
             out_buffer_capacity: None,
             out_buffer_pending: Vec::new(),
             bin: false,
+            nl_out: "\n".to_string(),
         };
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();
@@ -1255,17 +1504,360 @@ impl Interpreter {
         ))
     }
 
+    pub(super) fn dispatch_socket_async_listen(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let host = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        let port = args
+            .get(1)
+            .map(|v| match v {
+                Value::Int(i) => *i as u16,
+                Value::Num(f) => *f as u16,
+                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            })
+            .unwrap_or(0);
+        let enc = Self::named_value(args, "enc")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| "utf-8".to_string());
+        let mut attrs = HashMap::new();
+        attrs.insert("host".to_string(), Value::str(host));
+        attrs.insert("port".to_string(), Value::Int(port as i64));
+        attrs.insert("enc".to_string(), Value::str(enc));
+        Ok(Value::make_instance(
+            Symbol::intern("IO::Socket::Async::Listener"),
+            attrs,
+        ))
+    }
+
+    pub(super) fn dispatch_socket_async_connect(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let host = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| "127.0.0.1".to_string());
+        let port = args
+            .get(1)
+            .map(|v| match v {
+                Value::Int(i) => *i as u16,
+                Value::Num(f) => *f as u16,
+                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            })
+            .unwrap_or(0);
+        let enc = Self::named_value(args, "enc")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| "utf-8".to_string());
+
+        let promise = SharedPromise::new();
+        let result = if let Some((_listener_id, listener)) =
+            super::native_methods::lookup_async_listener(&host, port)
+        {
+            let defer_accept = Self::callback_uses_supply_list(&listener.callback);
+            let client_id = super::native_methods::next_async_socket_id();
+            let server_id = super::native_methods::next_async_socket_id();
+            let client_local_port = super::native_methods::allocate_async_listen_port();
+            let server_host = if listener.host == "0.0.0.0" {
+                host.clone()
+            } else {
+                listener.host.clone()
+            };
+
+            super::native_methods::register_async_connection(
+                client_id,
+                super::native_methods::AsyncSocketConnState {
+                    peer_id: Some(server_id),
+                    encoding: enc.clone(),
+                    closed: false,
+                    peer_closed: false,
+                    supply_ids: Vec::new(),
+                    pending_bytes: Vec::new(),
+                    deferred_accept_callback: None,
+                    deferred_accept_socket: None,
+                },
+            );
+            super::native_methods::register_async_connection(
+                server_id,
+                super::native_methods::AsyncSocketConnState {
+                    peer_id: Some(client_id),
+                    encoding: listener.encoding.clone(),
+                    closed: false,
+                    peer_closed: false,
+                    supply_ids: Vec::new(),
+                    pending_bytes: Vec::new(),
+                    deferred_accept_callback: None,
+                    deferred_accept_socket: None,
+                },
+            );
+
+            let mut client_attrs = HashMap::new();
+            client_attrs.insert("conn-id".to_string(), Value::Int(client_id as i64));
+            client_attrs.insert("socket-host".to_string(), Value::str(host.clone()));
+            client_attrs.insert(
+                "socket-port".to_string(),
+                Value::Int(client_local_port as i64),
+            );
+            client_attrs.insert("peer-host".to_string(), Value::str(server_host.clone()));
+            client_attrs.insert("peer-port".to_string(), Value::Int(port as i64));
+            client_attrs.insert("enc".to_string(), Value::str(enc));
+            let client_socket =
+                Value::make_instance(Symbol::intern("IO::Socket::Async"), client_attrs);
+
+            let mut server_attrs = HashMap::new();
+            server_attrs.insert("conn-id".to_string(), Value::Int(server_id as i64));
+            server_attrs.insert("socket-host".to_string(), Value::str(server_host.clone()));
+            server_attrs.insert("socket-port".to_string(), Value::Int(port as i64));
+            server_attrs.insert("peer-host".to_string(), Value::str(host.clone()));
+            server_attrs.insert(
+                "peer-port".to_string(),
+                Value::Int(client_local_port as i64),
+            );
+            server_attrs.insert("enc".to_string(), Value::str(listener.encoding));
+            let server_socket =
+                Value::make_instance(Symbol::intern("IO::Socket::Async"), server_attrs);
+
+            if defer_accept {
+                super::native_methods::update_async_connection(server_id, |conn| {
+                    conn.deferred_accept_callback = Some(listener.callback.clone());
+                    conn.deferred_accept_socket = Some(server_socket.clone());
+                });
+            } else {
+                let _ = self.call_sub_value(listener.callback, vec![server_socket], true);
+            }
+
+            let mut status_attrs = HashMap::new();
+            status_attrs.insert("status".to_string(), Value::str_from("Kept"));
+            status_attrs.insert("result".to_string(), client_socket);
+            status_attrs.insert("cause".to_string(), Value::Nil);
+            Value::make_instance(
+                Symbol::intern("IO::Socket::Async::StatusResult"),
+                status_attrs,
+            )
+        } else {
+            let mut status_attrs = HashMap::new();
+            status_attrs.insert("status".to_string(), Value::str_from("Broken"));
+            status_attrs.insert("result".to_string(), Value::Nil);
+            status_attrs.insert(
+                "cause".to_string(),
+                Value::str(format!("Failed to connect to '{}:{}'", host, port)),
+            );
+            Value::make_instance(
+                Symbol::intern("IO::Socket::Async::StatusResult"),
+                status_attrs,
+            )
+        };
+
+        promise.keep(result, String::new(), String::new());
+        Ok(Value::Promise(promise))
+    }
+
+    /// Thread.start({ block }) — spawn a real OS thread
+    pub(super) fn dispatch_thread_start(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let block = args.first().cloned().unwrap_or(Value::Nil);
+        let thread_id = NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let mut thread_interp = self.clone_for_thread();
+        let handle = std::thread::spawn(move || {
+            match thread_interp.call_sub_value(block, vec![], false) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Thread error: {}", e.message);
+                }
+            }
+            // Flush any output from the thread
+            let output = std::mem::take(&mut thread_interp.output);
+            if !output.is_empty() {
+                print!("{}", output);
+            }
+            let stderr = std::mem::take(&mut thread_interp.stderr_output);
+            if !stderr.is_empty() {
+                eprint!("{}", stderr);
+            }
+        });
+
+        THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
+
+        let mut attrs = HashMap::new();
+        attrs.insert("thread_id".to_string(), Value::Int(thread_id as i64));
+        Ok(Value::make_instance(Symbol::intern("Thread"), attrs))
+    }
+
+    /// Thread.finish — join the thread (block until it completes)
+    pub(super) fn dispatch_thread_finish(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+    ) -> Result<Value, RuntimeError> {
+        let thread_id = attributes
+            .get("thread_id")
+            .and_then(|v| {
+                if let Value::Int(i) = v {
+                    Some(*i as u64)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| RuntimeError::new("Thread has no thread_id"))?;
+
+        let handle = THREAD_HANDLES.lock().unwrap().remove(&thread_id);
+        if let Some(handle) = handle {
+            handle
+                .join()
+                .map_err(|_| RuntimeError::new("Thread panicked"))?;
+        }
+        Ok(Value::Bool(true))
+    }
+
+    /// IO::Socket::INET.new — handles both :listen (server) and client modes.
+    pub(super) fn dispatch_socket_inet_new(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut host = String::new();
+        let mut localhost = String::new();
+        let mut port: u16 = 0;
+        let mut localport: u16 = 0;
+        let mut listen = false;
+        let mut family: Option<i64> = None;
+
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "host" => host = value.to_string_value(),
+                    "localhost" => localhost = value.to_string_value(),
+                    "port" => {
+                        port = match value.as_ref() {
+                            Value::Int(i) => *i as u16,
+                            Value::Num(f) => *f as u16,
+                            other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                        }
+                    }
+                    "localport" => {
+                        localport = match value.as_ref() {
+                            Value::Int(i) => *i as u16,
+                            Value::Num(f) => *f as u16,
+                            other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                        }
+                    }
+                    "listen" => listen = value.as_ref().truthy(),
+                    "family" => {
+                        family = Some(match value.as_ref() {
+                            Value::Int(i) => *i,
+                            Value::Enum { value: v, .. } => *v,
+                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Validate family if provided — must match a known ProtocolFamily value
+        if let Some(f) = family {
+            let valid_families = [0, 1, 2, 3, 4]; // PF_UNSPEC, PF_INET, PF_INET6, PF_LOCAL/PF_UNIX, PF_MAX
+            if !valid_families.contains(&f) {
+                return Err(RuntimeError::new(format!(
+                    "Failed to create socket: unsupported family {}",
+                    f
+                )));
+            }
+        }
+
+        if !host.is_empty() && port == 0 {
+            let (parsed_host, parsed_port) = Self::split_host_port_literal(&host);
+            if let Some(p) = parsed_port {
+                host = parsed_host;
+                port = p;
+            }
+        }
+        if !localhost.is_empty() && localport == 0 {
+            let (parsed_host, parsed_port) = Self::split_host_port_literal(&localhost);
+            if let Some(p) = parsed_port {
+                localhost = parsed_host;
+                localport = p;
+            }
+        }
+
+        if listen {
+            // Server mode: bind and listen
+            let bind_addr = if localhost.is_empty() {
+                format!("0.0.0.0:{}", localport)
+            } else {
+                format!("{}:{}", localhost, localport)
+            };
+            let listener = std::net::TcpListener::bind(&bind_addr).map_err(|e| {
+                RuntimeError::new(format!("Failed to bind to '{}': {}", bind_addr, e))
+            })?;
+            let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(localport);
+            let id = self.next_handle_id;
+            self.next_handle_id += 1;
+            let state = IoHandleState {
+                target: IoHandleTarget::Socket,
+                mode: IoHandleMode::ReadWrite,
+                path: None,
+                line_separators: self.default_line_separators(),
+                line_chomp: true,
+                encoding: "utf-8".to_string(),
+                file: None,
+                socket: None,
+                listener: Some(listener),
+                closed: false,
+                out_buffer_capacity: None,
+                out_buffer_pending: Vec::new(),
+                bin: false,
+                nl_out: "\n".to_string(),
+            };
+            self.handles.insert(id, state);
+            let mut attrs = HashMap::new();
+            attrs.insert("handle".to_string(), Value::Int(id as i64));
+            attrs.insert("localport".to_string(), Value::Int(actual_port as i64));
+            attrs.insert(
+                "localhost".to_string(),
+                Value::str(if localhost.is_empty() {
+                    "0.0.0.0".to_string()
+                } else {
+                    localhost
+                }),
+            );
+            Ok(Value::make_instance(
+                Symbol::intern("IO::Socket::INET"),
+                attrs,
+            ))
+        } else {
+            // Client mode: connect
+            if host.is_empty() {
+                host = "127.0.0.1".to_string();
+            }
+            self.dispatch_socket_connect(&[Value::str(host), Value::Int(port as i64)])
+        }
+    }
+
     /// Replay deferred Proc::Async taps on the main thread.
     /// Called when a Proc result is retrieved via .result or await.
     pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
-        let stdout_taps = match attributes.get("stdout_taps") {
+        let mut stdout_taps = match attributes.get("stdout_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        let stderr_taps = match attributes.get("stderr_taps") {
+        let mut stderr_taps = match attributes.get("stderr_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
+        if let Some(Value::Int(sid)) = attributes.get("stdout_supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                stdout_taps = live;
+            }
+        }
+        if let Some(Value::Int(sid)) = attributes.get("stderr_supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                stderr_taps = live;
+            }
+        }
         let collected_stdout = match attributes.get("collected_stdout") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
@@ -1273,6 +1865,20 @@ impl Interpreter {
         let collected_stderr = match attributes.get("collected_stderr") {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
+        };
+        let mut supply_taps = match attributes.get("supply_taps") {
+            Some(Value::Array(taps, ..)) => taps.to_vec(),
+            _ => Vec::new(),
+        };
+        if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+            let live = super::native_methods::get_supply_taps(*sid as u64);
+            if !live.is_empty() {
+                supply_taps = live;
+            }
+        }
+        let collected_merged = match attributes.get("collected_merged") {
+            Some(Value::Str(s)) => s.to_string(),
+            _ => format!("{}{}", collected_stdout, collected_stderr),
         };
 
         if !collected_stdout.is_empty() && !stdout_taps.is_empty() {
@@ -1289,6 +1895,15 @@ impl Interpreter {
                 let _ = self.call_sub_value(
                     tap.clone(),
                     vec![Value::str(collected_stderr.clone())],
+                    true,
+                );
+            }
+        }
+        if !collected_merged.is_empty() && !supply_taps.is_empty() {
+            for tap in &supply_taps {
+                let _ = self.call_sub_value(
+                    tap.clone(),
+                    vec![Value::str(collected_merged.clone())],
                     true,
                 );
             }

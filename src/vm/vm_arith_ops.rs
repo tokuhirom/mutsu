@@ -1,4 +1,5 @@
 use super::*;
+use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 impl VM {
@@ -155,6 +156,29 @@ impl VM {
         self.stack.push(Value::Bool(!val.truthy()));
     }
 
+    pub(super) fn exec_str_bit_neg_op(&mut self) {
+        let val = self.stack.pop().unwrap();
+        if Self::is_buf_value(&val) {
+            let bytes = Self::extract_buf_bytes(&val);
+            let negated: Vec<Value> = bytes.iter().map(|b| Value::Int((!b) as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(negated));
+            // Determine result type: if input is utf8, result is utf8; otherwise Buf
+            let result_type = if let Value::Instance { class_name, .. } = &val {
+                class_name.resolve().to_string()
+            } else {
+                "Buf".to_string()
+            };
+            self.stack
+                .push(Value::make_instance(Symbol::intern(&result_type), attrs));
+        } else {
+            let s = crate::runtime::utils::coerce_to_str(&val);
+            let negated: Vec<u8> = s.as_bytes().iter().map(|b| !b).collect();
+            let result = String::from_utf8_lossy(&negated).into_owned();
+            self.stack.push(Value::str(result));
+        }
+    }
+
     pub(super) fn exec_decont_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let new_val = match val {
@@ -218,11 +242,75 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
+        if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            let result_class = if let Value::Instance { class_name, .. } = &left {
+                *class_name
+            } else {
+                crate::symbol::Symbol::intern("Buf")
+            };
+            let mut bytes = Self::extract_buf_bytes(&left);
+            bytes.extend(Self::extract_buf_bytes(&right));
+            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            self.stack.push(Value::make_instance(result_class, attrs));
+            return;
+        }
+        // Buf ~ non-Buf or non-Buf ~ Buf: decode the Buf and produce a Str
+        if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
+            let left_str = if Self::is_buf_value(&left) {
+                let bytes = Self::extract_buf_bytes(&left);
+                String::from_utf8_lossy(&bytes).into_owned()
+            } else {
+                crate::runtime::utils::coerce_to_str(&left)
+            };
+            let right_str = if Self::is_buf_value(&right) {
+                let bytes = Self::extract_buf_bytes(&right);
+                String::from_utf8_lossy(&bytes).into_owned()
+            } else {
+                crate::runtime::utils::coerce_to_str(&right)
+            };
+            self.stack
+                .push(Value::str(format!("{}{}", left_str, right_str)));
+            return;
+        }
         self.stack.push(Value::str(format!(
             "{}{}",
             crate::runtime::utils::coerce_to_str(&left),
             crate::runtime::utils::coerce_to_str(&right)
         )));
+    }
+
+    pub fn is_buf_value(val: &Value) -> bool {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } else {
+            false
+        }
+    }
+
+    pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {
+        if let Value::Instance { attributes, .. } = val
+            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        {
+            return items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i as u8,
+                    _ => 0,
+                })
+                .collect();
+        }
+        Vec::new()
     }
 
     pub(super) fn exec_int_div_op(&mut self) -> Result<(), RuntimeError> {
@@ -578,12 +666,31 @@ impl VM {
             Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
         }
 
+        fn shift_left_bigint(a: num_bigint::BigInt, b: i64) -> Value {
+            if b < 0 {
+                Value::from_bigint(a >> (b.unsigned_abs() as usize))
+            } else {
+                Value::from_bigint(a << (b as usize))
+            }
+        }
+
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => shift_left_i64(a, b),
-            _ => Value::Int(0),
+            (l, r) => {
+                let a = l.to_bigint();
+                let b_big = r.to_bigint();
+                let b = b_big.to_i64().unwrap_or_else(|| {
+                    if b_big.sign() == num_bigint::Sign::Minus {
+                        i64::MIN
+                    } else {
+                        i64::MAX
+                    }
+                });
+                shift_left_bigint(a, b)
+            }
         };
         self.stack.push(result);
     }
@@ -611,12 +718,31 @@ impl VM {
             }
         }
 
+        fn shift_right_bigint(a: num_bigint::BigInt, b: i64) -> Value {
+            if b < 0 {
+                Value::from_bigint(a << (b.unsigned_abs() as usize))
+            } else {
+                Value::from_bigint(a >> (b as usize))
+            }
+        }
+
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l, r) {
             (Value::Int(a), Value::Int(b)) => shift_right_i64(a, b),
-            _ => Value::Int(0),
+            (l, r) => {
+                let a = l.to_bigint();
+                let b_big = r.to_bigint();
+                let b = b_big.to_i64().unwrap_or_else(|| {
+                    if b_big.sign() == num_bigint::Sign::Minus {
+                        i64::MIN
+                    } else {
+                        i64::MAX
+                    }
+                });
+                shift_right_bigint(a, b)
+            }
         };
         self.stack.push(result);
     }

@@ -31,9 +31,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
-    "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max",
-    "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
-    "o", "∘", "⊍",
+    "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min",
+    "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|",
+    "^", "o", "∘", "⊍",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -237,7 +237,8 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
-    let mut items = merge_sequence_seeds(items);
+    let mut items = merge_list_infix_seeds(items);
+    items = merge_sequence_seeds(items);
     let expr = if items.len() == 1 {
         items.remove(0)
     } else {
@@ -290,6 +291,32 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
     } else {
         items
     }
+}
+
+fn merge_list_infix_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::MetaOp {
+        meta,
+        op,
+        left,
+        right,
+    } = last
+        && (meta == "X" || meta == "Z")
+    {
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            right: right.clone(),
+        };
+        return vec![merged];
+    }
+    items
 }
 
 pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, Expr> {
@@ -476,6 +503,43 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 r_end,
                 Expr::Literal(Value::make_instance(Symbol::intern("Signature"), attrs)),
             ));
+        }
+    }
+    // :16(expr) — radix conversion shorthand (equivalent to UNBASE(16, expr))
+    {
+        let mut digit_end = 0;
+        let mut base_clean = String::new();
+        for c in r.chars() {
+            let Some(dv) = crate::builtins::unicode::unicode_decimal_digit_value(c) else {
+                break;
+            };
+            digit_end += c.len_utf8();
+            base_clean.push(char::from_digit(dv, 10).unwrap());
+        }
+        if digit_end > 0 {
+            let after_digits = &r[digit_end..];
+            if let Some(after_paren) = after_digits.strip_prefix('(') {
+                let base: u32 = base_clean.parse().unwrap_or(0);
+                if !(2..=36).contains(&base) {
+                    return Err(PError::expected("generic radix base 2..36"));
+                }
+                let (r_args, _) = ws(after_paren)?;
+                let (r_args, mut args) = parse_call_arg_list(r_args)?;
+                let (r_args, _) = ws(r_args)?;
+                let (r_args, _) = parse_char(r_args, ')')?;
+                if args.is_empty() {
+                    return Err(PError::expected("known call arguments"));
+                }
+                let mut call_args = vec![Expr::Literal(Value::Int(base as i64))];
+                call_args.append(&mut args);
+                return Ok((
+                    r_args,
+                    Expr::Call {
+                        name: Symbol::intern("UNBASE"),
+                        args: call_args,
+                    },
+                ));
+            }
         }
     }
     // :123name (numeric leading-value pair) => :name(123)

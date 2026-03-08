@@ -31,6 +31,7 @@ pub(super) enum ComparisonOp {
     After,
     ApproxEq,
     ContainerEq,
+    ContainerNe,
 }
 
 impl ComparisonOp {
@@ -61,6 +62,7 @@ impl ComparisonOp {
             ComparisonOp::After => TokenKind::Ident("after".to_string()),
             ComparisonOp::ApproxEq => TokenKind::Ident("=~=".to_string()),
             ComparisonOp::ContainerEq => TokenKind::Ident("=:=".to_string()),
+            ComparisonOp::ContainerNe => TokenKind::Ident("!=:=".to_string()),
         }
     }
 }
@@ -256,6 +258,7 @@ pub(super) enum PrefixUnaryOp {
     Stringify,
     IntBitNeg,  // +^ integer bitwise negation
     BoolBitNeg, // ?^ boolean bitwise negation
+    StrBitNeg,  // ~^ string/buffer bitwise negation
 }
 
 impl PrefixUnaryOp {
@@ -270,6 +273,7 @@ impl PrefixUnaryOp {
             PrefixUnaryOp::Stringify => TokenKind::Tilde,
             PrefixUnaryOp::IntBitNeg => TokenKind::IntBitNeg,
             PrefixUnaryOp::BoolBitNeg => TokenKind::BoolBitNeg,
+            PrefixUnaryOp::StrBitNeg => TokenKind::StrBitNeg,
         }
     }
 
@@ -283,6 +287,7 @@ impl PrefixUnaryOp {
                 | PrefixUnaryOp::Stringify
                 | PrefixUnaryOp::IntBitNeg
                 | PrefixUnaryOp::BoolBitNeg
+                | PrefixUnaryOp::StrBitNeg
         )
     }
 
@@ -299,6 +304,7 @@ impl PrefixUnaryOp {
             PrefixUnaryOp::Stringify => Some("~"),
             PrefixUnaryOp::IntBitNeg => Some("+^"),
             PrefixUnaryOp::BoolBitNeg => Some("?^"),
+            PrefixUnaryOp::StrBitNeg => Some("~^"),
             PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec => None,
         }
     }
@@ -428,13 +434,15 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && (starts_hyper_prefix_marker(&input[1..])
-            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
+            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}'))
     {
         Some((PrefixUnaryOp::Positive, 1))
+    } else if input.starts_with("~^") {
+        Some((PrefixUnaryOp::StrBitNeg, 2))
     } else if input.starts_with('~')
         && !input.starts_with("~~")
         && (starts_hyper_prefix_marker(&input[1..])
-            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c)))
+            || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.'))
     {
         Some((PrefixUnaryOp::Stringify, 1))
     } else {

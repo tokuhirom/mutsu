@@ -1,5 +1,5 @@
 use super::super::expr::expression;
-use super::super::helpers::{skip_balanced_parens, ws, ws1};
+use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -882,7 +882,14 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             r
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
+        if r2.starts_with('$')
+            || r2.starts_with('@')
+            || r2.starts_with('%')
+            || r2.starts_with('&')
+            || r2.starts_with('*')
+            || (r2.starts_with(':')
+                && r2.len() > 1
+                && matches!(r2.as_bytes()[1], b'$' | b'@' | b'%' | b'&'))
         {
             type_constraint = Some(tc);
             r2
@@ -909,6 +916,92 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     {
         slurpy = true;
         rest = &rest[1..];
+    }
+
+    // Capture-all pointy parameter: -> |, -> |$c, -> |c
+    if let Some(stripped) = rest.strip_prefix('|') {
+        let (r, _) = ws(stripped)?;
+        // Optional capture variable name with sigil
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
+            let (r, name) = var_name(r)?;
+            return Ok((
+                r,
+                ParamDef {
+                    name,
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint,
+                    literal_value: None,
+                    sub_signature: None,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    is_invocant: false,
+                    shape_constraints: None,
+                },
+            ));
+        }
+
+        // Sigilless capture variable name
+        if let Ok((r, name)) = ident(r)
+            && !matches!(name.as_str(), "where" | "is")
+        {
+            return Ok((
+                r,
+                ParamDef {
+                    name,
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: true,
+                    type_constraint,
+                    literal_value: None,
+                    sub_signature: None,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    is_invocant: false,
+                    shape_constraints: None,
+                },
+            ));
+        }
+
+        // Bare capture marker
+        return Ok((
+            r,
+            ParamDef {
+                name: "_capture".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: true,
+                double_slurpy: false,
+                sigilless: false,
+                type_constraint,
+                literal_value: None,
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
     }
 
     // Anonymous callable pointy parameter with code signature: -> &:(Str) { ... }
@@ -1009,6 +1102,16 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
 
+    // Named parameter prefix: :$x, :@l, :%h
+    let mut named = false;
+    if rest.starts_with(':')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'$' | b'@' | b'%' | b'&')
+    {
+        named = true;
+        rest = &rest[1..];
+    }
+
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (rest, name) = var_name(rest)?;
 
@@ -1065,10 +1168,17 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     }
 
     // Optional unpacking sub-signature: `-> Pair $p (:$key, :$value) { ... }`
-    // Keep parse permissive and skip details for now.
+    // Parse and preserve the sub-signature for runtime binding.
+    let mut sub_signature = None;
     let (r, _) = ws(rest)?;
     if r.starts_with('(') {
-        rest = skip_balanced_parens(r);
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = super::sub::parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        sub_signature = Some(sub_params);
+        rest = r;
     } else {
         rest = r;
     }
@@ -1102,13 +1212,13 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             default,
             multi_invocant: true,
             required: required_marker,
-            named: false,
+            named,
             slurpy,
             double_slurpy,
             sigilless: false,
             type_constraint,
             literal_value: None,
-            sub_signature: None,
+            sub_signature,
             outer_sub_signature: None,
             code_signature: None,
             where_constraint,
@@ -1516,7 +1626,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond_expr) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
 
-    // Check for optional pointy block: -> $param { ... }
+    // Check for optional pointy block: -> $param { ... } or -> \param { ... }
     let (rest, param_name) = if let Some(r) = rest.strip_prefix("->") {
         let (r, _) = ws(r)?;
         // Parse parameter like $proc
@@ -1526,6 +1636,15 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 .unwrap_or(r_after_sigil.len());
             let name = &r_after_sigil[..end];
             let r = &r_after_sigil[end..];
+            let (r, _) = ws(r)?;
+            (r, Some(name.to_string()))
+        } else if let Some(r_after_backslash) = r.strip_prefix('\\') {
+            // Sigilless parameter like \c
+            let end = r_after_backslash
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(r_after_backslash.len());
+            let name = &r_after_backslash[..end];
+            let r = &r_after_backslash[end..];
             let (r, _) = ws(r)?;
             (r, Some(name.to_string()))
         } else {

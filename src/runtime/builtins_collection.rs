@@ -166,6 +166,11 @@ impl Interpreter {
             match arg {
                 Value::Array(items, ..) => elems.extend(items.iter().cloned()),
                 Value::Seq(items) | Value::Slip(items) => elems.extend(items.iter().cloned()),
+                range @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => elems.extend(Self::value_to_list(&range)),
                 other => elems.push(other),
             }
         }
@@ -628,12 +633,42 @@ impl Interpreter {
             return Ok(Value::str(joined));
         }
         // Multi-arg: join(sep, item1, item2, ...)
+        // Flatten ranges and lists to their elements
         if args.len() > 1 {
-            let joined = args[1..]
-                .iter()
-                .map(|v| v.to_string_value())
-                .collect::<Vec<_>>()
-                .join(&sep);
+            let mut parts = Vec::new();
+            for v in &args[1..] {
+                match v {
+                    Value::Range(start, end) => {
+                        for i in *start..=*end {
+                            parts.push(Value::Int(i).to_string_value());
+                        }
+                    }
+                    Value::RangeExcl(start, end) => {
+                        for i in *start..*end {
+                            parts.push(Value::Int(i).to_string_value());
+                        }
+                    }
+                    Value::GenericRange { .. } => {
+                        for item in crate::runtime::utils::value_to_list(v) {
+                            parts.push(item.to_string_value());
+                        }
+                    }
+                    Value::Array(items, ..) => {
+                        for item in items.iter() {
+                            parts.push(item.to_string_value());
+                        }
+                    }
+                    Value::Seq(items) | Value::Slip(items) => {
+                        for item in items.as_ref() {
+                            parts.push(item.to_string_value());
+                        }
+                    }
+                    _ => {
+                        parts.push(v.to_string_value());
+                    }
+                }
+            }
+            let joined = parts.join(&sep);
             return Ok(Value::str(joined));
         }
         Ok(Value::str(String::new()))
@@ -1193,7 +1228,21 @@ impl Interpreter {
                     with_func = Some(v.as_ref().clone());
                 }
                 _ => {
-                    lists.push(super::utils::value_to_list(arg));
+                    let mut values = super::utils::value_to_list(arg);
+                    if values.len() == 1
+                        && let Some(single) = values.first()
+                    {
+                        match single {
+                            Value::Array(items, _) => {
+                                values = items.as_ref().clone();
+                            }
+                            Value::Seq(items) | Value::Slip(items) => {
+                                values = items.as_ref().clone();
+                            }
+                            _ => {}
+                        }
+                    }
+                    lists.push(values);
                 }
             }
         }
@@ -1233,13 +1282,27 @@ impl Interpreter {
 
     pub(super) fn builtin_roundrobin(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-        if args.len() == 1 {
-            return Ok(args[0].clone());
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
         }
 
-        let streams: Vec<Vec<Value>> = args
+        // Implement Raku's single-arg rule (+@lol): when called with a single
+        // iterable arg, iterate it to get the list of streams.
+        let effective_args: Vec<Value> = if args.len() == 1 {
+            match &args[0] {
+                Value::Array(items, kind) if kind.is_itemized() => args.to_vec(),
+                Value::Array(items, _) => items.iter().cloned().collect(),
+                Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+                _ => args.to_vec(),
+            }
+        } else {
+            args.to_vec()
+        };
+
+        if effective_args.is_empty() {
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+        }
+
+        let streams: Vec<Vec<Value>> = effective_args
             .iter()
             .map(|arg| match arg {
                 Value::Capture { positional, named }
@@ -1275,6 +1338,6 @@ impl Interpreter {
             rounds.push(Value::array(tuple));
         }
 
-        Ok(Value::array(rounds))
+        Ok(Value::Seq(std::sync::Arc::new(rounds)))
     }
 }

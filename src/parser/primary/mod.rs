@@ -2,6 +2,7 @@ mod container;
 mod ident;
 pub(in crate::parser) mod misc;
 mod number;
+mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;
 mod var;
@@ -84,6 +85,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
 
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
+        try_primary!(number::rational(input));
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
@@ -161,6 +163,13 @@ mod tests {
         let (rest, expr) = primary("0xFF").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Literal(Value::Int(255))));
+    }
+
+    #[test]
+    fn parse_rational_literal() {
+        let (rest, expr) = primary("1/4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Rat(1, 4))));
     }
 
     #[test]
@@ -334,6 +343,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_topic_brace_lookup() {
+        let (rest, expr) = primary(".{'path'}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Index { target, index } => {
+                assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "_"));
+                assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s.as_str() == "path"));
+            }
+            _ => panic!("expected topical brace lookup"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_bracket_expr() {
         let (rest, expr) = primary("$[1,2]").unwrap();
         assert_eq!(rest, "");
@@ -391,6 +413,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_pointy_capture_param_method_call() {
+        let (rest, expr) = primary("(-> |c { }).count").unwrap();
+        assert_eq!(rest, ".count");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { ref param_defs, .. }
+                if param_defs.len() == 1
+                    && param_defs[0].slurpy
+                    && param_defs[0].sigilless
+                    && param_defs[0].name == "c"
+        ));
+    }
+
+    #[test]
     fn parse_big_q_to_heredoc() {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
@@ -411,6 +447,14 @@ mod tests {
         let src = "Q:to/END/\nhello\n    END\n";
         let (rest, expr) = primary(src).unwrap();
         assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
+    }
+
+    #[test]
+    fn parse_q_to_heredoc_with_space_before_delimiter() {
+        let src = "q:to /END/;\nhello\nEND\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, ";\n");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s.as_str() == "hello\n"));
     }
 
@@ -681,6 +725,13 @@ mod tests {
     }
 
     #[test]
+    fn primary_parses_named_sub_literal_in_expression_context() {
+        let (rest, expr) = primary("sub f { 42 }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::AnonSub { .. }));
+    }
+
+    #[test]
     fn primary_big_q_bang_delimiter() {
         reset_primary_memo();
         let (rest, expr) = primary("Q!hello!").unwrap();
@@ -717,6 +768,8 @@ mod tests {
 
     #[test]
     fn primary_qx_interpolates_command() {
+        // qx does NOT interpolate $x — only qqx does.
+        // qx uses q-style backslash processing (\\ → \).
         reset_primary_memo();
         let (rest, expr) = primary("qx{echo $x}").unwrap();
         assert_eq!(rest, "");
@@ -724,7 +777,7 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "QX");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], Expr::StringInterpolation(_)));
+                assert!(matches!(args[0], Expr::Literal(_)));
             }
             _ => panic!("expected qx call expression"),
         }

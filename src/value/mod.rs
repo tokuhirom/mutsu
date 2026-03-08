@@ -128,7 +128,7 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     }
 }
 
-/// Distinguishes the four array/list container kinds.
+/// Distinguishes the five array/list container kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ArrayKind {
     /// `(1,2,3)` — flattens in slurpy context, `.raku` → `(1, 2, 3)`
@@ -139,12 +139,17 @@ pub enum ArrayKind {
     ItemList,
     /// `$[1,2,3]` — Scalar-wrapped array, doesn't flatten, `.raku` → `$[1, 2, 3]`
     ItemArray,
+    /// `my @a[2;3]` — shaped (multidimensional) array declared with fixed dimensions
+    Shaped,
 }
 
 impl ArrayKind {
-    /// True for `Array` and `ItemArray` (the `[...]` constructor).
+    /// True for `Array`, `ItemArray`, and `Shaped` (the `[...]` constructor or shaped declaration).
     pub fn is_real_array(self) -> bool {
-        matches!(self, ArrayKind::Array | ArrayKind::ItemArray)
+        matches!(
+            self,
+            ArrayKind::Array | ArrayKind::ItemArray | ArrayKind::Shaped
+        )
     }
 
     /// True for `ItemList` and `ItemArray` (Scalar-wrapped).
@@ -226,6 +231,7 @@ pub enum Value {
         exhaustive: bool,
         overlap: bool,
         repeat: Option<usize>,
+        nth: Option<Arc<String>>,
         perl5: bool,
         pos: bool,
         ignore_case: bool,
@@ -739,6 +745,7 @@ impl PartialEq for Value {
                     exhaustive: aex,
                     overlap: aov,
                     repeat: ar,
+                    nth: anth,
                     perl5: ap5,
                     pos: apos,
                     ignore_case: aic,
@@ -752,6 +759,7 @@ impl PartialEq for Value {
                     exhaustive: bex,
                     overlap: bov,
                     repeat: br,
+                    nth: bnth,
                     perl5: bp5,
                     pos: bpos,
                     ignore_case: bic,
@@ -765,6 +773,7 @@ impl PartialEq for Value {
                     && aex == bex
                     && aov == bov
                     && ar == br
+                    && anth == bnth
                     && ap5 == bp5
                     && apos == bpos
                     && aic == bic
@@ -921,6 +930,10 @@ impl Value {
     pub fn real_array(items: Vec<Value>) -> Self {
         Value::Array(Arc::new(items), ArrayKind::Array)
     }
+    /// Create a shaped (multidimensional) Array value.
+    pub fn shaped_array(items: Vec<Value>) -> Self {
+        Value::Array(Arc::new(items), ArrayKind::Shaped)
+    }
     pub fn hash(map: HashMap<String, Value>) -> Self {
         Value::Hash(Arc::new(map))
     }
@@ -939,7 +952,8 @@ impl Value {
     pub fn bag(m: HashMap<String, i64>) -> Self {
         Value::Bag(Arc::new(m))
     }
-    pub fn mix(m: HashMap<String, f64>) -> Self {
+    pub fn mix(mut m: HashMap<String, f64>) -> Self {
+        m.retain(|_, weight| *weight != 0.0);
         Value::Mix(Arc::new(m))
     }
     pub fn slip(items: Vec<Value>) -> Self {

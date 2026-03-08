@@ -3,6 +3,40 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::sync::Arc;
 
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+fn f64_to_rat(f: f64) -> (i64, i64) {
+    if f.is_nan() {
+        return (0, 0);
+    }
+    if f.is_infinite() {
+        return if f > 0.0 { (1, 0) } else { (-1, 0) };
+    }
+    let negative = f < 0.0;
+    let f = f.abs();
+    let mut den: i64 = 1;
+    let mut num = f;
+    for _ in 0..18 {
+        if (num - num.round()).abs() < 1e-10 {
+            break;
+        }
+        num *= 10.0;
+        den *= 10;
+    }
+    let n = num.round() as i64;
+    let g = gcd_u64(n.unsigned_abs(), den.unsigned_abs());
+    let n = n / g as i64;
+    let d = den / g as i64;
+    if negative { (-n, d) } else { (n, d) }
+}
+
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
@@ -132,10 +166,33 @@ pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "hash" => {
-            let items = crate::runtime::utils::value_to_list(target);
-            Some(crate::runtime::utils::build_hash_from_items(items))
-        }
+        "hash" => match target {
+            Value::Set(s) => {
+                let mut map = std::collections::HashMap::new();
+                for k in s.iter() {
+                    map.insert(k.clone(), Value::Bool(true));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            Value::Bag(b) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in b.iter() {
+                    map.insert(k.clone(), Value::Int(*v));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            Value::Mix(m) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in m.iter() {
+                    map.insert(k.clone(), Value::Num(*v));
+                }
+                Some(Ok(Value::hash(map)))
+            }
+            _ => {
+                let items = crate::runtime::utils::value_to_list(target);
+                Some(crate::runtime::utils::build_hash_from_items(items))
+            }
+        },
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -401,7 +458,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "total" => match target {
             Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
-            Value::Mix(m) => Some(Ok(Value::Num(m.values().sum::<f64>()))),
+            Value::Mix(m) => {
+                let (n, d) = f64_to_rat(m.values().sum::<f64>());
+                Some(Ok(crate::value::make_rat(n, d)))
+            }
             _ => None,
         },
         "minmax" => match target {
@@ -427,9 +487,37 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "sum" => match target {
             Value::Array(items, ..) => {
+                // Check for non-numeric strings first
+                for item in items.iter() {
+                    if let Value::Str(s) = item {
+                        let trimmed = s.trim();
+                        if trimmed.parse::<f64>().is_err() {
+                            let reason =
+                                "base-10 number must begin with valid digits or '.'".to_string();
+                            let msg =
+                                format!("Cannot convert string '{}' to number: {}", s, reason);
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert("source".to_string(), Value::str(s.to_string()));
+                            attrs.insert("reason".to_string(), Value::str(reason));
+                            attrs.insert("pos".to_string(), Value::Int(0));
+                            attrs.insert(
+                                "target-name".to_string(),
+                                Value::str("Numeric".to_string()),
+                            );
+                            attrs.insert("message".to_string(), Value::str(msg.clone()));
+                            let ex = Value::make_instance(
+                                crate::symbol::Symbol::intern("X::Str::Numeric"),
+                                attrs,
+                            );
+                            let mut err = RuntimeError::new(&msg);
+                            err.exception = Some(Box::new(ex));
+                            return Some(Err(err));
+                        }
+                    }
+                }
                 let has_float = items
                     .iter()
-                    .any(|v| matches!(v, Value::Num(_) | Value::Rat(_, _)));
+                    .any(|v| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::Str(_)));
                 if has_float {
                     let total: f64 = items
                         .iter()

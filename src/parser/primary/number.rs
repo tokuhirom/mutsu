@@ -89,7 +89,17 @@ fn parse_prefixed_radix<'a>(
     if clean.is_empty() {
         return Some(Err(PError::expected("radix digits")));
     }
-    Some(Ok((&rest[end..], parse_int_radix(&clean, radix))))
+    // Reject if the next character is a Unicode numeric that wasn't a valid digit for this radix
+    let remaining = &rest[end..];
+    if let Some(next_ch) = remaining.chars().next()
+        && next_ch.is_numeric()
+        && !next_ch.is_ascii_digit()
+    {
+        return Some(Err(PError::expected(
+            "confused by Unicode numeric character after radix literal",
+        )));
+    }
+    Some(Ok((remaining, parse_int_radix(&clean, radix))))
 }
 
 /// Parse an integer string with given radix, using BigInt for overflow.
@@ -182,6 +192,33 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse a rational literal in `numerator/denominator` form with no whitespace.
+/// Examples: `1/4`, `10/3`, `0/0`.
+pub(super) fn rational(input: &str) -> PResult<'_, Expr> {
+    let (rest, numer_clean) =
+        scan_decimal_digits(input).ok_or_else(|| PError::expected("digits"))?;
+    let Some(rest) = rest.strip_prefix('/') else {
+        return Err(PError::expected("rational literal"));
+    };
+    let Some((rest, denom_clean)) = scan_decimal_digits(rest) else {
+        return Err(PError::expected("rational literal"));
+    };
+
+    let value = match (numer_clean.parse::<i64>(), denom_clean.parse::<i64>()) {
+        (Ok(n), Ok(d)) => crate::value::make_rat(n, d),
+        _ => {
+            let n = numer_clean
+                .parse::<num_bigint::BigInt>()
+                .map_err(|_| PError::expected("rational literal"))?;
+            let d = denom_clean
+                .parse::<num_bigint::BigInt>()
+                .map_err(|_| PError::expected("rational literal"))?;
+            crate::value::make_big_rat(n, d)
+        }
+    };
+    Ok((rest, Expr::Literal(value)))
+}
+
 /// Parse a decimal number literal.
 /// In Raku, decimal literals without exponent are Rat, with exponent are Num.
 pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
@@ -228,12 +265,30 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
             return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
         }
         // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
+        // For very large frac_digits, fall back to Num to avoid overflow
         let frac_digits = frac_clean.len() as u32;
+        if frac_digits > 18 {
+            // Too many decimal places for i64 — produce a Num instead
+            let n: f64 = format!("{}.{}", int_clean, frac_clean)
+                .parse()
+                .unwrap_or(0.0);
+            return Ok((rest, Expr::Literal(Value::Num(n))));
+        }
         let denom = 10i64.pow(frac_digits);
         let int_val: i64 = int_clean.parse().unwrap_or(0);
         let frac_val: i64 = frac_clean.parse().unwrap_or(0);
-        let numer = int_val * denom + frac_val;
-        Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
+        let numer = int_val
+            .checked_mul(denom)
+            .and_then(|v| v.checked_add(frac_val));
+        match numer {
+            Some(numer) => Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom)))),
+            None => {
+                let n: f64 = format!("{}.{}", int_clean, frac_clean)
+                    .parse()
+                    .unwrap_or(0.0);
+                Ok((rest, Expr::Literal(Value::Num(n))))
+            }
+        }
     }
 }
 
@@ -306,13 +361,52 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("closing '>' for generic radix literal"));
     };
     let body = &r[..close_pos];
+    let body: String = body.chars().filter(|c| !c.is_whitespace()).collect();
     if body.is_empty() {
         return Err(PError::expected("generic radix digits"));
     }
+    let (digits_body, exponent_scale) = if let Some((digits, exp_part)) = body.split_once("*10**") {
+        let exp_part = exp_part.trim();
+        if exp_part.is_empty() {
+            return Err(PError::expected("generic radix exponent"));
+        }
+        let (sign, after_sign) = if let Some(rest) = exp_part.strip_prefix('+') {
+            (1_i64, rest)
+        } else if let Some(rest) = exp_part.strip_prefix('-') {
+            (-1_i64, rest)
+        } else {
+            (1_i64, exp_part)
+        };
+        let Some((exp_rest, exp_clean)) = scan_decimal_digits(after_sign) else {
+            return Err(PError::expected("generic radix exponent"));
+        };
+        if !exp_rest.is_empty() {
+            return Err(PError::expected("generic radix exponent"));
+        }
+        let exp_abs: i64 = exp_clean
+            .parse()
+            .map_err(|_| PError::expected("generic radix exponent"))?;
+        (digits.trim(), sign * exp_abs)
+    } else {
+        (body.trim(), 0_i64)
+    };
+    if digits_body.is_empty() {
+        return Err(PError::expected("generic radix digits"));
+    }
 
-    let mut clean = String::new();
-    for c in body.chars() {
+    let mut int_clean = String::new();
+    let mut frac_clean = String::new();
+    let mut saw_dot = false;
+    let mut saw_digit = false;
+    for c in digits_body.chars() {
         if c == '_' {
+            continue;
+        }
+        if c == '.' {
+            if saw_dot {
+                return Err(PError::expected("generic radix digits"));
+            }
+            saw_dot = true;
             continue;
         }
         let Some(value) = decimal_digit_value(c).or_else(|| radix_alpha_value(c)) else {
@@ -321,12 +415,54 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
         if value >= base {
             return Err(PError::expected("generic radix digits"));
         }
-        clean.push(char::from_digit(value, 36).unwrap());
+        saw_digit = true;
+        let digit = char::from_digit(value, 36).unwrap();
+        if saw_dot {
+            frac_clean.push(digit);
+        } else {
+            int_clean.push(digit);
+        }
     }
-    if clean.is_empty() {
+    if !saw_digit {
         return Err(PError::expected("generic radix digits"));
     }
-    Ok((&r[close_pos + 1..], parse_int_radix(&clean, base)))
+
+    // Fast path for plain integer generic radix literals.
+    if !saw_dot && exponent_scale == 0 {
+        return Ok((&r[close_pos + 1..], parse_int_radix(&int_clean, base)));
+    }
+
+    let base_big = num_bigint::BigInt::from(base);
+    let int_value = if int_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base)
+            .unwrap_or_else(|| num_bigint::BigInt::from(0_i64))
+    };
+    let frac_value = if frac_clean.is_empty() {
+        num_bigint::BigInt::from(0_i64)
+    } else {
+        num_bigint::BigInt::parse_bytes(frac_clean.as_bytes(), base)
+            .unwrap_or_else(|| num_bigint::BigInt::from(0_i64))
+    };
+    let frac_scale = base_big.pow(frac_clean.len() as u32);
+    let mut numerator = int_value * &frac_scale + frac_value;
+    let mut denominator = frac_scale;
+
+    if exponent_scale != 0 {
+        let exp_abs = exponent_scale.unsigned_abs() as u32;
+        let scale10 = num_bigint::BigInt::from(10_u32).pow(exp_abs);
+        if exponent_scale > 0 {
+            numerator *= scale10;
+        } else {
+            denominator *= scale10;
+        }
+    }
+
+    Ok((
+        &r[close_pos + 1..],
+        Expr::Literal(crate::value::make_big_rat(numerator, denominator)),
+    ))
 }
 
 /// Parse a single Unicode numeric literal (vulgar fractions and superscript digits).

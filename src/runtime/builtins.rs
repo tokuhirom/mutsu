@@ -1,6 +1,246 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::token_kind::TokenKind;
+use crate::value::ArrayKind;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Navigate a multi-dimensional array to get a value.
+fn multidim_index(target: &Value, indices: &[Value]) -> Value {
+    if indices.is_empty() {
+        return target.clone();
+    }
+    let head = &indices[0];
+    // Whatever (*) means "all elements of this dimension"
+    if matches!(head, Value::Whatever) {
+        let Value::Array(items, ..) = target else {
+            return Value::Nil;
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items.iter() {
+            out.push(multidim_index(item, &indices[1..]));
+        }
+        return Value::array(out);
+    }
+    // List/Array as index means "multiple indices in this dimension"
+    if let Value::Array(idx_items, ..) = head {
+        let mut out = Vec::with_capacity(idx_items.len());
+        for idx in idx_items.iter() {
+            let mut sub_indices = vec![idx.clone()];
+            sub_indices.extend_from_slice(&indices[1..]);
+            out.push(multidim_index(target, &sub_indices));
+        }
+        return Value::array(out);
+    }
+    let Value::Array(items, ..) = target else {
+        return Value::Nil;
+    };
+    let i = match head {
+        Value::Int(n) => {
+            let n = *n;
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return Value::Nil;
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
+        Value::Num(f) => *f as usize,
+        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
+        _ => return Value::Nil,
+    };
+    if i >= items.len() {
+        return Value::Nil;
+    }
+    multidim_index(&items[i], &indices[1..])
+}
+
+/// Delete element from a multi-dimensional array, returning the deleted value.
+fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
+    let default = || Value::Package(crate::symbol::Symbol::intern("Any"));
+    if indices.is_empty() {
+        let old = target.clone();
+        *target = default();
+        return old;
+    }
+    let head = &indices[0];
+    // Whatever (*) means "all elements of this dimension"
+    if matches!(head, Value::Whatever) {
+        let Value::Array(items, ..) = target else {
+            return default();
+        };
+        let items = std::sync::Arc::make_mut(items);
+        let mut out = Vec::with_capacity(items.len());
+        for item in items.iter_mut() {
+            out.push(multidim_delete(item, &indices[1..]));
+        }
+        // Truncate trailing Any values
+        while items
+            .last()
+            .is_some_and(|v| matches!(v, Value::Package(s) if s == "Any"))
+        {
+            items.pop();
+        }
+        return Value::array(out);
+    }
+    // List/Array as index means "multiple indices in this dimension"
+    if let Value::Array(idx_items, ..) = head {
+        let idx_list: Vec<Value> = idx_items.as_ref().clone();
+        let mut out = Vec::with_capacity(idx_list.len());
+        for idx in &idx_list {
+            let mut sub_indices = vec![idx.clone()];
+            sub_indices.extend_from_slice(&indices[1..]);
+            out.push(multidim_delete(target, &sub_indices));
+        }
+        return Value::array(out);
+    }
+    let Value::Array(items, ..) = target else {
+        return default();
+    };
+    let items = std::sync::Arc::make_mut(items);
+    let i = match head {
+        Value::Int(n) => {
+            let n = *n;
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return default();
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
+        Value::Num(f) => *f as usize,
+        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
+        _ => return default(),
+    };
+    if i >= items.len() {
+        return default();
+    }
+    if indices.len() == 1 {
+        let old = items[i].clone();
+        items[i] = Value::Package(crate::symbol::Symbol::intern("Any"));
+        // Truncate trailing Any values (Raku behavior)
+        while items
+            .last()
+            .is_some_and(|v| matches!(v, Value::Package(s) if s == "Any"))
+        {
+            items.pop();
+        }
+        old
+    } else {
+        multidim_delete(&mut items[i], &indices[1..])
+    }
+}
+
+/// Convert array value to list (non-array) for :v/:kv/:p adverb output.
+fn array_to_list(value: Value) -> Value {
+    match value {
+        Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, ArrayKind::List),
+        other => other,
+    }
+}
+
+/// Build a key tuple from indices, normalizing to integers.
+fn make_key_tuple(indices: &[Value]) -> Value {
+    let int_indices: Vec<Value> = indices
+        .iter()
+        .map(|v| match v {
+            Value::Int(_) => v.clone(),
+            Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
+            Value::Num(f) => Value::Int(*f as i64),
+            Value::Rat(n, d) => Value::Int(*n / *d),
+            Value::FatRat(n, d) => Value::Int(*n / *d),
+            Value::BigRat(_, _) => Value::Int(to_float_value(v).unwrap_or(0.0) as i64),
+            _ => v.clone(),
+        })
+        .collect();
+    if int_indices.len() == 1 {
+        int_indices[0].clone()
+    } else {
+        Value::Array(std::sync::Arc::new(int_indices), ArrayKind::List)
+    }
+}
+
+/// Collect all (index_path, value) leaves from a multidim access,
+/// expanding Whatever and list indices.
+fn multidim_collect_leaves(
+    target: &Value,
+    indices: &[Value],
+    prefix: &[i64],
+    out: &mut Vec<(Vec<i64>, Value)>,
+) {
+    if indices.is_empty() {
+        out.push((prefix.to_vec(), target.clone()));
+        return;
+    }
+    let head = &indices[0];
+    if matches!(head, Value::Whatever) {
+        let Value::Array(items, ..) = target else {
+            return;
+        };
+        for (i, item) in items.iter().enumerate() {
+            let mut path = prefix.to_vec();
+            path.push(i as i64);
+            multidim_collect_leaves(item, &indices[1..], &path, out);
+        }
+        return;
+    }
+    if let Value::Array(idx_items, ..) = head {
+        for idx in idx_items.iter() {
+            let mut sub_indices = vec![idx.clone()];
+            sub_indices.extend_from_slice(&indices[1..]);
+            multidim_collect_leaves(target, &sub_indices, prefix, out);
+        }
+        return;
+    }
+    // Single index
+    let Value::Array(items, ..) = target else {
+        return;
+    };
+    let i = match head {
+        Value::Int(n) => {
+            let n = *n;
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return;
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        Value::Str(s) => s.parse::<usize>().unwrap_or(0),
+        Value::Num(f) => *f as usize,
+        Value::Rat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::FatRat(n, d) => (*n as f64 / *d as f64) as usize,
+        Value::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
+        _ => return,
+    };
+    if i >= items.len() {
+        return;
+    }
+    let mut path = prefix.to_vec();
+    path.push(i as i64);
+    multidim_collect_leaves(&items[i], &indices[1..], &path, out);
+}
+
+/// Check if indices contain Whatever or list values (needing multi-result).
+fn has_multi_indices(indices: &[Value]) -> bool {
+    indices
+        .iter()
+        .any(|v| matches!(v, Value::Whatever) || matches!(v, Value::Array(..)))
+}
 
 static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -114,6 +354,13 @@ impl Interpreter {
         if matches!(target_val, Value::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
         }
+        if let Value::Junction { kind, values } = target_val {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.eval_call_on_value(callable.clone(), args.clone())?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
         // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
         if let Value::Mixin(ref inner, ref mixins) = target_val {
             // Check if any mixed-in role provides CALL-ME
@@ -144,13 +391,14 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (args, callsite_line) = self.sanitize_call_args(&args);
+        let (mut args, callsite_line) = self.sanitize_call_args(&args);
         self.test_pending_callsite_line = callsite_line;
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         match name {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "succeed" => self.builtin_succeed(&args),
             "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
@@ -158,12 +406,15 @@ impl Interpreter {
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
+            "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
+            "__mutsu_andthen_finalize" => self.builtin_andthen_finalize(&args),
+            "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(Value::Array(
@@ -178,6 +429,17 @@ impl Interpreter {
                 )),
             )),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
+            "__mutsu_multidim_adverb" => self.builtin_multidim_adverb(&args),
+            "__mutsu_multidim_subscript_adverb" => self.builtin_multidim_subscript_adverb(&args),
+            "__mutsu_multidim_exists_adverb" => self.builtin_multidim_exists_adverb(&args),
+            "__mutsu_multidim_delete" => self.builtin_multidim_delete(&mut args),
+            "__mutsu_multidim_dynamic_adverb" => self.builtin_multidim_dynamic_adverb(&mut args),
+            "__mutsu_multidim_subscript_adverb_dyn" => {
+                self.builtin_multidim_subscript_adverb_dyn(&mut args)
+            }
+            "__mutsu_multidim_exists_adverb_dyn" => {
+                self.builtin_multidim_exists_adverb_dyn(&mut args)
+            }
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
@@ -191,6 +453,7 @@ impl Interpreter {
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
+            "UNBASE" => self.builtin_unbase(&args),
             // Grammar helpers
             "make" => self.builtin_make(&args),
             "made" => self.builtin_made(),
@@ -283,6 +546,9 @@ impl Interpreter {
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
             "end" => self.builtin_end(&args),
+            "Set" if !args.is_empty() => self.builtin_set(&args),
+            "Bag" if !args.is_empty() => self.builtin_bag(&args),
+            "Mix" if !args.is_empty() => self.builtin_mix(&args),
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
@@ -311,18 +577,62 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
-                self.take_value(value.clone());
+                self.take_value(value.clone())?;
                 Ok(value)
+            }
+            "return" => {
+                let mut err = RuntimeError::new("return");
+                err.return_value = Some(args.first().cloned().unwrap_or(Value::Nil));
+                Err(err)
             }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
             "squish" => self.builtin_squish(&args),
+            "reduce" => self.builtin_reduce(&args),
             "produce" => self.builtin_produce(&args),
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
             "first" => self.builtin_first(&args),
+            "tail" => {
+                if args.len() < 2 {
+                    return Err(RuntimeError::new("Too few positionals passed to 'tail'"));
+                }
+                let tail_spec = args[0].clone();
+                let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+                let mut values = Vec::new();
+                for (offset, value) in args[1..].iter().enumerate() {
+                    let source_name = arg_sources
+                        .get(offset + 1)
+                        .and_then(|entry| entry.as_ref())
+                        .map(String::as_str);
+                    if source_name.is_some_and(|name| {
+                        !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                    }) {
+                        values.push(value.clone());
+                        continue;
+                    }
+                    match value {
+                        Value::Array(items, ..) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        Value::Seq(items) | Value::Slip(items) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. } => {
+                            values.extend(crate::runtime::value_to_list(value));
+                        }
+                        other => values.push(other.clone()),
+                    }
+                }
+                let list = Value::array(values);
+                self.call_method_with_values(list, "tail", vec![tail_spec])
+            }
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
             "index" => {
@@ -485,6 +795,40 @@ impl Interpreter {
         }
     }
 
+    fn builtin_unbase(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "UNBASE expects a radix and at least one argument",
+            ));
+        }
+        let radix = match args[0] {
+            Value::Int(n) if (2..=36).contains(&n) => n as u32,
+            _ => {
+                return Err(RuntimeError::new(
+                    "UNBASE radix must be an integer in 2..36",
+                ));
+            }
+        };
+
+        let mut out = Vec::with_capacity(args.len() - 1);
+        for arg in args.iter().skip(1) {
+            let text = arg.to_string_value();
+            let Some(parsed) = crate::runtime::parse_radix_number_body(&text, radix) else {
+                return Err(RuntimeError::new(format!(
+                    "Cannot parse '{}' as base {}",
+                    text, radix
+                )));
+            };
+            out.push(parsed);
+        }
+
+        if out.len() == 1 {
+            Ok(out.remove(0))
+        } else {
+            Ok(Value::array(out))
+        }
+    }
+
     fn runtime_error_from_die_value(
         &self,
         value: &Value,
@@ -508,12 +852,18 @@ impl Interpreter {
 
         let mut err = RuntimeError::new(&msg);
         err.is_fail = is_fail;
-        if let Value::Instance { class_name, .. } = value
-            && (class_name == "Exception"
-                || class_name.resolve().starts_with("X::")
-                || class_name.resolve().starts_with("CX::"))
-        {
-            err.exception = Some(Box::new(value.clone()));
+        if let Value::Instance { class_name, .. } = value {
+            let cn = class_name.resolve();
+            let is_exception = cn == "Exception"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .mro_readonly(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            if is_exception {
+                err.exception = Some(Box::new(value.clone()));
+            }
         }
         err
     }
@@ -542,6 +892,14 @@ impl Interpreter {
         let mut err = RuntimeError::new("Failed");
         err.is_fail = true;
         Err(err)
+    }
+
+    fn builtin_succeed(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut sig = RuntimeError::succeed_signal();
+        if let Some(v) = args.first() {
+            sig.return_value = Some(v.clone());
+        }
+        Err(sig)
     }
 
     fn builtin_return_rw(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -679,6 +1037,18 @@ impl Interpreter {
             .get(3)
             .map(Value::to_string_value)
             .filter(|s| !s.is_empty());
+        let mut delete_after = false;
+        for extra in args.iter().skip(4) {
+            match extra {
+                Value::Pair(key, value) if key == "delete" => {
+                    delete_after = value.truthy();
+                }
+                Value::ValuePair(key, value) if key.to_string_value() == "delete" => {
+                    delete_after = value.truthy();
+                }
+                _ => {}
+            }
+        }
 
         let (kind, keep_missing) = match mode.as_str() {
             "kv" => ("kv", false),
@@ -747,6 +1117,10 @@ impl Interpreter {
                 }
             }
             Value::Hash(map) => {
+                let default_type = var_name
+                    .as_ref()
+                    .and_then(|name| self.var_type_constraint(name))
+                    .unwrap_or_else(|| "Any".to_string());
                 for idx in &indices {
                     let key_str = idx.to_string_value();
                     let key =
@@ -755,11 +1129,22 @@ impl Interpreter {
                     let value = map
                         .get(&key_str)
                         .cloned()
-                        .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                        .unwrap_or_else(|| Value::Package(Symbol::intern(&default_type)));
                     rows.push((key, value, exists));
                 }
             }
             _ => return Ok(Value::Nil),
+        }
+
+        if delete_after
+            && let Some(var_name) = var_name.as_ref()
+            && let Some(container) = self.env.get_mut(var_name)
+            && let Value::Hash(map) = container
+        {
+            let h = std::sync::Arc::make_mut(map);
+            for idx in &indices {
+                h.remove(&idx.to_string_value());
+            }
         }
 
         if !is_multi {
@@ -795,6 +1180,655 @@ impl Interpreter {
             }
         }
         Ok(Value::array(out))
+    }
+
+    /// Handle dynamic adverbs on multidim index: @array[$a;$b;$c]:$delete
+    /// Args: [inner_expr_result, adverb_name, adverb_value]
+    fn builtin_multidim_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_adverb expects value, adverb_name, and adverb_value",
+            ));
+        }
+        let value = args[0].clone();
+        let _adverb_name = args[1].to_string_value();
+        let adverb_value = &args[2];
+
+        // If the adverb is False, just return the value unchanged
+        if !adverb_value.truthy() {
+            return Ok(value);
+        }
+
+        // Adverb is True — currently only "delete" is supported.
+        // When the inner expression is a MultiDimIndex result, we need to
+        // delete the element from the array. However, the value has already
+        // been evaluated, so we return it as-is for now.
+        // TODO: Implement actual delete by restructuring the parser to
+        // pass target array info.
+        Ok(value)
+    }
+
+    /// Handle subscript adverbs (:kv, :k, :v, :p, etc.) on multidim index.
+    /// Args: [target_array, adverb_name, dim0, dim1, dim2, ...]
+    fn builtin_multidim_subscript_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_subscript_adverb expects target, adverb, and indices",
+            ));
+        }
+        let target = &args[0];
+        let adverb = args[1].to_string_value();
+        let raw_indices = &args[2..];
+        let indices = self.resolve_multidim_indices(target, raw_indices)?;
+
+        // Check if we need multi-result mode
+        if has_multi_indices(&indices) {
+            return self.multidim_subscript_adverb_multi(target, &adverb, &indices);
+        }
+
+        let value = multidim_index(target, &indices);
+        let key = make_key_tuple(&indices);
+        let exists = !matches!(&value, Value::Nil);
+
+        match adverb.as_str() {
+            "k" => Ok(if exists { key } else { Value::Nil }),
+            "kv" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, v]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::ValuePair(Box::new(key), Box::new(v)))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "v" => {
+                if exists {
+                    Ok(array_to_list(value))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "not-k" => Ok(if !exists { key } else { Value::Nil }),
+            "not-kv" => {
+                if !exists {
+                    let v = array_to_list(value);
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, v]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "not-p" => {
+                if !exists {
+                    let v = array_to_list(value);
+                    Ok(Value::ValuePair(Box::new(key), Box::new(v)))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "not-v" => {
+                if !exists {
+                    Ok(array_to_list(value))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => Ok(value),
+        }
+    }
+
+    /// Multi-result adverb handler for Whatever/list indices.
+    fn multidim_subscript_adverb_multi(
+        &mut self,
+        target: &Value,
+        adverb: &str,
+        indices: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut leaves = Vec::new();
+        multidim_collect_leaves(target, indices, &[], &mut leaves);
+
+        let mut out = Vec::new();
+        for (path, value) in leaves {
+            let exists = !matches!(&value, Value::Nil);
+            let key = if path.len() == 1 {
+                Value::Int(path[0])
+            } else {
+                Value::Array(
+                    std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                    ArrayKind::List,
+                )
+            };
+            match adverb {
+                "k" => {
+                    if exists {
+                        out.push(key);
+                    }
+                }
+                "kv" => {
+                    if exists {
+                        out.push(key);
+                        out.push(array_to_list(value));
+                    }
+                }
+                "p" => {
+                    if exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(array_to_list(value)),
+                        ));
+                    }
+                }
+                "v" => {
+                    if exists {
+                        out.push(array_to_list(value));
+                    }
+                }
+                "not-k" => {
+                    if !exists {
+                        out.push(key);
+                    }
+                }
+                "not-kv" => {
+                    if !exists {
+                        out.push(key);
+                        out.push(array_to_list(value));
+                    }
+                }
+                "not-p" => {
+                    if !exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(array_to_list(value)),
+                        ));
+                    }
+                }
+                "not-v" => {
+                    if !exists {
+                        out.push(array_to_list(value));
+                    }
+                }
+                _ => out.push(value),
+            }
+        }
+        Ok(Value::array(out))
+    }
+
+    /// Handle :exists with secondary adverbs on multidim index.
+    /// Args: [target_array, negated_bool, adverb_name, dim0, dim1, ...]
+    fn builtin_multidim_exists_adverb(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_exists_adverb expects target, negated, adverb, and indices",
+            ));
+        }
+        let target = &args[0];
+        let negated = args[1].truthy();
+        let adverb = args[2].to_string_value();
+        let raw_indices = &args[3..];
+        let indices = self.resolve_multidim_indices(target, raw_indices)?;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+            && class_name == "Stash"
+            && let Some(Value::Hash(symbols)) = attributes.get("symbols")
+        {
+            let stash_exists = |idx: &Value| {
+                let key = idx.to_string_value();
+                if symbols.contains_key(&key) {
+                    return true;
+                }
+                if !key.starts_with('$')
+                    && !key.starts_with('@')
+                    && !key.starts_with('%')
+                    && !key.starts_with('&')
+                {
+                    return symbols.contains_key(&format!("${key}"));
+                }
+                false
+            };
+            let stash_indices: Vec<Value> = if indices.len() > 1 {
+                indices.clone()
+            } else {
+                match &indices[0] {
+                    Value::Array(items, ..) => items.to_vec(),
+                    one => vec![one.clone()],
+                }
+            };
+            let exists_vals: Vec<bool> = stash_indices.iter().map(stash_exists).collect();
+            let exists_vals: Vec<bool> = if negated {
+                exists_vals.into_iter().map(|v| !v).collect()
+            } else {
+                exists_vals
+            };
+            if stash_indices.len() > 1 {
+                return Ok(Value::array(
+                    exists_vals.into_iter().map(Value::Bool).collect::<Vec<_>>(),
+                ));
+            }
+            return Ok(Value::Bool(*exists_vals.first().unwrap_or(&false)));
+        }
+
+        // Multi-result mode for Whatever/list indices
+        if has_multi_indices(&indices) {
+            return self.multidim_exists_adverb_multi(target, negated, &adverb, &indices);
+        }
+
+        let value = multidim_index(target, &indices);
+        let raw_exists = !matches!(&value, Value::Nil);
+        let exists = if negated { !raw_exists } else { raw_exists };
+        let key = make_key_tuple(&indices);
+
+        match adverb.as_str() {
+            "none" => Ok(Value::Bool(exists)),
+            "kv" => {
+                if raw_exists {
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if raw_exists {
+                    Ok(Value::ValuePair(
+                        Box::new(key),
+                        Box::new(Value::Bool(exists)),
+                    ))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "k" => {
+                if raw_exists {
+                    Ok(key)
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "v" => Ok(Value::Bool(exists)),
+            _ => Ok(Value::Bool(exists)),
+        }
+    }
+
+    /// Multi-result :exists adverb handler for Whatever/list indices.
+    fn multidim_exists_adverb_multi(
+        &mut self,
+        target: &Value,
+        negated: bool,
+        adverb: &str,
+        indices: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut leaves = Vec::new();
+        multidim_collect_leaves(target, indices, &[], &mut leaves);
+
+        let mut out = Vec::new();
+        for (path, value) in leaves {
+            let raw_exists = !matches!(&value, Value::Nil);
+            let exists = if negated { !raw_exists } else { raw_exists };
+            let key = if path.len() == 1 {
+                Value::Int(path[0])
+            } else {
+                Value::Array(
+                    std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                    ArrayKind::List,
+                )
+            };
+            match adverb {
+                "none" => out.push(Value::Bool(exists)),
+                "kv" => {
+                    if raw_exists {
+                        out.push(key);
+                        out.push(Value::Bool(exists));
+                    }
+                }
+                "p" => {
+                    if raw_exists {
+                        out.push(Value::ValuePair(
+                            Box::new(key),
+                            Box::new(Value::Bool(exists)),
+                        ));
+                    }
+                }
+                "k" => {
+                    if raw_exists {
+                        out.push(key);
+                    }
+                }
+                "v" => out.push(Value::Bool(exists)),
+                _ => out.push(Value::Bool(exists)),
+            }
+        }
+        Ok(Value::array(out))
+    }
+
+    /// Handle :delete on multidim index.
+    /// Args: [var_name_string, dim0, dim1, ...]
+    fn builtin_multidim_delete(&mut self, args: &mut [Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_delete expects var_name and indices",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let raw_indices = args[1..].to_vec();
+        let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
+        if let Some(target) = self.env.get_mut(&var_name) {
+            Ok(multidim_delete(target, &indices))
+        } else {
+            Ok(Value::Nil)
+        }
+    }
+
+    /// Resolve WhateverCode indices: if an index is a Sub (WhateverCode),
+    /// call it with the current dimension's array length.
+    fn resolve_multidim_indices(
+        &mut self,
+        target: &Value,
+        indices: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut resolved = Vec::with_capacity(indices.len());
+        let mut current = target.clone();
+        for idx in indices {
+            match idx {
+                Value::Sub(..) => {
+                    // WhateverCode: call with array length
+                    let len = match &current {
+                        Value::Array(items, ..) => Value::Int(items.len() as i64),
+                        _ => Value::Int(0),
+                    };
+                    let result = self.call_sub_value(idx.clone(), vec![len], false)?;
+                    // Navigate to next dimension
+                    let resolved_idx = result.clone();
+                    current = multidim_index(&current, std::slice::from_ref(&resolved_idx));
+                    resolved.push(result);
+                }
+                _ => {
+                    current = multidim_index(&current, std::slice::from_ref(idx));
+                    resolved.push(idx.clone());
+                }
+            }
+        }
+        Ok(resolved)
+    }
+
+    /// Handle dynamic adverb (:$delete) on multidim index.
+    /// Args: [var_name_string, adverb_name, adverb_value, dim0, dim1, ...]
+    fn builtin_multidim_dynamic_adverb(
+        &mut self,
+        args: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_dynamic_adverb expects var_name, name, value, and indices",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let adverb_value = args[2].truthy();
+        let raw_indices = args[3..].to_vec();
+
+        let target = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target, &raw_indices)?;
+
+        if adverb_value {
+            // Multi-result mode for Whatever/list indices
+            if has_multi_indices(&indices) {
+                let mut leaves = Vec::new();
+                multidim_collect_leaves(&target, &indices, &[], &mut leaves);
+                if let Some(t) = self.env.get_mut(&var_name) {
+                    multidim_delete(t, &indices);
+                }
+                let values: Vec<Value> = leaves.into_iter().map(|(_, v)| v).collect();
+                return Ok(Value::array(values));
+            }
+            if let Some(target) = self.env.get_mut(&var_name) {
+                Ok(multidim_delete(target, &indices))
+            } else {
+                Ok(Value::Nil)
+            }
+        } else {
+            Ok(multidim_index(&target, &indices))
+        }
+    }
+
+    /// Handle :kv/:k/:v/:p with dynamic :$delete on multidim index.
+    /// Args: [var_name_str, adverb_name, delete_flag, dim0, dim1, ...]
+    fn builtin_multidim_subscript_adverb_dyn(
+        &mut self,
+        args: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_subscript_adverb_dyn expects var_name, adverb, delete, and indices",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let adverb = args[1].to_string_value();
+        let do_delete = args[2].truthy();
+        let raw_indices = args[3..].to_vec();
+
+        let target = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target, &raw_indices)?;
+
+        // Multi-result mode for Whatever/list indices
+        if has_multi_indices(&indices) {
+            // Collect leaves before potentially deleting
+            let mut leaves = Vec::new();
+            multidim_collect_leaves(&target, &indices, &[], &mut leaves);
+            if do_delete && let Some(t) = self.env.get_mut(&var_name) {
+                multidim_delete(t, &indices);
+            }
+            let mut out = Vec::new();
+            for (path, value) in leaves {
+                let exists = !matches!(&value, Value::Nil);
+                let key = if path.len() == 1 {
+                    Value::Int(path[0])
+                } else {
+                    Value::Array(
+                        std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                        ArrayKind::List,
+                    )
+                };
+                match adverb.as_str() {
+                    "k" => {
+                        if exists {
+                            out.push(key);
+                        }
+                    }
+                    "kv" => {
+                        if exists {
+                            out.push(key);
+                            out.push(array_to_list(value));
+                        }
+                    }
+                    "p" => {
+                        if exists {
+                            out.push(Value::ValuePair(
+                                Box::new(key),
+                                Box::new(array_to_list(value)),
+                            ));
+                        }
+                    }
+                    "v" => {
+                        if exists {
+                            out.push(array_to_list(value));
+                        }
+                    }
+                    _ => out.push(value),
+                }
+            }
+            return Ok(Value::array(out));
+        }
+
+        let value = if do_delete {
+            if let Some(target) = self.env.get_mut(&var_name) {
+                multidim_delete(target, &indices)
+            } else {
+                Value::Nil
+            }
+        } else {
+            multidim_index(&target, &indices)
+        };
+
+        let key = make_key_tuple(&indices);
+        let exists = !matches!(&value, Value::Nil);
+
+        match adverb.as_str() {
+            "k" => Ok(if exists { key } else { Value::Nil }),
+            "kv" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, v]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if exists {
+                    let v = array_to_list(value);
+                    Ok(Value::ValuePair(Box::new(key), Box::new(v)))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "v" => {
+                if exists {
+                    Ok(array_to_list(value))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => Ok(value),
+        }
+    }
+
+    /// Handle :exists:kv/:exists:p with dynamic :$delete on multidim index.
+    /// Args: [var_name_str, negated_bool, delete_flag, adverb_name, dim0, dim1, ...]
+    fn builtin_multidim_exists_adverb_dyn(
+        &mut self,
+        args: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 5 {
+            return Err(RuntimeError::new(
+                "__mutsu_multidim_exists_adverb_dyn requires 5+ args",
+            ));
+        }
+        let var_name = args[0].to_string_value();
+        let negated = args[1].truthy();
+        let do_delete = args[2].truthy();
+        let adverb = args[3].to_string_value();
+        let raw_indices = args[4..].to_vec();
+
+        // First get value (need to read before potentially deleting)
+        let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::Nil);
+        let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
+
+        // Multi-result mode for Whatever/list indices
+        if has_multi_indices(&indices) {
+            let mut leaves = Vec::new();
+            multidim_collect_leaves(&target_val, &indices, &[], &mut leaves);
+            if do_delete && let Some(t) = self.env.get_mut(&var_name) {
+                multidim_delete(t, &indices);
+            }
+            let mut out = Vec::new();
+            for (path, value) in leaves {
+                let raw_exists = !matches!(&value, Value::Nil);
+                let exists = if negated { !raw_exists } else { raw_exists };
+                let key = if path.len() == 1 {
+                    Value::Int(path[0])
+                } else {
+                    Value::Array(
+                        std::sync::Arc::new(path.into_iter().map(Value::Int).collect()),
+                        ArrayKind::List,
+                    )
+                };
+                match adverb.as_str() {
+                    "none" => out.push(Value::Bool(exists)),
+                    "kv" => {
+                        if raw_exists {
+                            out.push(key);
+                            out.push(Value::Bool(exists));
+                        }
+                    }
+                    "p" => {
+                        if raw_exists {
+                            out.push(Value::ValuePair(
+                                Box::new(key),
+                                Box::new(Value::Bool(exists)),
+                            ));
+                        }
+                    }
+                    "k" => {
+                        if raw_exists {
+                            out.push(key);
+                        }
+                    }
+                    _ => out.push(Value::Bool(exists)),
+                }
+            }
+            return Ok(Value::array(out));
+        }
+
+        let value = multidim_index(&target_val, &indices);
+        // Then delete if requested
+        if do_delete && let Some(target) = self.env.get_mut(&var_name) {
+            multidim_delete(target, &indices);
+        }
+
+        let raw_exists = !matches!(&value, Value::Nil);
+        let exists = if negated { !raw_exists } else { raw_exists };
+        let key = make_key_tuple(&indices);
+
+        match adverb.as_str() {
+            "none" => Ok(Value::Bool(exists)),
+            "kv" => {
+                if raw_exists {
+                    Ok(Value::Array(
+                        std::sync::Arc::new(vec![key, Value::Bool(exists)]),
+                        ArrayKind::List,
+                    ))
+                } else {
+                    Ok(Value::Array(std::sync::Arc::new(vec![]), ArrayKind::List))
+                }
+            }
+            "p" => {
+                if raw_exists {
+                    Ok(Value::ValuePair(
+                        Box::new(key),
+                        Box::new(Value::Bool(exists)),
+                    ))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "k" => {
+                if raw_exists {
+                    Ok(key)
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            _ => Ok(Value::Bool(exists)),
+        }
     }
 
     fn builtin_feed_whatever(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -903,6 +1937,88 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    fn builtin_andthen_finalize(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_andthen_finalize expects lhs and rhs",
+            ));
+        }
+        let lhs = args[0].clone();
+        let rhs = args[1].clone();
+        if matches!(
+            rhs,
+            Value::Sub(_)
+                | Value::WeakSub(_)
+                | Value::Routine { .. }
+                | Value::Instance { .. }
+                | Value::Mixin(..)
+        ) {
+            let saved_topic = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), lhs.clone());
+            let result = self.eval_call_on_value(rhs, vec![lhs]);
+            match saved_topic {
+                Some(value) => {
+                    self.env.insert("_".to_string(), value);
+                }
+                None => {
+                    self.env.remove("_");
+                }
+            }
+            return result;
+        }
+        Ok(rhs)
+    }
+
+    fn builtin_cross_shortcircuit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_cross_shortcircuit expects op, lhs, thunk",
+            ));
+        }
+        let op = args[0].to_string_value();
+        let left_values = if matches!(args[1], Value::Nil) {
+            vec![Value::Nil]
+        } else {
+            crate::runtime::value_to_list(&args[1])
+        };
+        let thunk = args[2].clone();
+        let mut out = Vec::new();
+        for left in left_values {
+            let needs_rhs = match op.as_str() {
+                "and" | "&&" => left.truthy(),
+                "or" | "||" => !left.truthy(),
+                "andthen" => crate::runtime::types::value_is_defined(&left),
+                "orelse" => !crate::runtime::types::value_is_defined(&left),
+                _ => false,
+            };
+            if !needs_rhs {
+                out.push(left);
+                continue;
+            }
+            let rhs_value = if op == "andthen" || op == "orelse" {
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), left.clone());
+                let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+                match saved_topic {
+                    Some(value) => {
+                        self.env.insert("_".to_string(), value);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                result?
+            } else {
+                self.eval_call_on_value(thunk.clone(), Vec::new())?
+            };
+            let rhs_values = crate::runtime::value_to_list(&rhs_value);
+            for rhs in rhs_values {
+                out.push(rhs);
+            }
+        }
+        Ok(Value::array(out))
     }
 
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
@@ -1072,6 +2188,31 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // subbuf-rw as a function: subbuf-rw($buf, from, len) = $value
+        if name == "subbuf-rw" && !call_args.is_empty() {
+            let target = call_args[0].clone();
+            let method_args = call_args[1..].to_vec();
+            // We need to find the variable name for the target to update it.
+            // Search the env for a variable whose value matches the target by identity.
+            let target_var = {
+                let mut found = None;
+                for (k, v) in self.env.iter() {
+                    if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
+                        found = Some(k.clone());
+                        break;
+                    }
+                }
+                found
+            };
+            return self.assign_method_lvalue_with_values(
+                target_var.as_deref(),
+                target,
+                "subbuf-rw",
+                method_args,
+                value,
+            );
+        }
+
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
             if let Some(target_expr) = Self::rw_sub_target_expr(&def.body) {
                 let allow_target_assign =
@@ -1224,6 +2365,34 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    fn builtin_record_shaped_array_dims(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 1 {
+            return Err(RuntimeError::new(
+                "__mutsu_record_shaped_array_dims expects target name",
+            ));
+        }
+        let target_name = args[0].to_string_value();
+        if !target_name.starts_with('@') {
+            return Ok(Value::Nil);
+        }
+        let key = format!("__mutsu_shaped_array_dims::{target_name}");
+        let dims = self
+            .env
+            .get(&target_name)
+            .and_then(Self::infer_array_shape)
+            .filter(|shape| shape.len() > 1);
+        if let Some(shape) = dims {
+            let dims_val = Value::Array(
+                std::sync::Arc::new(shape.into_iter().map(|n| Value::Int(n as i64)).collect()),
+                ArrayKind::List,
+            );
+            self.env.insert(key, dims_val);
+        } else {
+            self.env.remove(&key);
+        }
+        Ok(Value::Nil)
+    }
+
     fn atomic_var_name_arg(args: &[Value]) -> Result<String, RuntimeError> {
         let Some(name) = args.first() else {
             return Err(RuntimeError::new(
@@ -1291,11 +2460,30 @@ impl Interpreter {
         name: &str,
         value_key: &str,
     ) -> Value {
-        shared
+        let current = shared
             .get(value_key)
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::Nil);
+        if let Some(constraint) = self.var_type_constraint(name) {
+            let is_untyped_placeholder = matches!(current, Value::Nil)
+                || matches!(current, Value::Package(sym) if sym.resolve() == "Any");
+            if is_untyped_placeholder {
+                return Value::Package(Symbol::intern(&constraint));
+            }
+        }
+        current
+    }
+
+    fn cas_retry_matches(expected_seen: &Value, latest_seen: &Value) -> bool {
+        match (expected_seen, latest_seen) {
+            (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+            (Value::Array(a, ..), Value::Array(b, ..)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => expected_seen == latest_seen,
+        }
     }
 
     fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1404,42 +2592,114 @@ impl Interpreter {
             // 3-arg form: cas($var, $expected, $new)
             let expected = &args[1];
             let new_val = args[2].clone();
+            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+            let mut did_swap = false;
             let current = {
-                let shared = self.shared_vars.read().unwrap();
-                self.atomic_current_value(&shared, &name, &value_key)
+                let mut shared = self.shared_vars.write().unwrap();
+                let current = self.atomic_current_value(&shared, &name, &value_key);
+                if current == *expected {
+                    shared.insert(value_key.clone(), coerced.clone());
+                    did_swap = true;
+                }
+                current
             };
-            if current == *expected {
-                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
-                self.env.insert(name.clone(), coerced.clone());
-                self.shared_vars
-                    .write()
-                    .unwrap()
-                    .insert(value_key.clone(), coerced);
+            if did_swap {
+                self.env.insert(name.clone(), coerced);
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(value_key);
                     dirty.insert(name);
                 }
+            } else {
+                self.env.insert(name.clone(), current.clone());
             }
             Ok(current)
         } else {
             // 2-arg form: cas($var, &code)
             let code = args[1].clone();
-            let current = {
-                let shared = self.shared_vars.read().unwrap();
-                self.atomic_current_value(&shared, &name, &value_key)
-            };
-            let new_val = self.call_sub_value(code, vec![current], false)?;
-            let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
-            self.env.insert(name.clone(), coerced.clone());
-            self.shared_vars
-                .write()
-                .unwrap()
-                .insert(value_key.clone(), coerced.clone());
-            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                dirty.insert(value_key);
-                dirty.insert(name);
+            if let Value::Sub(sub) = &code
+                && sub.params.len() == 1
+                && sub.body.len() == 1
+                && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
+                && *op == TokenKind::Plus
+            {
+                let param = &sub.params[0];
+                let delta_expr = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                    (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                    _ => None,
+                };
+                if let Some(delta_expr) = delta_expr {
+                    let delta = match delta_expr {
+                        Expr::Var(var_name) => {
+                            self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                        }
+                        Expr::Literal(v) => v,
+                        other => self.eval_block_value(&[Stmt::Expr(other)])?,
+                    };
+                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), delta]);
+                }
             }
-            Ok(coerced)
+            loop {
+                let current = {
+                    let shared = self.shared_vars.read().unwrap();
+                    self.atomic_current_value(&shared, &name, &value_key)
+                };
+                self.env.insert(name.clone(), current.clone());
+                let new_val = {
+                    let saved_topic = self.env.get("_").cloned();
+                    let saved_dollar_topic = self.env.get("$_").cloned();
+                    self.env.insert("_".to_string(), current.clone());
+                    self.env.insert("$_".to_string(), current.clone());
+                    let call_args = if let Value::Sub(sub) = &code {
+                        if sub.params.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![current.clone()]
+                        }
+                    } else {
+                        vec![current.clone()]
+                    };
+                    let result = self.call_sub_value(code.clone(), call_args, true)?;
+                    match saved_topic {
+                        Some(v) => {
+                            self.env.insert("_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("_");
+                        }
+                    }
+                    match saved_dollar_topic {
+                        Some(v) => {
+                            self.env.insert("$_".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("$_");
+                        }
+                    }
+                    result
+                };
+                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+
+                let mut updated = false;
+                {
+                    let mut shared = self.shared_vars.write().unwrap();
+                    let seen = self.atomic_current_value(&shared, &name, &value_key);
+                    if Self::cas_retry_matches(&current, &seen) {
+                        shared.insert(value_key.clone(), coerced.clone());
+                        updated = true;
+                    } else {
+                        self.env.insert(name.clone(), seen);
+                    }
+                }
+                if updated {
+                    self.env.insert(name.clone(), coerced.clone());
+                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(value_key.clone());
+                        dirty.insert(name.clone());
+                    }
+                    return Ok(coerced);
+                }
+            }
         }
     }
 
@@ -1823,6 +3083,7 @@ impl Interpreter {
                 | "put"
                 | "note"
                 | "die"
+                | "succeed"
                 | "warn"
                 | "sink"
                 | "quietly"
@@ -2010,6 +3271,164 @@ impl Interpreter {
         }
     }
 
+    fn builtin_reduce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let callable = args
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("reduce expects a callable as first argument"))?;
+
+        let mut items = Vec::new();
+        for arg in args.iter().skip(1) {
+            if matches!(arg, Value::Hash(_)) {
+                items.push(arg.clone());
+            } else {
+                items.extend(crate::runtime::value_to_list(arg));
+            }
+        }
+        self.reduce_items(callable, items)
+    }
+
+    pub(crate) fn reduce_items(
+        &mut self,
+        callable: Value,
+        items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if items.is_empty() {
+            return Ok(Value::Nil);
+        }
+        if items.len() == 1 {
+            return Ok(items.into_iter().next().unwrap());
+        }
+
+        let arity = self.reduce_callable_arity(&callable);
+        let step = arity.saturating_sub(1).max(1);
+        let assoc = self.callable_reduce_assoc(&callable);
+        let is_thunky = Self::is_thunky_reduce_op(&callable);
+
+        match assoc {
+            OpAssoc::Right => {
+                let mut acc = items.last().cloned().unwrap();
+                let mut right_edge = items.len().saturating_sub(1);
+                while right_edge >= step {
+                    let start = right_edge - step;
+                    let mut call_args = items[start..right_edge].to_vec();
+                    call_args.push(acc);
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    if is_thunky {
+                        acc = Self::dethunk(self, acc)?;
+                    }
+                    right_edge = start;
+                }
+                Ok(acc)
+            }
+            OpAssoc::Chain => {
+                let mut result = true;
+                for i in 0..items.len() - 1 {
+                    let v = self.call_sub_value(
+                        callable.clone(),
+                        vec![items[i].clone(), items[i + 1].clone()],
+                        true,
+                    )?;
+                    if !v.truthy() {
+                        result = false;
+                        break;
+                    }
+                }
+                Ok(Value::Bool(result))
+            }
+            OpAssoc::Left => {
+                let mut acc = items[0].clone();
+                let mut idx = 1usize;
+                while idx + step <= items.len() {
+                    let mut call_args = vec![acc];
+                    call_args.extend(items[idx..idx + step].iter().cloned());
+                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
+                    if is_thunky {
+                        acc = Self::dethunk(self, acc)?;
+                    }
+                    idx += step;
+                }
+                Ok(acc)
+            }
+        }
+    }
+
+    fn is_thunky_reduce_op(callable: &Value) -> bool {
+        let name = match callable {
+            Value::Routine { name, .. } => name.resolve(),
+            Value::Sub(data) => data.name.resolve(),
+            _ => return false,
+        };
+        matches!(
+            name.as_str(),
+            "infix:<&&>" | "infix:<||>" | "infix:<and>" | "infix:<or>"
+        )
+    }
+
+    fn dethunk(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        match val {
+            Value::Sub(_) | Value::WeakSub(_) => self.call_sub_value(val, vec![], false),
+            _ => Ok(val),
+        }
+    }
+
+    fn reduce_callable_arity(&self, callable: &Value) -> usize {
+        let (params, param_defs) = self.callable_signature(callable);
+        if !param_defs.is_empty() {
+            let mut total = 0usize;
+            let mut required = 0usize;
+            for pd in &param_defs {
+                if pd.named
+                    || pd.slurpy
+                    || pd.double_slurpy
+                    || pd.traits.iter().any(|t| t == "invocant")
+                {
+                    continue;
+                }
+                total += 1;
+                let is_required = pd.required || (!pd.optional_marker && pd.default.is_none());
+                if is_required {
+                    required += 1;
+                }
+            }
+            if required >= 2 {
+                return required;
+            }
+            if total >= 2 {
+                return total;
+            }
+        }
+        params.len().max(2)
+    }
+
+    fn callable_reduce_assoc(&self, callable: &Value) -> OpAssoc {
+        // Check the name in the operator_assoc map first (handles `is assoc<...>` trait)
+        let name = match callable {
+            Value::Sub(data) => Some(data.name.resolve()),
+            Value::Routine { name, .. } => Some(name.resolve()),
+            _ => None,
+        };
+        if let Some(ref name_str) = name {
+            if let Some(assoc) = self.infix_associativity(name_str) {
+                return match assoc.as_str() {
+                    "right" => OpAssoc::Right,
+                    "chain" => OpAssoc::Chain,
+                    _ => OpAssoc::Left,
+                };
+            }
+            // Also try the infix:<name> form
+            let infix_name = format!("infix:<{}>", name_str);
+            if let Some(assoc) = self.infix_associativity(&infix_name) {
+                return match assoc.as_str() {
+                    "right" => OpAssoc::Right,
+                    "chain" => OpAssoc::Chain,
+                    _ => OpAssoc::Left,
+                };
+            }
+        }
+        Self::op_associativity(callable)
+    }
+
     fn builtin_produce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let callable = args
             .first()
@@ -2126,7 +3545,7 @@ impl Interpreter {
             "**" => OpAssoc::Right,
             "=" | ":=" | "=>" | "x" | "xx" => OpAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
-            | "le" | "ge" | "~~" | "=~=" | "=:=" => OpAssoc::Chain,
+            | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => OpAssoc::Chain,
             _ => OpAssoc::Left,
         }
     }

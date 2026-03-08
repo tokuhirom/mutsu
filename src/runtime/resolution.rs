@@ -1,7 +1,14 @@
 use super::*;
 use crate::symbol::Symbol;
 
+type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFunction>;
+type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
+type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
+type ProtectBlockCapturedSlots = std::sync::Arc<Vec<usize>>;
+
 impl Interpreter {
+    const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
+
     fn is_stub_method_body(body: &[Stmt]) -> bool {
         body.len() == 1
             && matches!(
@@ -389,10 +396,13 @@ impl Interpreter {
         let saved_len = self.gather_items.len();
         self.env = list.env.clone();
         self.gather_items.push(Vec::new());
+        self.gather_take_limits.push(None);
         let run_res = self.run_block(&list.body);
         let items = self.gather_items.pop().unwrap_or_default();
+        self.gather_take_limits.pop();
         while self.gather_items.len() > saved_len {
             self.gather_items.pop();
+            self.gather_take_limits.pop();
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {
@@ -401,6 +411,51 @@ impl Interpreter {
         self.env = merged_env;
         run_res?;
         *list.cache.lock().unwrap() = Some(items.clone());
+        Ok(items)
+    }
+
+    pub(crate) fn force_lazy_list_prefix_bridge(
+        &mut self,
+        list: &crate::value::LazyList,
+        needed_len: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if needed_len == 0 {
+            return Ok(Vec::new());
+        }
+        if let Some(cached) = list.cache.lock().unwrap().clone()
+            && cached.len() >= needed_len
+        {
+            return Ok(cached[..needed_len].to_vec());
+        }
+
+        let saved_env = self.env.clone();
+        let saved_len = self.gather_items.len();
+        self.env = list.env.clone();
+        self.gather_items.push(Vec::new());
+        self.gather_take_limits.push(Some(needed_len));
+        let run_res = self.run_block(&list.body);
+        let mut items = self.gather_items.pop().unwrap_or_default();
+        self.gather_take_limits.pop();
+        while self.gather_items.len() > saved_len {
+            self.gather_items.pop();
+            self.gather_take_limits.pop();
+        }
+        let mut merged_env = saved_env;
+        for (k, v) in self.env.iter() {
+            merged_env.insert(k.clone(), v.clone());
+        }
+        self.env = merged_env;
+
+        match run_res {
+            Ok(()) => {
+                *list.cache.lock().unwrap() = Some(items.clone());
+            }
+            Err(err) if err.message == Self::LAZY_GATHER_TAKE_LIMIT_SIGNAL => {}
+            Err(err) => return Err(err),
+        }
+        if items.len() > needed_len {
+            items.truncate(needed_len);
+        }
         Ok(items)
     }
 
@@ -540,6 +595,13 @@ impl Interpreter {
             }
             return self.call_function(&name.resolve(), args);
         }
+        if let Value::Junction { kind, values } = func {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.call_sub_value(callable.clone(), args.clone(), merge_all)?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
         if let Value::Sub(data) = func {
             // Check for wrap chain — if wrappers exist, dispatch through them
             // Skip if we're already inside a wrap dispatch for this sub
@@ -634,8 +696,17 @@ impl Interpreter {
                 self.env.insert("?LINE".to_string(), Value::Int(line));
             }
             self.push_caller_env();
+            let persist_closure_env = data.name == "" || !self.has_function(&data.name.resolve());
+            let closure_base_env = if persist_closure_env {
+                self.closure_env_overrides
+                    .get(&data.id)
+                    .cloned()
+                    .unwrap_or_else(|| data.env.clone())
+            } else {
+                data.env.clone()
+            };
             let mut new_env = saved_env.clone();
-            for (k, v) in &data.env {
+            for (k, v) in &closure_base_env {
                 if merge_all {
                     new_env.entry(k.clone()).or_insert(v.clone());
                     continue;
@@ -765,11 +836,24 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
+            if persist_closure_env {
+                let mut persisted_closure_env = closure_base_env.clone();
+                for key in closure_base_env.keys() {
+                    if let Some(value) = self.env.get(key).cloned() {
+                        persisted_closure_env.insert(key.clone(), value);
+                    }
+                }
+                self.closure_env_overrides
+                    .insert(data.id, persisted_closure_env);
+            }
             let mut merged = saved_env;
             self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
-                    if k != "_" && k != "@_" && merged.contains_key(k) {
+                    if k != "_"
+                        && k != "@_"
+                        && (merged.contains_key(k) || k.starts_with("__mutsu_var_meta::"))
+                    {
                         merged.insert(k.clone(), v.clone());
                     }
                 }
@@ -865,6 +949,25 @@ impl Interpreter {
         let (code, compiled_fns) = compiler.compile(body);
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
+        let trailing_sub_value = match body.last() {
+            Some(Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                is_rw,
+                ..
+            }) => Some(Value::make_sub(
+                Symbol::intern(&self.current_package),
+                *name,
+                params.clone(),
+                param_defs.clone(),
+                body.clone(),
+                *is_rw,
+                self.env.clone(),
+            )),
+            _ => None,
+        };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
         // Sub/proto declarations in block scope are lexical; restore registries on block exit.
         self.functions = saved_functions;
@@ -878,7 +981,15 @@ impl Interpreter {
         }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
-        result
+        result.map(|value| {
+            let missing_value = matches!(value, Value::Nil)
+                || matches!(&value, Value::Package(name) if name == "Any");
+            if missing_value {
+                trailing_sub_value.unwrap_or(Value::Nil)
+            } else {
+                value
+            }
+        })
     }
 
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block
@@ -889,26 +1000,79 @@ impl Interpreter {
         if let Value::Sub(data) = code {
             // Targeted sync: only refresh variables the closure captures
             // (much cheaper than syncing ALL shared vars)
-            {
-                let sv = self.shared_vars.read().unwrap();
-                if !sv.is_empty() {
-                    for key in data.env.keys() {
-                        if let Some(val) = sv.get(key) {
-                            self.env.insert(key.clone(), val.clone());
-                        }
-                    }
-                }
-            }
-            if let Some(ref cc) = data.compiled_code {
-                self.run_compiled_block(cc, &std::collections::HashMap::new())
-            } else {
-                let compiler = crate::compiler::Compiler::new();
-                let (compiled, compiled_fns) = compiler.compile(&data.body);
-                self.run_compiled_block(&compiled, &compiled_fns)
-            }
+            self.sync_shared_vars_for_env(&data.env);
+            let (compiled, compiled_fns) = self.get_or_compile_protect_block(data);
+            self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
         }
+    }
+
+    pub(crate) fn get_or_compile_protect_block(
+        &mut self,
+        data: &std::sync::Arc<crate::value::SubData>,
+    ) -> (ProtectBlockCompiled, ProtectBlockCompiledFns) {
+        if let Some(ref cc) = data.compiled_code {
+            return (
+                cc.clone(),
+                std::sync::Arc::new(std::collections::HashMap::new()),
+            );
+        }
+        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let captured_slots = compiled
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                std::sync::Arc::new(captured_slots),
+            )
+        });
+        (entry.0.clone(), entry.1.clone())
+    }
+
+    pub(crate) fn get_or_compile_protect_block_with_slots(
+        &mut self,
+        data: &std::sync::Arc<crate::value::SubData>,
+    ) -> (
+        ProtectBlockCompiled,
+        ProtectBlockCompiledFns,
+        ProtectBlockCapturedSlots,
+    ) {
+        if let Some(ref cc) = data.compiled_code {
+            let slots = cc
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            return (
+                cc.clone(),
+                std::sync::Arc::new(std::collections::HashMap::new()),
+                std::sync::Arc::new(slots),
+            );
+        }
+        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let captured_slots = compiled
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                std::sync::Arc::new(captured_slots),
+            )
+        });
+        (entry.0.clone(), entry.1.clone(), entry.2.clone())
     }
 
     /// Run pre-compiled bytecode and return the `$_` topic value.
@@ -930,7 +1094,7 @@ impl Interpreter {
         }
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
-        result.map(|_last_value| value)
+        result.map(|last_value| last_value.unwrap_or(value))
     }
 
     pub(super) fn eval_map_over_items(
@@ -939,6 +1103,30 @@ impl Interpreter {
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if let Some(Value::Sub(data)) = func {
+            let requires_full_binding = data.param_defs.iter().any(|pd| {
+                pd.named
+                    || pd.slurpy
+                    || pd.sigilless
+                    || pd.optional_marker
+                    || pd.default.is_some()
+                    || pd.type_constraint.is_some()
+                    || pd.where_constraint.is_some()
+                    || pd.sub_signature.is_some()
+                    || pd.outer_sub_signature.is_some()
+                    || pd.code_signature.is_some()
+                    || pd.shape_constraints.is_some()
+            });
+            if requires_full_binding {
+                let mut result = Vec::new();
+                for item in list_items {
+                    let value = self.call_sub_value(Value::Sub(data.clone()), vec![item], false)?;
+                    match value {
+                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                        v => result.push(v),
+                    }
+                }
+                return Ok(Value::array(result));
+            }
             let arity = if !data.params.is_empty() {
                 // Account for assumed positional args (from .assuming)
                 let effective = data

@@ -93,6 +93,10 @@ impl Interpreter {
                     .unwrap_or_else(|| ".".to_string());
                 Ok(Value::str(dname))
             }
+            "cleanup" => {
+                let normalized = Self::cleanup_io_path_lexical(&p);
+                Ok(self.make_io_path_instance(&normalized))
+            }
             "parent" => {
                 let mut levels = 1i64;
                 if let Some(Value::Int(i)) = args.first() {
@@ -333,7 +337,7 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
             "slurp" => {
-                let (_, _, _, bin, _, _, _) = self.parse_io_flags_values(&args);
+                let (_, _, _, bin, _, _, _, _) = self.parse_io_flags_values(&args);
                 if bin {
                     let bytes = fs::read(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -344,7 +348,7 @@ impl Interpreter {
                         .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern("Buf"), attrs));
+                    return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
                 }
                 let content = fs::read_to_string(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -352,8 +356,16 @@ impl Interpreter {
                 Ok(Value::str(content))
             }
             "open" => {
-                let (read, write, append, bin, line_chomp, line_separators, out_buffer_capacity) =
-                    self.parse_io_flags_values(&args);
+                let (
+                    read,
+                    write,
+                    append,
+                    bin,
+                    line_chomp,
+                    line_separators,
+                    out_buffer_capacity,
+                    nl_out,
+                ) = self.parse_io_flags_values(&args);
                 self.open_file_handle(
                     &path_buf,
                     read,
@@ -363,6 +375,7 @@ impl Interpreter {
                     line_chomp,
                     line_separators,
                     out_buffer_capacity,
+                    nl_out,
                 )
             }
             "copy" => {
@@ -553,6 +566,56 @@ impl Interpreter {
     fn io_path_extension_part_count(path: &str) -> i64 {
         let (_, basename) = Self::split_path_for_extension(path);
         basename.chars().filter(|&c| c == '.').count() as i64
+    }
+
+    fn cleanup_io_path_lexical(path: &str) -> String {
+        if path.is_empty() {
+            return ".".to_string();
+        }
+        let mut prefix = "";
+        let mut rest = path;
+        if path.len() >= 2 {
+            let bytes = path.as_bytes();
+            if bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+                prefix = &path[..2];
+                rest = &path[2..];
+            }
+        }
+        let is_absolute = rest.starts_with('/') || rest.starts_with('\\');
+        let sep = if path.contains('\\') && !path.contains('/') {
+            '\\'
+        } else {
+            '/'
+        };
+        let mut stack: Vec<&str> = Vec::new();
+        for seg in rest.split(['/', '\\']) {
+            if seg.is_empty() || seg == "." {
+                continue;
+            }
+            if seg == ".." {
+                if let Some(last) = stack.last().copied()
+                    && last != ".."
+                {
+                    stack.pop();
+                    continue;
+                }
+                if !is_absolute {
+                    stack.push(seg);
+                }
+                continue;
+            }
+            stack.push(seg);
+        }
+        let joined = stack.join(&sep.to_string());
+        let mut out = String::new();
+        out.push_str(prefix);
+        if is_absolute {
+            out.push(sep);
+        }
+        if !joined.is_empty() {
+            out.push_str(&joined);
+        }
+        if out.is_empty() { ".".to_string() } else { out }
     }
 
     fn io_path_extension_dot_index_for_n_parts(basename: &str, parts: i64) -> Option<usize> {
@@ -748,6 +811,142 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let target_val = Value::make_instance(Symbol::intern("IO::Handle"), target.clone());
         match method {
+            "DESTROY" => {
+                let _ = self.close_handle_value(&target_val)?;
+                Ok(Value::Bool(true))
+            }
+            "path" | "IO" => {
+                if let Some(path_val) = target.get("path") {
+                    let io_path = match path_val {
+                        Value::Instance { class_name, .. } if class_name == "IO::Path" => {
+                            path_val.clone()
+                        }
+                        _ => self.make_io_path_instance(&path_val.to_string_value()),
+                    };
+                    return Ok(io_path);
+                }
+                Ok(Value::Nil)
+            }
+            "Str" | "gist" => {
+                if let Some(path_val) = target.get("path") {
+                    let path = match path_val {
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if class_name == "IO::Path" => attributes
+                            .get("path")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default(),
+                        _ => path_val.to_string_value(),
+                    };
+                    return Ok(Value::str(path));
+                }
+                Ok(Value::str_from("IO::Handle()"))
+            }
+            "open" => {
+                // IO::Handle.new(:path(...)).open(:w, :nl-out(...))
+                let path_str = target
+                    .get("path")
+                    .map(|v| match v {
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if class_name == "IO::Path" => attributes
+                            .get("path")
+                            .map(|p| p.to_string_value())
+                            .unwrap_or_default(),
+                        _ => v.to_string_value(),
+                    })
+                    .unwrap_or_default();
+                let path_buf = self.resolve_path(&path_str);
+                let (
+                    read,
+                    write,
+                    append,
+                    bin,
+                    line_chomp,
+                    line_separators,
+                    out_buffer_capacity,
+                    nl_out,
+                ) = self.parse_io_flags_values(&args);
+                self.open_file_handle(
+                    &path_buf,
+                    read,
+                    write,
+                    append,
+                    bin,
+                    line_chomp,
+                    line_separators,
+                    out_buffer_capacity,
+                    nl_out,
+                )
+            }
+            "nl-out" => {
+                if let Some(arg) = args.first() {
+                    let val = arg.to_string_value();
+                    let state = self.handle_state_mut(&target_val)?;
+                    state.nl_out = val.clone();
+                    return Ok(Value::str(val));
+                }
+                let state = self.handle_state_mut(&target_val)?;
+                Ok(Value::str(state.nl_out.clone()))
+            }
+            "nl-in" => {
+                if let Some(arg) = args.first() {
+                    if let Ok(state) = self.handle_state_mut(&target_val) {
+                        match arg {
+                            Value::Array(items, ..) => {
+                                let seps: Vec<Vec<u8>> = items
+                                    .iter()
+                                    .map(|v: &Value| v.to_string_value().into_bytes())
+                                    .collect();
+                                state.line_separators = seps;
+                            }
+                            _ => {
+                                let s = arg.to_string_value();
+                                state.line_separators = vec![s.clone().into_bytes()];
+                            }
+                        }
+                    }
+                    return Ok(arg.clone());
+                }
+                if let Ok(state) = self.handle_state_mut(&target_val) {
+                    if state.line_separators.len() == 1 {
+                        Ok(Value::str(
+                            String::from_utf8_lossy(&state.line_separators[0]).to_string(),
+                        ))
+                    } else {
+                        let items: Vec<Value> = state
+                            .line_separators
+                            .iter()
+                            .map(|s| Value::str(String::from_utf8_lossy(s).to_string()))
+                            .collect();
+                        Ok(Value::real_array(items))
+                    }
+                } else {
+                    // Default nl-in for unopened handles
+                    let items: Vec<Value> = self
+                        .default_line_separators()
+                        .iter()
+                        .map(|s| Value::str(String::from_utf8_lossy(s).to_string()))
+                        .collect();
+                    if items.len() == 1 {
+                        Ok(items.into_iter().next().unwrap())
+                    } else {
+                        Ok(Value::real_array(items))
+                    }
+                }
+            }
+            "print-nl" => {
+                let nl = {
+                    let state = self.handle_state_mut(&target_val)?;
+                    state.nl_out.clone()
+                };
+                self.write_to_handle_value(&target_val, &nl, false)?;
+                Ok(Value::Bool(true))
+            }
             "close" => Ok(Value::Bool(self.close_handle_value(&target_val)?)),
             "get" => Ok(self
                 .read_line_from_handle_value(&target_val)?
@@ -756,6 +955,23 @@ impl Interpreter {
             "getc" => {
                 let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
                 Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()))
+            }
+            "readchars" => {
+                let count = if let Some(arg) = args.first() {
+                    match Self::parse_out_buffer_size(arg) {
+                        Some(n) => Some(n),
+                        None => {
+                            return Err(RuntimeError::new(
+                                "readchars count must be a non-negative integer",
+                            ));
+                        }
+                    }
+                } else {
+                    None
+                };
+                Ok(Value::str(
+                    self.read_chars_from_handle_value(&target_val, count)?,
+                ))
             }
             "lines" => {
                 let mut lines = Vec::new();
@@ -797,7 +1013,33 @@ impl Interpreter {
                 }
                 Ok(Value::str(String::new()))
             }
-            "write" | "print" => {
+            "write" => {
+                let mut bytes = Vec::new();
+                for arg in &args {
+                    match arg {
+                        Value::Instance { class_name, .. }
+                            if {
+                                let cn = class_name.resolve();
+                                cn == "Buf"
+                                    || cn == "Blob"
+                                    || cn == "utf8"
+                                    || cn == "utf16"
+                                    || cn.starts_with("buf")
+                                    || cn.starts_with("blob")
+                                    || cn.starts_with("Buf[")
+                                    || cn.starts_with("Blob[")
+                            } =>
+                        {
+                            bytes.extend(self.supply_chunk_to_bytes(arg, "utf-8"));
+                        }
+                        _ => bytes.extend(self.render_str_value(arg).into_bytes()),
+                    }
+                }
+                let content = String::from_utf8_lossy(&bytes).to_string();
+                self.write_to_handle_value(&target_val, &content, false)?;
+                Ok(Value::Bool(true))
+            }
+            "print" => {
                 let mut content = String::new();
                 for arg in &args {
                     content.push_str(&self.render_str_value(arg));
@@ -829,8 +1071,21 @@ impl Interpreter {
                             RuntimeError::new(format!("Failed to flush handle: {}", err))
                         })?;
                     }
+                    Ok(Value::Bool(true))
+                } else {
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str_from("Failed to flush handle"),
+                    );
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Flush"), ex_attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
                 }
-                Ok(Value::Bool(true))
             }
             "out-buffer" => {
                 let state = self.handle_state_mut(&target_val)?;
@@ -863,10 +1118,17 @@ impl Interpreter {
             "encoding" => {
                 if let Some(arg) = args.first() {
                     let encoding = arg.to_string_value();
-                    let prev = self.set_handle_encoding(&target_val, Some(encoding.clone()))?;
-                    return Ok(Value::str(prev));
+                    if encoding == "bin" {
+                        self.set_handle_encoding(&target_val, Some("bin".to_string()))?;
+                        return Ok(Value::Nil);
+                    }
+                    self.set_handle_encoding(&target_val, Some(encoding.clone()))?;
+                    return Ok(Value::str(encoding));
                 }
                 let current = self.set_handle_encoding(&target_val, None)?;
+                if current == "bin" {
+                    return Ok(Value::Nil);
+                }
                 Ok(Value::str(current))
             }
             "opened" => {
@@ -933,7 +1195,10 @@ impl Interpreter {
                         chunk.iter().map(|b| Value::Int(*b as i64)).collect();
                     let mut buf_attrs = HashMap::new();
                     buf_attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    values.push(Value::make_instance(Symbol::intern("Buf"), buf_attrs));
+                    values.push(Value::make_instance(
+                        Symbol::intern("Buf[uint8]"),
+                        buf_attrs,
+                    ));
                 }
                 if bytes.len() < size {
                     break;

@@ -54,6 +54,12 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
 /// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
+    if matches!(stmt, Stmt::Block(_)) {
+        let consumed_len = input.len().saturating_sub(rest.len());
+        if input[..consumed_len].contains('\n') {
+            return Ok((input, stmt));
+        }
+    }
     let mut current_stmt = stmt;
     let mut rest = rest;
 
@@ -129,24 +135,13 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             },
         )));
     }
-    // Check for do { } with loop modifiers (X::Obsolete in Raku)
-    let is_do_block = matches!(
-        &stmt,
-        Stmt::Expr(Expr::DoBlock { .. }) | Stmt::Expr(Expr::DoStmt(_))
-    );
-    if is_do_block {
-        for kw in &["while", "until", "for", "given"] {
-            if keyword(kw, rest).is_some() {
-                return Err(PError::raw(
-                    format!(
-                        "X::Obsolete: Unsupported use of do...{kw}. In Raku please use: repeat...while or repeat...until."
-                    ),
-                    Some(rest.len()),
-                ));
-            }
-        }
-    }
     if let Some(r) = keyword("for", rest) {
+        if matches!(stmt, Stmt::For { .. }) {
+            return Err(PError::raw(
+                "double statement-modifying for is not allowed".to_string(),
+                Some(rest.len()),
+            ));
+        }
         let (r, _) = ws1(r)?;
         let (r, first) = expression_no_sequence(r).map_err(|err| PError {
             messages: merge_expected_messages(
@@ -190,6 +185,17 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         if r.starts_with("->") || r.starts_with('{') {
             return Ok(None);
         }
+        let loop_stmt = match stmt {
+            Stmt::Expr(expr @ Expr::AnonSubParams { .. })
+            | Stmt::Expr(expr @ Expr::Lambda { .. }) => {
+                let target = Expr::CallOn {
+                    target: Box::new(expr),
+                    args: vec![Expr::Var("_".to_string())],
+                };
+                Stmt::Expr(target)
+            }
+            other => other,
+        };
         return Ok(Some((
             r,
             Stmt::For {
@@ -197,7 +203,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 param: None,
                 param_def: Box::new(None),
                 params: Vec::new(),
-                body: vec![stmt],
+                body: vec![loop_stmt],
                 label: None,
                 mode: crate::ast::ForMode::Normal,
             },
@@ -289,6 +295,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             };
         }
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
+        // When the statement is a block with placeholders, rewrite them.
+        let stmt_for_branch =
+            rewrite_placeholder_block_modifier_stmt(stmt_for_branch, &Expr::Var("_".to_string()));
         // When the modified statement is an expression statement, preserve
         // expression semantics via do-given.
         if matches!(stmt, Stmt::Expr(_)) {

@@ -334,35 +334,12 @@ impl Interpreter {
                         f64::NAN
                     };
                     if !r1.is_nan() && !r2.is_nan() && (r1 - r2).abs() < 1e-12 {
-                        // Check if we can use rational ratio (when seeds are Int or Rat)
-                        let all_int_or_rat = seeds[seeds.len() - 3..]
-                            .iter()
-                            .all(|v| matches!(v, Value::Int(_) | Value::Rat(..)));
-                        if all_int_or_rat {
-                            // Extract rational representation (num, den) from each seed
-                            let to_rat = |v: &Value| -> (i64, i64) {
-                                match v {
-                                    Value::Int(i) => (*i, 1),
-                                    Value::Rat(n, d) => (*n, *d),
-                                    _ => (0, 1),
-                                }
-                            };
-                            let (a_num, a_den) = to_rat(&seeds[seeds.len() - 3]);
-                            let (b_num, b_den) = to_rat(&seeds[seeds.len() - 2]);
-                            // Ratio = (b_num/b_den) / (a_num/a_den) = (b_num * a_den) / (b_den * a_num)
-                            if a_num != 0 {
-                                let r_num = b_num * a_den;
-                                let r_den = b_den * a_num;
-                                let g = num_integer::Integer::gcd(&r_num, &r_den);
-                                let (r_num, r_den) = if r_den / g < 0 {
-                                    (-r_num / g, -r_den / g)
-                                } else {
-                                    (r_num / g, r_den / g)
-                                };
-                                SeqMode::GeometricRat(r_num, r_den)
-                            } else {
-                                SeqMode::Geometric(r2)
-                            }
+                        if let Some((num, den)) = Self::seq_geometric_ratio_rat(
+                            &seeds[seeds.len() - 3],
+                            &seeds[seeds.len() - 2],
+                            &seeds[seeds.len() - 1],
+                        ) {
+                            SeqMode::GeometricRat(num, den)
                         } else {
                             SeqMode::Geometric(r2)
                         }
@@ -670,6 +647,14 @@ impl Interpreter {
                         .all(|w| w[0].abs() > 1e-15 && ((w[1] / w[0]) - ratio_f).abs() < 1e-12)
             };
             if all_geometric && seeds.len() > 1 {
+                let has_rational_seed = seeds.iter().any(|v| matches!(v, Value::Rat(_, _)));
+                if has_rational_seed {
+                    for s in seeds.iter_mut().skip(1) {
+                        if let Value::Int(i) = s {
+                            *s = make_rat(*i, 1);
+                        }
+                    }
+                }
                 let first = seeds[0].clone();
                 for i in 1..seeds.len() {
                     seeds[i] = Self::seq_mul_rat(&seeds[i - 1], *num, *den);
@@ -1285,6 +1270,28 @@ impl Interpreter {
         if args.len() < 3 {
             // Not a chained sequence
             let left = args[0].clone();
+            let right = args.last().cloned().unwrap_or(Value::Nil);
+            return self.eval_sequence(left, right, exclude_end);
+        }
+
+        // If there are no list-like waypoints, this is a multi-seed sequence:
+        // args = [seed1, seed2, ..., endpoint].
+        let has_list_waypoint = args[1..args.len() - 1].iter().any(|v| {
+            matches!(
+                v,
+                Value::Array(..)
+                    | Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. }
+                    | Value::Seq(_)
+                    | Value::Slip(_)
+                    | Value::LazyList(_)
+            )
+        });
+        if !has_list_waypoint && args.len() > 3 {
+            let left = Value::array(args[..args.len() - 1].to_vec());
             let right = args.last().cloned().unwrap_or(Value::Nil);
             return self.eval_sequence(left, right, exclude_end);
         }

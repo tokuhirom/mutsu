@@ -437,6 +437,19 @@ impl Interpreter {
 
         // Check if we're in a react block (supply_emit_buffer has an entry)
         if !self.supply_emit_buffer.is_empty() {
+            if let Value::Instance { class_name, .. } = &supply_val
+                && class_name == "IO::Socket::Async::Listener"
+            {
+                let tap = self.call_method_with_values(
+                    supply_val.clone(),
+                    "act",
+                    vec![callback.clone()],
+                )?;
+                if let Some(name) = target_var {
+                    self.env.insert(name.to_string(), tap);
+                }
+                return Ok(());
+            }
             // In react mode: register the subscription for the event loop
             let sub = Value::array(vec![supply_val.clone(), callback.clone()]);
             if let Some(last) = self.supply_emit_buffer.last_mut() {
@@ -477,10 +490,10 @@ impl Interpreter {
             class_name,
             attributes,
             ..
-        } = supply_val
+        } = &supply_val
             && class_name == "Supply"
         {
-            let mut attrs = (*attributes).clone();
+            let mut attrs = (**attributes).clone();
             if let Some(Value::Array(items, ..)) = attrs.get("taps") {
                 let mut new_items = items.to_vec();
                 new_items.push(callback.clone());
@@ -493,9 +506,16 @@ impl Interpreter {
                     let _ = self.call_sub_value(callback.clone(), vec![v.clone()], true);
                 }
             }
-            let updated = Value::make_instance(class_name, attrs);
+            let updated = Value::make_instance(*class_name, attrs);
             if let Some(name) = target_var {
                 self.env.insert(name.to_string(), updated);
+            }
+        } else if let Value::Instance { class_name, .. } = &supply_val
+            && class_name == "IO::Socket::Async::Listener"
+        {
+            let tap = self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;
+            if let Some(name) = target_var {
+                self.env.insert(name.to_string(), tap);
             }
         }
         Ok(())

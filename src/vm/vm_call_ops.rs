@@ -27,15 +27,26 @@ impl VM {
         }
     }
 
-    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value) {
+    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value, preserve_empty_slip: bool) {
         match arg {
             Value::Slip(items) => {
+                if preserve_empty_slip && items.is_empty() {
+                    args.push(Value::Slip(items));
+                    return;
+                }
                 for item in items.iter() {
                     Self::append_slip_item(args, item);
                 }
             }
             other => args.push(other),
         }
+    }
+
+    fn preserve_empty_slip_arg(name: &str) -> bool {
+        matches!(
+            name,
+            "infix:<andthen>" | "infix:<notandthen>" | "andthen" | "notandthen"
+        )
     }
 
     fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
@@ -218,9 +229,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&name);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -381,9 +393,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
@@ -461,6 +474,14 @@ impl VM {
                     method.as_str(),
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 ));
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -483,6 +504,28 @@ impl VM {
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(
+                method.as_str(),
+                "start"
+                    | "kill"
+                    | "write"
+                    | "close-stdin"
+                    | "ready"
+                    | "print"
+                    | "say"
+                    | "command"
+                    | "started"
+                    | "w"
+                    | "pid"
+                    | "stdout"
+                    | "stderr"
+                    | "Supply"
+            )
         {
             skip_native = true;
         }
@@ -573,6 +616,14 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self
+                    .interpreter
+                    .call_method_with_values(target, method, args);
+            }
+        }
         // Pseudo-methods must always go through the interpreter which handles
         // them specially — never intercept via the compiled fast path.
         if matches!(
@@ -733,6 +784,17 @@ impl VM {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target {
+            let class = class_name.resolve();
+            if self.interpreter.is_native_method(&class, method) {
+                return self.interpreter.call_method_mut_with_values(
+                    target_name,
+                    target,
+                    method,
+                    args,
+                );
+            }
+        }
         if matches!(
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
@@ -890,7 +952,7 @@ impl VM {
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let name_val = self
             .stack
@@ -923,6 +985,53 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_call_method_dynamic_mut_op(
+        &mut self,
+        code: &CompiledCode,
+        arity: u32,
+        target_name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_env_synced(code);
+        let target_name = Self::const_str(code, target_name_idx).to_string();
+        let arity = arity as usize;
+        if self.stack.len() < arity + 2 {
+            return Err(RuntimeError::new(
+                "VM stack underflow in CallMethodDynamicMut",
+            ));
+        }
+        let start = self.stack.len() - arity;
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        let mut args = Vec::new();
+        for arg in raw_args {
+            Self::append_flattened_call_arg(&mut args, arg, false);
+        }
+        let name_val = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let target = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let call_result = if matches!(
+            &name_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target);
+            call_args.extend(args);
+            self.interpreter
+                .call_sub_value(name_val, call_args, false)?
+        } else {
+            let method = name_val.to_string_value();
+            self.interpreter
+                .call_method_mut_with_values(&target_name, target, &method, args)?
+        };
+        self.stack.push(call_result);
+        self.env_dirty = true;
+        Ok(())
+    }
+
     pub(super) fn exec_call_method_mut_op(
         &mut self,
         code: &CompiledCode,
@@ -944,9 +1053,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
@@ -1021,6 +1131,14 @@ impl VM {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+        let is_junction_target = match &target {
+            Value::Junction { .. } => true,
+            Value::Scalar(inner) => matches!(inner.as_ref(), Value::Junction { .. }),
+            _ => false,
+        };
+        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+            skip_native = true;
+        }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
         if !skip_native
@@ -1043,6 +1161,38 @@ impl VM {
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Stash")
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && method == "keys"
+            && target_name.starts_with('%')
+            && self
+                .interpreter
+                .var_hash_key_constraint(&target_name)
+                .is_some()
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            && matches!(
+                method.as_str(),
+                "start"
+                    | "kill"
+                    | "write"
+                    | "close-stdin"
+                    | "ready"
+                    | "print"
+                    | "say"
+                    | "command"
+                    | "started"
+                    | "w"
+                    | "pid"
+                    | "stdout"
+                    | "stderr"
+                    | "Supply"
+            )
         {
             skip_native = true;
         }
@@ -1098,7 +1248,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -1695,19 +1845,14 @@ impl VM {
         _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let (block_cc, captured_env) = match code_val {
+        let (block_cc, block_fns, captured_env, captured_slots) = match code_val {
             Value::Sub(data) => {
                 // Targeted sync: refresh shared vars for keys the closure captures
-                self.interpreter.sync_shared_vars_for_keys(data.env.keys());
-                let block_cc = match &data.compiled_code {
-                    Some(cc) => cc.clone(),
-                    None => {
-                        let compiler = crate::compiler::Compiler::new();
-                        let (compiled, _) = compiler.compile(&data.body);
-                        Arc::new(compiled)
-                    }
-                };
-                (block_cc, Some(&data.env))
+                self.interpreter.sync_shared_vars_for_env(&data.env);
+                let (block_cc, block_fns, captured_slots) = self
+                    .interpreter
+                    .get_or_compile_protect_block_with_slots(data);
+                (block_cc, block_fns, Some(&data.env), captured_slots)
             }
             _ => {
                 return self.interpreter.call_protect_block(code_val);
@@ -1721,8 +1866,9 @@ impl VM {
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if let Some(captured) = captured_env {
-            for (i, name) in block_cc.locals.iter().enumerate() {
-                if captured.contains_key(name)
+            for i in captured_slots.iter().copied() {
+                if let Some(name) = block_cc.locals.get(i)
+                    && captured.contains_key(name)
                     && let Some(val) = self.interpreter.env().get(name)
                 {
                     self.locals[i] = val.clone();
@@ -1731,11 +1877,10 @@ impl VM {
         }
 
         // Execute the block's opcodes inline
-        let empty_fns = HashMap::new();
         let mut sub_ip = 0;
         let mut exec_err = None;
         while sub_ip < block_cc.ops.len() {
-            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &empty_fns) {
+            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &block_fns) {
                 exec_err = Some(e);
                 break;
             }
@@ -1743,8 +1888,10 @@ impl VM {
 
         // Sync locals back to env
         if let Some(captured) = captured_env {
-            for (i, name) in block_cc.locals.iter().enumerate() {
-                if captured.contains_key(name) {
+            for i in captured_slots.iter().copied() {
+                if let Some(name) = block_cc.locals.get(i)
+                    && captured.contains_key(name)
+                {
                     self.interpreter
                         .env_mut()
                         .insert(name.clone(), self.locals[i].clone());

@@ -2,6 +2,27 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    pub(crate) fn should_hide_from_my_global_stash(&self, key: &str) -> bool {
+        if key.starts_with('$')
+            || key.starts_with('@')
+            || key.starts_with('%')
+            || key.starts_with('&')
+        {
+            return false;
+        }
+        self.need_hidden_classes.contains(key)
+            || key
+                .strip_prefix("GLOBAL::")
+                .is_some_and(|name| self.need_hidden_classes.contains(name))
+            || key
+                .rsplit_once("::")
+                .is_some_and(|(_, short)| self.need_hidden_classes.contains(short))
+            || self
+                .need_hidden_classes
+                .iter()
+                .any(|name| key.ends_with(&format!("::{name}")))
+    }
+
     fn normalize_categorical_operator_name(name: &str) -> String {
         // Keep categorical operator names as-written. Parenthesized operators
         // like infix:<(==)> are distinct from infix:<==>.
@@ -114,6 +135,33 @@ impl Interpreter {
         let mut err = RuntimeError::new(&message);
         err.exception = Some(Box::new(exception.clone()));
         err
+    }
+
+    pub(crate) fn failure_to_runtime_error_if_unhandled(
+        &self,
+        value: &Value,
+    ) -> Option<RuntimeError> {
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+        else {
+            return None;
+        };
+        if class_name != "Failure" {
+            return None;
+        }
+        let handled = attributes
+            .get("handled")
+            .is_some_and(crate::value::Value::truthy);
+        if handled {
+            return None;
+        }
+        if let Some(exception) = attributes.get("exception") {
+            return Some(Self::failure_value_to_error(exception));
+        }
+        Some(RuntimeError::new("Failed"))
     }
 
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
@@ -886,10 +934,22 @@ impl Interpreter {
         self.regex_find_first(pattern, text)
     }
 
-    pub(crate) fn take_value(&mut self, val: Value) {
+    pub(crate) fn regex_find_all_bridge(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        self.regex_find_all(pattern, text)
+    }
+
+    pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         if let Some(items) = self.gather_items.last_mut() {
             items.push(val);
+            if let Some(Some(limit)) = self.gather_take_limits.last()
+                && items.len() >= *limit
+            {
+                return Err(RuntimeError::new(
+                    "__mutsu_lazy_gather_take_limit_reached__",
+                ));
+            }
         }
+        Ok(())
     }
 
     pub(crate) fn current_package(&self) -> &str {
@@ -916,6 +976,9 @@ impl Interpreter {
 
     fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
         let package = package.trim_end_matches("::");
+        if package == "GLOBAL" {
+            return Some(key);
+        }
         let direct = format!("{package}::");
         if let Some(rest) = key.strip_prefix(&direct) {
             return Some(rest);
@@ -949,10 +1012,22 @@ impl Interpreter {
 
     fn qualify_stash_name(package: &str, symbol: &str) -> String {
         let package = package.trim_end_matches("::");
-        if package.is_empty() {
+        if package.is_empty() || package == "GLOBAL" {
             symbol.to_string()
         } else {
             format!("{package}::{symbol}")
+        }
+    }
+
+    fn normalize_stash_package(package: &str) -> String {
+        let trimmed = package.trim_end_matches("::");
+        if let Some(inner) = trimmed
+            .strip_prefix("GLOBAL[")
+            .and_then(|s| s.strip_suffix(']'))
+        {
+            inner.to_string()
+        } else {
+            trimmed.to_string()
         }
     }
 
@@ -1071,7 +1146,7 @@ impl Interpreter {
     }
 
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
-        let package_name = package.trim_end_matches("::");
+        let package_name = Self::normalize_stash_package(package);
 
         // PROCESS:: pseudo-package: exposes process-level dynamic variables
         // like $*PROGRAM, $*PID, %*ENV, @*ARGS, etc.
@@ -1130,7 +1205,7 @@ impl Interpreter {
             return Self::make_stash_instance(package, symbols);
         }
 
-        if let Some(module) = Self::package_export_module(package_name) {
+        if let Some(module) = Self::package_export_module(&package_name) {
             let mut tags = std::collections::BTreeSet::new();
             if let Some(subs) = self.exported_subs.get(module) {
                 for tagset in subs.values() {
@@ -1147,7 +1222,7 @@ impl Interpreter {
                 symbols.insert(
                     tag.clone(),
                     Value::Package(Symbol::intern(&Self::qualify_stash_name(
-                        package_name,
+                        &package_name,
                         &tag,
                     ))),
                 );
@@ -1161,7 +1236,12 @@ impl Interpreter {
             if key.starts_with("__mutsu_callable_id::") {
                 continue;
             }
-            if let Some(rest) = Self::stash_member_tail(key, package_name) {
+            if (package_name == "MY" || package_name == "GLOBAL")
+                && self.should_hide_from_my_global_stash(key)
+            {
+                continue;
+            }
+            if let Some(rest) = Self::stash_member_tail(key, &package_name) {
                 let stash_key = Self::stash_symbol_key_from_env_tail(rest);
                 symbols.insert(stash_key, val.clone());
             }
@@ -1169,7 +1249,7 @@ impl Interpreter {
 
         for (key, def) in &self.functions {
             let key_s = key.resolve();
-            let Some(rest) = Self::stash_member_tail(&key_s, package_name) else {
+            let Some(rest) = Self::stash_member_tail(&key_s, &package_name) else {
                 continue;
             };
             let base = rest.split('/').next().unwrap_or(rest);
@@ -1186,26 +1266,68 @@ impl Interpreter {
         }
 
         for class_name in self.classes.keys() {
-            let Some(rest) = Self::stash_member_tail(class_name, package_name) else {
+            let class_short = class_name
+                .rsplit_once("::")
+                .map(|(_, short)| short)
+                .unwrap_or(class_name.as_str());
+            if (package_name == "MY" || package_name == "GLOBAL")
+                && (self.need_hidden_classes.contains(class_name)
+                    || self.need_hidden_classes.contains(class_short))
+            {
+                continue;
+            }
+            let Some(rest) = Self::stash_member_tail(class_name, &package_name) else {
                 continue;
             };
-            if rest.is_empty() || rest.contains("::") {
+            if rest.is_empty() {
+                continue;
+            }
+            if let Some((head, _)) = rest.split_once("::") {
+                symbols.entry(head.to_string()).or_insert_with(|| {
+                    Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                        &package_name,
+                        head,
+                    )))
+                });
                 continue;
             }
             symbols.entry(rest.to_string()).or_insert_with(|| {
                 Value::Package(Symbol::intern(&Self::qualify_stash_name(
-                    package_name,
+                    &package_name,
+                    rest,
+                )))
+            });
+        }
+        for role_name in self.roles.keys() {
+            let Some(rest) = Self::stash_member_tail(role_name, &package_name) else {
+                continue;
+            };
+            if rest.is_empty() {
+                continue;
+            }
+            if let Some((head, _)) = rest.split_once("::") {
+                symbols.entry(head.to_string()).or_insert_with(|| {
+                    Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                        &package_name,
+                        head,
+                    )))
+                });
+                continue;
+            }
+            symbols.entry(rest.to_string()).or_insert_with(|| {
+                Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                    &package_name,
                     rest,
                 )))
             });
         }
 
-        if self.exported_subs.contains_key(package_name)
-            || self.exported_vars.contains_key(package_name)
+        if self.exported_subs.contains_key(&package_name)
+            || self.exported_vars.contains_key(&package_name)
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
                 Value::Package(Symbol::intern(&Self::qualify_stash_name(
-                    package_name,
+                    &package_name,
                     "EXPORT",
                 )))
             });

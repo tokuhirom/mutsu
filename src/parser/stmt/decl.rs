@@ -4,6 +4,18 @@ use super::super::parse_result::{
     PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
 };
 
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
+
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -96,6 +108,23 @@ fn rewrite_decl_assignment_or_chain(expr: Expr, mut decl_stmt: Stmt) -> Option<S
 
 fn is_supported_variable_trait(trait_name: &str) -> bool {
     if matches!(trait_name, "default" | "export" | "dynamic") {
+        return true;
+    }
+    // Native typed buffer traits (e.g. `my @a is buf8`, `my @a is blob16`)
+    if matches!(
+        trait_name,
+        "buf"
+            | "blob"
+            | "buf8"
+            | "buf16"
+            | "buf32"
+            | "buf64"
+            | "blob8"
+            | "blob16"
+            | "blob32"
+            | "blob64"
+            | "utf8"
+    ) {
         return true;
     }
     // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
@@ -361,17 +390,24 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
-    // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1 :tag2`)
+    // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1, :tag2`)
     let mut rest = rest;
-    while rest.starts_with(':') && !rest.starts_with("::") {
-        let r = &rest[1..];
-        // :!name
-        let r = r.strip_prefix('!').unwrap_or(r);
-        if let Ok((r, _name)) = ident(r) {
-            // :name(expr)
-            let r = skip_balanced_parens(r);
-            let (r, _) = ws(r)?;
-            rest = r;
+    loop {
+        if rest.starts_with(':') && !rest.starts_with("::") {
+            let r = &rest[1..];
+            // :!name
+            let r = r.strip_prefix('!').unwrap_or(r);
+            if let Ok((r, _name)) = ident(r) {
+                // :name(expr)
+                let r = skip_balanced_parens(r);
+                let (r, _) = ws(r)?;
+                // Skip optional comma between tags
+                let r = r.strip_prefix(',').unwrap_or(r);
+                let (r, _) = ws(r)?;
+                rest = r;
+            } else {
+                break;
+            }
         } else {
             break;
         }
@@ -839,6 +875,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 ));
             }
             let is_builtin = is_supported_variable_trait(&trait_name);
+            if is_hash && (trait_name == "Mix" || trait_name == "MixHash") {
+                type_constraint = Some(trait_name.clone());
+            }
             if trait_name == "dynamic" {
                 has_dynamic_trait = true;
             }
@@ -866,9 +905,29 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 continue;
             }
             let (r2, _) = ws(r2)?;
-            // "default" is a supported trait but needs to be in custom_traits
-            // for runtime processing via ApplyVarTrait.
-            let include_in_traits = !is_builtin || trait_name == "default";
+            // "default" and buf-type traits are supported but need to be in
+            // custom_traits for runtime processing via ApplyVarTrait.
+            let is_buf_trait = matches!(
+                trait_name.as_str(),
+                "Buf"
+                    | "Blob"
+                    | "buf"
+                    | "blob"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+                    | "utf8"
+            );
+            // `my @a is List` creates an immutable List container in Raku.
+            // Keep this trait so runtime can enforce readonly assignment.
+            let is_list_trait = is_array && trait_name == "List";
+            let include_in_traits =
+                !is_builtin || trait_name == "default" || is_buf_trait || is_list_trait;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
@@ -1115,7 +1174,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (rest, method_name) =
             take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let method_name = method_name.to_string();
-        // Parse optional args
+        // Parse optional args (parenthesized or colon-form)
         let (rest, args) = if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
             let (r, _) = ws(r)?;
@@ -1123,6 +1182,34 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             (r, args)
+        } else if rest.starts_with(':') && !rest.starts_with("::") {
+            // Colon-arg syntax: .=method: arg, arg2
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
         } else {
             (rest, Vec::new())
         };
@@ -1182,14 +1269,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
-        let stmt = if is_array {
-            Stmt::SyntheticBlock(vec![
-                stmt,
-                Stmt::Expr(Expr::Call {
+        let stmt = if is_array || bound_name.starts_with('%') {
+            let mut stmts = Vec::new();
+            if bound_name.starts_with('%') {
+                stmts.push(Stmt::MarkReadonly(bound_name.clone()));
+            }
+            stmts.push(stmt);
+            if is_array {
+                stmts.push(Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_record_bound_array_len"),
-                    args: vec![Expr::Literal(Value::str(bound_name))],
-                }),
-            ])
+                    args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                }));
+                stmts.push(Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_record_shaped_array_dims"),
+                    args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                }));
+            }
+            Stmt::SyntheticBlock(stmts)
         } else {
             stmt
         };
@@ -1463,24 +1559,26 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
 
-    // Optional type constraint (with optional smiley :D, :U, :_)
-    let mut type_constraint: Option<String> = None;
-    let rest = if let Ok((r, tc)) = ident(rest) {
-        // Skip smiley after type name
-        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            &r[2..]
+    // Optional type constraint.
+    let (rest, mut type_constraint) = {
+        let saved = rest;
+        if let Some((r, tc)) = parse_type_constraint_expr(rest) {
+            let (r2, _) = ws(r)?;
+            if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+                // Strip smiley suffix for the type_constraint name used as default
+                let base = tc
+                    .strip_suffix(":D")
+                    .or_else(|| tc.strip_suffix(":U"))
+                    .or_else(|| tc.strip_suffix(":_"))
+                    .unwrap_or(&tc)
+                    .to_string();
+                (r2, Some(base))
+            } else {
+                (saved, None)
+            }
         } else {
-            r
-        };
-        let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
-            type_constraint = Some(tc.to_string());
-            r2
-        } else {
-            rest
+            (saved, None)
         }
-    } else {
-        rest
     };
 
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
@@ -1588,6 +1686,18 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
+    // Postfix container typing: has @.a of Int; has %.h of Str;
+    if (sigil == b'@' || sigil == b'%')
+        && type_constraint.is_none()
+        && let Some(r) = keyword("of", rest)
+    {
+        let (r, _) = ws1(r)?;
+        let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+        let (r, _) = ws(r)?;
+        type_constraint = Some(tc);
+        rest = r;
+    }
+
     // Optional `where` constraint
     let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
@@ -1599,7 +1709,59 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     // Default value
-    let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
+    let (rest, mut default) = if let Some(stripped) = rest.strip_prefix(".=") {
+        let (rest, _) = ws(stripped)?;
+        let (rest, method_name) =
+            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let method_name = method_name.to_string();
+        let (rest, args) = if rest.starts_with('(') {
+            let (r, _) = parse_char(rest, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else if rest.starts_with(':') && !rest.starts_with("::") {
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) = parse_colon_method_arg(r)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = parse_colon_method_arg(r2)?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
+        } else {
+            (rest, Vec::new())
+        };
+        let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
+        (
+            rest,
+            Some(Expr::MethodCall {
+                target: Box::new(Expr::BareWord(target_name)),
+                name: Symbol::intern(&method_name),
+                args,
+                modifier: None,
+                quoted: false,
+            }),
+        )
+    } else if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
@@ -1618,8 +1780,11 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Some(expr))
         }
-    } else if let Some(tc) = &type_constraint {
+    } else if let Some(tc) = &type_constraint
+        && is_required.is_none()
+    {
         // Typed attribute with no explicit default → use type object as default
+        // But not when `is required` — the attribute must be explicitly provided
         (rest, Some(Expr::BareWord(tc.clone())))
     } else {
         (rest, None)

@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::ast::Stmt;
 use crate::env::Env;
@@ -59,6 +60,19 @@ pub(crate) struct VM {
 }
 
 impl VM {
+    /// Mark a Failure on top of the stack as handled (used by boolean/defined checks).
+    fn mark_failure_handled_on_stack(stack: &mut [Value]) {
+        if let Some(Value::Instance {
+            class_name,
+            attributes,
+            ..
+        }) = stack.last_mut()
+            && *class_name == "Failure"
+        {
+            Arc::make_mut(attributes).insert("handled".to_string(), Value::Bool(true));
+        }
+    }
+
     fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
         let mut seen: HashSet<String> = HashSet::new();
         for op in &code.ops {
@@ -76,6 +90,7 @@ impl VM {
     }
 
     fn runtime_error_from_exception_value(
+        &self,
         value: Value,
         default_message: &str,
         is_fail: bool,
@@ -97,12 +112,19 @@ impl VM {
 
         let mut err = RuntimeError::new(message);
         err.is_fail = is_fail;
-        if let Value::Instance { class_name, .. } = &value
-            && (class_name == "Exception"
-                || class_name.resolve().starts_with("X::")
-                || class_name.resolve().starts_with("CX::"))
-        {
-            err.exception = Some(Box::new(value));
+        if let Value::Instance { class_name, .. } = &value {
+            let cn = class_name.resolve();
+            let is_exception = cn == "Exception"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .interpreter
+                    .mro_readonly(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            if is_exception {
+                err.exception = Some(Box::new(value));
+            }
         }
         err
     }
@@ -168,7 +190,11 @@ impl VM {
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
-        (self.interpreter, Ok(self.last_topic_value))
+        let last_stack_value = self.stack.last().cloned();
+        (
+            self.interpreter,
+            Ok(last_stack_value.or(self.last_topic_value)),
+        )
     }
 
     /// Run compiled bytecode without consuming self.
@@ -344,6 +370,22 @@ impl VM {
                     *ip += 1;
                     return Ok(());
                 }
+                let atomic_name = name.strip_prefix('$').unwrap_or(name);
+                let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+                let is_atomic_int = self.interpreter.var_type_constraint(name).as_deref()
+                    == Some("atomicint")
+                    || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                        == Some("atomicint")
+                    || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+                if is_atomic_int {
+                    let fetched = self.interpreter.call_function(
+                        "__mutsu_atomic_fetch_var",
+                        vec![Value::str(atomic_name.to_string())],
+                    )?;
+                    self.stack.push(fetched);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
                     if name.starts_with('^') {
                         Value::Bool(true)
@@ -400,11 +442,28 @@ impl VM {
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
-                let val = self.stack.pop().unwrap();
-                let mut val = if name.starts_with('%') {
-                    runtime::coerce_to_hash(val)
+                let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+                let (raw_val, bind_source) = if let Value::Capture { positional, named } = &raw_val
+                {
+                    if positional.is_empty() {
+                        if let (Some(Value::Str(source_name)), Some(inner)) = (
+                            named.get("__mutsu_varref_name"),
+                            named.get("__mutsu_varref_value"),
+                        ) {
+                            (inner.clone(), Some(source_name.to_string()))
+                        } else {
+                            (raw_val, None)
+                        }
+                    } else {
+                        (raw_val, None)
+                    }
                 } else {
-                    val
+                    (raw_val, None)
+                };
+                let mut val = if name.starts_with('%') {
+                    runtime::coerce_to_hash(raw_val)
+                } else {
+                    raw_val
                 };
                 if let Some(constraint) = self.interpreter.var_type_constraint(&name)
                     && !name.starts_with('%')
@@ -423,6 +482,12 @@ impl VM {
                             .try_coerce_value_for_constraint(&constraint, val)?;
                     }
                 }
+                if self.interpreter.fatal_mode
+                    && !name.contains("__mutsu_")
+                    && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                {
+                    return Err(err);
+                }
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
                 if matches!(
@@ -432,20 +497,53 @@ impl VM {
                 {
                     return Err(RuntimeError::new("X::Assignment::RO"));
                 }
-                if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+                if let Some(source_name) = bind_source {
+                    let mut resolved_source = source_name;
+                    let mut seen = std::collections::HashSet::new();
+                    while seen.insert(resolved_source.clone()) {
+                        let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
+                        let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+                            break;
+                        };
+                        resolved_source = next.to_string();
+                    }
+                    self.interpreter
+                        .env_mut()
+                        .insert(alias_key.clone(), Value::str(resolved_source));
+                    self.interpreter
+                        .env_mut()
+                        .insert(readonly_key.clone(), Value::Bool(false));
+                }
+                self.set_env_with_main_alias(&name, val.clone());
+                // Sync to shared_vars for cross-thread visibility
+                self.interpreter.set_shared_var(&name, val.clone());
+                let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
                     if let Value::Str(name) = v {
                         Some(name.to_string())
                     } else {
                         None
                     }
-                }) {
-                    self.interpreter.env_mut().insert(alias_name, val.clone());
+                });
+                let mut seen_aliases = std::collections::HashSet::new();
+                while let Some(current_alias) = alias_name {
+                    if !seen_aliases.insert(current_alias.clone()) {
+                        break;
+                    }
+                    self.set_env_with_main_alias(&current_alias, val.clone());
+                    self.update_local_if_exists(code, &current_alias, &val);
+                    let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+                    alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                        if let Value::Str(name) = v {
+                            Some(name.to_string())
+                        } else {
+                            None
+                        }
+                    });
                 }
-                self.set_env_with_main_alias(&name, val.clone());
-                // Sync to shared_vars for cross-thread visibility
-                self.interpreter.set_shared_var(&name, val.clone());
                 if name == "_"
                     && let Some(ref source_var) = self.topic_source_var
+                    && !source_var.starts_with('@')
+                    && !source_var.starts_with('%')
                 {
                     let source_name = source_var.clone();
                     self.set_env_with_main_alias(&source_name, val.clone());
@@ -532,6 +630,10 @@ impl VM {
             }
             OpCode::BoolBitNeg => {
                 self.exec_bool_bit_neg_op();
+                *ip += 1;
+            }
+            OpCode::StrBitNeg => {
+                self.exec_str_bit_neg_op();
                 *ip += 1;
             }
             OpCode::MakeSlip => {
@@ -873,14 +975,19 @@ impl VM {
                 *ip = *target as usize;
             }
             OpCode::JumpIfFalse(target) => {
+                // Mark Failures as handled when tested for truthiness (e.g. && operator)
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.pop().unwrap();
                 if !val.truthy() {
+                    // Also mark the original (below dup) as handled
+                    Self::mark_failure_handled_on_stack(&mut self.stack);
                     *ip = *target as usize;
                 } else {
                     *ip += 1;
                 }
             }
             OpCode::JumpIfTrue(target) => {
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap();
                 if val.truthy() {
                     *ip = *target as usize;
@@ -889,6 +996,7 @@ impl VM {
                 }
             }
             OpCode::JumpIfNil(target) => {
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap();
                 if !runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
@@ -897,6 +1005,7 @@ impl VM {
                 }
             }
             OpCode::JumpIfNotNil(target) => {
+                Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap();
                 if runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
@@ -969,6 +1078,25 @@ impl VM {
                     // Sink context must realize lazy gathers for side effects.
                     self.interpreter.force_lazy_list_bridge(&list)?;
                     self.env_dirty = true;
+                }
+                *ip += 1;
+            }
+            OpCode::SinkPop => {
+                if let Some(val) = self.stack.pop() {
+                    match &val {
+                        Value::LazyList(list) => {
+                            self.interpreter.force_lazy_list_bridge(list)?;
+                            self.env_dirty = true;
+                        }
+                        _ => {
+                            // Sinking an unhandled Failure always throws (Raku behavior)
+                            if let Some(err) =
+                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                            {
+                                return Err(err);
+                            }
+                        }
+                    }
                 }
                 *ip += 1;
             }
@@ -1068,6 +1196,13 @@ impl VM {
                 self.exec_call_method_dynamic_op(code, *arity)?;
                 *ip += 1;
             }
+            OpCode::CallMethodDynamicMut {
+                arity,
+                target_name_idx,
+            } => {
+                self.exec_call_method_dynamic_mut_op(code, *arity, *target_name_idx)?;
+                *ip += 1;
+            }
             OpCode::CallMethodMut {
                 name_idx,
                 arity,
@@ -1140,6 +1275,18 @@ impl VM {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
+            OpCode::MultiDimIndex(ndims) => {
+                self.exec_multi_dim_index_op(*ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssign { name_idx, ndims } => {
+                self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
+                *ip += 1;
+            }
+            OpCode::MultiDimIndexAssignGeneric(ndims) => {
+                self.exec_multi_dim_index_assign_generic_op(*ndims)?;
+                *ip += 1;
+            }
             OpCode::HyperSlice(adverb) => {
                 self.exec_hyper_slice_op(*adverb)?;
                 *ip += 1;
@@ -1151,7 +1298,7 @@ impl VM {
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {
-                self.exec_string_concat_op(*n);
+                self.exec_string_concat_op(*n)?;
                 *ip += 1;
             }
 
@@ -1198,11 +1345,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {
-                self.exec_post_increment_index_op(code, *name_idx);
+                self.exec_post_increment_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PostDecrementIndex(name_idx) => {
-                self.exec_post_decrement_index_op(code, *name_idx);
+                self.exec_post_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
@@ -1238,11 +1385,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::PreIncrementIndex(name_idx) => {
-                self.exec_pre_increment_index_op(code, *name_idx);
+                self.exec_pre_increment_index_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PreDecrementIndex(name_idx) => {
-                self.exec_pre_decrement_index_op(code, *name_idx);
+                self.exec_pre_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
 
@@ -1286,6 +1433,7 @@ impl VM {
                 label,
                 arity,
                 collect,
+                restore_topic,
                 threaded,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
@@ -1295,6 +1443,7 @@ impl VM {
                     label: label.clone(),
                     arity: *arity,
                     collect: *collect,
+                    restore_topic: *restore_topic,
                     threaded: *threaded,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
@@ -1357,13 +1506,11 @@ impl VM {
             // -- Error handling --
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(Self::runtime_error_from_exception_value(val, "Died", false));
+                return Err(self.runtime_error_from_exception_value(val, "Died", false));
             }
             OpCode::Fail => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(Self::runtime_error_from_exception_value(
-                    val, "Failed", true,
-                ));
+                return Err(self.runtime_error_from_exception_value(val, "Failed", true));
             }
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
@@ -1425,20 +1572,33 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
+                self.exec_subst_op(
+                    code,
+                    *pattern_idx,
+                    *replacement_idx,
+                    *samemark,
+                    *nth_idx,
+                    *x_count,
+                )?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                nth_idx,
+                x_count,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
                     *pattern_idx,
                     *replacement_idx,
                     *samemark,
+                    *nth_idx,
+                    *x_count,
                 )?;
                 *ip += 1;
             }
@@ -1448,6 +1608,7 @@ impl VM {
                 delete,
                 complement,
                 squash,
+                non_destructive,
             } => {
                 self.exec_transliterate_op(
                     code,
@@ -1456,13 +1617,14 @@ impl VM {
                     *delete,
                     *complement,
                     *squash,
+                    *non_destructive,
                 )?;
                 *ip += 1;
             }
 
             // -- Take --
             OpCode::Take => {
-                self.exec_take_op();
+                self.exec_take_op()?;
                 *ip += 1;
             }
 

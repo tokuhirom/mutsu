@@ -25,9 +25,6 @@ impl Interpreter {
     fn union_insert_set_elem(elems: &mut std::collections::HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
-            Value::Scalar(inner) => {
-                Self::union_insert_set_elem(elems, inner);
-            }
             Value::Set(items) => {
                 elems.extend(items.iter().cloned());
             }
@@ -86,7 +83,6 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Scalar(inner) => Self::union_set_keys(inner),
             Value::Set(s) => Ok((**s).clone()),
             Value::Bag(b) => Ok(b.keys().cloned().collect()),
             Value::Mix(m) => Ok(m.keys().cloned().collect()),
@@ -137,7 +133,6 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Scalar(inner) => Self::union_bag_counts(inner),
             Value::Bag(b) => Ok((**b).clone()),
             Value::Mix(m) => Ok(m
                 .iter()
@@ -163,7 +158,6 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Scalar(inner) => Self::union_mix_weights(inner),
             Value::Mix(m) => Ok((**m).clone()),
             Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
@@ -233,7 +227,10 @@ impl Interpreter {
         match value {
             Value::Int(i) => *i,
             Value::Num(n) => *n as i64,
-            _ => 1,
+            Value::Rat(n, d) if *d != 0 => n / d,
+            Value::FatRat(n, d) if *d != 0 => n / d,
+            Value::Bool(b) => i64::from(*b),
+            _ => i64::from(value.truthy()),
         }
     }
 
@@ -249,24 +246,52 @@ impl Interpreter {
 
     fn multiply_bag_counts(
         value: &Value,
-    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+    ) -> Result<std::collections::HashMap<String, (i64, bool)>, RuntimeError> {
+        if let Value::Scalar(inner) = value {
+            return Self::multiply_bag_counts(inner.as_ref());
+        }
+        fn parse_pair_key(key: &str) -> Option<(String, i64, bool)> {
+            let (base, raw_weight) = key.split_once('\t')?;
+            let weight = match raw_weight {
+                "True" => 1,
+                "False" => 0,
+                _ => raw_weight.parse::<i64>().ok()?,
+            };
+            let explicit = weight != 1;
+            Some((base.to_string(), weight, explicit))
+        }
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b) => Ok((**b).clone()),
-            Value::Mix(m) => Ok(m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()),
-            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1)).collect()),
+            Value::Bag(b) => {
+                let mut out = std::collections::HashMap::new();
+                for (k, c) in b.iter() {
+                    if let Some((base, weight, explicit)) = parse_pair_key(k) {
+                        let entry = out.entry(base).or_insert((0, false));
+                        entry.0 += weight.saturating_mul(*c);
+                        entry.1 |= explicit;
+                    } else {
+                        let entry = out.entry(k.clone()).or_insert((0, false));
+                        entry.0 += *c;
+                    }
+                }
+                Ok(out)
+            }
+            Value::Mix(m) => Ok(m
+                .iter()
+                .map(|(k, v)| (k.clone(), (*v as i64, false)))
+                .collect()),
+            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), (1, false))).collect()),
             Value::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
-                    let c = match v {
-                        Value::Int(i) => *i,
-                        Value::Num(n) => *n as i64,
-                        Value::Bool(b) => i64::from(*b),
-                        _ => i64::from(v.truthy()),
-                    };
-                    if c > 0 { Some((k.clone(), c)) } else { None }
+                    let c = Self::multiply_pair_i64(v);
+                    if c > 0 {
+                        Some((k.clone(), (c, c != 1)))
+                    } else {
+                        None
+                    }
                 })
                 .collect()),
             _ if value.as_list_items().is_some() => {
@@ -274,14 +299,21 @@ impl Interpreter {
                 for item in value.as_list_items().unwrap().iter() {
                     match item {
                         Value::Pair(k, v) => {
-                            *counts.entry(k.clone()).or_insert(0) += Self::multiply_pair_i64(v);
+                            let c = Self::multiply_pair_i64(v);
+                            let entry = counts.entry(k.clone()).or_insert((0, false));
+                            entry.0 += c;
+                            entry.1 |= c != 1;
                         }
                         Value::ValuePair(k, v) => {
                             let key = k.to_string_value();
-                            *counts.entry(key).or_insert(0) += Self::multiply_pair_i64(v);
+                            let c = Self::multiply_pair_i64(v);
+                            let entry = counts.entry(key).or_insert((0, false));
+                            entry.0 += c;
+                            entry.1 |= c != 1;
                         }
                         other => {
-                            *counts.entry(other.to_string_value()).or_insert(0) += 1;
+                            let entry = counts.entry(other.to_string_value()).or_insert((0, false));
+                            entry.0 += 1;
                         }
                     }
                 }
@@ -290,7 +322,8 @@ impl Interpreter {
             range if range.is_range() => {
                 let mut counts = std::collections::HashMap::new();
                 for item in Self::value_to_list(range) {
-                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                    let entry = counts.entry(item.to_string_value()).or_insert((0, false));
+                    entry.0 += 1;
                 }
                 Ok(counts)
             }
@@ -298,7 +331,7 @@ impl Interpreter {
                 let mut counts = std::collections::HashMap::new();
                 let c = Self::multiply_pair_i64(v);
                 if c > 0 {
-                    counts.insert(k.clone(), c);
+                    counts.insert(k.clone(), (c, c != 1));
                 }
                 Ok(counts)
             }
@@ -306,13 +339,13 @@ impl Interpreter {
                 let mut counts = std::collections::HashMap::new();
                 let c = Self::multiply_pair_i64(v);
                 if c > 0 {
-                    counts.insert(k.to_string_value(), c);
+                    counts.insert(k.to_string_value(), (c, c != 1));
                 }
                 Ok(counts)
             }
             other => {
                 let mut counts = std::collections::HashMap::new();
-                counts.insert(other.to_string_value(), 1);
+                counts.insert(other.to_string_value(), (1, false));
                 Ok(counts)
             }
         }
@@ -321,6 +354,9 @@ impl Interpreter {
     fn multiply_mix_weights(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        if let Value::Scalar(inner) = value {
+            return Self::multiply_mix_weights(inner.as_ref());
+        }
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
@@ -404,6 +440,14 @@ impl Interpreter {
     }
 
     fn apply_set_multiply(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        let left = match left {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
+        let right = match right {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
         if matches!(left, Value::Instance { class_name, .. } if class_name == "Failure")
             || matches!(right, Value::Instance { class_name, .. } if class_name == "Failure")
         {
@@ -425,12 +469,17 @@ impl Interpreter {
         }
         let l = Self::multiply_bag_counts(left)?;
         let r = Self::multiply_bag_counts(right)?;
-        let mut result = std::collections::HashMap::new();
-        for (k, lv) in l {
-            if let Some(rv) = r.get(&k) {
-                let product = lv * rv;
+        let mut result: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for (k, (lv, l_explicit)) in l {
+            if let Some((rv, r_explicit)) = r.get(&k) {
+                let product = lv * *rv;
                 if product > 0 {
-                    result.insert(k, product);
+                    if l_explicit || *r_explicit {
+                        // Pair-ish bag elements are represented as "key<TAB>weight" with count 1.
+                        result.insert(format!("{k}\t{product}"), 1);
+                    } else {
+                        result.insert(k, product);
+                    }
                 }
             }
         }
@@ -544,6 +593,107 @@ impl Interpreter {
         }
     }
 
+    fn is_buf_value(val: &Value) -> bool {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+        } else {
+            false
+        }
+    }
+
+    fn extract_buf_bytes(val: &Value) -> Vec<u8> {
+        if let Value::Instance { attributes, .. } = val
+            && let Some(Value::Array(items, ..)) = attributes.get("bytes")
+        {
+            items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(n) => *n as u8,
+                    _ => 0,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn buf_class_name(val: &Value) -> Option<String> {
+        if let Value::Instance { class_name, .. } = val {
+            let cn = class_name.resolve();
+            if cn == "Buf"
+                || cn == "Blob"
+                || cn == "utf8"
+                || cn == "utf16"
+                || cn.starts_with("Buf[")
+                || cn.starts_with("Blob[")
+                || cn.starts_with("buf")
+                || cn.starts_with("blob")
+            {
+                return Some(cn.to_string());
+            }
+        }
+        None
+    }
+
+    fn str_bitwise_op(
+        left: &Value,
+        right: &Value,
+        op: fn(u8, u8) -> u8,
+        pad_to_max: bool,
+    ) -> Result<Value, RuntimeError> {
+        let left_is_buf = Self::is_buf_value(left);
+        let right_is_buf = Self::is_buf_value(right);
+        let any_buf = left_is_buf || right_is_buf;
+        let lb = if left_is_buf {
+            Self::extract_buf_bytes(left)
+        } else {
+            crate::runtime::utils::coerce_to_str(left)
+                .as_bytes()
+                .to_vec()
+        };
+        let rb = if right_is_buf {
+            Self::extract_buf_bytes(right)
+        } else {
+            crate::runtime::utils::coerce_to_str(right)
+                .as_bytes()
+                .to_vec()
+        };
+        let len = if pad_to_max {
+            lb.len().max(rb.len())
+        } else {
+            lb.len().min(rb.len())
+        };
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            let a = lb.get(i).copied().unwrap_or(0);
+            let b = rb.get(i).copied().unwrap_or(0);
+            out.push(op(a, b));
+        }
+        if any_buf {
+            let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(byte_vals));
+            let result_type = match (Self::buf_class_name(left), Self::buf_class_name(right)) {
+                (Some(l), Some(r)) if l == r => l,
+                _ => "Buf".to_string(),
+            };
+            Ok(Value::make_instance(
+                crate::symbol::Symbol::intern(&result_type),
+                attrs,
+            ))
+        } else {
+            Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
+        }
+    }
+
     fn shift_left_i64(a: i64, b: i64) -> Value {
         if b < 0 {
             let shift = b.unsigned_abs();
@@ -584,15 +734,132 @@ impl Interpreter {
         }
     }
 
+    fn shift_left_bigint(a: &num_bigint::BigInt, b: i64) -> Value {
+        if b < 0 {
+            Value::from_bigint(a >> (b.unsigned_abs() as usize))
+        } else {
+            Value::from_bigint(a << (b as usize))
+        }
+    }
+
+    fn shift_right_bigint(a: &num_bigint::BigInt, b: i64) -> Value {
+        if b < 0 {
+            Value::from_bigint(a << (b.unsigned_abs() as usize))
+        } else {
+            Value::from_bigint(a >> (b as usize))
+        }
+    }
+
     pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
-        let to_num = |v: &Value| -> f64 {
-            crate::runtime::to_float_value(v).unwrap_or(crate::runtime::to_int(v) as f64)
+        let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
+            match value {
+                Value::Bag(items) => Some((**items).clone()),
+                Value::Set(items) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
+                Value::Hash(items) => Some({
+                    let mut counts = std::collections::HashMap::new();
+                    for (k, v) in items.iter() {
+                        let count = match v {
+                            Value::Int(i) => *i,
+                            Value::Num(n) => *n as i64,
+                            Value::Rat(n, d) if *d != 0 => n / d,
+                            Value::FatRat(n, d) if *d != 0 => n / d,
+                            Value::Bool(b) => i64::from(*b),
+                            _ => return None,
+                        };
+                        counts.insert(k.clone(), count);
+                    }
+                    counts
+                }),
+                _ => None,
+            }
         };
-        let to_int = |v: &Value| -> i64 { crate::runtime::to_int(v) };
+        let to_num = |v: &Value| -> f64 {
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        f64::NAN
+                    } else {
+                        *n as f64 / *d as f64
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        f64::NAN
+                    } else {
+                        *n as f64 / *d as f64
+                    }
+                }
+                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                Value::Bool(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                Value::Array(items, kind) => {
+                    if kind.is_itemized() {
+                        0.0
+                    } else {
+                        items.len() as f64
+                    }
+                }
+                _ => 0.0,
+            }
+        };
+        let to_int = |v: &Value| -> i64 {
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
+                Value::Int(i) => *i,
+                Value::BigInt(n) => n
+                    .to_i64()
+                    .unwrap_or_else(|| if n.is_negative() { i64::MIN } else { i64::MAX }),
+                Value::Num(f) => *f as i64,
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        0
+                    } else {
+                        n / d
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        0
+                    } else {
+                        n / d
+                    }
+                }
+                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+                Value::Bool(b) => {
+                    if *b {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Value::Array(items, kind) => {
+                    if kind.is_itemized() {
+                        0
+                    } else {
+                        items.len() as i64
+                    }
+                }
+                _ => 0,
+            }
+        };
         let is_fractional =
             |v: &Value| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _));
         // Handle R (reverse) meta-prefix: swap operands and recurse with inner op
@@ -601,8 +868,45 @@ impl Interpreter {
         {
             return Self::apply_reduction_op(inner_op, right, left);
         }
+        if let Some(inner_op) = op.strip_prefix('X')
+            && !inner_op.is_empty()
+        {
+            let left_list = Self::value_to_list(left);
+            let right_list = Self::value_to_list(right);
+            let mut out = Vec::new();
+            for l in &left_list {
+                for r in &right_list {
+                    out.push(Self::apply_reduction_op(inner_op, l, r)?);
+                }
+            }
+            return Ok(Value::array(out));
+        }
+        if let Some(inner_op) = op.strip_prefix('Z')
+            && !inner_op.is_empty()
+        {
+            let left_list = Self::value_to_list(left);
+            let right_list = Self::value_to_list(right);
+            let len = left_list.len().min(right_list.len());
+            let mut out = Vec::with_capacity(len);
+            for i in 0..len {
+                out.push(Self::apply_reduction_op(
+                    inner_op,
+                    &left_list[i],
+                    &right_list[i],
+                )?);
+            }
+            return Ok(Value::array(out));
+        }
         match op {
             "+" => {
+                if let (Some(mut left_counts), Some(right_counts)) =
+                    (to_bag_counts(left), to_bag_counts(right))
+                {
+                    for (key, count) in right_counts {
+                        *left_counts.entry(key).or_insert(0) += count;
+                    }
+                    return Ok(Value::bag(left_counts));
+                }
                 if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) + to_num(right)))
                 } else {
@@ -639,11 +943,28 @@ impl Interpreter {
                 }
             }
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
-            "~" => Ok(Value::str(format!(
-                "{}{}",
-                crate::runtime::utils::coerce_to_str(left),
-                crate::runtime::utils::coerce_to_str(right)
-            ))),
+            "~" => {
+                // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
+                if crate::vm::VM::is_buf_value(left) && crate::vm::VM::is_buf_value(right) {
+                    let result_class = if let Value::Instance { class_name, .. } = left {
+                        *class_name
+                    } else {
+                        crate::symbol::Symbol::intern("Buf")
+                    };
+                    let mut bytes = crate::vm::VM::extract_buf_bytes(left);
+                    bytes.extend(crate::vm::VM::extract_buf_bytes(right));
+                    let byte_vals: Vec<Value> =
+                        bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
+                    return Ok(Value::make_instance(result_class, attrs));
+                }
+                Ok(Value::str(format!(
+                    "{}{}",
+                    crate::runtime::utils::coerce_to_str(left),
+                    crate::runtime::utils::coerce_to_str(right)
+                )))
+            }
             "&&" | "and" => {
                 if !left.truthy() {
                     Ok(left.clone())
@@ -694,10 +1015,27 @@ impl Interpreter {
                 let b = right.to_bigint();
                 Ok(Value::from_bigint(a ^ b))
             }
-            "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
-            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
-            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
-            "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
+            "==" => {
+                if let (Some(a), Some(b)) = (
+                    super::to_big_rat_parts(left),
+                    super::to_big_rat_parts(right),
+                ) {
+                    Ok(Value::Bool(super::big_rat_parts_equal(a, b)))
+                } else {
+                    Ok(Value::Bool(to_num(left) == to_num(right)))
+                }
+            }
+            "=" => Ok(right.clone()),
+            "!=" => {
+                if let (Some(a), Some(b)) = (
+                    super::to_big_rat_parts(left),
+                    super::to_big_rat_parts(right),
+                ) {
+                    Ok(Value::Bool(!super::big_rat_parts_equal(a, b)))
+                } else {
+                    Ok(Value::Bool(to_num(left) != to_num(right)))
+                }
+            }
             "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
             ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
             "<=" => Ok(Value::Bool(to_num(left) <= to_num(right))),
@@ -733,18 +1071,13 @@ impl Interpreter {
             "cmp" => {
                 let ord = match (left, right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _)
-                    | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _)
-                    | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) =
-                            (super::to_rat_parts(left), super::to_rat_parts(right))
-                        {
-                            super::compare_rat_parts((an, ad), (bn, bd))
-                        } else {
-                            left.to_string_value().cmp(&right.to_string_value())
-                        }
-                    }
+                    (
+                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                    ) => super::to_big_rat_parts(left)
+                        .zip(super::to_big_rat_parts(right))
+                        .and_then(|(a, b)| super::compare_big_rat_parts(a, b))
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Num(a), Value::Num(b)) => {
                         a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                     }
@@ -754,6 +1087,29 @@ impl Interpreter {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (l, r)
+                        if matches!(
+                            l,
+                            Value::Int(_)
+                                | Value::BigInt(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        ) && matches!(
+                            r,
+                            Value::Int(_)
+                                | Value::BigInt(_)
+                                | Value::Num(_)
+                                | Value::Rat(_, _)
+                                | Value::FatRat(_, _)
+                                | Value::BigRat(_, _)
+                        ) =>
+                    {
+                        let lf = super::to_float_value(l).unwrap_or(0.0);
+                        let rf = super::to_float_value(r).unwrap_or(0.0);
+                        lf.partial_cmp(&rf).unwrap_or(std::cmp::Ordering::Equal)
+                    }
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
                         super::version_cmp_parts(ap, bp)
                     }
@@ -811,6 +1167,7 @@ impl Interpreter {
             }
             "eqv" => Ok(Value::Bool(left.eqv(right))),
             "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
+            "!=:=" => Ok(Value::Bool(!super::values_identical(left, right))),
             "===" => Ok(Value::Bool(super::values_identical(left, right))),
             "=>" => match left {
                 Value::Str(_) => Ok(Value::Pair(left.to_string_value(), Box::new(right.clone()))),
@@ -861,42 +1218,17 @@ impl Interpreter {
                     values: std::sync::Arc::new(vals),
                 })
             }
-            "~|" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let max_len = ls.len().max(rs.len());
-                let mut out = Vec::with_capacity(max_len);
-                for i in 0..max_len {
-                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
-                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
-                    out.push(lb | rb);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "~^" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let max_len = ls.len().max(rs.len());
-                let mut out = Vec::with_capacity(max_len);
-                for i in 0..max_len {
-                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
-                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
-                    out.push(lb ^ rb);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "~&" => {
-                let ls = crate::runtime::utils::coerce_to_str(left);
-                let rs = crate::runtime::utils::coerce_to_str(right);
-                let min_len = ls.len().min(rs.len());
-                let mut out = Vec::with_capacity(min_len);
-                for i in 0..min_len {
-                    out.push(ls.as_bytes()[i] & rs.as_bytes()[i]);
-                }
-                Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
-            }
-            "+<" => Ok(Self::shift_left_i64(to_int(left), to_int(right))),
-            "+>" => Ok(Self::shift_right_i64(to_int(left), to_int(right))),
+            "~|" => Self::str_bitwise_op(left, right, |a, b| a | b, true),
+            "~^" => Self::str_bitwise_op(left, right, |a, b| a ^ b, true),
+            "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, true),
+            "+<" => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Self::shift_left_i64(*a, *b)),
+                _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),
+            },
+            "+>" => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Self::shift_right_i64(*a, *b)),
+                _ => Ok(Self::shift_right_bigint(&left.to_bigint(), to_int(right))),
+            },
             "x" => {
                 if matches!(right, Value::Whatever) {
                     let mut env = crate::env::Env::new();
@@ -991,6 +1323,8 @@ impl Interpreter {
             "(-)" | "∖" => Ok(set_diff_values(left, right)),
             "(&)" | "∩" => Ok(set_intersect_values(left, right)),
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
+            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
+            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op
@@ -1000,6 +1334,7 @@ impl Interpreter {
 
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
+            Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
             Value::Array(items, ..) => items.to_vec(),
             Value::Seq(items) => items.to_vec(),
             Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
@@ -1074,12 +1409,19 @@ impl Interpreter {
                 "Cannot convert Complex to Real: imaginary part not zero",
             ));
         }
-        if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
-            && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
+        if let (Some(a), Some(b)) = (super::to_big_rat_parts(&l), super::to_big_rat_parts(&r))
+            && (matches!(
+                l,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ) || matches!(
+                r,
+                Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+            ))
         {
-            return Ok(Value::Bool(f(
-                super::compare_rat_parts((an, ad), (bn, bd)) as i32
-            )));
+            if let Some(ord) = super::compare_big_rat_parts(a, b) {
+                return Ok(Value::Bool(f(ord as i32)));
+            }
+            return Ok(Value::Bool(false));
         }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {

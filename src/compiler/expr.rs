@@ -214,6 +214,10 @@ impl Compiler {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::BoolBitNeg);
                 }
+                TokenKind::StrBitNeg => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::StrBitNeg);
+                }
                 TokenKind::Pipe => {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::MakeSlip);
@@ -246,11 +250,40 @@ impl Compiler {
                     // Raku's list repeat reevaluates call-like lhs expressions on each
                     // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
                     if Self::xx_lhs_needs_reeval(left) {
+                        let reevaluated_lhs = if let Expr::MethodCall {
+                            target,
+                            name,
+                            args,
+                            modifier,
+                            quoted,
+                        } = left.as_ref()
+                        {
+                            if matches!(target.as_ref(), Expr::Var(v) if v == "_") {
+                                let temp_name = format!(
+                                    "__mutsu_xx_target_{}",
+                                    STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                                );
+                                self.compile_expr(target);
+                                self.code.emit(OpCode::Dup);
+                                self.emit_set_named_var(&temp_name);
+                                Expr::MethodCall {
+                                    target: Box::new(Expr::Var(temp_name)),
+                                    name: *name,
+                                    args: args.clone(),
+                                    modifier: *modifier,
+                                    quoted: *quoted,
+                                }
+                            } else {
+                                (**left).clone()
+                            }
+                        } else {
+                            (**left).clone()
+                        };
                         let thunk = Expr::AnonSubParams {
                             params: Vec::new(),
                             param_defs: Vec::new(),
                             return_type: None,
-                            body: vec![Stmt::Expr((**left).clone())],
+                            body: vec![Stmt::Expr(reevaluated_lhs)],
                             is_rw: false,
                         };
                         self.compile_expr(&thunk);
@@ -325,17 +358,34 @@ impl Compiler {
                         return;
                     }
                     TokenKind::AndThen => {
-                        // a andthen b: result is b if a.defined, else a
+                        // a andthen b: result is b if a.defined, else Empty.
+                        // For callable RHS values (e.g. pointy blocks), invoke them with
+                        // the LHS as argument while keeping $_ topicalized to LHS.
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::CallDefined);
                         let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
-                        // Defined path: pop original, evaluate right
-                        self.code.emit(OpCode::Pop);
+                        // Defined path:
+                        // - topicalize $_ with LHS for RHS evaluation
+                        // - evaluate RHS
+                        // - if RHS is callable, invoke it with LHS argument
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::SetTopic);
                         self.compile_expr(right);
+                        let finalize_name_idx = self
+                            .code
+                            .add_constant(Value::str_from("__mutsu_andthen_finalize"));
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx: finalize_name_idx,
+                            arity: 2,
+                            arg_sources_idx: None,
+                        });
                         let jump_end = self.code.emit(OpCode::Jump(0));
-                        // Undefined path: keep original
+                        // Undefined path: replace with Empty
                         self.code.patch_jump(jump_undef);
+                        self.code.emit(OpCode::Pop);
+                        let empty_idx = self.code.add_constant(Value::slip(vec![]));
+                        self.code.emit(OpCode::LoadConst(empty_idx));
                         self.code.patch_jump(jump_end);
                         return;
                     }
@@ -509,6 +559,31 @@ impl Compiler {
                     && (args.len() == 2 || args.len() == 3)
                     && let Expr::Var(var_name) = &args[0]
                 {
+                    if args.len() == 2
+                        && let Expr::Lambda { param, body } = &args[1]
+                        && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
+                        && *op == TokenKind::Plus
+                    {
+                        let delta = match (left.as_ref(), right.as_ref()) {
+                            (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                            (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                            _ => None,
+                        };
+                        if let Some(delta) = delta {
+                            let call_name_idx = self
+                                .code
+                                .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                            self.code.emit(OpCode::LoadConst(name_idx));
+                            self.compile_expr(&delta);
+                            self.code.emit(OpCode::CallFunc {
+                                name_idx: call_name_idx,
+                                arity: 2,
+                                arg_sources_idx: None,
+                            });
+                            return;
+                        }
+                    }
                     let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::LoadConst(name_idx));
@@ -587,8 +662,9 @@ impl Compiler {
                         }
                         _ => {
                             // sink expr — evaluate, discard, push Nil
+                            // SinkPop throws unhandled Failures
                             self.compile_expr(&args[0]);
-                            self.code.emit(OpCode::Pop);
+                            self.code.emit(OpCode::SinkPop);
                             self.code.emit(OpCode::LoadNil);
                         }
                     }
@@ -887,6 +963,27 @@ impl Compiler {
                     }
                     return;
                 }
+                if name == "DELETE-KEY"
+                    && args.is_empty()
+                    && modifier.is_none()
+                    && let Expr::Call {
+                        name: sub_name,
+                        args: sub_args,
+                    } = target.as_ref()
+                    && *sub_name == Symbol::intern("__mutsu_subscript_adverb")
+                {
+                    let mut call_args = sub_args.clone();
+                    call_args.push(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str_from("delete"))),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(Expr::Literal(Value::Bool(true))),
+                    });
+                    self.compile_expr(&Expr::Call {
+                        name: *sub_name,
+                        args: call_args,
+                    });
+                    return;
+                }
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
@@ -908,13 +1005,28 @@ impl Compiler {
                 name_expr,
                 args,
             } => {
+                // If target is a variable, emit CallMethodDynamicMut for writeback
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(n) => Some(n.clone()),
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::HashVar(n) => Some(format!("%{}", n)),
+                    _ => None,
+                };
                 self.compile_expr(target);
                 self.compile_expr(name_expr);
                 let arity = args.len() as u32;
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
-                self.code.emit(OpCode::CallMethodDynamic { arity });
+                if let Some(var_name) = target_var_name {
+                    let target_name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::CallMethodDynamicMut {
+                        arity,
+                        target_name_idx,
+                    });
+                } else {
+                    self.code.emit(OpCode::CallMethodDynamic { arity });
+                }
             }
             // Hyper method call: target».method(args)
             Expr::HyperMethodCall {
@@ -983,6 +1095,12 @@ impl Compiler {
                     self.code.emit(OpCode::Index);
                 }
             }
+            // Multi-dimensional indexing: @a[$x;$y;$z]
+            Expr::MultiDimIndex { target, dimensions } => {
+                self.compile_expr(target);
+                self.compile_expr(&Expr::ArrayLiteral(dimensions.clone()));
+                self.code.emit(OpCode::Index);
+            }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {
                 self.compile_expr(target);
@@ -998,7 +1116,22 @@ impl Compiler {
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
                 for part in parts {
-                    self.compile_expr(part);
+                    match part {
+                        // Sigiled collection interpolation in strings should
+                        // flatten values rather than force scalar Str coercion.
+                        Expr::ArrayVar(name) => self.compile_expr(&Expr::Call {
+                            name: Symbol::intern("join"),
+                            args: vec![
+                                Expr::Literal(Value::str(" ".to_string())),
+                                Expr::ArrayVar(name.clone()),
+                            ],
+                        }),
+                        Expr::HashVar(name) => self.compile_expr(&Expr::Unary {
+                            op: crate::token_kind::TokenKind::Tilde,
+                            expr: Box::new(Expr::HashVar(name.clone())),
+                        }),
+                        _ => self.compile_expr(part),
+                    }
                 }
                 self.code.emit(OpCode::StringConcat(n));
             }
@@ -1079,6 +1212,10 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                 }
+                // Preserve lvalue container identity for expression-context consumers
+                // (e.g. collected postfix `for` results).
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::TagContainerRef(name_idx));
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {
@@ -1125,6 +1262,7 @@ impl Compiler {
             Expr::Exists {
                 target,
                 negated,
+                delete,
                 arg,
                 adverb,
             } => {
@@ -1161,13 +1299,49 @@ impl Compiler {
                         }
                         _ => {}
                     }
-                    // Non-index, non-env: use ExistsExpr
-                    if !matches!(target.as_ref(), Expr::Index { .. } | Expr::ZenSlice(_)) {
+                    // Non-index, non-env, non-multidim: use ExistsExpr
+                    if !matches!(
+                        target.as_ref(),
+                        Expr::Index { .. } | Expr::ZenSlice(_) | Expr::MultiDimIndex { .. }
+                    ) {
                         self.compile_expr(target);
                         self.code.emit(OpCode::ExistsExpr);
                         return;
                     }
                 }
+                // MultiDimIndex targets: compile as a call to
+                // __mutsu_multidim_exists_adverb(target, negated, adverb, dim0, dim1, ...)
+                if let Expr::MultiDimIndex {
+                    target: mdtarget,
+                    dimensions,
+                } = target.as_ref()
+                {
+                    let adverb_str = match adverb {
+                        ExistsAdverb::Kv => "kv",
+                        ExistsAdverb::NotKv => "not-kv",
+                        ExistsAdverb::P => "p",
+                        ExistsAdverb::NotP => "not-p",
+                        ExistsAdverb::InvalidK => "k",
+                        ExistsAdverb::InvalidNotK => "not-k",
+                        ExistsAdverb::InvalidV => "v",
+                        ExistsAdverb::None => "none",
+                        ExistsAdverb::NotV => "not-v",
+                    };
+                    // Build args: target, negated_bool, adverb_name, dim0, dim1, ...
+                    let mut call_args = vec![
+                        mdtarget.as_ref().clone(),
+                        Expr::Literal(Value::Bool(*negated)),
+                        Expr::Literal(Value::str(adverb_str.to_string())),
+                    ];
+                    call_args.extend(dimensions.iter().cloned());
+                    let call = Expr::Call {
+                        name: crate::symbol::Symbol::intern("__mutsu_multidim_exists_adverb"),
+                        args: call_args,
+                    };
+                    self.compile_expr(&call);
+                    return;
+                }
+
                 // Rich case: use ExistsIndexAdv opcode
                 let is_zen = matches!(target.as_ref(), Expr::ZenSlice(_));
                 let mut flags: u32 = 0;
@@ -1198,6 +1372,30 @@ impl Compiler {
                     self.compile_expr(a);
                 }
                 self.code.emit(OpCode::ExistsIndexAdv(flags));
+
+                if *delete
+                    && let Expr::Index {
+                        target: delete_target,
+                        index: delete_index,
+                    } = target.as_ref()
+                {
+                    if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        if Self::index_assign_target_requires_eval(delete_target) {
+                            // Preserve side effects for targets like DoStmt(VarDecl).
+                            self.compile_expr(delete_target);
+                            self.code.emit(OpCode::Pop);
+                        }
+                        self.compile_expr(delete_index);
+                        let name_idx = self.code.add_constant(Value::str(var_name));
+                        self.code.emit(OpCode::DeleteIndexNamed(name_idx));
+                    } else {
+                        self.compile_expr(delete_target);
+                        self.compile_expr(delete_index);
+                        self.code.emit(OpCode::DeleteIndexExpr);
+                    }
+                    // Keep the :exists result on the stack.
+                    self.code.emit(OpCode::Pop);
+                }
             }
             Expr::ZenSlice(inner) => {
                 // Outside of :exists, zen slice is identity
@@ -1222,13 +1420,20 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                nth,
+                x,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
+                let nth_idx = nth
+                    .as_ref()
+                    .map(|raw| self.code.add_constant(Value::str(raw.clone())));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
                     samemark: *samemark,
+                    nth_idx,
+                    x_count: x.map(|n| n as u32),
                 });
             }
             // S/// non-destructive substitution
@@ -1236,13 +1441,20 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                nth,
+                x,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
+                let nth_idx = nth
+                    .as_ref()
+                    .map(|raw| self.code.add_constant(Value::str(raw.clone())));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
                     samemark: *samemark,
+                    nth_idx,
+                    x_count: x.map(|n| n as u32),
                 });
             }
             // tr/// transliteration
@@ -1252,6 +1464,7 @@ impl Compiler {
                 delete,
                 complement,
                 squash,
+                non_destructive,
             } => {
                 let from_idx = self.code.add_constant(Value::str(from.clone()));
                 let to_idx = self.code.add_constant(Value::str(to.clone()));
@@ -1261,6 +1474,7 @@ impl Compiler {
                     delete: *delete,
                     complement: *complement,
                     squash: *squash,
+                    non_destructive: *non_destructive,
                 });
             }
             // HyperOp (>>op<<): compile sub-expressions, delegate operation
@@ -1287,6 +1501,39 @@ impl Compiler {
                 left,
                 right,
             } => {
+                if meta == "X"
+                    && matches!(
+                        op.as_str(),
+                        "and" | "&&" | "or" | "||" | "andthen" | "orelse"
+                    )
+                {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(right.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_cross_shortcircuit"),
+                        args: vec![
+                            Expr::Literal(Value::str(op.clone())),
+                            left.as_ref().clone(),
+                            thunked,
+                        ],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
+                if meta == "X" && op == "xx" && matches!(left.as_ref(), Expr::ArrayLiteral(_)) {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(left.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_reverse_xx"),
+                        args: vec![right.as_ref().clone(), thunked],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
                 if meta == "R" {
                     // R-meta can stack (RRop, RRRop, ...). Normalize to base operator and parity.
                     let mut base = op.as_str();
@@ -1359,6 +1606,23 @@ impl Compiler {
                 right,
                 modifier,
             } => {
+                if modifier.is_none()
+                    && matches!(name.as_str(), "any" | "all" | "one" | "none")
+                    && right.len() == 1
+                    && let Expr::BareWord(mop_name) = left.as_ref()
+                    && matches!(mop_name.as_str(), "WHAT" | "HOW")
+                    && let Expr::ArrayLiteral(junction_args) = &right[0]
+                {
+                    let normalized = Expr::Call {
+                        name: Symbol::intern(mop_name),
+                        args: vec![Expr::Call {
+                            name: Symbol::intern(name),
+                            args: junction_args.clone(),
+                        }],
+                    };
+                    self.compile_expr(&normalized);
+                    return;
+                }
                 let flip_flop_mode = match name.as_str() {
                     "ff" => Some((false, false, false)),
                     "^ff" => Some((true, false, false)),
@@ -1428,6 +1692,15 @@ impl Compiler {
                 }
                 Stmt::Given { topic, body } => {
                     self.compile_expr(topic);
+                    if let Some(source_name) = match topic {
+                        Expr::Var(name) => Some(name.clone()),
+                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                        Expr::HashVar(name) => Some(format!("%{}", name)),
+                        _ => None,
+                    } {
+                        let name_idx = self.code.add_constant(Value::str(source_name));
+                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                    }
                     let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
                     self.compile_block_inline(body);
                     self.code.patch_body_end(given_idx);
@@ -1563,6 +1836,14 @@ impl Compiler {
                 Stmt::EnumDecl { name, .. } if name.resolve().is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);
+                }
+                Stmt::Whenever { supply, .. } => {
+                    self.compile_stmt(stmt);
+                    if let Expr::Var(name) = supply {
+                        self.compile_expr(&Expr::Var(name.clone()));
+                    } else {
+                        self.code.emit(OpCode::LoadNil);
+                    }
                 }
                 _ => {
                     self.compile_stmt(stmt);
@@ -1761,6 +2042,34 @@ impl Compiler {
                     self.code.emit(OpCode::IndexAssignGeneric);
                 }
             }
+            // Multi-dimensional index assignment: @a[$x;$y;$z] = value
+            Expr::MultiDimIndexAssign {
+                target,
+                dimensions,
+                value,
+            } => {
+                // Compile as a runtime call: __mutsu_multidim_assign(target_var, dim0, dim1, ..., value)
+                if let Some(var_name) = Self::index_assign_target_name(target) {
+                    self.compile_expr(value);
+                    for dim in dimensions {
+                        self.compile_expr(dim);
+                    }
+                    let name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::MultiDimIndexAssign {
+                        name_idx,
+                        ndims: dimensions.len() as u32,
+                    });
+                } else {
+                    // Fallback: compile target, dims, value, use generic handler
+                    self.compile_expr(target);
+                    for dim in dimensions {
+                        self.compile_expr(dim);
+                    }
+                    self.compile_expr(value);
+                    self.code
+                        .emit(OpCode::MultiDimIndexAssignGeneric(dimensions.len() as u32));
+                }
+            }
             Expr::IndirectTypeLookup(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::IndirectTypeLookup);
@@ -1903,6 +2212,7 @@ impl Compiler {
                     || name == "pick"
                     || name == "roll"
                     || name == "take"
+                    || name == "readchars"
                     || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(

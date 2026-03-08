@@ -1,5 +1,5 @@
 use Test;
-plan 13;
+plan 16;
 
 is 0xFF, 255, '0xFF is 255';
 is 0x10, 16, '0x10 is 16';
@@ -14,3 +14,6 @@ is :36<Ｕｎｉｃｏｄｅｚ>, 2402100600299, 'fullwidth letters work in gene
 throws-like "say 0o7₅₅", X::Syntax::Confused, "No numerals are rejected in octal literals";
 throws-like "say :36<αω>", X::Syntax::Malformed, "non-Hex_Digit scripts are rejected in generic radix literals";
 throws-like { "௰".Int }, X::Str::Numeric, 'No numerals are not accepted by Str.Int coercion';
+is :16<dead_beef.face>, 0xDEADBEEF + 0xFACE / 65536.0, 'generic radix fractional digits parse';
+is :2<1.1> * 10 ** 10, 15_000_000_000, 'generic radix fraction multiplies correctly';
+is :2<1.1*10**10>, 15_000_000_000, 'generic radix decimal exponent inside <> works';

@@ -8,6 +8,31 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
+/// Process escape sequences in a tr/// from/to string.
+/// Handles \n, \t, \r, \x.., \o.., \\, etc.
+fn process_trans_escapes(raw: &str) -> String {
+    let mut result = String::new();
+    let mut rest = raw;
+    while !rest.is_empty() {
+        if rest.starts_with('\\') && rest.len() >= 2 {
+            if let Some((remaining, _)) =
+                super::string::process_escape_sequence(rest, &mut result, &[])
+            {
+                rest = remaining;
+            } else {
+                // Unknown escape: keep as-is
+                result.push('\\');
+                rest = &rest[1..];
+            }
+        } else {
+            let ch = rest.chars().next().unwrap();
+            result.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    result
+}
+
 /// Validate a regex pattern at parse time, converting any RuntimeError to PError.
 fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
     validate_regex_syntax(pattern).map_err(|e| {
@@ -22,6 +47,18 @@ fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
 use super::super::expr::expression;
 use super::super::helpers::{consume_unspace, skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::assign::try_parse_assign_expr;
+
+/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
+/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
+fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with(':')
+        && !input.starts_with("::")
+        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
+    {
+        return Ok(result);
+    }
+    expression(input)
+}
 
 #[derive(Default)]
 struct MatchAdverbs {
@@ -39,6 +76,7 @@ struct MatchAdverbs {
     perl5: bool,
     pos: bool,
     continue_: bool,
+    nth: Option<String>,
 }
 
 fn is_regex_quote_open(ch: char) -> bool {
@@ -131,6 +169,18 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.continue_ = true;
         } else if name.eq_ignore_ascii_case("p5") {
             adverbs.perl5 = true;
+        } else if name == "nth" {
+            if let Some(raw) = arg {
+                adverbs.nth = Some(raw.trim().to_string());
+            }
+        } else if (name == "th" || name == "st" || name == "nd" || name == "rd")
+            && !leading_digits.is_empty()
+        {
+            adverbs.nth = Some(leading_digits.clone());
+        } else if name == "th" {
+            if let Some(raw) = arg {
+                adverbs.nth = Some(raw.trim().to_string());
+            }
         } else if name == "x" {
             if let Some(raw) = arg {
                 let trimmed = raw.trim();
@@ -202,7 +252,9 @@ fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -
     rest
 }
 
-fn parse_trans_adverbs(input: &str) -> Option<(&str, bool, bool, bool)> {
+/// Parse tr/TR adverbs and the opening delimiter.
+/// Returns (remaining_after_open, delimiter_char, close_delimiter_char, is_paired, delete, complement, squash).
+fn parse_trans_adverbs(input: &str) -> Option<(&str, char, char, bool, bool, bool, bool)> {
     let mut rest = input;
     let mut delete = false;
     let mut complement = false;
@@ -228,8 +280,21 @@ fn parse_trans_adverbs(input: &str) -> Option<(&str, bool, bool, bool)> {
         rest = &after_colon[name_len..];
     }
 
-    let after_slash = rest.strip_prefix('/')?;
-    Some((after_slash, delete, complement, squash))
+    let open_ch = rest.chars().next()?;
+    if open_ch.is_alphanumeric() || open_ch == '_' || open_ch.is_whitespace() {
+        return None;
+    }
+    let (close_ch, is_paired) = match open_ch {
+        '{' => ('}', true),
+        '[' => (']', true),
+        '(' => (')', true),
+        '<' => ('>', true),
+        other => (other, false),
+    };
+    let after_open = &rest[open_ch.len_utf8()..];
+    Some((
+        after_open, open_ch, close_ch, is_paired, delete, complement, squash,
+    ))
 }
 
 fn has_unescaped_statement_boundary(input: &str) -> bool {
@@ -248,6 +313,19 @@ fn has_unescaped_statement_boundary(input: &str) -> bool {
         }
     }
     false
+}
+
+fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
+    let (rest, expr) = super::primary(input)?;
+    let replacement = match expr {
+        Expr::Literal(value) => value.to_string_value(),
+        _ => {
+            return Err(PError::expected(
+                "literal replacement expression after '=' in substitution",
+            ));
+        }
+    };
+    Ok((rest, replacement))
 }
 
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
@@ -272,6 +350,7 @@ fn adverbs_need_value(adverbs: &MatchAdverbs) -> bool {
         || adverbs.exhaustive
         || adverbs.overlap
         || adverbs.repeat.is_some()
+        || adverbs.nth.is_some()
         || adverbs.perl5
         || adverbs.pos
         || adverbs.continue_
@@ -289,6 +368,7 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
         exhaustive: adverbs.exhaustive,
         overlap: adverbs.overlap,
         repeat: adverbs.repeat,
+        nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
         perl5: adverbs.perl5,
         pos: adverbs.pos,
         ignore_case: adverbs.ignore_case,
@@ -583,6 +663,17 @@ fn scan_to_delim_inner(
 }
 
 pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
+    // y/// is obsolete — reject with X::Obsolete
+    if input.starts_with("y/")
+        || input.starts_with("y[")
+        || input.starts_with("y{")
+        || input.starts_with("y|")
+    {
+        return Err(PError::fatal(
+            "X::Obsolete: Unsupported use of y///. In Raku please use: tr///.".to_string(),
+        ));
+    }
+
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
         let (spec, adverbs) = parse_match_adverbs(rest)?;
@@ -724,9 +815,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         after_pat
                     };
-                    if let Some((replacement, rest)) =
+                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                        None
+                    } else {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
-                    {
+                    };
+                    if let Some((replacement, rest)) = replacement_scan {
                         if !is_paired
                             && open_ch == '-'
                             && (has_unescaped_statement_boundary(pattern)
@@ -742,6 +836,31 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                            },
+                        ));
+                    }
+                    let (after_pat_ws, _) = ws(after_pat)?;
+                    if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
+                        let (rest, replacement) = parse_subst_replacement_expr(after_eq)?;
+                        if !is_paired
+                            && open_ch == '-'
+                            && (has_unescaped_statement_boundary(pattern)
+                                || has_unescaped_statement_boundary(&replacement))
+                        {
+                            return Err(PError::expected("substitution"));
+                        }
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
+                        return Ok((
+                            rest,
+                            Expr::Subst {
+                                pattern,
+                                replacement,
+                                samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
                             },
                         ));
                     }
@@ -776,9 +895,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         after_pat
                     };
-                    if let Some((replacement, rest)) =
+                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                        None
+                    } else {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
-                    {
+                    };
+                    if let Some((replacement, rest)) = replacement_scan {
                         if !is_paired
                             && open_ch == '-'
                             && (has_unescaped_statement_boundary(pattern)
@@ -793,6 +915,30 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                            },
+                        ));
+                    }
+                    let (after_pat_ws, _) = ws(after_pat)?;
+                    if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
+                        let (rest, replacement) = parse_subst_replacement_expr(after_eq)?;
+                        if !is_paired
+                            && open_ch == '-'
+                            && (has_unescaped_statement_boundary(pattern)
+                                || has_unescaped_statement_boundary(&replacement))
+                        {
+                            return Err(PError::expected("substitution"));
+                        }
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        return Ok((
+                            rest,
+                            Expr::NonDestructiveSubst {
+                                pattern,
+                                replacement,
+                                samemark: adverbs.samemark,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
                             },
                         ));
                     }
@@ -841,22 +987,27 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
                     samemark: false,
+                    nth: None,
+                    x: None,
                 },
             ));
         }
     }
 
     // tr[:adverbs]/from/to/ or TR[:adverbs]/from/to/
+    // Supports arbitrary delimiters: tr/.../.../  tr|...|...|  tr[...][...]  tr{...}{...}
+    let is_tr_upper = input.starts_with("TR");
     if let Some(r) = input
         .strip_prefix("tr")
         .or_else(|| input.strip_prefix("TR"))
         .and_then(parse_trans_adverbs)
     {
-        let (r, delete, complement, squash) = r;
+        let (r, _open_ch, close_ch, is_paired, delete, complement, squash) = r;
+        let close_byte = close_ch as u8;
         let mut end = 0;
         let bytes = r.as_bytes();
         while end < bytes.len() {
-            if bytes[end] == b'/' {
+            if bytes[end] == close_byte {
                 break;
             }
             if bytes[end] == b'\\' && end + 1 < bytes.len() {
@@ -867,11 +1018,22 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         }
         let from = &r[..end];
         if end < bytes.len() {
-            let r = &r[end + 1..]; // skip middle /
+            let r = &r[end + 1..]; // skip close delimiter
+            // For paired delimiters, skip optional whitespace and open delimiter of second part
+            let r = if is_paired {
+                let r = r.trim_start();
+                if let Some(r2) = r.strip_prefix(|c: char| c == _open_ch) {
+                    r2
+                } else {
+                    r
+                }
+            } else {
+                r
+            };
             let mut rend = 0;
             let rbytes = r.as_bytes();
             while rend < rbytes.len() {
-                if rbytes[rend] == b'/' {
+                if rbytes[rend] == close_byte {
                     break;
                 }
                 if rbytes[rend] == b'\\' && rend + 1 < rbytes.len() {
@@ -889,11 +1051,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Transliterate {
-                    from: from.to_string(),
-                    to: to.to_string(),
+                    from: process_trans_escapes(from),
+                    to: process_trans_escapes(to),
                     delete,
                     complement,
                     squash,
+                    non_destructive: is_tr_upper,
                 },
             ));
         }
@@ -904,6 +1067,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
     if let Some(after_m) = input.strip_prefix('m')
+        && !after_m.starts_with("=>")
         && !crate::parser::stmt::simple::is_user_declared_sub("m")
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
@@ -926,6 +1090,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     scan_to_delim(r, open_ch, close_ch, is_paired)
                 };
                 if let Some((pattern, rest)) = scan_result {
+                    // Disambiguate `m-foo` style identifiers (e.g., user-defined
+                    // callable names like `m-bar`) from `m-...-` regex literals.
+                    // If the `-`-delimited candidate spans a statement boundary,
+                    // treat it as a non-match and let identifier parsing handle it.
+                    if !is_paired && open_ch == '-' && has_unescaped_statement_boundary(pattern) {
+                        return Err(PError::expected("regex literal"));
+                    }
                     let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;
@@ -983,6 +1154,59 @@ pub(super) fn version_lit(input: &str) -> PResult<'_, Expr> {
     };
     let (parts, plus, minus) = Value::parse_version_string(version);
     Ok((rest, Expr::Literal(Value::Version { parts, plus, minus })))
+}
+
+fn parse_topic_brace_index(input: &str) -> PResult<'_, Expr> {
+    let (r, first) = expression(input)?;
+    let mut current_dim = vec![first];
+    let mut dimensions: Vec<Expr> = Vec::new();
+    let mut has_semicolons = false;
+    let mut r = r;
+
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(',') {
+            let (r3, _) = parse_char(r2, ',')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if r2.starts_with(';') && !r2.starts_with(";;") {
+            has_semicolons = true;
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(std::mem::take(&mut current_dim))
+            };
+            dimensions.push(dim_expr);
+            current_dim = Vec::new();
+            let (r3, _) = parse_char(r2, ';')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            current_dim.push(next);
+            r = r3;
+            continue;
+        }
+        if has_semicolons {
+            let dim_expr = if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            };
+            dimensions.push(dim_expr);
+            return Ok((r2, Expr::ArrayLiteral(dimensions)));
+        }
+        return Ok((
+            r2,
+            if current_dim.len() == 1 {
+                current_dim.remove(0)
+            } else {
+                Expr::ArrayLiteral(current_dim)
+            },
+        ));
+    }
 }
 
 /// Parse a topicalized method call: .say, .uc, .defined, etc.
@@ -1085,6 +1309,20 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // .{index} — topicalized hash/associative lookup on $_
+    if let Some(r) = r.strip_prefix('{') {
+        let (r, _) = ws(r)?;
+        let (r, index) = parse_topic_brace_index(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, '}')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::Var("_".to_string())),
+                index: Box::new(index),
+            },
+        ));
+    }
     // .&foo(...) / .&foo: ... — call a code object/sub with topic as first arg
     if let Some(r) = r.strip_prefix('&') {
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -1174,17 +1412,26 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     if r2.starts_with(':') && !r2.starts_with("::") {
         let r3 = &r2[1..];
         let (r3, _) = ws(r3)?;
-        let (r3, first_arg) = expression(r3)?;
+        let (r3, first_arg) = parse_colon_method_arg(r3)?;
         let mut args = vec![first_arg];
         let mut r_inner = r3;
         loop {
             let (r4, _) = ws(r_inner)?;
+            // Adjacent colonpairs without comma
+            if r4.starts_with(':')
+                && !r4.starts_with("::")
+                && let Ok((r5, arg)) = crate::parser::primary::misc::colonpair_expr(r4)
+            {
+                args.push(arg);
+                r_inner = r5;
+                continue;
+            }
             if !r4.starts_with(',') {
                 break;
             }
             let r4 = &r4[1..];
             let (r4, _) = ws(r4)?;
-            let (r4, next) = expression(r4)?;
+            let (r4, next) = parse_colon_method_arg(r4)?;
             args.push(next);
             r_inner = r4;
         }

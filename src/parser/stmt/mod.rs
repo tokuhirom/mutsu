@@ -240,7 +240,7 @@ fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     result
 }
 
-fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
+pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, stmts) = stmt_list_with_mode(input, false)?;
     let (input, _) = ws(input)?;
     let (input, _) = parse_char(input, '}')?;
@@ -1248,6 +1248,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_ternary_statement() {
+        let (rest, stmts) = program("1 ?? 2 !! 3;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Expr(Expr::Ternary { .. })));
+    }
+
+    #[test]
     fn parse_main_semicolon_captures_following_mainline() {
         let (rest, stmts) = program("my @*ARGS = <x>; sub MAIN($a); say $a;").unwrap();
         assert_eq!(rest, "");
@@ -1336,6 +1344,65 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
+    }
+
+    #[test]
+    fn parse_class_has_decl_dot_equals_initializer() {
+        let src = r#"class MyHandle {
+            has Buf[uint8] $.data .= new: "x".encode;
+        }"#;
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(matches!(
+                &body[0],
+                Stmt::HasDecl {
+                    default: Some(_),
+                    ..
+                }
+            ));
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_class_attribute_postfix_of_type() {
+        let (rest, stmts) = program("class Foo { has @.a of Int }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::HasDecl {
+                sigil,
+                type_constraint,
+                ..
+            } = &body[0]
+            {
+                assert_eq!(*sigil, '@');
+                assert_eq!(type_constraint.as_deref(), Some("Int"));
+            } else {
+                panic!("expected HasDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_class_attribute_where_constraint() {
+        let (rest, stmts) = program("class Foo { has $.x where * > 0 }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::HasDecl {
+                where_constraint, ..
+            } = &body[0]
+            {
+                assert!(where_constraint.is_some());
+            } else {
+                panic!("expected HasDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
     }
 
     #[test]
@@ -1554,6 +1621,13 @@ mod tests {
     }
 
     #[test]
+    fn assign_stmt_parses_comma_compound_assign() {
+        let (rest, stmt) = assign::assign_stmt("%h ,= 1;").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(stmt, Stmt::Assign { .. }));
+    }
+
+    #[test]
     fn assign_expr_parses_reverse_bracket_metaop_assign() {
         let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
         assert_eq!(rest, "");
@@ -1597,6 +1671,70 @@ mod tests {
                 }
                 other => panic!("expected meta-op assignment stmt, got {other:?}"),
             },
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_expr_parses_unbracketed_cross_metaop_assign() {
+        let (rest, expr) = assign::try_parse_assign_expr("@a X*= 10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "@a");
+                match *expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "*");
+                        assert!(matches!(*left, Expr::ArrayVar(ref n) if n == "a"));
+                        assert!(matches!(*right, Expr::Literal(Value::Int(10))));
+                    }
+                    other => panic!("expected meta-op assignment expr, got {other:?}"),
+                }
+            }
+            other => panic!("expected AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
+        let (rest, stmt) = assign::assign_stmt("@a X*= 10;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp { meta, op, .. } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "*");
+                    }
+                    other => panic!("expected meta-op assignment stmt, got {other:?}"),
+                }
+            }
+            other => panic!("expected Assign stmt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assign_stmt_parses_unbracketed_cross_plain_assign() {
+        let (rest, stmt) = assign::assign_stmt("@a X= 10;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp { meta, op, .. } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "=");
+                    }
+                    other => panic!("expected meta-op assignment stmt, got {other:?}"),
+                }
+            }
             other => panic!("expected Assign stmt, got {other:?}"),
         }
     }
