@@ -5,7 +5,7 @@ mod number;
 mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;
-mod var;
+pub(crate) mod var;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, update_best_error};
