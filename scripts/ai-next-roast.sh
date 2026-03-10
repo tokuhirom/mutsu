@@ -87,9 +87,9 @@ while true; do
         break
     fi
 
-    # Filter out entries in wip.txt
+    # Filter out entries in wip.txt (preserve priority order)
     if [[ -f "$WIP_FILE" ]]; then
-        CANDIDATES=$(comm -23 <(echo "$CANDIDATES" | sort) <(sort "$WIP_FILE") || true)
+        CANDIDATES=$(echo "$CANDIDATES" | grep -vxFf "$WIP_FILE" || true)
     fi
 
     if [[ -z "$CANDIDATES" ]]; then
@@ -97,8 +97,8 @@ while true; do
         break
     fi
 
-    # Pick one at random
-    FILE=$(echo "$CANDIDATES" | shuf -n 1)
+    # Pick the first candidate (highest priority from pick-next-roast.sh)
+    FILE=$(echo "$CANDIDATES" | head -n 1)
 
     if [[ -z "$FILE" ]]; then
         echo "No candidate selected. Done."
