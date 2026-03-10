@@ -5,10 +5,14 @@
 # Monitors liveness, restarts dead workers, and shows status.
 #
 # Usage:
-#   ai-fleet.sh [--dry-run] [--once] [--interval <seconds>]
+#   ai-fleet.sh [--codex N] [--claude N] [--supervisor <agent>|--no-supervisor]
+#               [--dry-run] [--once] [--interval <seconds>]
 #
-# Fleet composition (edit FLEET array below to change):
-#   codex worker x2, claude worker x1, supervisor x1
+# Examples:
+#   ai-fleet.sh                                  # default: --codex 2 --claude 1 --supervisor codex
+#   ai-fleet.sh --codex 3 --claude 2             # 3 codex + 2 claude workers + supervisor(codex)
+#   ai-fleet.sh --codex 2 --claude 2 --supervisor claude
+#   ai-fleet.sh --codex 1 --no-supervisor        # 1 codex worker, no supervisor
 #
 # Window naming convention:
 #   fleet:codex:1, fleet:codex:2, fleet:claude:1, fleet:supervisor:1
@@ -20,12 +24,22 @@ set -euo pipefail
 DRY_RUN=0
 ONCE=0
 INTERVAL=30
+NUM_CODEX=2
+NUM_CLAUDE=1
+SUPERVISOR_AGENT="codex"
+NO_SUPERVISOR=0
 
 usage() {
     cat <<USAGE
-Usage: $0 [--dry-run] [--once] [--interval <seconds>]
+Usage: $0 [options]
 
-Options:
+Worker options:
+  --codex <N>            Number of codex workers (default: 2)
+  --claude <N>           Number of claude workers (default: 1)
+  --supervisor <agent>   Supervisor agent type: codex or claude (default: codex)
+  --no-supervisor        Do not start a supervisor
+
+General options:
   --dry-run              Show what would be done without executing
   --once                 Check once and exit (don't loop)
   --interval <seconds>   Poll interval (default: 30)
@@ -42,6 +56,22 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: --interval requires a value" >&2; exit 1
             fi
             INTERVAL="$2"; shift 2 ;;
+        --codex)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --codex requires a value" >&2; exit 1
+            fi
+            NUM_CODEX="$2"; shift 2 ;;
+        --claude)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --claude requires a value" >&2; exit 1
+            fi
+            NUM_CLAUDE="$2"; shift 2 ;;
+        --supervisor)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --supervisor requires a value" >&2; exit 1
+            fi
+            SUPERVISOR_AGENT="$2"; shift 2 ;;
+        --no-supervisor) NO_SUPERVISOR=1; shift ;;
         -h|--help)   usage; exit 0 ;;
         *)           echo "Error: unknown argument: $1" >&2; usage; exit 1 ;;
     esac
@@ -51,15 +81,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STOP_FILE="${REPO_ROOT}/tmp/.stop"
 
-# --- Fleet definition ---
+# --- Build fleet definition from options ---
 # Each entry: "window_name|command"
 # Window names use "fleet:" prefix for identification.
-FLEET=(
-    "fleet:codex:1|dotenvx run -- ${SCRIPT_DIR}/ai-next-roast.sh --agent codex"
-    "fleet:codex:2|dotenvx run -- ${SCRIPT_DIR}/ai-next-roast.sh --agent codex"
-    "fleet:claude:1|dotenvx run -- ${SCRIPT_DIR}/ai-next-roast.sh --agent claude"
-    "fleet:supervisor:1|dotenvx run -- ${SCRIPT_DIR}/ai-supervisor.sh --agent codex"
-)
+FLEET=()
+
+for i in $(seq 1 "$NUM_CODEX"); do
+    FLEET+=("fleet:codex:${i}|dotenvx run -- ${SCRIPT_DIR}/ai-next-roast.sh --agent codex")
+done
+
+for i in $(seq 1 "$NUM_CLAUDE"); do
+    FLEET+=("fleet:claude:${i}|dotenvx run -- ${SCRIPT_DIR}/ai-next-roast.sh --agent claude")
+done
+
+if [[ "$NO_SUPERVISOR" -eq 0 ]]; then
+    FLEET+=("fleet:supervisor:1|dotenvx run -- ${SCRIPT_DIR}/ai-supervisor.sh --agent ${SUPERVISOR_AGENT}")
+fi
 
 # Check if running inside tmux
 if [[ -z "${TMUX:-}" ]]; then
