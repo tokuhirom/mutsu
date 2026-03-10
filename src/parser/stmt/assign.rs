@@ -1551,6 +1551,18 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
+    // $/ cannot be assigned directly (only bound with :=)
+    if name == "/"
+        && rest.starts_with('=')
+        && !rest.starts_with("==")
+        && !rest.starts_with("=>")
+        && !rest.starts_with("=:")
+    {
+        return Err(PError::fatal(
+            "Cannot modify an immutable Match (or Nil)".to_string(),
+        ));
+    }
+
     if (rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>"))
         || rest.starts_with("⚛=")
     {
