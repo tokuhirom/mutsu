@@ -759,6 +759,47 @@ impl Interpreter {
             None
         };
 
+        // Pre-compile the closure body once to avoid recompilation per iteration.
+        let precompiled_closure: Option<(
+            crate::opcode::CompiledCode,
+            std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+        )> = if let SeqMode::Closure = &mode {
+            if let Some(Value::Sub(data)) = generator.as_ref() {
+                if !self
+                    .sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve())
+                    && !data.body.is_empty()
+                {
+                    let needs_full_binding = data.param_defs.iter().any(|pd| {
+                        pd.type_constraint.is_some()
+                            || pd.literal_value.is_some()
+                            || pd.shape_constraints.is_some()
+                            || pd.named
+                            || pd.slurpy
+                            || pd.double_slurpy
+                    });
+                    if !needs_full_binding {
+                        let mut compiler = crate::compiler::Compiler::new();
+                        compiler.is_routine = !self.routine_stack.is_empty();
+                        let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
+                            format!("{}::&{}", pkg, routine)
+                        } else {
+                            self.current_package.clone()
+                        };
+                        compiler.set_current_package(scope);
+                        Some(compiler.compile(&data.body))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         'seq_gen: for _ in 0..max_gen {
             let next = match &mode {
                 SeqMode::Closure => {
@@ -871,7 +912,13 @@ impl Interpreter {
                                 self.env
                                     .insert("@_".to_string(), Value::array(args.clone()));
 
-                                let val = match self.eval_block_value(&data.body) {
+                                let exec_result =
+                                    if let Some((ref code, ref fns)) = precompiled_closure {
+                                        self.eval_precompiled_block_fast(code, fns)
+                                    } else {
+                                        self.eval_block_value(&data.body)
+                                    };
+                                let val = match exec_result {
                                     Ok(v) => v,
                                     Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
                                     Err(e) if e.is_last => {
