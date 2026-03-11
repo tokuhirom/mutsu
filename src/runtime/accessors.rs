@@ -938,6 +938,28 @@ impl Interpreter {
         self.regex_find_all(pattern, text)
     }
 
+    #[cfg(feature = "pcre2")]
+    pub(crate) fn regex_find_first_p5_bridge(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<(usize, usize)> {
+        let caps = self.regex_match_with_captures_p5(pattern, text)?;
+        Some((caps.from, caps.to))
+    }
+
+    #[cfg(feature = "pcre2")]
+    pub(crate) fn regex_find_all_p5_bridge(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Vec<(usize, usize)> {
+        self.regex_match_all_with_captures_p5(pattern, text)
+            .into_iter()
+            .map(|caps| (caps.from, caps.to))
+            .collect()
+    }
+
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         if let Some(items) = self.gather_items.last_mut() {
             items.push(val);
