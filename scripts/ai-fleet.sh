@@ -28,7 +28,7 @@ NUM_CODEX=2
 NUM_CLAUDE=1
 SUPERVISOR_AGENT="codex"
 NO_SUPERVISOR=0
-RESTART_PATTERN=""
+STOP_PATTERN=""
 
 usage() {
     cat <<USAGE
@@ -41,8 +41,9 @@ Worker options:
   --no-supervisor        Do not start a supervisor
 
 Actions:
-  --restart <pattern>    Gracefully restart workers matching pattern
+  --stop <pattern>       Gracefully stop workers matching pattern
                          e.g. "fleet:codex:1", "codex" (matches all codex), "all"
+                         The fleet manager loop will restart them automatically.
 
 General options:
   --dry-run              Show what would be done without executing
@@ -77,11 +78,11 @@ while [[ $# -gt 0 ]]; do
             fi
             SUPERVISOR_AGENT="$2"; shift 2 ;;
         --no-supervisor) NO_SUPERVISOR=1; shift ;;
-        --restart)
+        --stop)
             if [[ $# -lt 2 ]]; then
-                echo "Error: --restart requires a pattern" >&2; exit 1
+                echo "Error: --stop requires a pattern" >&2; exit 1
             fi
-            RESTART_PATTERN="$2"; shift 2 ;;
+            STOP_PATTERN="$2"; shift 2 ;;
         -h|--help)   usage; exit 0 ;;
         *)           echo "Error: unknown argument: $1" >&2; usage; exit 1 ;;
     esac
@@ -261,29 +262,9 @@ graceful_stop_window() {
     return 0
 }
 
-# Wait for a window to become dead (up to timeout)
-wait_window_dead() {
-    local name="$1"
-    local timeout="${2:-120}"
-    local elapsed=0
-
-    while window_alive "$name" && [[ "$elapsed" -lt "$timeout" ]]; do
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
-
-    if window_alive "$name"; then
-        echo "  $name: still alive after ${timeout}s (agent may be mid-task)"
-        return 1
-    fi
-    echo "  $name: stopped"
-    return 0
-}
-
-# Restart matching fleet windows
-do_restart() {
+# Gracefully stop matching fleet windows (create stop files, then exit)
+do_stop() {
     local pattern="$1"
-    local matched=0
 
     # Collect matching window names
     local matching_names=()
@@ -304,33 +285,13 @@ do_restart() {
         exit 1
     fi
 
-    echo "Gracefully restarting ${#matching_names[@]} window(s):"
+    echo "Sending graceful stop to ${#matching_names[@]} window(s):"
     for name in "${matching_names[@]}"; do
-        echo "  - $name"
+        graceful_stop_window "$name"
     done
     echo ""
-
-    # Send stop signals
-    for name in "${matching_names[@]}"; do
-        graceful_stop_window "$name" && matched=$((matched + 1))
-    done
-
-    if [[ "$matched" -eq 0 ]]; then
-        echo "No running windows to restart."
-        exit 0
-    fi
-
-    # Wait for them to stop
-    echo ""
-    echo "Waiting for processes to finish current work..."
-    for name in "${matching_names[@]}"; do
-        wait_window_dead "$name" 120
-    done
-
-    # Reconcile to restart them
-    echo ""
-    echo "Restarting..."
-    reconcile
+    echo "Stop files created. Workers will exit after finishing current work."
+    echo "The fleet manager loop will restart them automatically."
 }
 
 # --- Main ---
@@ -343,8 +304,8 @@ if [[ -f "$STOP_FILE" ]]; then
     fi
 fi
 
-if [[ -n "$RESTART_PATTERN" ]]; then
-    do_restart "$RESTART_PATTERN"
+if [[ -n "$STOP_PATTERN" ]]; then
+    do_stop "$STOP_PATTERN"
     exit 0
 fi
 
