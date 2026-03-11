@@ -1760,6 +1760,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_meta_compound_assign_op_recognizes_reverse_add_assign() {
+        let parsed = assign::parse_meta_compound_assign_op("R+= 10");
+        assert!(parsed.is_some());
+        let (rest, meta, op) = parsed.unwrap();
+        assert_eq!(rest, " 10");
+        assert_eq!(meta, "R");
+        assert_eq!(op, "+");
+    }
+
+    #[test]
     fn known_call_stmt_accepts_bracket_metaop_assign_argument() {
         simple::register_module_exports("Test");
         let parsed = simple::known_call_stmt("is $y [R/]= 1, 1/5, \"[R/]= works correctly (1)\";");
