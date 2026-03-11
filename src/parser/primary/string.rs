@@ -1056,6 +1056,10 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
             if let Some(after_q) = after_dot.strip_prefix('\'') {
                 if let Some(end) = after_q.find('\'') {
                     let name = &after_q[..end];
+                    // Reject quoted method names containing whitespace
+                    if name.contains(char::is_whitespace) {
+                        break;
+                    }
                     let rest = &after_q[end + 1..];
                     (name, rest, true)
                 } else {
@@ -1073,6 +1077,10 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
             } else if let Some(after_q) = after_dot.strip_prefix('"') {
                 if let Some(end) = after_q.find('"') {
                     let name = &after_q[..end];
+                    // Reject quoted method names containing whitespace
+                    if name.contains(char::is_whitespace) {
+                        break;
+                    }
                     let rest = &after_q[end + 1..];
                     (name, rest, true)
                 } else {
@@ -1263,10 +1271,17 @@ pub(super) fn try_interpolate_var<'a>(
                     && leftover.trim().is_empty()
                     && !stmts.is_empty()
                 {
-                    Some(Expr::DoBlock {
-                        body: stmts,
-                        label: None,
-                    })
+                    // When there's a single statement, use DoStmt so that
+                    // For/If/etc. get expression-level compilation that
+                    // collects results (e.g. list comprehensions).
+                    if stmts.len() == 1 {
+                        Some(Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap())))
+                    } else {
+                        Some(Expr::DoBlock {
+                            body: stmts,
+                            label: None,
+                        })
+                    }
                 } else if let Ok((leftover, expr)) = expression(inner.trim())
                     && leftover.trim().is_empty()
                 {
