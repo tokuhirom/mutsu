@@ -167,7 +167,7 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.pos = true;
         } else if name == "c" || name == "continue" {
             adverbs.continue_ = true;
-        } else if name.eq_ignore_ascii_case("p5") {
+        } else if name.eq_ignore_ascii_case("p5") || name.eq_ignore_ascii_case("Perl5") {
             adverbs.perl5 = true;
         } else if name == "nth" {
             if let Some(raw) = arg {
@@ -316,16 +316,91 @@ fn has_unescaped_statement_boundary(input: &str) -> bool {
 }
 
 fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
+    let (input, _) = ws(input)?;
     let (rest, expr) = super::primary(input)?;
-    let replacement = match expr {
-        Expr::Literal(value) => value.to_string_value(),
-        _ => {
-            return Err(PError::expected(
-                "literal replacement expression after '=' in substitution",
-            ));
-        }
-    };
+    let replacement = subst_expr_to_template(&expr);
     Ok((rest, replacement))
+}
+
+/// Convert a replacement expression to a template string.
+/// For literals, returns the literal value.
+/// For string interpolations containing capture variables ($0, $1, etc.),
+/// reconstructs a template with `$N` placeholders for runtime substitution.
+fn subst_expr_to_template(expr: &Expr) -> String {
+    match expr {
+        Expr::Literal(value) => value.to_string_value(),
+        Expr::StringInterpolation(parts) => {
+            let mut out = String::new();
+            for part in parts {
+                match part {
+                    Expr::Literal(value) => out.push_str(&value.to_string_value()),
+                    Expr::Index { target, index } => {
+                        if let Expr::Var(ref name) = **target
+                            && name == "/"
+                            && let Expr::Literal(ref idx) = **index
+                        {
+                            // $0, $1 etc. — capture variable references
+                            out.push('$');
+                            out.push_str(&idx.to_string_value());
+                            continue;
+                        }
+                        out.push_str(&subst_expr_to_template(part));
+                    }
+                    Expr::Block(body) => {
+                        if body.len() == 1
+                            && let crate::ast::Stmt::Expr(ref inner) = body[0]
+                        {
+                            out.push('{');
+                            out.push_str(&subst_expr_to_template(inner));
+                            out.push('}');
+                            continue;
+                        }
+                        out.push_str("{...}");
+                    }
+                    Expr::Call { .. } => {
+                        // Call in string interpolation is a closure: wrap in {}
+                        out.push('{');
+                        out.push_str(&subst_expr_to_template(part));
+                        out.push('}');
+                    }
+                    other => {
+                        out.push_str(&subst_expr_to_template(other));
+                    }
+                }
+            }
+            out
+        }
+        Expr::Call { name, args, .. } => {
+            let mut out = name.resolve();
+            for arg in args.iter() {
+                if !out.is_empty() {
+                    out.push(' ');
+                }
+                out.push_str(&subst_expr_to_template(arg));
+            }
+            out
+        }
+        Expr::Index { target, index } => {
+            if let Expr::Var(ref name) = **target
+                && name == "/"
+                && let Expr::Literal(ref idx) = **index
+            {
+                let mut out = String::from("$");
+                out.push_str(&idx.to_string_value());
+                return out;
+            }
+            String::new()
+        }
+        // $0, $1, etc. as Var("0"), Var("1") — used inside {uc $0} blocks
+        Expr::Var(name) => {
+            if name.chars().all(|c| c.is_ascii_digit()) {
+                format!("${name}")
+            } else {
+                String::new()
+            }
+        }
+        _ => String::new(),
+    }
 }
 
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
@@ -790,6 +865,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         } else {
             (after_s, MatchAdverbs::default())
         };
+        // Skip optional whitespace between adverbs and delimiter (e.g., s:Perl5 /aa/ll/)
+        let (spec, _) = ws(spec)?;
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             // Don't treat s.identifier as substitution when the identifier is 2+ chars
@@ -807,15 +884,24 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
-                if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                let scan_result = if adverbs.perl5 {
+                    scan_to_delim_p5(r, open_ch, close_ch, is_paired)
+                } else {
+                    scan_to_delim(r, open_ch, close_ch, is_paired)
+                };
+                if let Some((pattern, after_pat)) = scan_result {
                     // For paired delimiters, skip optional whitespace and opening delimiter
-                    let r2 = if is_paired {
+                    let (r2, has_second_open) = if is_paired {
                         let (r2, _) = ws(after_pat)?;
-                        r2.strip_prefix(open_ch).unwrap_or(r2)
+                        if let Some(stripped) = r2.strip_prefix(open_ch) {
+                            (stripped, true)
+                        } else {
+                            (r2, false)
+                        }
                     } else {
-                        after_pat
+                        (after_pat, true)
                     };
-                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                    let replacement_scan = if is_paired && !has_second_open {
                         None
                     } else {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
@@ -829,7 +915,9 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             return Err(PError::expected("substitution"));
                         }
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                        validate_regex_pattern_or_perror(&pattern)?;
+                        if !adverbs.perl5 {
+                            validate_regex_pattern_or_perror(&pattern)?;
+                        }
                         return Ok((
                             rest,
                             Expr::Subst {
@@ -838,6 +926,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 samemark: adverbs.samemark,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                global: adverbs.global,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
@@ -852,7 +942,9 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             return Err(PError::expected("substitution"));
                         }
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                        validate_regex_pattern_or_perror(&pattern)?;
+                        if !adverbs.perl5 {
+                            validate_regex_pattern_or_perror(&pattern)?;
+                        }
                         return Ok((
                             rest,
                             Expr::Subst {
@@ -861,6 +953,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 samemark: adverbs.samemark,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                global: adverbs.global,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
@@ -888,14 +982,23 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
-                if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
-                    let r2 = if is_paired {
+                let scan_result = if adverbs.perl5 {
+                    scan_to_delim_p5(r, open_ch, close_ch, is_paired)
+                } else {
+                    scan_to_delim(r, open_ch, close_ch, is_paired)
+                };
+                if let Some((pattern, after_pat)) = scan_result {
+                    let (r2, has_second_open) = if is_paired {
                         let (r2, _) = ws(after_pat)?;
-                        r2.strip_prefix(open_ch).unwrap_or(r2)
+                        if let Some(stripped) = r2.strip_prefix(open_ch) {
+                            (stripped, true)
+                        } else {
+                            (r2, false)
+                        }
                     } else {
-                        after_pat
+                        (after_pat, true)
                     };
-                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                    let replacement_scan = if is_paired && !has_second_open {
                         None
                     } else {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
@@ -917,6 +1020,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 samemark: adverbs.samemark,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                global: adverbs.global,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
@@ -939,6 +1044,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 samemark: adverbs.samemark,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                global: adverbs.global,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
@@ -989,6 +1096,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     samemark: false,
                     nth: None,
                     x: None,
+                    global: false,
+                    perl5: false,
                 },
             ));
         }

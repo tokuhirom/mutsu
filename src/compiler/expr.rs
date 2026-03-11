@@ -1441,6 +1441,8 @@ impl Compiler {
                 samemark,
                 nth,
                 x,
+                global,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1453,6 +1455,8 @@ impl Compiler {
                     samemark: *samemark,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    global: *global,
+                    perl5: *perl5,
                 });
             }
             // S/// non-destructive substitution
@@ -1462,6 +1466,8 @@ impl Compiler {
                 samemark,
                 nth,
                 x,
+                global,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1474,6 +1480,8 @@ impl Compiler {
                     samemark: *samemark,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    global: *global,
+                    perl5: *perl5,
                 });
             }
             // tr/// transliteration
